@@ -12,10 +12,12 @@ import MarkdownView from './MarkdownView'
 
 // Import all Solution components statically (required for Vite)
 import ProgressBarsIV from '../lld/lld-003-progress-bars-ii/Solution'
+import GridLights from '../lld/lld-004-grid-lights/Solution'
 
 // Map LLD IDs to their Solution components
 const SOLUTION_COMPONENTS = {
   'lld-003-progress-bars-ii': ProgressBarsIV,
+  'lld-004-grid-lights': GridLights,
 }
 
 function Detail({ lld }) {
