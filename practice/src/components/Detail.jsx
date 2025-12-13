@@ -13,11 +13,28 @@ import MarkdownView from './MarkdownView'
 // Import all Solution components statically (required for Vite)
 import ProgressBarsIV from '../lld/lld-003-progress-bars-ii/Solution'
 import GridLights from '../lld/lld-004-grid-lights/Solution'
+import Wordle from '../lld/lld-005-wordle/Solution'
+import Typeahead from '../lld/lld-006-typeahead/Solution'
+import FileExplorer from '../lld/lld-007-file-explorer/Solution'
+import Comments from '../lld/lld-008-nested-comments/Solution'
+import TrafficLight from '../lld/lld-009-traffic-light/Solution'
+
+
+
+
 
 // Map LLD IDs to their Solution components
 const SOLUTION_COMPONENTS = {
   'lld-003-progress-bars-ii': ProgressBarsIV,
   'lld-004-grid-lights': GridLights,
+  'lld-005-wordle': Wordle,
+  'lld-006-typeahead': Typeahead,
+  'lld-007-file-explorer': FileExplorer,
+  'lld-008-nested-comments': Comments,
+  'lld-009-traffic-light': TrafficLight
+
+
+
 }
 
 function Detail({ lld }) {

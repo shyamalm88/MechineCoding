@@ -29,8 +29,16 @@ function App() {
       })
       .then(data => {
         setLlds(data)
-        // Auto-select first LLD if available
-        if (data.length > 0) setSelectedLld(data[0])
+        // Check URL for lld query param
+        const params = new URLSearchParams(window.location.search)
+        const lldId = params.get('lld')
+        const matchedLld = lldId && data.find(item => item.id === lldId)
+        // Select from URL or fall back to first LLD
+        if (matchedLld) {
+          setSelectedLld(matchedLld)
+        } else if (data.length > 0) {
+          setSelectedLld(data[0])
+        }
         setLoading(false)
       })
       .catch(err => {
@@ -38,6 +46,15 @@ function App() {
         setLoading(false)
       })
   }, [])
+
+  // Update URL when selected LLD changes
+  useEffect(() => {
+    if (selectedLld) {
+      const params = new URLSearchParams(window.location.search)
+      params.set('lld', selectedLld.id)
+      window.history.replaceState({}, '', `?${params.toString()}`)
+    }
+  }, [selectedLld])
 
   if (loading) {
     return <div className="loading">Loading LLD problems...</div>

@@ -10,5 +10,35 @@
     "title": "Grid Lights",
     "summary": "3x3 grid with click activation and reverse deactivation",
     "path": "src/lld/lld-004-grid-lights"
+  },
+  {
+    "id": "lld-005-wordle",
+    "title": "Wordle",
+    "summary": "Word guessing game with colored tile feedback",
+    "path": "src/lld/lld-005-wordle"
+  },
+  {
+    "id": "lld-006-typeahead",
+    "title": "Typeahead",
+    "summary": "Typeahead with debounce and cancelling",
+    "path": "src/lld/lld-006-typeahead"
+  },
+  {
+    "id": "lld-007-file-explorer",
+    "title": "File Explorer",
+    "summary": "File Explorer",
+    "path": "src/lld/lld-007-file-explorer"
+  },
+  {
+    "id": "lld-008-nested-comments",
+    "title": "Nested Comments",
+    "summary": "Nested Comments",
+    "path": "src/lld/lld-008-nested-comments"
+  },
+  {
+    "id": "lld-009-traffic-light",
+    "title": "Traffic Lights",
+    "summary": "Traffic Lights",
+    "path": "src/lld/lld-009-traffic-light"
   }
 ]

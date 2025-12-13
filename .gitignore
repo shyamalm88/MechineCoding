@@ -1,1 +1,16 @@
 node_modules/
+.DS_Store
+*.log
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# Build outputs
+dist/
+build/
+
+# Claude Code settings (not needed in repo)
+.claude/
