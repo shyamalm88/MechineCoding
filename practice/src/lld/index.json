@@ -40,5 +40,17 @@
     "title": "Traffic Lights",
     "summary": "Traffic Lights",
     "path": "src/lld/lld-009-traffic-light"
+  },
+  {
+    "id": "lld-010-promise-progress",
+    "title": "Promise Progress",
+    "summary": "Concurrent async operations with real-time progress tracking",
+    "path": "src/lld/lld-010-promise-progress"
+  },
+  {
+    "id": "lld-011-infinite-scroll",
+    "title": "Infinite Scroll",
+    "summary": "Auto-loading content with IntersectionObserver and pagination",
+    "path": "src/lld/lld-011-infinite-scroll"
   }
 ]

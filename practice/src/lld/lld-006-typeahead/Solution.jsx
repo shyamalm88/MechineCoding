@@ -9,6 +9,7 @@ function Typeahead() {
 
   const debouncedSearchTerm = useDebounce(inputValue, 1000);
 
+  const cache = useRef({});
   
 
   useEffect(() => {
@@ -16,6 +17,13 @@ function Typeahead() {
     if (!debouncedSearchTerm) {
       setResults([]);
       return;
+    }
+
+    // 2. CHECK CACHE FIRST
+    if (cache.current[debouncedSearchTerm]) {
+      console.log("Serving from Cache:", debouncedSearchTerm);
+      setResults(cache.current[debouncedSearchTerm]);
+      return; // Stop here, don't fetch!
     }
 
     // 2. Create the AbortController for THIS specific request
@@ -36,6 +44,9 @@ function Typeahead() {
         if (!response.ok) throw new Error('Network error');
         
         const data = await response.json();
+
+        // 3. SAVE TO CACHE
+        cache.current[debouncedSearchTerm] = data.products;
         
         // 4. Update state only if we are still here (implicit success)
         setResults(data.products);

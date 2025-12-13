@@ -18,6 +18,10 @@ import Typeahead from '../lld/lld-006-typeahead/Solution'
 import FileExplorer from '../lld/lld-007-file-explorer/Solution'
 import Comments from '../lld/lld-008-nested-comments/Solution'
 import TrafficLight from '../lld/lld-009-traffic-light/Solution'
+import PromiseProgress from '../lld/lld-010-promise-progress/Solution'
+import InfiniteScroll from '../lld/lld-011-infinite-scroll/Solution'
+
+
 
 
 
@@ -25,13 +29,17 @@ import TrafficLight from '../lld/lld-009-traffic-light/Solution'
 
 // Map LLD IDs to their Solution components
 const SOLUTION_COMPONENTS = {
-  'lld-003-progress-bars-ii': ProgressBarsIV,
+  'lld-003-progress-bars-iv': ProgressBarsIV,
   'lld-004-grid-lights': GridLights,
   'lld-005-wordle': Wordle,
   'lld-006-typeahead': Typeahead,
   'lld-007-file-explorer': FileExplorer,
   'lld-008-nested-comments': Comments,
-  'lld-009-traffic-light': TrafficLight
+  'lld-009-traffic-light': TrafficLight,
+  'lld-010-promise-progress': PromiseProgress,
+  'lld-011-infinite-scroll': InfiniteScroll,
+
+
 
 
 
