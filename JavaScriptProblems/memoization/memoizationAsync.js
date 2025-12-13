@@ -1,22 +1,29 @@
 function memoizeAsync(fn) {
-  const cache = new Map();
+  // 1. Two separate caches
+  const primitiveCache = new Map();
+  const objectCache = new WeakMap();
 
-  return function (...args) {
-    const key = JSON.stringify(args);
+  return function (arg) {
+    // 2. Decide which cache to use based on type
+    const isObject =
+      (typeof arg === "object" && arg !== null) || typeof arg === "function";
+    const cache = isObject ? objectCache : primitiveCache;
 
-    if (cache.has(key)) {
-      return cache.get(key);
+    // 3. Check Cache
+    if (cache.has(arg)) {
+      return cache.get(arg);
     }
 
-    // 1. Create the promise
-    const promise = fn.apply(this, args).catch((err) => {
-      // 2. IMPORTANT: Delete from cache on error so we can retry later
-      cache.delete(key);
+    // 4. Execute Function
+    // We use .call(this) to preserve context
+    const promise = fn.call(this, arg).catch((err) => {
+      // 5. Delete on error (works for both Map and WeakMap)
+      cache.delete(arg);
       throw err;
     });
 
-    // 3. Store the PROMISE, not the value
-    cache.set(key, promise);
+    // 6. Store in the correct cache
+    cache.set(arg, promise);
 
     return promise;
   };

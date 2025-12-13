@@ -1,10 +1,10 @@
 const memoization = (fn) => {
-  let weakCache = new WeakMap();
-  let strongCache = new Map();
+  let objectCache = new WeakMap();
+  let primitiveCache = new Map();
   return function (args) {
     const isObj =
       args && (typeof args === "object" || typeof args === "function");
-    const cache = isObj ? weakCache : strongCache;
+    const cache = isObj ? objectCache : primitiveCache;
 
     if (cache.has(args)) {
       return cache.get(args);
