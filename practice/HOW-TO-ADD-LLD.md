@@ -95,7 +95,7 @@ import MyProblem from "../lld/lld-004-my-problem/Solution";
 const SOLUTION_COMPONENTS = {
   "lld-001-tic-tac-toe": TicTacToe,
   "lld-002-todo-list": TodoList,
-  "lld-003-progress-bars-ii": ProgressBarsIV,
+  "lld-003-progress-bars-iV": ProgressBarsIV,
   "lld-004-my-problem": MyProblem, // ← Add this
 };
 ```

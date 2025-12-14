@@ -2,14 +2,20 @@
   {
     "id": "lld-001-holy-grail",
     "title": "HolyGrail",
-    "summary": "Concurrent progress bar animation with 3-bar limit",
+    "summary": "Holy grail HTML structure",
     "path": "src/lld/lld-001-holy-grail"
   },
   {
-    "id": "lld-003-progress-bars-ii",
+    "id": "lld-002-transfer-list",
+    "title": "TransferList",
+    "summary": "Transfer List",
+    "path": "src/lld/lld-002-transfer-list"
+  },
+  {
+    "id": "lld-003-progress-bars-iv",
     "title": "Progress Bars IV",
     "summary": "Concurrent progress bar animation with 3-bar limit",
-    "path": "src/lld/lld-003-progress-bars-ii"
+    "path": "src/lld/lld-003-progress-bars-iv"
   },
   {
     "id": "lld-004-grid-lights",
