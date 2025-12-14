@@ -1,4 +1,4 @@
-Array.prototype.myMap = function (callback, thisArg) {
+Array.prototype.myMap = function (callback, context) {
   if (typeof callback !== "function") {
     throw new TypeError(callback + " is not a function");
   }
@@ -9,7 +9,7 @@ Array.prototype.myMap = function (callback, thisArg) {
   for (let i = 0; i < length; i++) {
     // Sparse array check: Only map if the index actually exists
     if (i in this) {
-      newArray[i] = callback.call(thisArg, this[i], i, this);
+      newArray[i] = callback.call(context, this[i], i, this);
     }
   }
 
