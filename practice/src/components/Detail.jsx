@@ -20,6 +20,11 @@ import Comments from '../lld/lld-008-nested-comments/Solution'
 import TrafficLight from '../lld/lld-009-traffic-light/Solution'
 import PromiseProgress from '../lld/lld-010-promise-progress/Solution'
 import InfiniteScroll from '../lld/lld-011-infinite-scroll/Solution'
+import StarRating from '../lld/lld-012-star-rating/Solution'
+import CircleCollide from "../lld/lld-013-circle-collide/Solution"
+import Carousel from "../lld/lld-014-carousel/Solution"
+
+
 
 
 
@@ -38,6 +43,9 @@ const SOLUTION_COMPONENTS = {
   'lld-009-traffic-light': TrafficLight,
   'lld-010-promise-progress': PromiseProgress,
   'lld-011-infinite-scroll': InfiniteScroll,
+  'lld-012-star-rating': StarRating,
+  'lld-013-circle-collide': CircleCollide,
+  'lld-014-carousel': Carousel
 
 
 

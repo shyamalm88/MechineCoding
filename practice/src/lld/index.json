@@ -52,5 +52,23 @@
     "title": "Infinite Scroll",
     "summary": "Auto-loading content with IntersectionObserver and pagination",
     "path": "src/lld/lld-011-infinite-scroll"
+  },
+  {
+    "id": "lld-012-star-rating",
+    "title": "Star Rating",
+    "summary": "Rating system with star",
+    "path": "src/lld/lld-012-star-rating"
+  },
+  {
+    "id": "lld-013-circle-collide",
+    "title": "Circle Collide",
+    "summary": "Circle Collide",
+    "path": "src/lld/lld-013-circle-collide"
+  },
+  {
+    "id": "lld-014-carousel",
+    "title": "Carousel",
+    "summary": "Carousel",
+    "path": "src/lld/lld-014-carousel"
   }
 ]
