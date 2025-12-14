@@ -23,6 +23,8 @@ import InfiniteScroll from '../lld/lld-011-infinite-scroll/Solution'
 import StarRating from '../lld/lld-012-star-rating/Solution'
 import CircleCollide from "../lld/lld-013-circle-collide/Solution"
 import Carousel from "../lld/lld-014-carousel/Solution"
+import VirtualList from "../lld/lld-015-virtual-list/Solution"
+
 
 
 
@@ -45,7 +47,8 @@ const SOLUTION_COMPONENTS = {
   'lld-011-infinite-scroll': InfiniteScroll,
   'lld-012-star-rating': StarRating,
   'lld-013-circle-collide': CircleCollide,
-  'lld-014-carousel': Carousel
+  'lld-014-carousel': Carousel,
+  'lld-015-virtual-list': VirtualList
 
 
 

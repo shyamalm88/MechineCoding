@@ -56,19 +56,25 @@
   {
     "id": "lld-012-star-rating",
     "title": "Star Rating",
-    "summary": "Rating system with star",
+    "summary": "Interactive rating with hover preview, click selection, and double-click reset",
     "path": "src/lld/lld-012-star-rating"
   },
   {
     "id": "lld-013-circle-collide",
     "title": "Circle Collide",
-    "summary": "Circle Collide",
+    "summary": "Click-to-place circles with Euclidean distance collision detection",
     "path": "src/lld/lld-013-circle-collide"
   },
   {
     "id": "lld-014-carousel",
     "title": "Carousel",
-    "summary": "Carousel",
+    "summary": "Sliding carousel with prev/next buttons and dot navigation indicators",
     "path": "src/lld/lld-014-carousel"
+  },
+  {
+    "id": "lld-015-virtual-list",
+    "title": "Virtual List",
+    "summary": "Windowed rendering for large datasets with dynamic height measurement",
+    "path": "src/lld/lld-015-virtual-list"
   }
 ]

@@ -1,8 +1,8 @@
 const pipeAsync =
   (...funcs) =>
   (initialValue) => {
-    funcs.reduce(async (prevPromise, currentFunc) => {
-      const result = await prevPromise();
-      return currentFunc(result);
+    return funcs.reduce(async (prevPromise, currentFunc) => {
+      const resolvedValue = await prevPromise;
+      return currentFunc(resolvedValue);
     }, Promise.resolve(initialValue));
   };
