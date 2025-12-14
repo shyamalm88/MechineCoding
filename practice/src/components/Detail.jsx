@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react'
 import MarkdownView from './MarkdownView'
 
 // Import all Solution components statically (required for Vite)
+import HolyGrail from '../lld/lld-001-holy-grail/Solution'
 import ProgressBarsIV from '../lld/lld-003-progress-bars-ii/Solution'
 import GridLights from '../lld/lld-004-grid-lights/Solution'
 import Wordle from '../lld/lld-005-wordle/Solution'
@@ -36,6 +37,7 @@ import VirtualList from "../lld/lld-015-virtual-list/Solution"
 
 // Map LLD IDs to their Solution components
 const SOLUTION_COMPONENTS = {
+  'lld-001-holy-grail': HolyGrail,
   'lld-003-progress-bars-iv': ProgressBarsIV,
   'lld-004-grid-lights': GridLights,
   'lld-005-wordle': Wordle,

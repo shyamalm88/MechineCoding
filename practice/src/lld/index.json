@@ -1,5 +1,11 @@
 [
   {
+    "id": "lld-001-holy-grail",
+    "title": "HolyGrail",
+    "summary": "Concurrent progress bar animation with 3-bar limit",
+    "path": "src/lld/lld-001-holy-grail"
+  },
+  {
     "id": "lld-003-progress-bars-ii",
     "title": "Progress Bars IV",
     "summary": "Concurrent progress bar animation with 3-bar limit",
