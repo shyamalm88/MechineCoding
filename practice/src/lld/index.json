@@ -88,5 +88,11 @@
     "title": "Virtual List",
     "summary": "Windowed rendering for large datasets with dynamic height measurement",
     "path": "src/lld/lld-015-virtual-list"
+  },
+  {
+    "id": "lld-016-modal",
+    "title": "Modal",
+    "summary": "Managed Modal",
+    "path": "src/lld/lld-016-modal"
   }
 ]

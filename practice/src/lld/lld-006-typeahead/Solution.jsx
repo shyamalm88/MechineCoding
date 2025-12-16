@@ -1,91 +1,89 @@
-import { useEffect, useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import useDebounce from "./useDebounce";
 
-function Typeahead() {
-  const [result, setResults] = useState([]);
+export default function App() {
   const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState(null);
 
-  const debouncedSearchTerm = useDebounce(inputValue, 1000);
+  const [result, setResult] = useState([]);
+  const cache = useRef(new Map());
 
-  const cache = useRef({});
-  
+  const debouncedTerm = useDebounce(inputValue, 1000);
 
   useEffect(() => {
-    // If empty, clear results and do nothing
-    if (!debouncedSearchTerm) {
-      setResults([]);
+    setError(false);
+    setLoading(true);
+
+    if (!debouncedTerm) {
+      setResult([]);
       return;
     }
 
-    // 2. CHECK CACHE FIRST
-    if (cache.current[debouncedSearchTerm]) {
-      console.log("Serving from Cache:", debouncedSearchTerm);
-      setResults(cache.current[debouncedSearchTerm]);
-      return; // Stop here, don't fetch!
+    if (cache.current.has(debouncedTerm)) {
+      setResult(cache.current.get(debouncedTerm));
+      setLoading(false);
+
+      return;
     }
 
-    // 2. Create the AbortController for THIS specific request
     const controller = new AbortController();
     const signal = controller.signal;
 
     const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-
+      const url = "https://dummyjson.com/products/search?q=";
       try {
-        // 3. Pass the 'signal' to the fetch call
-        const response = await fetch(
-          `https://dummyjson.com/products/search?q=${debouncedSearchTerm}`,
-          { signal } 
-        );
-
-        if (!response.ok) throw new Error('Network error');
-        
+        const response = await fetch(url + debouncedTerm, { signal });
         const data = await response.json();
-
-        // 3. SAVE TO CACHE
-        cache.current[debouncedSearchTerm] = data.products;
-        
-        // 4. Update state only if we are still here (implicit success)
-        setResults(data.products);
+        setResult(data.products);
+        cache.current.set(debouncedTerm, data.products);
       } catch (err) {
-        // 5. Handle "AbortError" separately
-        if (err.name === 'AbortError') {
-          console.log('Request cancelled for:', debouncedSearchTerm);
-        } else {
+        if (err.name !== "AbortError") {
           setError(err.message);
+          console.error("Hi error")
+          return;
         }
+        setError(err);
       } finally {
-        // Only turn off loading if NOT aborted (optional nuance, but safer)
-        if (!signal.aborted) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
-
     fetchData();
 
-    // 6. CLEANUP FUNCTION: This runs if 'debouncedSearchTerm' changes
-    // or component unmounts. It cancels the PREVIOUS request.
     return () => {
       controller.abort();
     };
-    
-  }, [debouncedSearchTerm]);
+  }, [debouncedTerm]);
+
 
   return (
-    <div>
+    <div style={{ position: "relative" }}>
       <input
         type="text"
-        placeholder="Search products (e.g. 'phone')..."
-        value={inputValue}
+        placeholder="write here..."
         onChange={(e) => setInputValue(e.target.value)}
-        style={{ width: "100%", padding: "10px", fontSize: "16px" }}
+        style={{ width: "100%", padding: 10 }}
       />
+      <div
+        style={{
+          position: "absolute",
+          padding: 20,
+          border: "1px solid #ccc",
+          width: "100%",
+          borderRadius: "4px",
+          display: result.length ? "flex" : "none",
+          background: "#fbfbfbff"
+        }}
+      >
+        {loading && <div>Loading...</div>}
+        <ul style={{ padding: 0, margin: 0 }}>
+          {result.map((item) => {
+            return (
+              <div style={{ padding: "10px 10px 10px 20px" }}>{item.title}</div>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
-
-export default Typeahead;

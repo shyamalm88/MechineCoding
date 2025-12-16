@@ -9,105 +9,127 @@ const data = [
 ];
 
 export default function TransferList() {
+  // Location state
   const [leftItems, setLeftItems] = useState(data);
   const [rightItems, setRightItems] = useState([]);
-  const [checkedItems, setCheckedItems] = useState(new Set()); // Using Set for O(1) lookup
 
-  // 1. Helper: Toggle Checkbox
-  const handleToggle = (item) => {
-    const newChecked = new Set(checkedItems);
-    if (newChecked.has(item)) {
-      newChecked.delete(item);
-    } else {
-      newChecked.add(item);
-    }
-    setCheckedItems(newChecked);
+  // Selection state (store IDs, not objects)
+  const [checkedIds, setCheckedIds] = useState(new Set());
+
+  /* -------------------- Helpers -------------------- */
+
+  const toggleChecked = (id) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
-  // 2. Helper: Calculate Intersection (Items in 'list' that are also 'checked')
-  const intersection = (list, checked) => {
-    return list.filter(item => checked.has(item));
+  const intersection = (items) =>
+    items.filter((item) => checkedIds.has(item.id));
+
+  const difference = (items) =>
+    items.filter((item) => !checkedIds.has(item.id));
+
+  const clearChecked = (items) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      items.forEach((item) => next.delete(item.id));
+      return next;
+    });
   };
 
-  // 3. Helper: Calculate Difference (Items in 'list' that are NOT 'checked')
-  const not = (list, checked) => {
-    return list.filter(item => !checked.has(item));
+  /* -------------------- Actions -------------------- */
+
+  const moveRight = () => {
+    const selected = intersection(leftItems);
+    if (selected.length === 0) return;
+
+    setRightItems((prev) => [...prev, ...selected]);
+    setLeftItems((prev) => difference(prev));
+    clearChecked(selected);
   };
 
-  // MOVE RIGHT Logic
-  const handleMoveRight = () => {
-    const leftChecked = intersection(leftItems, checkedItems);
-    
-    // Safety check: Don't move if nothing selected
-    if (leftChecked.length === 0) return;
+  const moveLeft = () => {
+    const selected = intersection(rightItems);
+    if (selected.length === 0) return;
 
-    setRightItems(prev => [...prev, ...leftChecked]);
-    setLeftItems(prev => not(prev, checkedItems));
-    
-    // CRITICAL: Uncheck items after moving so they don't stay active in new list
-    const newChecked = new Set(checkedItems);
-    leftChecked.forEach(item => newChecked.delete(item));
-    setCheckedItems(newChecked);
+    setLeftItems((prev) => [...prev, ...selected]);
+    setRightItems((prev) => difference(prev));
+    clearChecked(selected);
   };
 
-  // MOVE LEFT Logic
-  const handleMoveLeft = () => {
-    const rightChecked = intersection(rightItems, checkedItems);
-    
-    if (rightChecked.length === 0) return;
-
-    setLeftItems(prev => [...prev, ...rightChecked]);
-    setRightItems(prev => not(prev, checkedItems));
-
-    const newChecked = new Set(checkedItems);
-    rightChecked.forEach(item => newChecked.delete(item));
-    setCheckedItems(newChecked);
-  };
+  /* -------------------- UI -------------------- */
 
   return (
-    <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-      {/* LEFT LIST */}
-      <ItemList 
-        items={leftItems} 
-        checked={checkedItems} 
-        onToggle={handleToggle} 
+    <div style={styles.container}>
+      <ItemList
+        title="Available"
+        items={leftItems}
+        checkedIds={checkedIds}
+        onToggle={toggleChecked}
       />
 
-      {/* ACTION BUTTONS */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <button onClick={handleMoveRight}>&gt;</button>
-        <button onClick={handleMoveLeft}>&lt;</button>
+      <div style={styles.actions}>
+        <button onClick={moveRight}>&gt;</button>
+        <button onClick={moveLeft}>&lt;</button>
       </div>
 
-      {/* RIGHT LIST */}
-      <ItemList 
-        items={rightItems} 
-        checked={checkedItems} 
-        onToggle={handleToggle} 
+      <ItemList
+        title="Selected"
+        items={rightItems}
+        checkedIds={checkedIds}
+        onToggle={toggleChecked}
       />
     </div>
   );
 }
 
-// Reusable List Component
-const ItemList = ({ items, checked, onToggle }) => (
-  <div style={{ border: "1px solid #ccc", padding: "10px", width: "150px", height: "200px", overflow: "auto" }}>
-    {items.map((item) => {
-      const isChecked = checked.has(item);
-      return (
-        <div key={item.id} style={{ marginBottom: "5px" }}>
-          <label style={{ cursor: "pointer", display: "flex", alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={isChecked}
-              // Prevent clicking the label from triggering twice if logic is complex
-              onChange={() => onToggle(item)} 
-              tabIndex={-1} // Accessibility consideration
-            />
-            <span style={{ marginLeft: "8px" }}>{item.title}</span>
-          </label>
-        </div>
-      );
-    })}
-  </div>
-);
+/* -------------------- Reusable List -------------------- */
+
+function ItemList({ title, items, checkedIds, onToggle }) {
+  return (
+    <div style={styles.list}>
+      <h4>{title}</h4>
+      {items.map((item) => (
+        <label key={item.id} style={styles.item}>
+          <input
+            type="checkbox"
+            checked={checkedIds.has(item.id)}
+            onChange={() => onToggle(item.id)}
+          />
+          <span style={{ marginLeft: 8 }}>{item.title}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/* -------------------- Styles -------------------- */
+
+const styles = {
+  container: {
+    display: "flex",
+    gap: 20,
+    alignItems: "center",
+  },
+  list: {
+    border: "1px solid #ccc",
+    padding: 10,
+    width: 160,
+    height: 220,
+    overflowY: "auto",
+  },
+  item: {
+    display: "flex",
+    alignItems: "center",
+    marginBottom: 6,
+    cursor: "pointer",
+  },
+  actions: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+};
