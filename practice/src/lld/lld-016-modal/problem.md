@@ -1,16 +1,14 @@
-# Modal System with Priority Queue
+# Modal with Priority System
 
 ## Problem Statement
 
-Build a **Modal System** with priority-based rendering that can manage multiple modals simultaneously. This pattern is essential for complex applications where different UI elements (alerts, confirmations, forms) may need to interrupt each other based on importance.
+Build a **Modal Component** with a priority-based system that determines which modal should be displayed when multiple modals compete for visibility. Higher priority modals can replace lower priority ones, ensuring critical information (errors, confirmations) always takes precedence.
 
 This pattern is essential for:
-- Alert and notification systems
-- Confirmation dialogs
-- Form wizards and multi-step flows
-- Error handling UIs
+- Confirmation dialogs for dangerous actions
+- System error alerts that must interrupt user flow
 - Authentication prompts
-- System-level warnings
+- Multi-step workflows with nested confirmations
 
 ---
 
@@ -18,85 +16,84 @@ This pattern is essential for:
 
 ### Functional Requirements
 
-1. **Modal Rendering**
-   - Display modal with overlay backdrop
-   - Support title, content, and action buttons
-   - Allow close button (optional via prop)
+1. **Modal Display**
+   - Show modal with overlay backdrop
+   - Display title, content, and action buttons
+   - Close on overlay click or ESC key
+   - Prevent body scroll when open
 
-2. **Priority Queue System**
-   - Each modal has a priority level (higher = more important)
-   - When opening a new modal, filter out lower priority modals
-   - Higher priority modals take precedence
+2. **Priority System**
+   - Each modal has a priority level (number)
+   - Higher priority modals replace lower priority ones
+   - Lower priority modals cannot replace higher priority ones
+   - Only one modal visible at a time
 
-3. **Modal Management**
-   - Open modals programmatically via context
-   - Close specific modal by ID
-   - Close all modals at once
-   - Support multiple simultaneous modals
+3. **Nested Modal Triggering**
+   - Buttons inside a modal can trigger another modal
+   - If new modal has higher priority, it replaces current
+   - Example: Settings (priority 1) → Delete Confirm (priority 10)
 
-4. **Action Buttons**
-   - Primary action button (e.g., Confirm, Submit)
-   - Secondary action button (e.g., Cancel, Back)
-   - Custom onClick handlers for each action
-
-5. **Nested Modals**
-   - Open new modals from within existing modals
-   - Navigate back to previous modal (if priority allows)
+4. **Async Modal Triggering**
+   - Modals can be triggered by async events (API errors, timers)
+   - High priority async modals interrupt any open modal
 
 ### Non-Functional Requirements
 
-- Accessible overlay with proper focus management
-- Smooth transitions (optional CSS)
-- Memory-efficient context state
-- Clean separation of concerns (Context, Component, Root)
+- Accessible (ESC to close, focus management)
+- Portal rendering to avoid z-index issues
+- Body scroll lock when modal is open
+- Clean event listener cleanup
 
 ---
 
 ## Visual Representation
 
 ```
-Initial State (No Modal):
+Initial State:
 +------------------------------------------+
 |                                          |
-|     [ Open Low Modal ]                   |
+|  [ Open Settings ]  [ Simulate Error ]   |
 |                                          |
 +------------------------------------------+
 
-Low Priority Modal Open (priority: 1):
+Settings Modal Open (Priority: 1):
 +------------------------------------------+
 |  +------------------------------------+  |
-|  |       X (close button)             |  |
+|  |  Settings                      X   |  |
+|  |  --------------------------------  |  |
+|  |  Configure your preferences:       |  |
+|  |  [x] Enable notifications          |  |
 |  |                                    |  |
-|  |    Low Priority Modal              |  |
-|  |    ----------------------          |  |
-|  |    Low priority content            |  |
-|  |                                    |  |
-|  |                    [ Escalate ]    |  |
-|  +------------------------------------+  |
-+------------------------------------------+
-        ↑ Semi-transparent overlay
-
-High Priority Modal (priority: 10) replaces low:
-+------------------------------------------+
-|  +------------------------------------+  |
-|  |       X (close button)             |  |
-|  |                                    |  |
-|  |    High Priority Modal             |  |
-|  |    -----------------------         |  |
-|  |    High priority content           |  |
-|  |                                    |  |
-|  |         [ Back ]    [ Confirm ]    |  |
+|  |  [ Delete Account ]  <- triggers   |  |
+|  |                         priority 10|  |
+|  |  --------------------------------  |  |
+|  |          [ Cancel ]  [ Save ]      |  |
 |  +------------------------------------+  |
 +------------------------------------------+
 
-Multiple Modals (stacked, same priority):
+After clicking "Delete Account" (Priority: 10 replaces 1):
 +------------------------------------------+
-|  +----------------------------------+    |
-|  | Modal 1                          |    |
-|  +----------------------------------+    |
-|     +----------------------------------+ |
-|     | Modal 2 (on top)                 | |
-|     +----------------------------------+ |
+|  +------------------------------------+  |
+|  |  ⚠️ Confirm Delete             X   |  |
+|  |  --------------------------------  |  |
+|  |  Are you sure you want to delete   |  |
+|  |  your account? This cannot be      |  |
+|  |  undone.                           |  |
+|  |  --------------------------------  |  |
+|  |          [ Cancel ]  [ Delete ]    |  |
+|  +------------------------------------+  |
++------------------------------------------+
+
+Async Error Interrupts (Priority: 100):
++------------------------------------------+
+|  +------------------------------------+  |
+|  |  🚨 Connection Lost            X   |  |
+|  |  --------------------------------  |  |
+|  |  Unable to connect to server.      |  |
+|  |  Please check your internet.       |  |
+|  |  --------------------------------  |  |
+|  |          [ Cancel ]  [ Retry ]     |  |
+|  +------------------------------------+  |
 +------------------------------------------+
 ```
 
@@ -104,289 +101,229 @@ Multiple Modals (stacked, same priority):
 
 ## Key Concepts & Intuition
 
-### 1. Context API for Global State
+### 1. Priority-Based State Update
 
 ```javascript
-const ModalContext = createContext();
-
-export const useModal = () => useContext(ModalContext);
-
-export function ModalProvider({ children }) {
-    const [modal, setModal] = useState([]);
-
-    // Modal operations...
-
-    return (
-        <ModalContext.Provider value={{ modal, openModal, closeModal, closeAll }}>
-            {children}
-        </ModalContext.Provider>
-    );
-}
-```
-
-**Why Context?**
-- Modals need to be triggered from anywhere in the app
-- Avoids prop drilling through component tree
-- Centralized state management for all modals
-- Clean API via custom hook (`useModal`)
-
-### 2. Priority Queue Pattern
-
-```javascript
-const openModal = (modal) => {
-    setModal((prev) => {
-        // Filter out modals with lower priority
-        const filtered = prev.filter(m => m.priority >= modal.priority);
-        return [...filtered, modal];
-    });
+const openModal = (newModal) => {
+  setModal((current) => {
+    // No modal open OR new modal has higher priority
+    if (!current || newModal.priority > current.priority) {
+      return newModal;
+    }
+    // Keep current modal (new one has lower/equal priority)
+    return current;
+  });
 };
 ```
 
-**Key insight:** When a high-priority modal opens, it dismisses all lower-priority modals. This ensures critical alerts (errors, confirmations) always take precedence.
+**Key insight:** Using functional state update ensures we compare against the latest state, avoiding race conditions.
 
-### 3. Component Architecture
-
-```
-ModalProvider (Context)
-    ├── Page (Consumer - opens modals)
-    └── ModalRoot (Renderer - displays modals)
-            └── Modal (Presentational)
-```
-
-**Separation of Concerns:**
-- `ModalProvider`: State management
-- `ModalRoot`: Maps state to UI
-- `Modal`: Pure presentational component
-
-### 4. Imperative API Design
+### 2. Portal Rendering
 
 ```javascript
-openModal({
-    id: "confirm-delete",
-    title: "Confirm Delete",
-    priority: 10,
-    children: "Are you sure?",
-    primaryAction: {
-        label: "Delete",
-        onClick: handleDelete
-    },
-    secondaryAction: {
-        label: "Cancel",
-        onClick: () => closeModal("confirm-delete")
-    }
-});
+import ReactDOM from "react-dom";
+
+return ReactDOM.createPortal(
+  <div className="overlay">
+    <div className="modal">{/* content */}</div>
+  </div>,
+  document.body
+);
 ```
 
-**Why imperative?** More flexible than declarative modals. Can be triggered from event handlers, async operations, or anywhere in the code.
+**Why Portals?**
+- Renders modal at document body level
+- Avoids z-index conflicts with parent components
+- Overlay covers entire viewport reliably
 
-### 5. Nested Modal Navigation
+### 3. Click Outside to Close
 
 ```javascript
-primaryAction: {
-    label: "Escalate",
-    onClick: () => {
-        openModal({
-            id: "high",
-            priority: 10,
-            // ...
-            secondaryAction: {
-                label: "Back",
-                onClick: () => closeModal("high")
-            }
-        });
-    }
-}
+const modalRef = useRef(null);
+
+const handleMouseDown = (e) => {
+  if (modalRef.current && !modalRef.current.contains(e.target)) {
+    onClose();
+  }
+};
+
+document.addEventListener("mousedown", handleMouseDown);
 ```
 
-**Pattern:** Each modal can open another. The "Back" button closes current modal, revealing the previous one (if it wasn't filtered by priority).
+**Why mousedown instead of click?** Prevents issues where drag-selecting text accidentally closes the modal.
+
+### 4. ESC Key Handler
+
+```javascript
+useEffect(() => {
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") onClose();
+  };
+  document.addEventListener("keydown", handleKeyDown);
+  return () => document.removeEventListener("keydown", handleKeyDown);
+}, [onClose]);
+```
+
+### 5. Body Scroll Lock
+
+```javascript
+useEffect(() => {
+  if (isOpen) {
+    document.body.style.overflow = "hidden";
+  }
+  return () => {
+    document.body.style.overflow = "auto";
+  };
+}, [isOpen]);
+```
 
 ---
 
 ## Implementation Tips
 
-### 1. Modal Identification
+### 1. Modal Props Structure
 
 ```javascript
-// Use unique IDs to manage specific modals
-openModal({ id: "user-profile", ... });
-closeModal("user-profile");
-
-// Without IDs, you can't close specific modals
+const modalConfig = {
+  title: "Settings",
+  priority: 1,
+  content: <SettingsForm />,  // Can be JSX
+  primaryText: "Save",
+  onPrimary: handleSave,
+};
 ```
 
-### 2. Overlay Click to Close
+### 2. Triggering Nested Modals
 
 ```javascript
-<div className="overlay" onClick={onClose}>
-    <div className="modal" onClick={(e) => e.stopPropagation()}>
-        {/* Modal content */}
-    </div>
-</div>
+// Inside a low-priority modal, trigger high-priority
+<button onClick={() => openModal({
+  title: "Confirm",
+  priority: 10,  // Higher than parent
+  content: "Are you sure?",
+  onPrimary: handleConfirm,
+})}>
+  Delete
+</button>
 ```
 
-**Why stopPropagation?** Clicking inside modal shouldn't close it; only clicking overlay should.
-
-### 3. Portal Rendering (Advanced)
+### 3. Async Modal Triggering
 
 ```javascript
-import { createPortal } from 'react-dom';
-
-function ModalRoot() {
-    return createPortal(
-        <>{/* modals */}</>,
-        document.getElementById('modal-root')
-    );
-}
+// API error triggers modal regardless of what's open
+fetch('/api/data').catch(() => {
+  openModal({
+    title: "Error",
+    priority: 100,  // Always wins
+    content: "Request failed",
+  });
+});
 ```
 
-**Why Portals?** Renders modals outside component tree, avoiding z-index and overflow issues.
+### 4. Priority Guidelines
 
-### 4. ESC Key to Close
-
-```javascript
-useEffect(() => {
-    const handleEsc = (e) => {
-        if (e.key === 'Escape') closeTopModal();
-    };
-    document.addEventListener('keydown', handleEsc);
-    return () => document.removeEventListener('keydown', handleEsc);
-}, []);
-```
+| Priority | Use Case |
+|----------|----------|
+| 1-10 | Normal UI modals (settings, forms) |
+| 11-50 | Confirmations (delete, submit) |
+| 51-99 | Warnings (unsaved changes) |
+| 100+ | System errors (connection lost, auth expired) |
 
 ---
 
 ## Common Interview Questions
 
-### Q1: Why use Context instead of Redux/Zustand?
+### Q1: Why use a single modal state instead of a stack/queue?
 
-**Answer:** For modal state, Context is often sufficient. Modals don't have complex state transitions or need middleware. Context provides a clean, built-in solution without external dependencies. For very complex modal workflows (multi-step wizards with undo), a state machine or Redux might be better.
-
-### Q2: How would you handle focus trapping?
+**Answer:** For most applications, only one modal should be visible at a time. A stack adds complexity for features rarely needed. If you need modal history (back button), then use an array:
 
 ```javascript
-useEffect(() => {
-    const modal = modalRef.current;
-    const focusableElements = modal.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-
-    firstElement?.focus();
-
-    const trapFocus = (e) => {
-        if (e.key === 'Tab') {
-            if (e.shiftKey && document.activeElement === firstElement) {
-                e.preventDefault();
-                lastElement.focus();
-            } else if (!e.shiftKey && document.activeElement === lastElement) {
-                e.preventDefault();
-                firstElement.focus();
-            }
-        }
-    };
-
-    modal.addEventListener('keydown', trapFocus);
-    return () => modal.removeEventListener('keydown', trapFocus);
-}, []);
+const [modals, setModals] = useState([]);
+const currentModal = modals[modals.length - 1];
 ```
 
-### Q3: How would you animate modal enter/exit?
+### Q2: How would you prevent closing a critical modal?
 
 ```javascript
-// CSS approach
+<Modal
+  isOpen={isOpen}
+  onClose={modal.priority < 50 ? closeModal : undefined}
+  showClose={modal.priority < 50}
+>
+```
+
+High-priority modals can disable the close button and overlay click.
+
+### Q3: How would you animate modal transitions?
+
+```css
 .modal {
-    animation: fadeIn 0.2s ease-out;
+  animation: slideIn 0.2s ease-out;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
-
-// For exit animations, use libraries like framer-motion
-// or manage animation state before removing from DOM
 ```
 
-### Q4: How would you prevent body scroll when modal is open?
+### Q4: How would you handle form state when modal is replaced?
 
 ```javascript
-useEffect(() => {
-    if (modal.length > 0) {
-        document.body.style.overflow = 'hidden';
-    } else {
-        document.body.style.overflow = '';
+// Option 1: Warn user before replacing
+const openModal = (newModal) => {
+  setModal((current) => {
+    if (current?.hasUnsavedChanges && newModal.priority <= current.priority) {
+      // Show warning instead
+      return current;
     }
-
-    return () => {
-        document.body.style.overflow = '';
-    };
-}, [modal.length]);
-```
-
-### Q5: How would you implement a confirmation modal hook?
-
-```javascript
-const useConfirmation = () => {
-    const { openModal, closeModal } = useModal();
-
-    const confirm = (message) => {
-        return new Promise((resolve) => {
-            openModal({
-                id: 'confirmation',
-                title: 'Confirm',
-                priority: 100,
-                children: message,
-                primaryAction: {
-                    label: 'Yes',
-                    onClick: () => {
-                        closeModal('confirmation');
-                        resolve(true);
-                    }
-                },
-                secondaryAction: {
-                    label: 'No',
-                    onClick: () => {
-                        closeModal('confirmation');
-                        resolve(false);
-                    }
-                }
-            });
-        });
-    };
-
-    return { confirm };
+    return newModal;
+  });
 };
 
-// Usage
-const { confirm } = useConfirmation();
-const shouldDelete = await confirm('Delete this item?');
+// Option 2: Save form state before replacing
+const openModal = (newModal) => {
+  setModal((current) => {
+    if (current) saveDraft(current);
+    return newModal;
+  });
+};
 ```
 
-### Q6: How would you handle modal stacking with z-index?
+### Q5: How would you add a "Go Back" feature?
 
 ```javascript
-{modal.map((m, index) => (
-    <Modal
-        key={m.id}
-        style={{ zIndex: 1000 + index }}
-        {...m}
-    />
-))}
+const [modalHistory, setModalHistory] = useState([]);
+
+const openModal = (newModal) => {
+  setModalHistory(prev => [...prev, modal]); // Save current
+  setModal(newModal);
+};
+
+const goBack = () => {
+  const previous = modalHistory[modalHistory.length - 1];
+  setModalHistory(prev => prev.slice(0, -1));
+  setModal(previous);
+};
 ```
 
 ---
 
 ## Edge Cases to Consider
 
-1. **Rapid open/close** - Multiple opens before state updates
-2. **Same ID modals** - What happens if you open same ID twice?
+1. **Rapid clicks** - User clicks multiple triggers quickly
+2. **Async race conditions** - Multiple API errors at same time
 3. **Memory leaks** - Cleanup event listeners on unmount
-4. **Priority ties** - How to handle same priority modals
-5. **Deep nesting** - Many nested modals (wizard flows)
-6. **Form data loss** - Warn before closing modal with unsaved changes
-7. **Mobile/responsive** - Full-screen modals on mobile
-8. **Accessibility** - Screen reader announcements, ARIA attributes
+4. **Focus management** - Return focus to trigger element on close
+5. **Mobile keyboards** - Modal position when keyboard opens
+6. **Long content** - Scrollable modal body
+7. **Nested portals** - Modal inside modal edge cases
 
 ---
 
@@ -394,64 +331,39 @@ const shouldDelete = await confirm('Delete this item?');
 
 | Operation | Time | Space |
 |-----------|------|-------|
-| openModal | O(n) | O(n) |
-| closeModal | O(n) | O(n) |
-| closeAll | O(1) | O(1) |
-| Render modals | O(n) | O(n) |
-
-Where n = number of open modals (typically very small)
+| openModal | O(1) | O(1) |
+| closeModal | O(1) | O(1) |
+| Render | O(1) | O(1) |
+| Event setup/cleanup | O(1) | O(1) |
 
 ---
 
-## Performance Optimizations
+## File Structure
 
-### 1. Memoize Modal Component
-
-```jsx
-const MemoizedModal = React.memo(Modal);
-
-// Prevents re-render when other modals change
 ```
-
-### 2. Lazy Load Modal Content
-
-```jsx
-const LazyContent = React.lazy(() => import('./HeavyModalContent'));
-
-<Modal>
-    <Suspense fallback={<Spinner />}>
-        <LazyContent />
-    </Suspense>
-</Modal>
-```
-
-### 3. Debounce Rapid Opens
-
-```javascript
-const debouncedOpen = useMemo(
-    () => debounce(openModal, 100),
-    [openModal]
-);
+lld-016-modal/
+├── Modal.jsx        # Presentational component with portal
+├── Solution.jsx     # App with priority logic & demo
+├── styles.css       # Overlay and modal styles
+└── problem.md       # This file
 ```
 
 ---
 
 ## Real-World Applications
 
-1. **Confirmation Dialogs** - Delete, logout, submit actions
-2. **Authentication** - Login, 2FA prompts
-3. **Form Wizards** - Multi-step signup, checkout
-4. **Error Alerts** - API failures, validation errors
-5. **Media Preview** - Image/video lightbox
-6. **Settings Panels** - Preferences, account settings
-7. **Help/Onboarding** - Tutorials, tooltips
+1. **Confirmation Dialogs** - Delete, logout, destructive actions
+2. **Error Alerts** - API failures, connection issues
+3. **Auth Prompts** - Session expired, re-login required
+4. **Form Wizards** - Multi-step with nested confirmations
+5. **Media Lightbox** - Image/video preview
+6. **Cookie Consent** - GDPR compliance banners
 
 ---
 
 ## Related Patterns
 
-- **Portal Pattern** - Render outside component tree
+- **Portal Pattern** - Render outside React tree
 - **Compound Components** - Modal.Header, Modal.Body, Modal.Footer
-- **Render Props** - Flexible modal content rendering
-- **State Machine** - Complex modal flow management (XState)
-- **Command Pattern** - Queue modal operations
+- **Context API** - Global modal state (for larger apps)
+- **State Machine** - Complex modal flows (XState)
