@@ -27,6 +27,9 @@ import CircleCollide from "../lld/lld-013-circle-collide/Solution"
 import Carousel from "../lld/lld-014-carousel/Solution"
 import VirtualList from "../lld/lld-015-virtual-list/Solution"
 import Modal from "../lld/lld-016-modal/Solution"
+import GridSelection from "../lld/lld-017-grid-selection/Solution"
+import CheckboxHierarchy from "../lld/lld-018-checkbox-hierarchy/Solution"
+
 
 
 
@@ -55,7 +58,9 @@ const SOLUTION_COMPONENTS = {
   'lld-013-circle-collide': CircleCollide,
   'lld-014-carousel': Carousel,
   'lld-015-virtual-list': VirtualList,
-  'lld-016-modal': Modal
+  'lld-016-modal': Modal,
+  'lld-017-grid-selection': GridSelection,
+  'lld-018-checkbox-hierarchy': CheckboxHierarchy
 
 
 

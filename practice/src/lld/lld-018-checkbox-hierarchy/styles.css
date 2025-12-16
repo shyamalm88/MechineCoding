@@ -1,0 +1,95 @@
+.checkbox-tree {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  user-select: none;
+}
+
+.checkbox-tree ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.checkbox-tree ul ul {
+  padding-left: 24px;
+  margin-left: 8px;
+  border-left: 1px dashed #ccc;
+}
+
+.checkbox-tree li {
+  position: relative;
+  padding: 4px 0;
+}
+
+/* Horizontal connector line */
+.checkbox-tree ul ul > li::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 14px;
+  width: 12px;
+  height: 1px;
+  border-bottom: 1px dashed #ccc;
+}
+
+.checkbox-tree label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.checkbox-tree label:hover {
+  background-color: #f0f7ff;
+}
+
+/* Custom checkbox styling */
+.checkbox-tree input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
+/* Node text */
+.node-label {
+  color: #333;
+}
+
+/* Checked state styling */
+.checkbox-tree label.checked .node-label {
+  color: #2563eb;
+  font-weight: 500;
+}
+
+/* Expand/collapse icon area (if needed later) */
+.node-toggle {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+  font-size: 10px;
+}
+
+/* Container styling */
+.tree-container {
+  padding: 16px;
+  max-width: 400px;
+}
+
+.tree-container h2 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  color: #333;
+}
+
+/* Indeterminate state indicator (visual only) */
+.checkbox-tree input[type="checkbox"]:indeterminate {
+  opacity: 0.6;
+}

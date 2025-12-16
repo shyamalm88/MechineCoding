@@ -94,5 +94,17 @@
     "title": "Modal",
     "summary": "Managed Modal",
     "path": "src/lld/lld-016-modal"
+  },
+  {
+    "id": "lld-017-grid-selection",
+    "title": "Grid Selection",
+    "summary": "Grid Selection",
+    "path": "src/lld/lld-017-grid-selection"
+  },
+  {
+    "id": "lld-018-checkbox-hierarchy",
+    "title": "Checkbox Hierarchy",
+    "summary": "Checkbox Hierarchy",
+    "path": "src/lld/lld-018-checkbox-hierarchy"
   }
 ]
