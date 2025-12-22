@@ -106,5 +106,11 @@
     "title": "Checkbox Hierarchy",
     "summary": "Checkbox Hierarchy",
     "path": "src/lld/lld-018-checkbox-hierarchy"
+  },
+  {
+    "id": "lld-019-search-highlighter",
+    "title": "Search Highlighter",
+    "summary": "Real-time text search with highlighted matches",
+    "path": "src/lld/lld-019-search-highlighter"
   }
 ]

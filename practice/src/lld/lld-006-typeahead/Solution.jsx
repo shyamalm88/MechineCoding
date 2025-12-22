@@ -39,8 +39,6 @@ export default function App() {
         cache.current.set(debouncedTerm, data.products);
       } catch (err) {
         if (err.name !== "AbortError") {
-          setError(err.message);
-          console.error("Hi error")
           return;
         }
         setError(err);

@@ -1,0 +1,207 @@
+No,Category,Problem Name,LeetCode,Difficulty,Status,Priority,Companies
+1,Graph (Routing),Bus Routes,815,Hard,To Do,Depth,Meta | Google
+2,Graph (Routing),Cheapest Flights Within K Stops,787,Medium,To Do,Core,Amazon | Airbnb
+3,Graph (Routing),Network Delay Time,743,Medium,To Do,Core,Amazon | Google
+4,Graph (Dep),Alien Dictionary,269,Hard,To Do,Must Do,Meta | Amazon | Google
+5,Graph (Dep),Course Schedule,207,Medium,Completed,Must Do,Amazon | Meta | Microsoft
+6,Graph (Dep),Course Schedule II,210,Medium,To Do,Must Do,Amazon | Meta
+7,Graph (BFS),Number of Islands,200,Medium,Completed,Must Do,Amazon | Meta | Microsoft | Google
+8,Graph (BFS),Rotting Oranges,994,Medium,Completed,Must Do,Amazon | Microsoft
+9,Graph (BFS),Word Ladder,127,Hard,To Do,Core,Amazon | Meta | LinkedIn
+10,Graph (BFS),Shortest Path in Binary Matrix,1091,Medium,To Do,Core,Meta | Amazon
+11,Graph (BFS),Walls and Gates,286,Medium,To Do,Core,Meta | Amazon
+12,Graph (Grid),Word Search II,212,Hard,To Do,Must Do,Amazon | Microsoft
+13,Graph (Grid),Pacific Atlantic Water Flow,417,Medium,Completed,Must Do,Amazon | Google
+14,Graph (Grid),Clone Graph,133,Medium,Completed,Must Do,Meta | Amazon | Microsoft
+15,Graph (Grid),Number of Provinces,547,Medium,Completed,Core,Amazon | LinkedIn
+16,Graph (Grid),Surrounded Regions,130,Medium,To Do,Core,Amazon | Google
+17,Graph (Grid),Shortest Bridge,934,Medium,Completed,Depth,Amazon | Microsoft
+18,Graph (Misc),Is Graph Bipartite?,785,Medium,To Do,Depth,Meta | Amazon
+19,Graph (Misc),Graph Valid Tree,261,Medium,To Do,Must Do,Amazon | Meta
+20,Graph (Union Find),Redundant Connection,684,Medium,To Do,Core,Amazon | Google
+21,Graph (Union Find),Accounts Merge,721,Medium,To Do,Must Do,Meta | Amazon
+22,Trie,Implement Trie (Prefix Tree),208,Medium,To Do,Must Do,Amazon | Google | Microsoft
+23,Trie,Design Add and Search Words,211,Medium,To Do,Must Do,Meta | Amazon
+24,Trie,Search Suggestions System,1268,Medium,To Do,Core,Amazon
+25,Tree,Lowest Common Ancestor,236,Medium,Completed,Must Do,Meta | Amazon | Microsoft | LinkedIn
+26,Tree,Lowest Common Ancestor of BST,235,Medium,To Do,Must Do,Meta | Amazon
+27,Tree,Serialize and Deserialize Binary Tree,297,Hard,Completed,Must Do,Meta | Amazon | Microsoft | LinkedIn
+28,Tree,Validate Binary Search Tree,98,Medium,Completed,Must Do,Amazon | Meta | Microsoft
+29,Tree,Kth Smallest Element in BST,230,Medium,To Do,Must Do,Amazon | Meta
+30,Tree,Binary Tree Level Order Traversal,102,Medium,Completed,Must Do,Amazon | Meta | Microsoft | LinkedIn
+31,Tree,Binary Tree Right Side View,199,Medium,Completed,Must Do,Meta | Amazon
+32,Tree,Binary Tree Zigzag Level Order,103,Medium,Completed,Core,Amazon | Meta | Microsoft | LinkedIn
+33,Tree,Path Sum II,113,Medium,Completed,Core,Amazon | Meta
+34,Tree,Path Sum III,437,Medium,Completed,Must Do,Amazon | Meta
+35,Tree,Binary Tree Maximum Path Sum,124,Hard,To Do,Must Do,Meta | Amazon | Microsoft
+36,Tree,Flatten Binary Tree to Linked List,114,Medium,To Do,Core,Meta | Amazon
+37,Tree,Construct Binary Tree from Preorder and Inorder,105,Medium,Completed,Must Do,Amazon | Meta | Microsoft
+38,Tree,Count Good Nodes in Binary Tree,1448,Medium,To Do,Core,Amazon | Microsoft
+39,Tree,Binary Tree Vertical Order Traversal,314,Medium,To Do,Must Do,Meta | Amazon
+40,Tree,Boundary of Binary Tree,545,Medium,To Do,Depth,Amazon
+41,Intervals,Merge Intervals,56,Medium,Completed,Must Do,Meta | Amazon | Microsoft | Google | LinkedIn
+42,Intervals,Interval List Intersections,986,Medium,To Do,Core,Meta | Amazon
+43,Intervals,Non-overlapping Intervals,435,Medium,Completed,Must Do,Amazon
+44,Intervals,Insert Interval,57,Medium,To Do,Must Do,Meta | Google | LinkedIn
+45,Intervals,Meeting Rooms II,253,Medium,Completed,Must Do,Amazon | Meta | Google | Microsoft
+46,Intervals,My Calendar I,729,Medium,To Do,Depth,Google
+47,Intervals,Minimum Number of Arrows to Burst Balloons,452,Medium,To Do,Depth,Amazon
+48,Sliding Window,Minimum Window Substring,76,Hard,Completed,Must Do,Meta | Amazon | LinkedIn | Google
+49,Sliding Window,Longest Substring Without Repeating,3,Medium,Completed,Must Do,Amazon | Meta | Microsoft | Google
+50,Sliding Window,Find All Anagrams in a String,438,Medium,To Do,Must Do,Amazon | Meta
+51,Sliding Window,Minimum Size Subarray Sum,209,Medium,To Do,Core,Meta | Amazon
+52,Sliding Window,Longest Repeating Character Replacement,424,Medium,To Do,Must Do,Amazon | Google
+53,Sliding Window,Max Consecutive Ones III,1004,Medium,To Do,Core,Meta | Amazon
+54,Sliding Window,Sliding Window Maximum,239,Hard,To Do,Must Do,Amazon | Google | Microsoft
+55,Sliding Window,Subarrays with K Different Integers,992,Hard,To Do,Depth,Amazon
+56,Sliding Window,Permutation in String,567,Medium,To Do,Core,Microsoft | Amazon
+57,Sliding Window,Fruit Into Baskets,904,Medium,To Do,Less Frequent,Amazon
+58,String,Longest Palindromic Substring,5,Medium,Completed,Must Do,Amazon | Microsoft
+59,String,Encode and Decode Strings,271,Medium,Completed,Must Do,Meta | Google
+60,String,Group Shifted Strings,249,Medium,Completed,Core,Google | Meta
+61,String,Group Anagrams,49,Medium,Completed,Must Do,Amazon | Meta | Microsoft
+62,String,Integer to Roman,12,Medium,To Do,Core,Amazon | Microsoft
+63,String,Multiply Strings,43,Medium,To Do,Core,Meta | Amazon
+64,String,Palindromic Substrings,647,Medium,To Do,Must Do,Amazon | Meta
+65,String,Minimum Remove to Make Valid Parentheses,1249,Medium,To Do,Must Do,Meta | Amazon
+66,String,Basic Calculator,224,Hard,To Do,Core,Amazon | Microsoft
+67,System Design,LRU Cache,146,Medium,To Do,Must Do,Amazon | Meta | Microsoft | Google | LinkedIn
+68,System Design,LFU Cache,460,Hard,To Do,Depth,Amazon | Google
+69,System Design,Insert Delete GetRandom O(1),380,Medium,To Do,Must Do,Meta | Amazon | LinkedIn
+70,System Design,Design Underground System,1396,Medium,To Do,Depth,Amazon
+71,System Design,Design Browser History,1472,Medium,To Do,Core,Amazon | Microsoft
+72,System Design,Design In-Memory File System,588,Hard,To Do,Depth,Amazon | Google
+73,System Design,Design Twitter,355,Medium,To Do,Core,Amazon | Twitter
+74,System Design,Design Hit Counter,362,Medium,To Do,Core,Amazon | Google
+75,System Design,Design Tic-Tac-Toe,348,Medium,To Do,Core,Meta | Amazon
+76,System Design,Snapshot Array,1146,Medium,To Do,Depth,Google
+77,Binary Search,Search in Rotated Sorted Array,33,Medium,Completed,Must Do,Meta | Amazon | Microsoft | LinkedIn
+78,Binary Search,Search in Rotated Sorted Array II,81,Medium,To Do,Depth,Meta | Amazon
+79,Binary Search,Find Minimum in Rotated Sorted Array,153,Medium,Completed,Must Do,Amazon | Meta | Microsoft
+80,Binary Search,Find Minimum in Rotated Sorted Array II,154,Hard,To Do,Less Frequent,Amazon
+81,Binary Search,Time Based Key-Value Store,981,Medium,Completed,Must Do,Amazon | Google | Netflix
+82,Binary Search,Search a 2D Matrix,74,Medium,To Do,Must Do,Amazon | Microsoft
+83,Binary Search,Search a 2D Matrix II,240,Medium,To Do,Core,Amazon | Microsoft
+84,Binary Search,Find Peak Element,162,Medium,To Do,Must Do,Meta | Google
+85,Binary Search,Koko Eating Bananas,875,Medium,To Do,Must Do,Amazon
+86,Binary Search,Capacity to Ship Packages,1011,Medium,To Do,Core,Amazon
+87,Binary Search,Median of Two Sorted Arrays,4,Hard,To Do,Must Do,Amazon | Google | Microsoft
+88,Binary Search,Find First and Last Position,34,Medium,To Do,Must Do,Meta | Amazon
+89,Binary Search,Random Pick with Weight,528,Medium,To Do,Core,Meta | Amazon
+90,Array,Next Permutation,31,Medium,Completed,Must Do,Google | Meta | Amazon
+91,Array,Subarray Sum Equals K,560,Medium,Completed,Must Do,Meta | Amazon | Google
+92,Array,Sort Colors,75,Medium,To Do,Must Do,Microsoft | Amazon
+93,Array,Gas Station,134,Medium,Completed,Core,Amazon
+94,Array,Product of Array Except Self,238,Medium,Completed,Must Do,Amazon | Meta | Microsoft | LinkedIn
+95,Array,Container With Most Water,11,Medium,Completed,Must Do,Amazon | Meta | Google
+96,Array,3Sum,15,Medium,To Do,Must Do,Amazon | Meta | Microsoft
+97,Array,3Sum Closest,16,Medium,To Do,Core,Amazon | Meta
+98,Array,4Sum,18,Medium,To Do,Depth,Amazon | LinkedIn
+99,Array,Maximum Subarray,53,Medium,To Do,Must Do,Amazon | Microsoft | LinkedIn
+100,Array,Spiral Matrix,54,Medium,To Do,Must Do,Amazon | Microsoft
+101,Array,Spiral Matrix II,59,Medium,To Do,Depth,Amazon
+102,Array,Rotate Array,189,Medium,To Do,Core,Amazon | Microsoft
+103,Array,Find All Duplicates in Array,442,Medium,To Do,Core,Amazon
+104,Array,First Missing Positive,41,Hard,To Do,Must Do,Amazon | Microsoft
+105,Array,Longest Consecutive Sequence,128,Medium,Completed,Must Do,Amazon | Google
+106,Array,Maximum Product Subarray,152,Medium,To Do,Must Do,Amazon | LinkedIn
+107,Array,Find the Duplicate Number,287,Medium,To Do,Core,Amazon
+108,Two Pointers,Trapping Rain Water,42,Hard,Completed,Must Do,Amazon | Meta | Google | Microsoft
+109,Two Pointers,Partition Labels,763,Medium,To Do,Core,Amazon
+110,Two Pointers,Boats to Save People,881,Medium,To Do,Depth,Amazon
+111,Two Pointers,Longest Mountain in Array,845,Medium,To Do,Less Frequent,Amazon
+112,Matrix,Set Matrix Zeroes,73,Medium,To Do,Must Do,Amazon | Meta
+113,Matrix,Rotate Image,48,Medium,To Do,Must Do,Amazon | Microsoft
+114,Matrix,Valid Sudoku,36,Medium,To Do,Core,Amazon
+115,Matrix,Game of Life,289,Medium,To Do,Depth,Amazon | Google
+116,Matrix,Word Search,79,Medium,Completed,Must Do,Amazon | Microsoft
+117,Matrix,Maximal Rectangle,85,Hard,To Do,Depth,Amazon
+118,DP,House Robber,198,Medium,To Do,Must Do,Amazon | Microsoft
+119,DP,House Robber II,213,Medium,To Do,Must Do,Amazon
+120,DP,House Robber III,337,Medium,To Do,Core,Amazon
+121,DP,Coin Change,322,Medium,To Do,Must Do,Amazon | Microsoft
+122,DP,Coin Change II,518,Medium,To Do,Must Do,Amazon
+123,DP,Word Break,139,Medium,To Do,Must Do,Meta | Amazon | Microsoft | Google
+124,DP,Word Break II,140,Hard,To Do,Core,Amazon | Meta
+125,DP,Unique Paths,62,Medium,To Do,Must Do,Amazon
+126,DP,Unique Paths II,63,Medium,To Do,Core,Amazon
+127,DP,Decode Ways,91,Medium,To Do,Must Do,Meta | Amazon | Microsoft
+128,DP,Longest Increasing Subsequence,300,Medium,To Do,Must Do,Amazon | Microsoft
+129,DP,Longest Common Subsequence,1143,Medium,To Do,Must Do,Amazon
+130,DP,Edit Distance,72,Hard,To Do,Must Do,Amazon | Google
+131,DP,Maximal Square,221,Medium,To Do,Core,Amazon | Google
+132,DP,Jump Game,55,Medium,To Do,Must Do,Amazon | Microsoft
+133,DP,Jump Game II,45,Medium,To Do,Core,Amazon
+134,DP,Wildcard Matching,44,Hard,To Do,Depth,Google | Amazon
+135,DP,Regular Expression Matching,10,Hard,To Do,Depth,Meta | Google
+136,DP,Best Time to Buy and Sell Stock II,122,Medium,To Do,Core,Amazon
+137,DP,Best Time to Buy and Sell Stock III,123,Hard,To Do,Depth,Amazon
+138,DP,Best Time to Buy and Sell Stock with Cooldown,309,Medium,To Do,Core,Amazon
+139,DP,Best Time to Buy and Sell Stock IV,188,Hard,To Do,Less Frequent,Amazon
+140,DP,Partition Equal Subset Sum,416,Medium,To Do,Must Do,Amazon
+141,DP,Target Sum,494,Medium,To Do,Must Do,Meta | Amazon
+142,DP,Longest Palindromic Subsequence,516,Medium,To Do,Core,Amazon
+143,DP,Burst Balloons,312,Hard,To Do,Depth,Amazon
+144,DP,Interleaving String,97,Medium,To Do,Depth,Amazon
+145,DP,Minimum Path Sum,64,Medium,To Do,Core,Amazon | Goldman
+146,DP,Triangle,120,Medium,To Do,Depth,Amazon
+147,DP,Palindrome Partitioning II,132,Hard,To Do,Less Frequent,Amazon
+148,Heap,Merge K Sorted Lists,23,Hard,To Do,Must Do,Amazon | Meta | Microsoft
+149,Heap,K Closest Points to Origin,973,Medium,To Do,Must Do,Amazon | Meta
+150,Heap,Kth Largest Element in Array,215,Medium,To Do,Must Do,Meta | Amazon | Microsoft
+151,Heap,Kth Smallest Element in Sorted Matrix,378,Medium,To Do,Core,Amazon
+152,Heap,Top K Frequent Elements,347,Medium,To Do,Must Do,Amazon | Meta
+153,Heap,Top K Frequent Words,692,Medium,To Do,Core,Amazon
+154,Heap,Find Median from Data Stream,295,Hard,To Do,Must Do,Amazon | Meta | Google | Microsoft
+155,Heap,Task Scheduler,621,Medium,To Do,Must Do,Meta | Amazon | Microsoft
+156,Heap,Reorganize String,767,Medium,To Do,Core,Amazon
+157,Heap,Meeting Rooms III,2402,Hard,To Do,Depth,Google | Amazon
+158,Heap,IPO,502,Hard,To Do,Less Frequent,Amazon
+159,Stack,Largest Rectangle in Histogram,84,Hard,To Do,Must Do,Amazon | Google
+160,Stack,Daily Temperatures,739,Medium,To Do,Must Do,Amazon
+161,Stack,Basic Calculator II,227,Medium,To Do,Must Do,Meta | Amazon | Microsoft
+162,Stack,Evaluate Reverse Polish Notation,150,Medium,To Do,Must Do,Amazon | LinkedIn
+163,Stack,Min Stack,155,Medium,To Do,Must Do,Amazon | Microsoft
+164,Stack,Flatten Nested List Iterator,341,Medium,To Do,Core,Meta | Amazon
+165,Stack,Decode String,394,Medium,To Do,Must Do,Amazon | Google | Microsoft
+166,Stack,Next Greater Element II,503,Medium,To Do,Core,Amazon
+167,Stack,Online Stock Span,901,Medium,To Do,Depth,Amazon
+168,Stack,Remove K Digits,402,Medium,To Do,Core,Amazon
+169,Stack,Asteroid Collision,735,Medium,To Do,Core,Amazon
+170,Stack,Car Fleet,853,Medium,To Do,Depth,Google
+171,Stack,Simplify Path,71,Medium,To Do,Core,Meta | Amazon
+172,Stack,Exclusive Time of Functions,636,Medium,To Do,Core,Meta | Amazon
+173,Backtracking,Generate Parentheses,22,Medium,Completed,Must Do,Amazon | Meta | Microsoft
+174,Backtracking,Permutations,46,Medium,Completed,Must Do,Amazon | Meta | Microsoft | LinkedIn
+175,Backtracking,Permutations II,47,Medium,To Do,Core,Amazon
+176,Backtracking,N-Queens,51,Hard,To Do,Core,Amazon
+177,Backtracking,N-Queens II,52,Hard,To Do,Less Frequent,Amazon
+178,Backtracking,Combination Sum,39,Medium,To Do,Must Do,Amazon | Meta
+179,Backtracking,Combination Sum II,40,Medium,To Do,Core,Amazon
+180,Backtracking,Combination Sum III,216,Medium,To Do,Depth,Amazon
+181,Backtracking,Subsets,78,Medium,To Do,Must Do,Amazon | Meta | Microsoft
+182,Backtracking,Subsets II,90,Medium,To Do,Core,Amazon
+183,Backtracking,Palindrome Partitioning,131,Medium,To Do,Core,Amazon
+184,Backtracking,Letter Combinations of Phone,17,Medium,To Do,Must Do,Amazon | Meta
+185,Backtracking,Restore IP Addresses,93,Medium,To Do,Depth,Amazon
+186,Linked List,Add Two Numbers,2,Medium,To Do,Must Do,Amazon | Microsoft
+187,Linked List,Add Two Numbers II,445,Medium,To Do,Core,Amazon
+188,Linked List,Copy List with Random Pointer,138,Medium,To Do,Must Do,Amazon | Meta | Microsoft
+189,Linked List,Reorder List,143,Medium,To Do,Must Do,Amazon | Meta
+190,Linked List,Reverse Nodes in k-Group,25,Hard,To Do,Must Do,Amazon | Meta | Microsoft
+191,Linked List,Remove Nth Node From End,19,Medium,To Do,Must Do,Amazon | Meta
+192,Linked List,Linked List Cycle II,142,Medium,To Do,Must Do,Amazon
+193,Linked List,Reverse Linked List II,92,Medium,To Do,Core,Amazon | Meta
+194,Linked List,Sort List,148,Medium,To Do,Core,Amazon | Meta
+195,Linked List,Odd Even Linked List,328,Medium,To Do,Core,Amazon
+196,Linked List,Swap Nodes in Pairs,24,Medium,To Do,Core,Amazon
+197,Linked List,Rotate List,61,Medium,To Do,Depth,Amazon
+198,Linked List,LRU Cache,146,Medium,To Do,Must Do,Amazon | Meta | Microsoft | Google
+199,Math,Pow(x n),50,Medium,To Do,Must Do,Meta | Amazon | LinkedIn
+200,Math,Reverse Integer,7,Medium,To Do,Core,Amazon
+201,Math,Max Points on a Line,149,Hard,To Do,Depth,LinkedIn | Google
+202,Math,Fraction to Recurring Decimal,166,Medium,To Do,Depth,Meta | Amazon
+203,Math,Divide Two Integers,29,Medium,To Do,Core,Amazon | Meta
+204,Bit Manipulation,Single Number II,137,Medium,To Do,Depth,Amazon
+205,Bit Manipulation,Sum of Two Integers,371,Medium,To Do,Core,Amazon
+206,Bit Manipulation,Bitwise AND of Numbers Range,201,Medium,To Do,Depth,Amazon

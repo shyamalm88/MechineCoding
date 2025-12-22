@@ -1,11 +1,10 @@
 /**
  * ============================================================================
- * PROBLEM: Binary Tree Zigzag Level Order Traversal (LeetCode #103)
+ * PROBLEM: Binary Tree Level Order Traversal (LeetCode #102)
  * ============================================================================
  *
- * Given the root of a binary tree, return the zigzag level order traversal
- * of its nodes' values. (i.e., from left to right, then right to left for
- * the next level and alternate between).
+ * Given the root of a binary tree, return the level order traversal of its
+ * nodes' values. (i.e., from left to right, level by level).
  *
  * Example 1:
  *         3
@@ -15,7 +14,7 @@
  *         15  7
  *
  * Input: root = [3,9,20,null,null,15,7]
- * Output: [[3],[20,9],[15,7]]
+ * Output: [[3],[9,20],[15,7]]
  *
  * Example 2:
  * Input: root = [1]
@@ -27,9 +26,9 @@
  *
  * Constraints:
  * - The number of nodes in the tree is in the range [0, 2000]
- * - -100 <= Node.val <= 100
+ * - -1000 <= Node.val <= 1000
  *
- * Approach: BFS with direction flag
+ * Approach: BFS using queue
  * Time Complexity: O(n) - visit each node once
  * Space Complexity: O(n) - queue can hold up to n/2 nodes at last level
  * ============================================================================
@@ -48,41 +47,42 @@ class TreeNode {
  * @param {TreeNode} root
  * @return {number[][]}
  */
-var zigzagLevelOrder = function (root) {
-  if (!root) return []; // Base case: Empty tree
+const levelOrderTraversal = (root) => {
+  // If tree is empty, return empty result
+  if (!root) return [];
 
-  const results = [];
+  // Final result: array of levels
+  const result = [];
+
+  // Queue for BFS — ALWAYS store nodes, never values
   const queue = [root];
-  let isLeftToRight = true; // 1. Start Direction: Normal
 
-  // 2. Standard BFS Loop
+  // Run BFS while there are nodes to process
   while (queue.length > 0) {
-    const size = queue.length; // Snapshot size
-    const level = []; // Holds values for this level
+    // Snapshot of current level size
+    const levelSize = queue.length;
 
-    for (let i = 0; i < size; i++) {
+    // This array will store values of ONE level
+    const currentLevel = [];
+
+    // Process exactly `levelSize` nodes
+    for (let i = 0; i < levelSize; i++) {
+      // Remove node from front of queue
       const node = queue.shift();
 
-      // 3. The Logic (Push vs Unshift)
-      if (isLeftToRight) {
-        level.push(node.val); // Normal Order
-      } else {
-        level.unshift(node.val); // Reverse Order
-      }
+      // Store node value in current level
+      currentLevel.push(node.val);
 
-      // 4. Add Children (Always Left then Right)
-      // Even if printing right-to-left, we traverse the tree normally!
+      // Add children to queue (for next level)
       if (node.left) queue.push(node.left);
       if (node.right) queue.push(node.right);
     }
 
-    results.push(level);
-
-    // 5. Flip the switch for next level
-    isLeftToRight = !isLeftToRight;
+    // After finishing this level, save it
+    result.push(currentLevel);
   }
 
-  return results;
+  return result;
 };
 
 // ============================================================================
@@ -123,24 +123,44 @@ function buildTree(arr) {
 //          / \
 //         15  7
 const tree1 = buildTree([3, 9, 20, null, null, 15, 7]);
-console.log("Test 1:", zigzagLevelOrder(tree1));
-// Expected: [[3], [20, 9], [15, 7]]
+console.log("Test 1:", JSON.stringify(levelOrderTraversal(tree1)));
+// Expected: [[3],[9,20],[15,7]]
 
 // Test Case 2: Single node
 const tree2 = buildTree([1]);
-console.log("Test 2:", zigzagLevelOrder(tree2));
+console.log("Test 2:", JSON.stringify(levelOrderTraversal(tree2)));
 // Expected: [[1]]
 
 // Test Case 3: Empty tree
-console.log("Test 3:", zigzagLevelOrder(null));
+console.log("Test 3:", JSON.stringify(levelOrderTraversal(null)));
 // Expected: []
 
-// Test Case 4: Larger tree
+// Test Case 4: Complete binary tree
 //           1
 //         /   \
 //        2     3
 //       / \   / \
 //      4   5 6   7
 const tree4 = buildTree([1, 2, 3, 4, 5, 6, 7]);
-console.log("Test 4:", zigzagLevelOrder(tree4));
-// Expected: [[1], [3, 2], [4, 5, 6, 7]]
+console.log("Test 4:", JSON.stringify(levelOrderTraversal(tree4)));
+// Expected: [[1],[2,3],[4,5,6,7]]
+
+// Test Case 5: Left-heavy tree
+//         1
+//        /
+//       2
+//      /
+//     3
+const tree5 = buildTree([1, 2, null, 3]);
+console.log("Test 5:", JSON.stringify(levelOrderTraversal(tree5)));
+// Expected: [[1],[2],[3]]
+
+// Test Case 6: Right-heavy tree
+//     1
+//      \
+//       2
+//        \
+//         3
+const tree6 = buildTree([1, null, 2, null, 3]);
+console.log("Test 6:", JSON.stringify(levelOrderTraversal(tree6)));
+// Expected: [[1],[2],[3]]

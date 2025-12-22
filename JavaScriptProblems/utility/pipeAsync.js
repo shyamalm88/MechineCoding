@@ -1,8 +1,7 @@
-const pipeAsync =
-  (...funcs) =>
-  (initialValue) => {
-    return funcs.reduce(async (prevPromise, currentFunc) => {
-      const resolvedValue = await prevPromise;
-      return currentFunc(resolvedValue);
-    }, Promise.resolve(initialValue));
-  };
+const asyncPipe =
+  (...fns) =>
+  (input) =>
+    fns.reduce(
+      (p, fn) => p.then(fn), // Step 3: Chain each fn with .then()
+      Promise.resolve(input) // Step 4: Start with Promise-wrapped input
+    );
