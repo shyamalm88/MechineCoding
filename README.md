@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/DSA-30%2B%20Problems-blue?style=for-the-badge" alt="DSA Problems"/>
+  <img src="https://img.shields.io/badge/DSA-125%20Problems-blue?style=for-the-badge" alt="DSA Problems"/>
   <img src="https://img.shields.io/badge/JavaScript-34%2B%20Concepts-yellow?style=for-the-badge&logo=javascript" alt="JavaScript"/>
   <img src="https://img.shields.io/badge/React%20LLD-7%20Components-61DAFB?style=for-the-badge&logo=react" alt="React LLD"/>
-  <img src="https://img.shields.io/badge/System%20Design-Templates-green?style=for-the-badge" alt="System Design"/>
+  <img src="https://img.shields.io/badge/System%20Design-15%20Docs-green?style=for-the-badge" alt="System Design"/>
 </p>
 
 <h1 align="center">Interview Prep Hub</h1>
@@ -40,19 +40,20 @@ This repository is a **one-stop interview preparation hub** covering all aspects
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| **DSA** | 30+ | Classic algorithms with optimal solutions |
+| **DSA** | 125 | Curated problems with intuitions & optimal solutions |
 | **JavaScript** | 34+ | Polyfills, patterns & utility functions |
 | **React LLD** | 7 | Interactive UI components |
 | **React Hooks** | 6 | Reusable custom hooks |
-| **System Design** | 2 | Architecture templates & examples |
+| **System Design** | 15 | Frontend architecture templates |
 
 ### Features
 
 - **Zero Dependencies** - Pure implementations, no external libraries
-- **Self-Documenting** - Each file includes problem statement & complexity analysis
+- **Self-Documenting** - Each file includes problem statement, intuition & complexity analysis
 - **Runnable Tests** - Execute DSA files directly with Node.js
 - **Interactive Demo** - React app to visualize LLD components
 - **Interview Ready** - Common follow-up questions included
+- **DSA Tracker** - CSV with 125 problems, categories, priorities & intuitions
 
 ---
 
@@ -77,78 +78,120 @@ npm run dev
 
 ## DSA Problems
 
-Organized by pattern/technique for efficient learning:
+**125 curated problems** organized by pattern/technique. Full tracking available in [`DSA/dsa-preparation-list.csv`](DSA/dsa-preparation-list.csv) with:
+- Problem name & LeetCode number
+- Difficulty & Category
+- Priority (Must Do / Core / Depth)
+- Completion status
+- **Algorithm intuition for each problem**
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-### Arrays & Hashset
-- Gas Station Problem
+### Arrays & Strings
+- Two Sum, 3Sum
+- Product Except Self
 - Longest Consecutive Sequence
 - Next Permutation
-- Product Except Self
 - Subarray Sum Equals K
+- Group Anagrams
+- Longest Palindromic Substring
 
 ### Binary Search
 - Search in Rotated Sorted Array
 - Find Minimum in Rotated Array
 - Time-Based Key-Value Store
+- Find Peak Element
 
 ### Two Pointer
 - Container With Most Water
 - Trapping Rain Water
+- Move Zeroes
+- Valid Palindrome II
 
 ### Sliding Window
 - Minimum Window Substring
+- Longest Substring Without Repeating
+- Find All Anagrams
+- Longest Repeating Character Replacement
 
 </td>
 <td width="50%" valign="top">
 
-### Graph / BFS+DFS
+### Graph (Comprehensive)
 - Number of Islands
 - Clone Graph
-- Course Schedule
+- Course Schedule I & II
 - Pacific Atlantic Water Flow
-- Rotten Oranges
+- Rotting Oranges
 - Number of Provinces
-- Smallest Bridge
+- Graph Valid Tree
+- Connected Components
+- Is Graph Bipartite?
+- Accounts Merge
+- Word Ladder
+- Network Delay Time (Dijkstra)
 
 ### Trees
-- Zigzag Level Order
-- Max Subtree Sum
-- Search in BST
+- Level Order Traversal
+- Validate BST
+- Lowest Common Ancestor
+- Serialize/Deserialize
+- Path Sum III
 
-### Intervals
-- Merge Intervals
-- Meeting Rooms II
-- Non-Overlapping Intervals
+### Dynamic Programming
+- Climbing Stairs
+- House Robber I & II
+- Coin Change
+- Word Break
+- Longest Increasing Subsequence
 
 ### Backtracking
+- Subsets, Permutations
 - Generate Parentheses
-- Permutations
+- Combination Sum
 - Word Search
 
 </td>
 </tr>
 </table>
 
+### Problem Categories Distribution
+
+```
+Arrays/Strings  ████████████████░░░░  28 problems
+Graph/Matrix    ████████████████████  26 problems
+Trees           ███████████░░░░░░░░░  11 problems
+DP              █████████░░░░░░░░░░░   9 problems
+Binary Search   ██████░░░░░░░░░░░░░░   6 problems
+Sliding Window  ██████░░░░░░░░░░░░░░   6 problems
+Stack           ██████░░░░░░░░░░░░░░   6 problems
+Linked List     ██████░░░░░░░░░░░░░░   6 problems
+Others          █████████████████░░░  27 problems
+```
+
 ### File Format
 Each DSA file follows this structure:
 ```javascript
 /**
- * Problem: [Name]
- * Link: [LeetCode URL]
+ * ============================================================================
+ * PROBLEM: [Name] (LeetCode #XXX)
+ * ============================================================================
+ * [Problem description with examples]
  *
- * Approach 1: Brute Force
- * Time: O(n^2) | Space: O(1)
+ * ============================================================================
+ * INTUITION: [Algorithm Name]
+ * ============================================================================
+ * [Why this approach works, key insights]
  *
- * Approach 2: Optimal
- * Time: O(n) | Space: O(n)
+ * Time Complexity: O(...)
+ * Space Complexity: O(...)
  */
 
 // Implementation with detailed comments
-// Built-in test cases at the bottom
+// Multiple approaches (DFS, BFS, Union-Find, etc.)
+// Comprehensive test cases at the bottom
 ```
 
 ---
@@ -238,20 +281,6 @@ Interactive low-level design problems with working solutions:
 - Common follow-up questions
 - Edge cases to consider
 
-### Architecture Pattern
-```
-+---------------------------------------------+
-|              Solution.jsx                   |
-|  (Main component with state management)     |
-+---------------------------------------------+
-|         Supporting Components               |
-|   (Folder.jsx, CommentItem.jsx, etc.)       |
-+---------------------------------------------+
-|           Utility Functions                 |
-|    (Tree operations, helpers, etc.)         |
-+---------------------------------------------+
-```
-
 ---
 
 ## React Hooks
@@ -271,24 +300,55 @@ Reusable custom hooks for common UI patterns:
 
 ## System Design
 
-Templates and examples for system design interviews:
+**15 comprehensive frontend system design documents** for interviews:
 
-### Framework (README.md)
-1. Requirements Gathering
-2. API Design
-3. High-Level Architecture
-4. Data Model
-5. Scaling Strategy
-6. Deep Dives
+<table>
+<tr>
+<td width="50%" valign="top">
 
-### Example: URL Shortener
-Complete design including:
-- Functional & non-functional requirements
-- API endpoints
-- Database schema
-- Hash generation strategies
-- Caching layer
-- Capacity planning calculations
+### Core Applications
+- **Instagram Photo Feed** - Infinite scroll, lazy loading
+- **Twitter/Facebook News Feed** - Real-time updates, feed ranking
+- **YouTube Video Streaming** - Adaptive bitrate, player controls
+- **Google Photos Grid** - Virtualization, gestures
+- **Gmail/Outlook Email Client** - Threading, offline support
+
+### E-commerce & Marketplace
+- **Amazon E-commerce** - Product catalog, cart, checkout
+- **Uber Eats Restaurant Listing** - Geolocation, filters
+- **Zomato Food Delivery** - Real-time tracking
+
+</td>
+<td width="50%" valign="top">
+
+### Real-time Applications
+- **Zoom Video Conference** - WebRTC, screen sharing
+- **Uber/Rapido Ride Booking** - Maps, real-time tracking
+- **Chat Application** - WebSocket, message sync
+
+### Productivity Tools
+- **Google Docs Collaborative Editor** - CRDT, operational transform
+- **Trello Kanban Board** - Drag & drop, real-time sync
+
+### Infrastructure
+- **URL Shortener** - Hash generation, caching
+- **Design Framework Template** - Architecture patterns
+
+</td>
+</tr>
+</table>
+
+### Each System Design Doc Includes:
+1. Requirements (Functional & Non-Functional)
+2. Component Architecture
+3. State Management Strategy
+4. API Design & Data Flow
+5. Performance Optimizations
+6. Accessibility Considerations
+7. Error Handling & Edge Cases
+8. Testing Strategy
+9. Security Considerations
+10. Deployment & Monitoring
 
 ---
 
@@ -296,11 +356,11 @@ Complete design including:
 
 ```
 .
-├── DSA/                          # Data Structures & Algorithms
+├── DSA/                          # Data Structures & Algorithms (125 problems)
+│   ├── dsa-preparation-list.csv  # Master tracking with intuitions
 │   ├── Arrays&Hashset/
-│   ├── BFS+DFS/
 │   ├── BinarySearch/
-│   ├── Graph/
+│   ├── Graph/                    # 10 fully documented graph problems
 │   ├── Two-Pointer/
 │   ├── intervals/
 │   ├── matrix/
@@ -308,7 +368,7 @@ Complete design including:
 │   ├── sliding-window/
 │   └── tree/
 │
-├── JavaScriptProblems/           # Pure JavaScript
+├── JavaScriptProblems/           # Pure JavaScript (34+ implementations)
 │   ├── Array/                    # Array method polyfills
 │   ├── Design Patterns/          # Common patterns
 │   ├── call,apply,bind/          # Function context
@@ -320,12 +380,19 @@ Complete design including:
 ├── practice/                     # React LLD App
 │   ├── src/
 │   │   ├── components/           # App shell components
-│   │   └── lld/                  # LLD problem solutions
+│   │   └── lld/                  # 7 LLD problem solutions
 │   └── package.json
 │
-├── reactHooks/                   # Custom React hooks
+├── reactHooks/                   # 6 Custom React hooks
 │
-└── system-design/                # Architecture templates
+├── system-design/                # 15 Frontend architecture templates
+│   ├── instagram-photo-feed.md
+│   ├── news-feed-facebook-twitter.md
+│   ├── video-streaming-youtube.md
+│   ├── ecommerce-marketplace-amazon.md
+│   └── ... (11 more)
+│
+└── Theory/                       # Supporting educational content
 ```
 
 ---
@@ -334,10 +401,10 @@ Complete design including:
 
 Contributions are welcome! Please follow these guidelines:
 
-1. **DSA Problems**: Include problem link, brute force & optimal solutions, complexity analysis
+1. **DSA Problems**: Include problem link, intuition, brute force & optimal solutions, complexity analysis
 2. **JavaScript**: Provide polyfill with edge case handling
 3. **React LLD**: Include `problem.md` with requirements and visual representation
-4. **System Design**: Follow the existing template format
+4. **System Design**: Follow the existing template format with all 10 sections
 
 ---
 
@@ -346,6 +413,7 @@ Contributions are welcome! Please follow these guidelines:
 - [LeetCode](https://leetcode.com) - DSA practice
 - [GreatFrontEnd](https://greatfrontend.com) - Frontend interview prep
 - [React Documentation](https://react.dev) - Official React docs
+- [NeetCode](https://neetcode.io) - DSA roadmap
 
 ---
 
