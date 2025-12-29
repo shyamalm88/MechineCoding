@@ -159,7 +159,10 @@ console.log("Test 9:", trappingRainWater([5, 0]));
 
 // Test with prefix/suffix approach
 console.log("\n--- Prefix/Suffix Approach ---");
-console.log("Test 1 (Prefix):", trappingRainWaterPrefixSuffix([0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]));
+console.log(
+  "Test 1 (Prefix):",
+  trappingRainWaterPrefixSuffix([0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1])
+);
 // Expected: 6
 
 // Visual explanation:

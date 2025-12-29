@@ -1,0 +1,1000 @@
+S.No	Category	Sub-Topic	Problem Name	LeetCode #	Difficulty	Pattern	Priority	Notes																	
+1	Arrays	Core	Two Sum	1	Easy	HashMap	Must Do	Tradeoff vs sorting																	
+2	Arrays	Core	Best Time to Buy and Sell Stock	121	Easy	Greedy	Must Do	Min so far																	
+3	Arrays	Core	Contains Duplicate	217	Easy	HashSet	Must Do	Early exit																	
+4	Arrays	Core	Product of Array Except Self	238	Medium	Prefix/Suffix	Must Do	No division																	
+5	Arrays	Core	Maximum Subarray	53	Medium	Kadane	Must Do	DP vs greedy																	
+6	Arrays	Core	Maximum Product Subarray	152	Medium	Kadane Variant	Must Do	Min/max tracking																	
+7	Arrays	Core	Find Minimum in Rotated Sorted Array	153	Medium	Binary Search	Must Do	Invariant logic																	
+8	Arrays	Core	Search in Rotated Sorted Array	33	Medium	Binary Search	Must Do	Partition logic																	
+9	Arrays	Core	Container With Most Water	11	Medium	Two Pointers	Must Do	Why greedy works																	
+10	Arrays	Core	3Sum	15	Medium	Two Pointers	Must Do	Skip duplicates																	
+11	Arrays	Core	4Sum	18	Medium	Two Pointers	Important	Generalized k-sum																	
+12	Arrays	Core	Next Permutation	31	Medium	Array Manipulation	Must Do	Lexicographic order																	
+13	Arrays	Hard	First Missing Positive	41	Hard	Index as Hash	Must Do	O(1) space																	
+14	Arrays	Hard	Trapping Rain Water	42	Hard	Two Pointers	Must Do	Explain all approaches																	
+15	Arrays	Intervals	Merge Intervals	56	Medium	Sort + Merge	Must Do	Interval modeling																	
+16	Arrays	Intervals	Insert Interval	57	Medium	Intervals	Must Do	No sorting																	
+17	Arrays	Intervals	Non-overlapping Intervals	435	Medium	Greedy	Important	Activity selection																	
+18	Arrays	Intervals	Meeting Rooms II	253	Medium	Heap	Must Do	Line sweep follow-up																	
+19	Arrays	2D	Set Matrix Zeroes	73	Medium	In-place Marking	Must Do	First row/col trick																	
+20	Arrays	2D	Spiral Matrix	54	Medium	Simulation	Important	Boundary control																	
+21	Arrays	2D	Rotate Image	48	Medium	Transpose + Reverse	Must Do	In-place matrix ops																	
+22	Arrays	2D	Search a 2D Matrix	74	Medium	Binary Search	Important	1D mapping																	
+23	Arrays	2D	Search a 2D Matrix II	240	Medium	Staircase Search	Must Do	Monotonic grid																	
+24	Two Pointers	Core	Valid Palindrome	125	Easy	Two Pointers	Must Do	Skip non-alnum																	
+25	Two Pointers	Core	Two Sum II - Sorted Array	167	Medium	Two Pointers	Must Do	Sorted invariant																	
+26	Two Pointers	Core	Remove Duplicates from Sorted Array	26	Easy	Two Pointers	Must Do	In-place overwrite																	
+27	Two Pointers	Core	Remove Duplicates from Sorted Array II	80	Medium	Two Pointers	Important	Allow at most two																	
+28	Two Pointers	Core	Sort Colors	75	Medium	Dutch Flag	Must Do	Three-way partition																	
+29	Two Pointers	Core	Partition Labels	763	Medium	Greedy	Must Do	Last occurrence tracking																	
+30	Two Pointers	Core	Squares of a Sorted Array	977	Easy	Two Pointers	Important	Merge from ends																	
+31	Sliding Window	Fixed	Maximum Average Subarray I	643	Easy	Fixed Window	Important	Window basics																	
+32	Sliding Window	Fixed	Find All Anagrams in a String	438	Medium	Fixed Window	Must Do	Freq map																	
+33	Sliding Window	Fixed	Permutation in String	567	Medium	Fixed Window	Must Do	Exact freq match																	
+34	Sliding Window	Variable	Longest Substring Without Repeating Characters	3	Medium	Variable Window	Must Do	Canonical window																	
+35	Sliding Window	Variable	Longest Repeating Character Replacement	424	Medium	Variable Window	Important	Max freq trick																	
+36	Sliding Window	Variable	Minimum Window Substring	76	Hard	Variable Window	Must Do	Google classic																	
+37	Sliding Window	Variable	Sliding Window Maximum	239	Hard	Monotonic Deque	Must Do	Deque invariant																	
+38	Sliding Window	Variable	Subarrays with K Different Integers	992	Hard	AtMost K	Important	Exactly K trick																	
+39	Stack	Core	Valid Parentheses	20	Easy	Stack	Must Do	Foundation																	
+40	Stack	Core	Min Stack	155	Medium	Design	Must Do	Auxiliary stack																	
+41	Stack	Core	Implement Queue using Stacks	232	Easy	Two Stacks	Important	Amortized analysis																	
+42	Stack	Monotonic	Daily Temperatures	739	Medium	Monotonic Stack	Must Do	Next greater pattern																	
+43	Stack	Monotonic	Next Greater Element II	503	Medium	Monotonic Stack	Important	Circular array																	
+44	Stack	Monotonic	Largest Rectangle in Histogram	84	Hard	Monotonic Stack	Must Do	Google hard																	
+45	Stack	Monotonic	Maximal Rectangle	85	Hard	Histogram DP	Must Do	Build on #84																	
+46	Stack	Expression	Basic Calculator II	227	Medium	Stack	Important	Operator precedence																	
+47	Stack	Expression	Basic Calculator	224	Hard	Stack + Recursion	Must Do	Parentheses handling																	
+48	Stack	Design	LRU Cache	146	Medium	HashMap + DLL	Must Do	Google favorite																	
+49	Binary Search	Core	Binary Search	704	Easy	Template	Must Do	Invariant correctness																	
+50	Binary Search	Core	Search Insert Position	35	Easy	Lower Bound	Must Do	First >= target																	
+51	Binary Search	Core	Find First and Last Position	34	Medium	Lower/Upper Bound	Must Do	Two searches																	
+52	Binary Search	Core	Sqrt(x)	69	Easy	Binary Search	Important	Integer sqrt																	
+53	Binary Search	Answer Space	Koko Eating Bananas	875	Medium	BS on Answer	Must Do	Feasibility check																	
+54	Binary Search	Answer Space	Capacity To Ship Packages	1011	Medium	BS on Answer	Must Do	Monotonic predicate																	
+55	Binary Search	Answer Space	Minimum Days to Make m Bouquets	1482	Medium	BS on Answer	Important	Feasibility																	
+56	Binary Search	Advanced	Split Array Largest Sum	410	Hard	BS + Greedy	Must Do	Google classic																	
+57	Binary Search	Advanced	Median of Two Sorted Arrays	4	Hard	Partition BS	Must Do	Elite problem																	
+58	Linked List	Core	Reverse Linked List	206	Easy	Iterative/Recursive	Must Do	Explain both																	
+59	Linked List	Core	Linked List Cycle	141	Easy	Fast Slow	Important	Floyd cycle																	
+60	Linked List	Core	Linked List Cycle II	142	Medium	Fast Slow	Must Do	Find entry																	
+61	Linked List	Core	Remove Nth Node From End	19	Medium	Two Pointers	Important	N gap																	
+62	Linked List	Advanced	Merge Two Sorted Lists	21	Easy	Two Pointers	Important	Foundation																	
+63	Linked List	Advanced	Merge K Sorted Lists	23	Hard	Heap / D&C	Must Do	Compare approaches																	
+64	Linked List	Advanced	Reverse Nodes in K-Group	25	Hard	Pointer Logic	Must Do	Complex pointers																	
+65	Linked List	Advanced	Copy List with Random Pointer	138	Medium	HashMap/Interleave	Must Do	Space optimize																	
+66	Tree	Traversal	Binary Tree Inorder Traversal	94	Easy	DFS	Must Do	Iterative with stack																	
+67	Tree	Traversal	Binary Tree Preorder Traversal	144	Easy	DFS	Must Do	Iterative with stack																	
+68	Tree	Traversal	Binary Tree Postorder Traversal	145	Easy	DFS	Must Do	Two stacks or flag																	
+69	Tree	Traversal	Binary Tree Level Order Traversal	102	Medium	BFS	Must Do	Queue based																	
+70	Tree	Traversal	Binary Tree Zigzag Level Order Traversal	103	Medium	BFS	Important	Alternate direction																	
+71	Tree	Traversal	Vertical Order Traversal	987	Hard	BFS + Sorting	Must Do	Google favorite																	
+72	Tree	Properties	Maximum Depth of Binary Tree	104	Easy	DFS/BFS	Must Do	Foundation																	
+73	Tree	Properties	Minimum Depth of Binary Tree	111	Easy	BFS	Important	Shortest path																	
+74	Tree	Properties	Balanced Binary Tree	110	Easy	DFS	Must Do	Height balanced																	
+75	Tree	Properties	Diameter of Binary Tree	543	Easy	DFS	Must Do	Global state																	
+76	Tree	Properties	Same Tree	100	Easy	DFS	Must Do	Structural equality																	
+77	Tree	Properties	Symmetric Tree	101	Easy	DFS/BFS	Must Do	Mirror logic																	
+78	Tree	Properties	Invert Binary Tree	226	Easy	DFS	Must Do	Swap children																	
+79	Tree	Construction	Construct Binary Tree from Preorder and Inorder	105	Medium	Recursion + Map	Must Do	Classic construction																	
+80	Tree	Construction	Construct Binary Tree from Inorder and Postorder	106	Medium	Recursion + Map	Must Do	Similar pattern																	
+81	Tree	Construction	Maximum Binary Tree	654	Medium	Monotonic Stack	Important	Array to tree																	
+82	Tree	Advanced	Serialize and Deserialize Binary Tree	297	Hard	BFS/DFS	Must Do	Google classic																	
+83	Tree	Path	Path Sum	112	Easy	DFS	Must Do	Root to leaf																	
+84	Tree	Path	Path Sum II	113	Medium	DFS + Backtracking	Important	Collect paths																	
+85	Tree	Path	Path Sum III	437	Medium	Prefix Sum	Must Do	Any path																	
+86	Tree	Path	Binary Tree Maximum Path Sum	124	Hard	DFS	Must Do	Negative pruning																	
+87	Tree	LCA	Lowest Common Ancestor of a Binary Tree	236	Medium	DFS	Must Do	Bottom-up																	
+88	Tree	Advanced	Flatten Binary Tree to Linked List	114	Medium	Stack/Morris	Important	Preorder flatten																	
+89	Tree	Advanced	Populating Next Right Pointers in Each Node	116	Medium	BFS/O(1)	Important	Perfect tree																	
+90	Tree	Advanced	Populating Next Right Pointers II	117	Medium	BFS/O(1)	Important	Any tree																	
+91	Tree	Advanced	Count Complete Tree Nodes	222	Medium	Binary Search	Important	O(log^2 n)																	
+92	BST	Core	Validate Binary Search Tree	98	Medium	DFS Range	Must Do	Boundary correctness																	
+93	BST	Core	Kth Smallest Element in a BST	230	Medium	Inorder	Must Do	Sorted property																	
+94	BST	Core	Convert Sorted Array to BST	108	Easy	Divide and Conquer	Must Do	Balanced BST																	
+95	BST	Advanced	Delete Node in a BST	450	Medium	BST Ops	Must Do	All cases																	
+96	BST	Advanced	Insert into a BST	701	Medium	BST Ops	Important	Foundation																	
+97	BST	Advanced	Inorder Successor in BST	285	Medium	BST Property	Important	Iterative logic																	
+98	BST	Advanced	Recover Binary Search Tree	99	Medium	Morris Traversal	Important	Two swapped nodes																	
+99	Trie	Core	Implement Trie (Prefix Tree)	208	Medium	Design	Must Do	Foundation																	
+100	Trie	Core	Design Add and Search Words Data Structure	211	Medium	Trie + DFS	Must Do	Wildcard search																	
+101	Trie	Advanced	Word Search II	212	Hard	Trie + Backtracking	Must Do	Google favorite																	
+102	Trie	Advanced	Replace Words	648	Medium	Trie	Important	Prefix replacement																	
+103	Trie	Advanced	Longest Word in Dictionary	720	Medium	Trie + BFS	Important	Incremental build																	
+104	Heap	Core	Kth Largest Element in an Array	215	Medium	Heap/QuickSelect	Must Do	Know both																	
+105	Heap	Core	Top K Frequent Elements	347	Medium	Heap/Bucket	Must Do	Tradeoffs																	
+106	Heap	Core	K Closest Points to Origin	973	Medium	Heap/QuickSelect	Must Do	Distance calc																	
+107	Heap	Core	Find Median from Data Stream	295	Hard	Two Heaps	Must Do	Google classic																	
+108	Heap	Advanced	Task Scheduler	621	Medium	Heap/Greedy	Must Do	Frequency gaps																	
+109	Heap	Advanced	Reorganize String	767	Medium	Heap	Important	Max heap logic																	
+110	Heap	Advanced	Ugly Number II	264	Medium	DP/Heap	Important	Three pointers																	
+111	Backtracking	Core	Subsets	78	Medium	Backtracking	Must Do	Decision tree																	
+112	Backtracking	Core	Subsets II	90	Medium	Backtracking	Important	Skip duplicates																	
+113	Backtracking	Core	Permutations	46	Medium	Backtracking	Must Do	Swap technique																	
+114	Backtracking	Core	Permutations II	47	Medium	Backtracking	Important	Skip duplicates																	
+115	Backtracking	Core	Combinations	77	Medium	Backtracking	Must Do	Choose or skip																	
+116	Backtracking	Core	Combination Sum	39	Medium	Backtracking	Must Do	Reuse allowed																	
+117	Backtracking	Core	Combination Sum II	40	Medium	Backtracking	Important	Each once																	
+118	Backtracking	Advanced	Letter Combinations of a Phone Number	17	Medium	Backtracking	Must Do	Digit mapping																	
+119	Backtracking	Advanced	Palindrome Partitioning	131	Medium	Backtracking	Must Do	Palindrome check																	
+120	Backtracking	Advanced	Generate Parentheses	22	Medium	Backtracking	Must Do	Validity constraint																	
+121	Backtracking	Advanced	Word Search	79	Medium	DFS Backtracking	Must Do	Grid search																	
+122	Backtracking	Advanced	N-Queens	51	Hard	Backtracking	Must Do	Constraint propagation																	
+123	Backtracking	Advanced	Sudoku Solver	37	Hard	Backtracking	Important	Constraint pruning																	
+124	Graph	BFS	Number of Islands	200	Medium	BFS/DFS	Must Do	Connected components																	
+125	Graph	BFS	Rotting Oranges	994	Medium	Multi-source BFS	Must Do	Layered BFS																	
+126	Graph	BFS	Shortest Path in Binary Matrix	1091	Medium	BFS	Important	8 directions																	
+127	Graph	BFS	Word Ladder	127	Hard	BFS	Must Do	Google classic																	
+128	Graph	BFS	Open the Lock	752	Medium	BFS	Important	State space																	
+129	Graph	DFS	Clone Graph	133	Medium	DFS + Map	Must Do	Graph copy																	
+130	Graph	DFS	Pacific Atlantic Water Flow	417	Medium	Reverse DFS	Important	Multi-source																	
+131	Graph	DFS	Surrounded Regions	130	Medium	DFS from Border	Must Do	Boundary-connected regions																	
+132	Graph	DFS	Max Area of Island	695	Medium	DFS	Must Do	Component size																	
+133	Graph	DFS	Number of Provinces	547	Medium	DFS/Union Find	Must Do	Adjacency matrix																	
+134	Graph	DFS	All Paths From Source to Target	797	Medium	DFS	Important	DAG paths																	
+135	Graph	Topo	Course Schedule	207	Medium	Topological Sort	Must Do	Cycle detection																	
+136	Graph	Topo	Course Schedule II	210	Medium	Topological Sort	Must Do	Return order																	
+137	Graph	Topo	Alien Dictionary	269	Hard	Topological Sort	Must Do	Google favorite																	
+138	Graph	Topo	Minimum Height Trees	310	Medium	BFS/Topo	Important	Trim leaves																	
+139	Graph	Union Find	Number of Connected Components	323	Medium	Union Find	Must Do	UF basics																	
+140	Graph	Union Find	Redundant Connection	684	Medium	Union Find	Must Do	Cycle detection																	
+141	Graph	Union Find	Accounts Merge	721	Medium	Union Find	Must Do	Google favorite																	
+142	Graph	Union Find	Most Stones Removed	947	Medium	Union Find	Important	Connected components																	
+143	Graph	Shortest Path	Network Delay Time	743	Medium	Dijkstra	Must Do	Priority queue																	
+144	Graph	Shortest Path	Cheapest Flights Within K Stops	787	Medium	Bellman-Ford/BFS	Must Do	K stops constraint																	
+145	Graph	Shortest Path	Path with Minimum Effort	1631	Medium	Binary Search + BFS	Important	Minimize max edge																	
+146	Graph	Shortest Path	Swim in Rising Water	778	Hard	Binary Search + BFS	Important	Threshold BFS																	
+147	Graph	Advanced	Graph Valid Tree	261	Medium	DFS/Union Find	Must Do	N-1 edges																	
+148	Graph	Advanced	Critical Connections in a Network	1192	Hard	Tarjan	Important	Bridge finding																	
+149	Graph	Advanced	Reconstruct Itinerary	332	Hard	Hierholzer	Important	Eulerian path																	
+150	DP	1D	Climbing Stairs	70	Easy	DP	Must Do	Foundation																	
+151	DP	1D	House Robber	198	Medium	DP	Must Do	State definition																	
+152	DP	1D	House Robber II	213	Medium	Circular DP	Must Do	Two passes																	
+153	DP	1D	Coin Change	322	Medium	DP	Must Do	Min coins																	
+154	DP	1D	Coin Change II	518	Medium	DP	Must Do	Count ways																	
+155	DP	1D	Longest Increasing Subsequence	300	Medium	DP + Binary Search	Must Do	O(n log n)																	
+156	DP	1D	Word Break	139	Medium	DP	Must Do	Dictionary DP																	
+157	DP	1D	Decode Ways	91	Medium	DP	Must Do	State transitions																	
+158	DP	2D	Unique Paths	62	Medium	DP	Must Do	Grid DP																	
+159	DP	2D	Minimum Path Sum	64	Medium	DP	Must Do	Grid DP																	
+160	DP	2D	Triangle	120	Medium	DP	Important	Bottom-up																	
+161	DP	2D	Maximal Square	221	Medium	DP	Must Do	Square DP																	
+162	DP	2D	Longest Common Subsequence	1143	Medium	DP	Must Do	Foundation																	
+163	DP	2D	Edit Distance	72	Medium	DP	Must Do	Google classic																	
+164	DP	2D	Distinct Subsequences	115	Hard	DP	Important	Count subsequences																	
+165	DP	2D	Regular Expression Matching	10	Hard	DP	Must Do	Hard DP																	
+166	DP	Interval	Burst Balloons	312	Hard	Interval DP	Must Do	Reverse thinking																	
+167	DP	Interval	Minimum Cost to Merge Stones	1000	Hard	Interval DP	Important	K piles																	
+168	DP	Advanced	Job Scheduling	1235	Hard	DP + Binary Search	Must Do	Google favorite																	
+169	DP	Advanced	Dungeon Game	174	Hard	Reverse DP	Important	Think backwards																	
+170	DP	Advanced	Russian Doll Envelopes	354	Hard	LIS variant	Important	2D LIS																	
+171	Greedy	Core	Assign Cookies	455	Easy	Greedy	Must Do	Foundation																	
+172	Greedy	Core	Maximum Units on a Truck	1710	Easy	Greedy	Must Do	Sort by value																	
+173	Greedy	Interval	Minimum Number of Arrows to Burst Balloons	452	Medium	Greedy	Must Do	Overlap logic																	
+174	Greedy	Advanced	Gas Station	134	Medium	Greedy	Must Do	Circular reasoning																	
+175	Greedy	Advanced	Candy	135	Hard	Greedy	Must Do	Two pass																	
+176	Greedy	Advanced	Queue Reconstruction by Height	406	Medium	Greedy	Important	Sort + insert																	
+177	Design	Core	Design HashMap	706	Easy	Design	Must Do	Collision handling																	
+178	Design	Core	Design HashSet	705	Easy	Design	Must Do	Foundation																	
+179	Design	Iterator	Flatten Nested List Iterator	341	Medium	Stack/Recursion	Must Do	Google favorite																	
+180	Design	Stream	Moving Average from Data Stream	346	Easy	Queue	Must Do	Sliding window																	
+181	Design	Stream	Find Median from Data Stream	295	Hard	Two Heaps	Must Do	Already covered conceptually																	
+182	Design	Complex	Insert Delete GetRandom O(1)	380	Medium	Design	Must Do	Randomization																	
+183	Design	Complex	Design Twitter	355	Medium	OOD + Heap	Important	Feed merge																	
+184	Design	Complex	Time Based Key-Value Store	981	Medium	Design + Binary Search	Must Do	Google favorite																	
+185	Design	Complex	Snapshot Array	1146	Medium	Binary Search	Important	Versioned array																	
+186	Random	Core	Shuffle an Array	384	Medium	Fisher-Yates	Must Do	Uniform randomness																	
+187	Random	Core	Random Pick Index	398	Medium	Reservoir Sampling	Important	Streaming random																	
+188	Random	Core	Linked List Random Node	382	Medium	Reservoir Sampling	Important	Unknown length																	
+189	Advanced	Line Sweep	The Skyline Problem	218	Hard	Line Sweep + Heap	Must Do	Google classic																	
+190	Advanced	Segment Tree	Range Sum Query - Mutable	307	Medium	Segment Tree	Important	Update + query																	
+191	Google	Stack	Decode String	394	Medium	Stack + Recursion	Must Do	Nested encoding	Google classic																
+192	Google	DFS	Robot Room Cleaner	489	Hard	DFS + Backtracking	Must Do	No grid access	state modeling																
+193	Google	BFS	Minimum Knight Moves	1197	Medium	BFS + Pruning	Important	Infinite grid optimization																	
+194	Google	BFS/DP	Race Car	818	Hard	BFS/DP	Must Do	State space explosion control																	
+195	Google	Binary Search	Find in Mountain Array	1095	Hard	Binary Search	Important	Peak + two searches																	
+196	Google	DP	Odd Even Jump	975	Hard	DP + Monotonic Stack	Must Do	Observation-heavy	Google onsite favorite																
+197	Google	DP	Delete and Earn	740	Medium	DP	Important	House Robber variant																	
+198	Google	DP	Maximum Sum of 3 Non-Overlapping Subarrays	689	Hard	DP	Important	Window DP composition																	
+199	Google	Design	Read N Characters Given Read4 II	158	Hard	Design	Must Do	Stateful API behavior																	
+200	Google	Design	Logger Rate Limiter	359	Easy	HashMap	Important	Timestamp window logic																	
+201	Google	Design	Design Search Autocomplete System	642	Hard	Trie + Heap	Must Do	Google Search–style design																	
+202	Google	Design	Max Stack	716	Hard	Design	Important	PopMax in O(log n)																	
+203	Google	String	Expressive Words	809	Medium	Two Pointers	Important	String stretching logic																	
+204	Google	Greedy	Split Array into Consecutive Subsequences	659	Medium	Greedy + HashMap	Important	Sequence validation																	
+205	Google	Two Pointers	Backspace String Compare	844	Easy	Two Pointers	Important	O(1) space follow-up																	
+206	Google	Interactive	Guess the Word	843	Hard	Minimax/Heuristic	Must Do	Google unique problem																	
+207	Google	Sliding Window	Fruit Into Baskets	904	Medium	Sliding Window	Must Do	At most 2 distinct																	
+208	Google	Tree	Flip Equivalent Binary Trees	951	Medium	DFS	Important	Structural equivalence																	
+209	Google	Greedy	Campus Bikes	1057	Medium	Bucket Sort/Heap	Important	Assignment problem																	
+210	Google	Backtracking	Strobogrammatic Number II	247	Medium	Backtracking	Important	Symmetric digits																	
+211	Google	String	License Key Formatting	482	Easy	String	Important	Simple but tricky																	
+212	Google	Stack	Longest Absolute File Path	388	Medium	Stack	Important	Path parsing																	
+213	Google	Array	Shortest Way to Form String	1055	Medium	Two Pointers/BS	Important	Subsequence count																	
+214	Google	String	String Transforms Into Another String	1153	Hard	Graph/HashMap	Must Do	Character mapping cycles																	
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									
+																									

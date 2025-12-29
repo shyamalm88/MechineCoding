@@ -1,4 +1,39 @@
 /**
+ * Word Search (LeetCode 79)
+ *
+ * INTUITION:
+ * Given a 2D grid of characters, find if a word exists by connecting
+ * adjacent cells (horizontally or vertically). Each cell can only be used once.
+ *
+ * This is a classic BACKTRACKING problem - we explore paths and "undo" when stuck.
+ *
+ * KEY INSIGHT - DFS + Backtracking:
+ *   Think of it like a maze where each step must match the next letter:
+ *   1. Start from any cell matching the first letter
+ *   2. Explore all 4 directions, looking for the next letter
+ *   3. Mark visited cells to avoid revisiting in current path
+ *   4. BACKTRACK: restore the cell when returning (crucial!)
+ *
+ * WHY BACKTRACKING?
+ *   The same cell might be part of DIFFERENT valid paths.
+ *   If we permanently mark cells, we block other potential solutions.
+ *
+ *   Example: Finding "AB" in:
+ *     [A, B]
+ *     [A, B]
+ *   Path 1: (0,0)→(0,1) uses top-A
+ *   Path 2: (1,0)→(1,1) uses bottom-A
+ *   Without backtracking, marking top-A would block finding path from bottom-A
+ *
+ * VISUALIZATION:
+ *   Board:        Looking for "ABCCED"
+ *   [A, B, C, E]     A → B → C
+ *   [S, F, C, S]           ↓
+ *   [A, D, E, E]     D ← C ← (backtrack and explore)
+ *
+ * TIME: O(m * n * 4^L) - for each cell, explore 4 directions up to L (word length) times
+ * SPACE: O(L) - recursion stack depth equals word length
+ *
  * @param {character[][]} board
  * @param {string} word
  * @return {boolean}

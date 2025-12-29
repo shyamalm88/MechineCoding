@@ -57,7 +57,7 @@
  * Time Complexity: O(m × n) - visit each pixel at most once
  * Space Complexity: O(m × n) - recursion stack in worst case (all same color)
  */
-const floodFill = (image, sr, sc, color) => {
+const floodFillDFS = (image, sr, sc, color) => {
   // Edge case: empty image
   if (!image || !image.length) return image;
 
@@ -100,6 +100,44 @@ const floodFill = (image, sr, sc, color) => {
   return image;
 };
 
+const floodFillBFS = (image, sr, sc, color) => {
+  if (!image || !image.length) return image;
+  const row = image.length;
+  const col = image[0].length;
+  const originalColor = image[sr][sc];
+  if (originalColor === color) return image;
+  const q = [[sr, sc]];
+  image[sr][sc] = color;
+  const dirs = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
+
+  while (q.length) {
+    const [r, c] = q.shift();
+    for (let [dr, dc] of dirs) {
+      const nr = dr + r;
+      const nc = dc + c;
+
+      if (
+        nr < 0 ||
+        nc < 0 ||
+        nr >= row ||
+        nc >= col ||
+        image[nr][nc] !== originalColor
+      ) {
+        continue;
+      }
+
+      image[nr][nc] = color;
+      q.push([nr, nc]);
+    }
+  }
+  return image;
+};
+
 // ============================================================================
 // TEST CASES
 // ============================================================================
@@ -113,7 +151,7 @@ const img1 = [
   [1, 1, 0],
   [1, 0, 1],
 ];
-console.log("Test 1:", JSON.stringify(floodFill(clone2D(img1), 1, 1, 2)));
+console.log("Test 1:", JSON.stringify(floodFillDFS(clone2D(img1), 1, 1, 2)));
 // Expected: [[2,2,2],[2,2,0],[2,0,1]]
 
 // Test 2: Same color (no change)
@@ -121,12 +159,12 @@ const img2 = [
   [0, 0, 0],
   [0, 0, 0],
 ];
-console.log("Test 2:", JSON.stringify(floodFill(clone2D(img2), 0, 0, 0)));
+console.log("Test 2:", JSON.stringify(floodFillDFS(clone2D(img2), 0, 0, 0)));
 // Expected: [[0,0,0],[0,0,0]]
 
 // Test 3: Single pixel
 const img3 = [[1]];
-console.log("Test 3:", JSON.stringify(floodFill(clone2D(img3), 0, 0, 5)));
+console.log("Test 3:", JSON.stringify(floodFillDFS(clone2D(img3), 0, 0, 5)));
 // Expected: [[5]]
 
 // Test 4: Disconnected regions
@@ -135,7 +173,7 @@ const img4 = [
   [0, 1, 0],
   [1, 0, 1],
 ];
-console.log("Test 4:", JSON.stringify(floodFill(clone2D(img4), 1, 1, 9)));
+console.log("Test 4:", JSON.stringify(floodFillDFS(clone2D(img4), 1, 1, 9)));
 // Expected: [[1,0,1],[0,9,0],[1,0,1]] (only center changes)
 
-module.exports = { floodFill };
+module.exports = { floodFillDFS };
