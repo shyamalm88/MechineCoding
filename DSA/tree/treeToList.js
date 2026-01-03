@@ -44,18 +44,18 @@ const treeToList = (root) => {
   const dfs = (node) => {
     if (!node) return;
 
-    // 1. Traverse Right first
+    // 1. Traverse Right subtree first (Reverse Pre-order)
     dfs(node.right);
 
-    // 2. Traverse Left second
+    // 2. Traverse Left subtree second
     dfs(node.left);
 
-    // 3. Process Node
-    // Set right to the previously processed node (which is the next in preorder)
+    // 3. Rewire the current node
+    // The 'prev' node is the one that should come AFTER the current node in the flattened list.
     node.right = prev;
-    node.left = null;
+    node.left = null; // Ensure left child is null as per requirement
 
-    // Update prev to current node
+    // Update 'prev' to be the current node for the next step up the recursion
     prev = node;
   };
 

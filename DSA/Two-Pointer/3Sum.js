@@ -43,11 +43,11 @@
  */
 const threeSum = (nums) => {
   const result = [];
-  // 1. Sort the array
+  // 1. Sort the array to use two pointers and handle duplicates
   nums.sort((a, b) => a - b);
 
   for (let i = 0; i < nums.length - 2; i++) {
-    // Skip duplicates for the first element 'a'
+    // 2. Skip duplicates for the first element 'a' to avoid duplicate triplets
     if (i > 0 && nums[i] === nums[i - 1]) continue;
 
     let left = i + 1;
@@ -61,9 +61,9 @@ const threeSum = (nums) => {
         left++;
         right--;
 
-        // Skip duplicates for the second element 'b'
+        // 3. Skip duplicates for the second element 'b'
         while (left < right && nums[left] === nums[left - 1]) left++;
-        // Skip duplicates for the third element 'c'
+        // 4. Skip duplicates for the third element 'c'
         while (left < right && nums[right] === nums[right + 1]) right--;
       } else if (sum < 0) {
         left++; // Need a larger sum

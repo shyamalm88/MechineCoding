@@ -53,19 +53,19 @@ const maxSlidingWindow = (nums, k) => {
   const result = [];
 
   for (let i = 0; i < nums.length; i++) {
-    // 1. Remove elements out of the current window from the front
-    // The window is [i - k + 1, i]. If deque[0] < i - k + 1, it's gone.
+    // 1. Remove indices that are out of the current window [i - k + 1, i]
     if (deque.length > 0 && deque[0] <= i - k) {
       deque.shift();
     }
 
-    // 2. Maintain Monotonic Decreasing property
-    // Remove elements from the back that are smaller than the current element
+    // 2. Maintain Monotonic Decreasing Queue
+    // Remove elements from the back that are smaller than the current element.
+    // They will never be the maximum because the current element is larger and newer.
     while (deque.length > 0 && nums[deque[deque.length - 1]] < nums[i]) {
       deque.pop();
     }
 
-    // 3. Add current index
+    // 3. Add current index to the deque
     deque.push(i);
 
     // 4. Add max to result (only if window is fully formed)

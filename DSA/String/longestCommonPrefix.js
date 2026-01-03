@@ -35,11 +35,14 @@ const longestCommonPrefix = (strs) => {
   if (strs.length === 0) return "";
   let prefix = "";
 
+  // Iterate through the characters of the first string
   for (let i = 0; i < strs[0].length; i++) {
     let char = strs[0][i];
+    // Check if this character exists at index 'i' in ALL other strings
     if (strs.every((str) => str[i] === char)) {
       prefix += char;
     } else {
+      // Mismatch found, stop immediately
       break;
     }
   }

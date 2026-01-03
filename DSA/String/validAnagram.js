@@ -35,17 +35,19 @@
  * Space Complexity: O(1) (Fixed size array of 26)
  */
 const isAnagram = (s, t) => {
+  // Anagrams must be of the same length
   if (s.length !== t.length) return false;
 
   const count = new Array(26).fill(0);
   const base = "a".charCodeAt(0);
 
+  // Increment for 's', Decrement for 't'
   for (let i = 0; i < s.length; i++) {
     count[s.charCodeAt(i) - base]++;
     count[t.charCodeAt(i) - base]--;
   }
 
-  // Check if all counts are zero
+  // If they are anagrams, all counts should cancel out to zero
   return count.every((c) => c === 0);
 };
 

@@ -47,7 +47,7 @@ class TreeNode {
  */
 const buildTree = (preorder, inorder) => {
   const inMap = new Map();
-  // Build map for O(1) index lookup
+  // 1. Build a hashmap for O(1) lookup of values in the inorder array
   for (let i = 0; i < inorder.length; i++) {
     inMap.set(inorder[i], i);
   }
@@ -55,20 +55,20 @@ const buildTree = (preorder, inorder) => {
   let preIdx = 0; // Tracks our progress in the preorder array
 
   const build = (inStart, inEnd) => {
-    // Base case: No elements left to construct subtree
+    // Base case: If start index exceeds end index, this subtree is empty
     if (inStart > inEnd) return null;
 
-    // 1. Pick current root from preorder
+    // 2. Pick the current root value from preorder traversal
     const rootVal = preorder[preIdx++];
     const root = new TreeNode(rootVal);
 
-    // 2. Find split point in inorder
+    // 3. Find the index of this root in the inorder array to split left/right subtrees
     const inIdx = inMap.get(rootVal);
 
-    // 3. Recurse
-    // Left child uses inorder range [start, split - 1]
+    // 4. Recursively build left and right subtrees
+    // Left subtree: elements from inStart to inIdx - 1
     root.left = build(inStart, inIdx - 1);
-    // Right child uses inorder range [split + 1, end]
+    // Right subtree: elements from inIdx + 1 to inEnd
     root.right = build(inIdx + 1, inEnd);
 
     return root;

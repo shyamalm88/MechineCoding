@@ -44,12 +44,12 @@ const diameterOfBinaryTree = (root) => {
     const leftH = height(node.left);
     const rightH = height(node.right);
 
-    // 1. Update global max diameter found so far
-    // Diameter passing through this node = left height + right height
+    // 1. Calculate diameter passing through this node.
+    // Diameter = Left Height + Right Height (edges connecting left and right subtrees via current node)
     maxDiameter = Math.max(maxDiameter, leftH + rightH);
 
-    // 2. Return height of this node to parent
-    // Height = 1 + max of children heights
+    // 2. Return the height of this node to its parent.
+    // Height = 1 (current edge) + max height of children
     return 1 + Math.max(leftH, rightH);
   };
 

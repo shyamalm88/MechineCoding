@@ -37,12 +37,13 @@
  * Here we create a new string for simplicity, which is O(N).
  */
 const isPalindrome = (s) => {
-  // Remove non-alphanumeric characters and convert to lowercase
+  // 1. Clean the string: Remove non-alphanumeric characters and convert to lowercase
   const cleanStr = s.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
   let left = 0;
   let right = cleanStr.length - 1;
 
+  // 2. Two-pointer check from outside in
   while (left < right) {
     if (cleanStr[left] !== cleanStr[right]) {
       return false;

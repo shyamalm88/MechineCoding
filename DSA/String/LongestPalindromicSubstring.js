@@ -30,6 +30,7 @@
  * Space Complexity: O(1)
  */
 const expandAroundCenter = (string, left, right) => {
+  // Expand outwards as long as characters match and we are within bounds
   while (left >= 0 && right < string.length && string[left] === string[right]) {
     left--;
     right++;
@@ -41,7 +42,9 @@ const longestPalindrome = (string) => {
   let longest = "";
 
   for (let i = 0; i < string.length; i++) {
+    // Case 1: Odd length palindrome (center is a single character)
     const odd = expandAroundCenter(string, i, i);
+    // Case 2: Even length palindrome (center is between two characters)
     const even = expandAroundCenter(string, i, i + 1);
 
     if (odd.length > longest.length) longest = odd;

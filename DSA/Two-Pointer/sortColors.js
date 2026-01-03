@@ -54,17 +54,18 @@ const sortColors = (nums) => {
 
   while (mid <= high) {
     if (nums[mid] === 0) {
+      // Found a 0: Swap it to the 'low' region (front)
       [nums[low], nums[mid]] = [nums[mid], nums[low]];
       low++;
       mid++;
     } else if (nums[mid] === 1) {
+      // Found a 1: It's in the correct place (middle), just move on
       mid++;
     } else {
-      // nums[mid] === 2
+      // Found a 2: Swap it to the 'high' region (back)
       [nums[mid], nums[high]] = [nums[high], nums[mid]];
       high--;
-      // Note: We do NOT increment mid here, because the value swapped
-      // from 'high' could be 0, 1, or 2, and needs to be checked.
+      // Note: Do NOT increment mid. The swapped value from 'high' is unknown and needs checking.
     }
   }
 };

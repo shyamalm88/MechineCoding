@@ -44,12 +44,15 @@ const groupStrings = (strs) => {
   for (let str of strs) {
     const diffs = [];
 
+    // Calculate the relative difference between consecutive characters
     for (let i = 1; i < str.length; i++) {
       let diff = str.charCodeAt(i) - str.charCodeAt(i - 1);
+      // Handle wrap-around (e.g., 'a' - 'z' should be 1, not -25)
       if (diff < 0) diff += 26;
       diffs.push(diff);
     }
 
+    // Create a unique key representing the sequence of differences
     const key = diffs.join(",");
 
     if (!map.has(key)) {

@@ -35,10 +35,12 @@ const groupAnagram = (strs) => {
   for (let str of strs) {
     const freq = new Array(26).fill(0);
 
+    // Count frequency of each character
     for (let ch of str) {
       freq[ch.charCodeAt(0) - "a".charCodeAt(0)]++;
     }
 
+    // Create a unique key based on character counts (e.g., "1#0#2#...")
     const key = freq.join("#");
     if (!map.has(key)) {
       map.set(key, []);

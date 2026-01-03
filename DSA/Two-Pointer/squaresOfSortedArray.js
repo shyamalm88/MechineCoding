@@ -44,10 +44,12 @@ const sortedSquares = (nums) => {
   let right = n - 1;
   let insertPos = n - 1;
 
+  // Fill the result array from the back (largest squares first)
   while (left <= right) {
     const leftVal = Math.abs(nums[left]);
     const rightVal = Math.abs(nums[right]);
 
+    // Compare absolute values to find the larger square
     if (leftVal > rightVal) {
       result[insertPos] = leftVal * leftVal;
       left++;

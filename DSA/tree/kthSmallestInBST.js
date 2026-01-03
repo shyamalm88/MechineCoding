@@ -41,13 +41,13 @@ const kThSmallestBST = (root, k) => {
     // Base case: empty node
     if (!node) return;
 
-    // Optimization: if result already found, stop further traversal
+    // Optimization: If we already found the kth element, stop traversing.
     if (result !== null) return;
 
     // 1️⃣ Visit left subtree (smaller values in BST)
     dfs(node.left);
 
-    // 2️⃣ Process current node
+    // 2️⃣ Process current node (Inorder position)
     count++;
     if (count === k) {
       result = node.val; // kth smallest found

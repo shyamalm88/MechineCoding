@@ -56,7 +56,8 @@ const validPalindrome = (s) => {
 
   while (left < right) {
     if (s[left] !== s[right]) {
-      // Try skipping left OR skipping right
+      // Mismatch found! Try deleting the character at 'left' OR 'right'.
+      // If either resulting substring is a palindrome, return true.
       return (
         isPalindromeRange(s, left + 1, right) ||
         isPalindromeRange(s, left, right - 1)

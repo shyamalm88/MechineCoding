@@ -69,9 +69,8 @@ const containerWithMostWater = (height) => {
     // 2. Update max
     max = Math.max(area, max);
 
-    // 3. Move the shorter wall inward
-    // Why? Because moving the taller wall can only decrease the area
-    // (width decreases and height is still limited by shorter wall)
+    // 3. Greedy Move: Always move the shorter wall inward.
+    // Moving the taller wall can only decrease width without increasing height (limited by short wall).
     if (height[left] < height[right]) {
       left++;
     } else {

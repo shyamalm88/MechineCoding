@@ -45,20 +45,20 @@ const maxPathSum = (root) => {
   const dfs = (node) => {
     if (!node) return 0;
 
-    // Recursively get max gain from left and right subtrees
-    // If gain is negative, we ignore it (take 0)
+    // 1. Recursively get max gain from left and right subtrees.
+    // If a subtree returns a negative gain, we ignore it (max(..., 0)) because adding it would decrease the sum.
     const leftGain = Math.max(dfs(node.left), 0);
     const rightGain = Math.max(dfs(node.right), 0);
 
-    // 1. Calculate max path sum assuming 'node' is the highest point (peak)
-    // This path connects left child -> node -> right child
+    // 2. Calculate the price of the path where 'node' is the highest point (the "peak").
+    // This path goes: Left Child -> Node -> Right Child
     const currentPathSum = node.val + leftGain + rightGain;
 
-    // 2. Update global maximum
+    // 3. Update the global maximum if this new path is better
     globalMax = Math.max(globalMax, currentPathSum);
 
-    // 3. Return max gain to parent
-    // The parent can only extend ONE of our branches, so we pick the best one.
+    // 4. Return the max gain this node can contribute to its parent.
+    // A path can only go up from one child, through the node, to the parent. It cannot split.
     return node.val + Math.max(leftGain, rightGain);
   };
 

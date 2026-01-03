@@ -31,7 +31,7 @@
  */
 const encode = (arr) => {
   if (arr.length === 0) return "";
-  // Map each string to "length#content", then join them all together
+  // Format: "length#string". Example: "5#Hello"
   return arr.map((item) => `${item.length}#${item}`).join("");
 };
 
@@ -40,19 +40,19 @@ const decode = (s) => {
   let i = 0;
 
   while (i < s.length) {
-    // 1. Find the delimiter to get the length
+    // 1. Find the delimiter '#' to separate length from content
     let j = i;
     while (s[j] !== "#") {
       j++;
     }
 
-    // 2. Extract the length (the number before '#')
+    // 2. Parse the length integer
     let length = parseInt(s.substring(i, j));
 
-    // 3. Move pointer to the start of the actual string
+    // 3. Move pointer to the start of the content
     i = j + 1;
 
-    // 4. Extract exactly 'length' characters
+    // 4. Extract the string using the parsed length
     res.push(s.substring(i, i + length));
 
     // 5. Move pointer to the start of the next encoded block

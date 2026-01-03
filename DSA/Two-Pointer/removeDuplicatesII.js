@@ -43,9 +43,12 @@
 const removeDuplicates = (nums) => {
   if (nums.length <= 2) return nums.length;
 
+  // Start from index 2, as the first two elements are always allowed
   let insertIndex = 2;
 
   for (let i = 2; i < nums.length; i++) {
+    // Check if the current number is different from the number two positions back.
+    // If it is, it means we haven't used this number more than twice yet.
     if (nums[i] !== nums[insertIndex - 2]) {
       nums[insertIndex] = nums[i];
       insertIndex++;

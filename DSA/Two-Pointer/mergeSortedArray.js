@@ -48,11 +48,14 @@ const merge = (nums1, m, nums2, n) => {
   let p2 = n - 1; // Pointer for nums2
   let p = m + n - 1; // Pointer for the end of nums1 (write position)
 
+  // Iterate backwards while there are elements in nums2
   while (p2 >= 0) {
+    // If nums1 has elements and the current element is larger than nums2's
     if (p1 >= 0 && nums1[p1] > nums2[p2]) {
       nums1[p] = nums1[p1];
       p1--;
     } else {
+      // Otherwise take from nums2
       nums1[p] = nums2[p2];
       p2--;
     }
