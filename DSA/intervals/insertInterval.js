@@ -45,22 +45,23 @@ const insert = (intervals, newInterval) => {
   const result = [];
   let i = 0;
   const n = intervals.length;
+  let [newStart, newEnd] = newInterval;
 
-  // 1. Add intervals that come BEFORE the new interval
-  while (i < n && intervals[i][1] < newInterval[0]) {
+  // Phase 1: As long as the current interval ends before the new interval starts, it can never overlap.
+  while (i < n && intervals[i][1] < newStart) {
     result.push(intervals[i]);
     i++;
   }
 
-  // 2. Merge overlapping intervals
-  while (i < n && intervals[i][0] <= newInterval[1]) {
-    newInterval[0] = Math.min(newInterval[0], intervals[i][0]);
-    newInterval[1] = Math.max(newInterval[1], intervals[i][1]);
+  // Phase 2: As long as the current interval touches or overlaps the new interval, merge it.
+  while (i < n && intervals[i][0] <= newEnd) {
+    newStart = Math.min(newStart, intervals[i][0]);
+    newEnd = Math.max(newEnd, intervals[i][1]);
     i++;
   }
-  result.push(newInterval);
+  result.push([newStart, newEnd]);
 
-  // 3. Add intervals that come AFTER the new interval
+  // Phase 3: Add the remaining intervals
   while (i < n) {
     result.push(intervals[i]);
     i++;
