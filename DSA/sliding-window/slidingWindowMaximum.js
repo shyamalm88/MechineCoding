@@ -48,28 +48,30 @@
  * Time Complexity: O(N) - Each element is added and removed at most once.
  * Space Complexity: O(K) - Deque size.
  */
-const maxSlidingWindow = (nums, k) => {
-  const deque = []; // Stores indices
+var maxSlidingWindow = function (nums, k) {
+  const deque = []; // will store indices
   const result = [];
 
   for (let i = 0; i < nums.length; i++) {
-    // 1. Remove indices that are out of the current window [i - k + 1, i]
-    if (deque.length > 0 && deque[0] <= i - k) {
-      deque.shift();
-    }
-
-    // 2. Maintain Monotonic Decreasing Queue
-    // Remove elements from the back that are smaller than the current element.
-    // They will never be the maximum because the current element is larger and newer.
-    while (deque.length > 0 && nums[deque[deque.length - 1]] < nums[i]) {
+    // 1️⃣ Remove smaller elements from the back
+    while (deque.length > 0 && nums[i] >= nums[deque[deque.length - 1]]) {
+      // nums[i] is better than the old one
+      // so the old one can never be a max again
       deque.pop();
     }
 
-    // 3. Add current index to the deque
+    // 2️⃣ Add current index
     deque.push(i);
 
-    // 4. Add max to result (only if window is fully formed)
+    // 3️⃣ Remove element that slid out of the window
+    if (deque[0] <= i - k) {
+      // leftmost index is no longer inside window
+      deque.shift();
+    }
+
+    // 4️⃣ If window is ready, record max
     if (i >= k - 1) {
+      // front of deque holds max index
       result.push(nums[deque[0]]);
     }
   }

@@ -1,6 +1,7 @@
 # High-Level Design: Ticket Booking System (BookMyShow)
 
 ## Table of Contents
+
 1. [Problem Statement & Requirements](#1-problem-statement--requirements)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Component Architecture](#3-component-architecture)
@@ -28,9 +29,11 @@
 ## 1. Problem Statement & Requirements
 
 ### Problem Statement
+
 Design a scalable ticket booking system similar to BookMyShow that allows users to browse movies/events, select seats, and complete bookings with proper seat locking mechanisms to prevent double booking in high-concurrency scenarios.
 
 ### Functional Requirements
+
 - **Browse & Search**: Users can browse movies, events, theaters, and showtimes
 - **Seat Selection**: Interactive seat map showing available/booked/locked seats
 - **Seat Locking**: Temporary hold on seats during selection (5-10 minutes)
@@ -41,6 +44,7 @@ Design a scalable ticket booking system similar to BookMyShow that allows users 
 - **User Management**: Authentication, booking history, profiles
 
 ### Non-Functional Requirements
+
 - **High Availability**: 99.9% uptime
 - **Low Latency**: Seat selection < 200ms, booking < 1s
 - **Consistency**: No double booking (strong consistency for seat allocation)
@@ -49,6 +53,7 @@ Design a scalable ticket booking system similar to BookMyShow that allows users 
 - **Security**: Secure payment processing, PCI DSS compliance
 
 ### Constraints & Assumptions
+
 - Peak load during new movie releases (100K+ concurrent users)
 - Average seats per show: 200-500
 - Seat lock timeout: 10 minutes
@@ -121,6 +126,78 @@ Design a scalable ticket booking system similar to BookMyShow that allows users 
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+## System Invariants
+
+These are the non-negotiable rules the system must always satisfy.  
+Every service, cache, and database operation must preserve these invariants.
+
+### Seat Ownership Invariants
+
+- A seat can be in exactly one of the following states at any time:
+  `AVAILABLE → LOCKED → BOOKED`
+- A seat can never be BOOKED unless it was previously LOCKED.
+- A seat lock can belong to exactly one user session.
+- A seat lock must expire automatically if not converted to a booking.
+
+### Payment & Booking Invariants
+
+- A booking can never exist without a corresponding successful payment.
+- A payment can be applied to exactly one booking (idempotency enforced).
+- A booking confirmation must be atomic: either both seat and payment succeed, or neither does.
+
+### Concurrency Invariants
+
+- Two users can never hold a lock for the same seat at the same time.
+- Two bookings can never exist for the same seat.
+- At most one active booking is allowed per seat.
+
+### Failure Safety Invariants
+
+- No seat is permanently blocked due to client or server failure.
+- A failed or abandoned checkout always results in seat lock expiry.
+- Payment success must never result in seat loss or double booking.
+
+These invariants ensure **no revenue loss, no ghost bookings, and no oversold seats**, even under extreme concurrency.
+
+## Consistency Model
+
+Different parts of the system use different consistency guarantees based on business risk and performance trade-offs.
+
+| Domain                    | Consistency   | Rationale                                |
+| ------------------------- | ------------- | ---------------------------------------- |
+| Seat locking              | Strong        | Prevents two users holding the same seat |
+| Seat booking              | Strong (ACID) | No overselling allowed                   |
+| Payments                  | Strong        | Financial correctness                    |
+| Seat availability display | Eventual      | Small staleness acceptable               |
+| Show listings             | Eventual      | Cached for performance                   |
+| Search results            | Eventual      | Inaccurate counts acceptable             |
+| User sessions             | Eventual      | Redis TTL based                          |
+| Notifications             | Eventual      | Non-blocking                             |
+
+### Implementation Strategy
+
+#### Seat Locking
+
+- Redis `SETNX` ensures only one user can lock a seat.
+- TTL ensures automatic release if user drops.
+- Database enforces final uniqueness using a `(show_id, seat_id)` unique constraint.
+
+#### Booking Finalization
+
+- Payment + seat booking happens inside a database transaction.
+- If payment succeeds but seat commit fails → refund triggered.
+- If seat commit succeeds but payment fails → booking rolled back.
+
+#### Availability Display
+
+- Seat availability is served from cache and may be slightly stale.
+- Locking and booking always hit authoritative Redis + DB.
+
+This hybrid model guarantees:
+
+- **Strong correctness where money and seats are involved**
+- **High scalability where only discovery and UI are involved**
+
 ---
 
 ## 3. Component Architecture
@@ -128,6 +205,7 @@ Design a scalable ticket booking system similar to BookMyShow that allows users 
 ### 3.1 Frontend Components
 
 #### Seat Selection Component
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │          Seat Selection Interface                   │
@@ -158,6 +236,7 @@ State Management:
 ```
 
 #### Payment Component
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │          Payment Gateway                             │
@@ -190,6 +269,7 @@ Flow:
 ### 3.2 Backend Services Architecture
 
 #### Booking Service (Core Component)
+
 ```
 ┌───────────────────────────────────────────────────────┐
 │              BOOKING SERVICE                          │
@@ -243,6 +323,7 @@ Flow:
 ## 4. Data Flow
 
 ### 4.1 Browse & Search Flow
+
 ```
 User → API Gateway → Catalog Service → Cache/DB → Response
                            │
@@ -254,6 +335,7 @@ User → API Gateway → Catalog Service → Cache/DB → Response
 ```
 
 ### 4.2 Seat Selection & Locking Flow (CRITICAL)
+
 ```
 ┌──────┐                                                    ┌─────────┐
 │ User │                                                    │ Backend │
@@ -302,6 +384,7 @@ User → API Gateway → Catalog Service → Cache/DB → Response
 ```
 
 ### 4.3 Booking & Payment Flow
+
 ```
 ┌──────┐      ┌─────────┐      ┌─────────┐      ┌──────────┐
 │ User │      │ Booking │      │ Payment │      │ Gateway  │
@@ -359,6 +442,7 @@ FAILURE SCENARIO:
 ```
 
 ### 4.4 Lock Expiration & Cleanup
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │          Background Job: Lock Cleanup                   │
@@ -385,6 +469,7 @@ FAILURE SCENARIO:
 ### 5.1 Core APIs
 
 #### Catalog APIs
+
 ```
 GET    /api/v1/movies
        ?city=Mumbai&date=2025-12-25
@@ -405,6 +490,7 @@ GET    /api/v1/shows/{showId}/seats
 ```
 
 #### Booking APIs (CRITICAL)
+
 ```
 POST   /api/v1/bookings/lock
        Body: { showId, seatIds: ["A1", "A2"], userId }
@@ -454,6 +540,7 @@ DELETE /api/v1/bookings/{bookingId}
 ```
 
 #### Payment APIs
+
 ```
 POST   /api/v1/payments
        Body: { bookingId, amount, method, ... }
@@ -476,11 +563,13 @@ POST   /api/v1/payments/{paymentId}/refund
 ### 5.2 Communication Protocols
 
 #### REST APIs
+
 - Primary protocol for client-server communication
 - Stateless, cacheable responses
 - Standard HTTP methods (GET, POST, PUT, DELETE)
 
 #### WebSockets (Optional Enhancement)
+
 ```
 WS /api/v1/ws/shows/{showId}
 
@@ -506,6 +595,7 @@ Alternative: Short polling (every 5-10s)
 ```
 
 #### Message Queue (Kafka)
+
 ```
 Topics:
 - booking.created
@@ -529,6 +619,7 @@ Consumers:
 ### 6.1 Schema Design
 
 #### Users Table
+
 ```sql
 CREATE TABLE users (
     id UUID PRIMARY KEY,
@@ -544,6 +635,7 @@ CREATE TABLE users (
 ```
 
 #### Movies Table
+
 ```sql
 CREATE TABLE movies (
     id UUID PRIMARY KEY,
@@ -561,6 +653,7 @@ CREATE TABLE movies (
 ```
 
 #### Theaters Table
+
 ```sql
 CREATE TABLE theaters (
     id UUID PRIMARY KEY,
@@ -576,6 +669,7 @@ CREATE TABLE theaters (
 ```
 
 #### Screens Table
+
 ```sql
 CREATE TABLE screens (
     id UUID PRIMARY KEY,
@@ -589,6 +683,7 @@ CREATE TABLE screens (
 ```
 
 #### Shows Table
+
 ```sql
 CREATE TABLE shows (
     id UUID PRIMARY KEY,
@@ -605,6 +700,7 @@ CREATE TABLE shows (
 ```
 
 #### Seats Table (CRITICAL)
+
 ```sql
 CREATE TABLE seats (
     id UUID PRIMARY KEY,
@@ -620,6 +716,7 @@ CREATE TABLE seats (
 ```
 
 #### Show Seats Table (CRITICAL - Tracks seat status per show)
+
 ```sql
 CREATE TABLE show_seats (
     id UUID PRIMARY KEY,
@@ -639,6 +736,7 @@ CREATE TABLE show_seats (
 ```
 
 #### Seat Locks Table (CRITICAL - Temporary locks)
+
 ```sql
 CREATE TABLE seat_locks (
     id UUID PRIMARY KEY,
@@ -658,6 +756,7 @@ CREATE TABLE seat_locks (
 ```
 
 #### Bookings Table (CRITICAL)
+
 ```sql
 CREATE TABLE bookings (
     id UUID PRIMARY KEY,
@@ -683,6 +782,7 @@ CREATE TABLE bookings (
 ```
 
 #### Booking Seats Table
+
 ```sql
 CREATE TABLE booking_seats (
     id UUID PRIMARY KEY,
@@ -695,6 +795,7 @@ CREATE TABLE booking_seats (
 ```
 
 #### Payments Table
+
 ```sql
 CREATE TABLE payments (
     id UUID PRIMARY KEY,
@@ -717,7 +818,8 @@ CREATE TABLE payments (
 ### 6.2 Seat Locking Mechanism (CRITICAL)
 
 #### Distributed Lock Using Redis
-```
+
+````
 Key Pattern: lock:show:{showId}:seat:{seatId}
 Value: {userId}:{lockId}:{timestamp}
 TTL: 600 seconds (10 minutes)
@@ -742,8 +844,9 @@ if redis.call("get", KEYS[1]) == ARGV[1] then
 else
     return 0
 end
-```
-```
+````
+
+````
 
 #### Database Transaction for Seat Lock
 ```sql
@@ -774,9 +877,10 @@ INSERT INTO seat_locks (show_id, seat_id, user_id, expires_at)
 VALUES (?, ?, ?, NOW() + INTERVAL '10 minutes');
 
 COMMIT;
-```
+````
 
 #### Race Condition Prevention
+
 ```
 Scenario: Two users (A and B) click same seat simultaneously
 
@@ -800,6 +904,7 @@ Result: Only User A gets the seat
 ### 7.1 Cache Layers
 
 #### L1: Browser Cache
+
 ```
 - Static assets (images, CSS, JS): 1 week
 - Movie posters: 1 day
@@ -807,6 +912,7 @@ Result: Only User A gets the seat
 ```
 
 #### L2: CDN Cache (CloudFront/Cloudflare)
+
 ```
 - Movie images, posters: 7 days
 - Theater images: 7 days
@@ -814,6 +920,7 @@ Result: Only User A gets the seat
 ```
 
 #### L3: Redis Cache (Application Layer)
+
 ```
 Key Patterns:
 
@@ -893,6 +1000,7 @@ Invalidation Flow:
 ```
 
 ### 7.3 Cache Warming
+
 ```
 Pre-populate cache before peak hours:
 
@@ -995,6 +1103,7 @@ Payment State:
 ### 9.1 Database Optimizations
 
 #### Indexing Strategy
+
 ```sql
 -- High-priority indexes for frequent queries
 
@@ -1023,6 +1132,7 @@ ON show_seats(show_id, seat_id, status, booking_id);
 ```
 
 #### Query Optimization
+
 ```sql
 -- Before: N+1 query problem
 SELECT * FROM bookings WHERE user_id = ?;
@@ -1040,6 +1150,7 @@ GROUP BY b.id;
 ```
 
 #### Database Partitioning
+
 ```sql
 -- Partition bookings by month (for historical data)
 CREATE TABLE bookings_2025_12
@@ -1051,6 +1162,7 @@ FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
 ```
 
 #### Connection Pooling
+
 ```
 PgBouncer/HikariCP:
 - Pool size: 50-100 connections per service
@@ -1062,6 +1174,7 @@ PgBouncer/HikariCP:
 ### 9.2 Application-Level Optimizations
 
 #### Seat Availability Query Optimization
+
 ```javascript
 // Instead of querying all seats individually:
 // BAD: 200 queries for 200 seats
@@ -1077,20 +1190,24 @@ const seatMap = await redis.hgetall(`seats:show:${showId}`);
 ```
 
 #### Optimistic Locking
+
 ```javascript
 // Prevent lost updates during concurrent modifications
 async function updateShowSeat(showId, seatId, newStatus, currentVersion) {
-  const result = await db.query(`
+  const result = await db.query(
+    `
     UPDATE show_seats
     SET status = $1, version = version + 1
     WHERE show_id = $2
       AND seat_id = $3
       AND version = $4
     RETURNING *
-  `, [newStatus, showId, seatId, currentVersion]);
+  `,
+    [newStatus, showId, seatId, currentVersion]
+  );
 
   if (result.rowCount === 0) {
-    throw new OptimisticLockError('Seat was modified by another transaction');
+    throw new OptimisticLockError("Seat was modified by another transaction");
   }
 
   return result.rows[0];
@@ -1098,21 +1215,24 @@ async function updateShowSeat(showId, seatId, newStatus, currentVersion) {
 ```
 
 #### Batch Processing
+
 ```javascript
 // Lock multiple seats in a single transaction
 async function acquireMultipleSeats(showId, seatIds, userId) {
   const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // 1. Acquire Redis locks (pipeline)
     const pipeline = redis.pipeline();
-    seatIds.forEach(seatId => {
+    seatIds.forEach((seatId) => {
       pipeline.set(
         `lock:show:${showId}:seat:${seatId}`,
         `${userId}:${lockId}`,
-        'NX', 'EX', 600
+        "NX",
+        "EX",
+        600
       );
     });
     const results = await pipeline.exec();
@@ -1126,10 +1246,10 @@ async function acquireMultipleSeats(showId, seatIds, userId) {
     `;
     const dbResult = await client.query(query, [userId, showId, seatIds]);
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return dbResult.rows;
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
@@ -1140,6 +1260,7 @@ async function acquireMultipleSeats(showId, seatIds, userId) {
 ### 9.3 Scaling Strategies
 
 #### Horizontal Scaling
+
 ```
 Load Balancer
     │
@@ -1154,6 +1275,7 @@ Shared PostgreSQL (with read replicas)
 ```
 
 #### Database Scaling
+
 ```
 Write Operations → Primary DB
 Read Operations → Read Replicas (3x)
@@ -1165,6 +1287,7 @@ Replication Lag Handling:
 ```
 
 #### Redis Scaling
+
 ```
 Redis Cluster (for high availability):
 - 3 master nodes (sharded by show_id)
@@ -1178,6 +1301,7 @@ Sharding Strategy:
 ```
 
 ### 9.4 Rate Limiting
+
 ```
 API Gateway Level:
 - 100 requests/minute per user (general)
@@ -1202,6 +1326,7 @@ TTL: 60 seconds
 ### 10.1 Error Scenarios
 
 #### Seat Lock Failures
+
 ```
 Error: Seat Already Locked
 Cause: Another user locked the seat
@@ -1253,6 +1378,7 @@ Action:
 ```
 
 #### Payment Failures
+
 ```
 Error: Payment Gateway Timeout
 Cause: External gateway is slow/down
@@ -1299,6 +1425,7 @@ Recovery:
 ```
 
 #### Concurrency Issues
+
 ```
 Error: Double Booking (CRITICAL BUG)
 Root Cause: Race condition in lock acquisition
@@ -1331,6 +1458,7 @@ COMMIT;
 ### 10.2 Edge Cases
 
 #### Case 1: Lock Leakage
+
 ```
 Problem: User closes browser/app during seat selection
 Impact: Seats remain locked for full timeout (10 mins)
@@ -1350,6 +1478,7 @@ Solutions:
 ```
 
 #### Case 2: Payment Webhook Delay
+
 ```
 Problem: Payment succeeds but webhook delayed/lost
 Impact: Booking stuck in PENDING, seats locked
@@ -1371,6 +1500,7 @@ Solutions:
 ```
 
 #### Case 3: Seat Lock Extension Race
+
 ```
 Problem: Lock expires during payment processing
 Impact: Another user can book the same seat
@@ -1391,6 +1521,7 @@ Solution:
 ```
 
 #### Case 4: High Traffic Show (Avengers, IPL)
+
 ```
 Problem: 10,000 users trying to book 200 seats
 Impact: System overload, poor user experience
@@ -1418,6 +1549,7 @@ Solutions:
 ```
 
 #### Case 5: Refund After Seat Rebooked
+
 ```
 Problem: User cancels, seat released, another user books, first user claims refund failed
 Impact: Potential dispute
@@ -1438,6 +1570,7 @@ Solution:
 ```
 
 #### Case 6: System Clock Skew
+
 ```
 Problem: Different servers have different times
 Impact: Lock expiry inconsistencies
@@ -1450,6 +1583,7 @@ Solutions:
 ```
 
 #### Case 7: Partial Seat Lock Failure
+
 ```
 Problem: User selects 5 seats, only 3 get locked
 Impact: Inconsistent state
@@ -1520,6 +1654,7 @@ Alerts:
 ### Architecture & Design
 
 **Q1: Why use Redis for seat locking instead of just database locks?**
+
 ```
 Answer:
 1. Performance: Redis is in-memory, < 1ms latency vs DB 10-50ms
@@ -1534,6 +1669,7 @@ Trade-off:
 ```
 
 **Q2: How do you handle the scenario where Redis crashes during peak load?**
+
 ```
 Answer:
 Multi-layer approach:
@@ -1578,6 +1714,7 @@ async function acquireLock(showId, seatId, userId) {
 ```
 
 **Q3: How would you handle 100,000 concurrent users trying to book 200 seats for Avengers premiere?**
+
 ```
 Answer:
 1. Virtual Waiting Room (Pre-booking Phase):
@@ -1631,6 +1768,7 @@ Architecture:
 ```
 
 **Q4: What if payment succeeds but the booking confirmation fails due to database error?**
+
 ```
 Answer: This is a critical scenario requiring careful handling.
 
@@ -1712,6 +1850,7 @@ async function handlePaymentSuccess(paymentId, bookingId) {
 ```
 
 **Q5: How do you prevent a user from locking too many seats across multiple shows?**
+
 ```
 Answer:
 1. Rate Limiting:
@@ -1747,6 +1886,7 @@ Answer:
 ### Scalability
 
 **Q6: How would you scale this system to handle 1 million concurrent users globally?**
+
 ```
 Answer:
 1. Geographic Distribution:
@@ -1812,6 +1952,7 @@ Architecture:
 ### Data Consistency
 
 **Q7: How do you ensure no double booking ever happens?**
+
 ```
 Answer: Multi-layer defense strategy
 
@@ -1916,6 +2057,7 @@ Testing:
 ```
 
 **Q8: What consistency model do you use and why?**
+
 ```
 Answer:
 Different consistency models for different data:
@@ -1972,6 +2114,7 @@ CAP Theorem Trade-off:
 ### Performance
 
 **Q9: How do you optimize the seat selection API for sub-200ms response time?**
+
 ```
 Answer:
 1. Caching Strategy:
@@ -2055,6 +2198,7 @@ Typical Breakdown (target < 200ms):
 ```
 
 **Q10: How would you design the cancellation and refund flow?**
+
 ```
 Answer:
 Cancellation Flow:
@@ -2277,10 +2421,9 @@ function AccessibleSeatMap({ seats, rows, cols, onSelect }) {
     >
       {/* Instructions for screen readers */}
       <div id="seat-instructions" className="sr-only">
-        Use arrow keys to navigate between seats.
-        Press Enter or Space to select a seat.
-        Press Escape to clear selection.
-        Selected seats will be announced.
+        Use arrow keys to navigate between seats. Press Enter or Space to select
+        a seat. Press Escape to clear selection. Selected seats will be
+        announced.
       </div>
 
       {/* Live region for announcements */}
@@ -2291,8 +2434,7 @@ function AccessibleSeatMap({ seats, rows, cols, onSelect }) {
         className="sr-only"
       >
         {selectedSeats.length > 0 &&
-          `${selectedSeats.length} seats selected. Total: $${calculateTotal()}`
-        }
+          `${selectedSeats.length} seats selected. Total: $${calculateTotal()}`}
       </div>
 
       {/* Screen indicator */}
@@ -2327,7 +2469,7 @@ function AccessibleSeatMap({ seats, rows, cols, onSelect }) {
                 role="gridcell"
                 aria-colindex={colIndex + 1}
                 aria-selected={selectedSeats.includes(seat.id)}
-                aria-disabled={seat.status !== 'AVAILABLE'}
+                aria-disabled={seat.status !== "AVAILABLE"}
                 aria-label={getSeatAriaLabel(seat)}
                 tabIndex={focusedSeat === seat.id ? 0 : -1}
                 className={getSeatClassName(seat)}
@@ -2345,7 +2487,7 @@ function AccessibleSeatMap({ seats, rows, cols, onSelect }) {
       <div role="region" aria-label="Selection summary" aria-live="polite">
         <h3>Selected Seats</h3>
         <ul>
-          {selectedSeats.map(seatId => (
+          {selectedSeats.map((seatId) => (
             <li key={seatId}>
               Seat {seatId} - ${getSeatPrice(seatId)}
               <button
@@ -2374,14 +2516,16 @@ function AccessibleSeatMap({ seats, rows, cols, onSelect }) {
 
 function getSeatAriaLabel(seat) {
   const status = {
-    'AVAILABLE': 'Available',
-    'BOOKED': 'Booked, not available',
-    'LOCKED': 'Temporarily held by another user',
-    'SELECTED': 'Selected by you'
+    AVAILABLE: "Available",
+    BOOKED: "Booked, not available",
+    LOCKED: "Temporarily held by another user",
+    SELECTED: "Selected by you",
   };
 
-  return `Row ${seat.row}, Seat ${seat.number}, ${status[seat.status]}, ` +
-         `${seat.type} seat, ${seat.price} dollars`;
+  return (
+    `Row ${seat.row}, Seat ${seat.number}, ${status[seat.status]}, ` +
+    `${seat.type} seat, ${seat.price} dollars`
+  );
 }
 ```
 
@@ -2393,81 +2537,84 @@ function useGridKeyboardNavigation({
   cols,
   focusedSeat,
   setFocusedSeat,
-  onSelect
+  onSelect,
 }) {
-  const handleKeyDown = useCallback((event) => {
-    const { row, col } = getSeatPosition(focusedSeat);
+  const handleKeyDown = useCallback(
+    (event) => {
+      const { row, col } = getSeatPosition(focusedSeat);
 
-    switch (event.key) {
-      case 'ArrowRight':
-        event.preventDefault();
-        if (col < cols - 1) {
-          setFocusedSeat(getSeatId(row, col + 1));
-        }
-        break;
+      switch (event.key) {
+        case "ArrowRight":
+          event.preventDefault();
+          if (col < cols - 1) {
+            setFocusedSeat(getSeatId(row, col + 1));
+          }
+          break;
 
-      case 'ArrowLeft':
-        event.preventDefault();
-        if (col > 0) {
-          setFocusedSeat(getSeatId(row, col - 1));
-        }
-        break;
+        case "ArrowLeft":
+          event.preventDefault();
+          if (col > 0) {
+            setFocusedSeat(getSeatId(row, col - 1));
+          }
+          break;
 
-      case 'ArrowDown':
-        event.preventDefault();
-        if (row < rows - 1) {
-          setFocusedSeat(getSeatId(row + 1, col));
-        }
-        break;
+        case "ArrowDown":
+          event.preventDefault();
+          if (row < rows - 1) {
+            setFocusedSeat(getSeatId(row + 1, col));
+          }
+          break;
 
-      case 'ArrowUp':
-        event.preventDefault();
-        if (row > 0) {
-          setFocusedSeat(getSeatId(row - 1, col));
-        }
-        break;
+        case "ArrowUp":
+          event.preventDefault();
+          if (row > 0) {
+            setFocusedSeat(getSeatId(row - 1, col));
+          }
+          break;
 
-      case 'Enter':
-      case ' ':
-        event.preventDefault();
-        onSelect(focusedSeat);
-        break;
+        case "Enter":
+        case " ":
+          event.preventDefault();
+          onSelect(focusedSeat);
+          break;
 
-      case 'Home':
-        event.preventDefault();
-        if (event.ctrlKey) {
-          // First seat in grid
-          setFocusedSeat(getSeatId(0, 0));
-        } else {
-          // First seat in row
-          setFocusedSeat(getSeatId(row, 0));
-        }
-        break;
+        case "Home":
+          event.preventDefault();
+          if (event.ctrlKey) {
+            // First seat in grid
+            setFocusedSeat(getSeatId(0, 0));
+          } else {
+            // First seat in row
+            setFocusedSeat(getSeatId(row, 0));
+          }
+          break;
 
-      case 'End':
-        event.preventDefault();
-        if (event.ctrlKey) {
-          // Last seat in grid
-          setFocusedSeat(getSeatId(rows - 1, cols - 1));
-        } else {
-          // Last seat in row
-          setFocusedSeat(getSeatId(row, cols - 1));
-        }
-        break;
+        case "End":
+          event.preventDefault();
+          if (event.ctrlKey) {
+            // Last seat in grid
+            setFocusedSeat(getSeatId(rows - 1, cols - 1));
+          } else {
+            // Last seat in row
+            setFocusedSeat(getSeatId(row, cols - 1));
+          }
+          break;
 
-      case 'PageDown':
-        event.preventDefault();
-        // Jump 5 rows down
-        setFocusedSeat(getSeatId(Math.min(row + 5, rows - 1), col));
-        break;
+        case "PageDown":
+          event.preventDefault();
+          // Jump 5 rows down
+          setFocusedSeat(getSeatId(Math.min(row + 5, rows - 1), col));
+          break;
 
-      case 'PageUp':
-        event.preventDefault();
-        // Jump 5 rows up
-        setFocusedSeat(getSeatId(Math.max(row - 5, 0), col));
-        break;
-    }
-  }, [rows, cols, focusedSeat, setFocusedSeat, onSelect]);
+        case "PageUp":
+          event.preventDefault();
+          // Jump 5 rows up
+          setFocusedSeat(getSeatId(Math.max(row - 5, 0), col));
+          break;
+      }
+    },
+    [rows, cols, focusedSeat, setFocusedSeat, onSelect]
+  );
 
   return { handleKeyDown };
 }
@@ -2486,7 +2633,7 @@ function useGridKeyboardNavigation({
 /* Available - Green with checkmark pattern */
 .seat--available {
   background-color: #22c55e;
-  background-image: url('data:image/svg+xml,...'); /* Subtle pattern */
+  background-image: url("data:image/svg+xml,..."); /* Subtle pattern */
 }
 
 /* Selected - Blue with filled circle */
@@ -2495,7 +2642,7 @@ function useGridKeyboardNavigation({
   border: 3px solid #1d4ed8;
 }
 .seat--selected::after {
-  content: '✓';
+  content: "✓";
   position: absolute;
   font-size: 14px;
 }
@@ -2507,12 +2654,12 @@ function useGridKeyboardNavigation({
     45deg,
     transparent,
     transparent 3px,
-    rgba(0,0,0,0.1) 3px,
-    rgba(0,0,0,0.1) 6px
+    rgba(0, 0, 0, 0.1) 3px,
+    rgba(0, 0, 0, 0.1) 6px
   );
 }
 .seat--booked::after {
-  content: '×';
+  content: "×";
   position: absolute;
 }
 
@@ -2522,16 +2669,28 @@ function useGridKeyboardNavigation({
   border: 2px dashed #92400e;
 }
 .seat--locked::before {
-  content: '⏰';
+  content: "⏰";
   font-size: 10px;
 }
 
 /* High contrast mode */
 @media (prefers-contrast: high) {
-  .seat--available { background: white; border: 2px solid green; }
-  .seat--selected { background: blue; color: white; }
-  .seat--booked { background: black; color: white; }
-  .seat--locked { background: yellow; border: 2px dashed black; }
+  .seat--available {
+    background: white;
+    border: 2px solid green;
+  }
+  .seat--selected {
+    background: blue;
+    color: white;
+  }
+  .seat--booked {
+    background: black;
+    color: white;
+  }
+  .seat--locked {
+    background: yellow;
+    border: 2px dashed black;
+  }
 }
 
 /* Visible focus indicator */
@@ -2569,20 +2728,20 @@ function AccessibleTimer({ expiresAt, onExpire }) {
   useEffect(() => {
     for (const threshold of announcements) {
       if (timeLeft <= threshold && !announced.has(threshold)) {
-        setAnnounced(prev => new Set([...prev, threshold]));
+        setAnnounced((prev) => new Set([...prev, threshold]));
         break; // Only announce once per threshold
       }
     }
   }, [timeLeft, announced]);
 
-  const urgency = timeLeft <= 60 ? 'assertive' : 'polite';
+  const urgency = timeLeft <= 60 ? "assertive" : "polite";
   const isUrgent = timeLeft <= 60;
 
   return (
     <>
       {/* Visual timer */}
       <div
-        className={`timer ${isUrgent ? 'timer--urgent' : ''}`}
+        className={`timer ${isUrgent ? "timer--urgent" : ""}`}
         aria-hidden="true"
       >
         {formatTime(timeLeft)}
@@ -2699,47 +2858,53 @@ function ZoomableSeatMap({ children }) {
     }
   }, []);
 
-  const handleTouchMove = useCallback((e) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
+  const handleTouchMove = useCallback(
+    (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
 
-      const distance = getDistance(e.touches[0], e.touches[1]);
-      const delta = distance - lastDistance;
+        const distance = getDistance(e.touches[0], e.touches[1]);
+        const delta = distance - lastDistance;
 
-      setScale(prev => {
-        const newScale = prev + delta * 0.01;
-        return Math.min(Math.max(newScale, 0.5), 3); // Min 0.5x, Max 3x
-      });
+        setScale((prev) => {
+          const newScale = prev + delta * 0.01;
+          return Math.min(Math.max(newScale, 0.5), 3); // Min 0.5x, Max 3x
+        });
 
-      setLastDistance(distance);
-    } else if (e.touches.length === 1 && scale > 1) {
-      // Pan when zoomed in
-      const touch = e.touches[0];
-      setPosition(prev => ({
-        x: prev.x + touch.movementX,
-        y: prev.y + touch.movementY
-      }));
-    }
-  }, [lastDistance, scale]);
+        setLastDistance(distance);
+      } else if (e.touches.length === 1 && scale > 1) {
+        // Pan when zoomed in
+        const touch = e.touches[0];
+        setPosition((prev) => ({
+          x: prev.x + touch.movementX,
+          y: prev.y + touch.movementY,
+        }));
+      }
+    },
+    [lastDistance, scale]
+  );
 
-  const handleDoubleTap = useCallback((e) => {
-    if (scale === 1) {
-      // Zoom to 2x centered on tap point
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+  const handleDoubleTap = useCallback(
+    (e) => {
+      if (scale === 1) {
+        // Zoom to 2x centered on tap point
+        const rect = containerRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
 
-      setScale(2);
-      setPosition({
-        x: -(x - rect.width / 2),
-        y: -(y - rect.height / 2)
-      });
-    } else {
-      // Reset zoom
-      setScale(1);
-      setPosition({ x: 0, y: 0 });
-    }
-  }, [scale]);
+        setScale(2);
+        setPosition({
+          x: -(x - rect.width / 2),
+          y: -(y - rect.height / 2),
+        });
+      } else {
+        // Reset zoom
+        setScale(1);
+        setPosition({ x: 0, y: 0 });
+      }
+    },
+    [scale]
+  );
 
   return (
     <div
@@ -2747,13 +2912,13 @@ function ZoomableSeatMap({ children }) {
       className="seat-map-container"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
-      style={{ overflow: 'hidden', touchAction: 'none' }}
+      style={{ overflow: "hidden", touchAction: "none" }}
     >
       <div
         className="seat-map-content"
         style={{
           transform: `scale(${scale}) translate(${position.x}px, ${position.y}px)`,
-          transformOrigin: 'center center'
+          transformOrigin: "center center",
         }}
       >
         {children}
@@ -2761,18 +2926,21 @@ function ZoomableSeatMap({ children }) {
 
       {/* Minimap */}
       {scale > 1 && (
-        <Minimap
-          scale={scale}
-          position={position}
-          onNavigate={setPosition}
-        />
+        <Minimap scale={scale} position={position} onNavigate={setPosition} />
       )}
 
       {/* Zoom controls */}
       <div className="zoom-controls">
-        <button onClick={() => setScale(s => Math.min(s + 0.5, 3))}>+</button>
-        <button onClick={() => setScale(s => Math.max(s - 0.5, 0.5))}>−</button>
-        <button onClick={() => { setScale(1); setPosition({ x: 0, y: 0 }); }}>
+        <button onClick={() => setScale((s) => Math.min(s + 0.5, 3))}>+</button>
+        <button onClick={() => setScale((s) => Math.max(s - 0.5, 0.5))}>
+          −
+        </button>
+        <button
+          onClick={() => {
+            setScale(1);
+            setPosition({ x: 0, y: 0 });
+          }}
+        >
           Reset
         </button>
       </div>
@@ -2818,9 +2986,15 @@ function getDistance(touch1, touch2) {
 }
 
 @keyframes selectPulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Larger seats on mobile */
@@ -2859,34 +3033,34 @@ async function initializeMobilePayment(bookingDetails) {
     applePay: applePayAvailable,
     googlePay: googlePayAvailable,
     upi: isIndianDevice(), // UPI for Indian users
-    paytm: isPaytmInstalled()
+    paytm: isPaytmInstalled(),
   };
 }
 
 // Apple Pay Implementation
 async function processApplePay(booking) {
   const paymentRequest = {
-    countryCode: 'US',
-    currencyCode: 'USD',
-    merchantCapabilities: ['supports3DS'],
-    supportedNetworks: ['visa', 'masterCard', 'amex'],
+    countryCode: "US",
+    currencyCode: "USD",
+    merchantCapabilities: ["supports3DS"],
+    supportedNetworks: ["visa", "masterCard", "amex"],
     total: {
       label: `Movie Tickets - ${booking.movieName}`,
-      amount: booking.totalAmount.toString()
+      amount: booking.totalAmount.toString(),
     },
-    lineItems: booking.seats.map(seat => ({
+    lineItems: booking.seats.map((seat) => ({
       label: `Seat ${seat.id}`,
-      amount: seat.price.toString()
-    }))
+      amount: seat.price.toString(),
+    })),
   };
 
   const session = new ApplePaySession(3, paymentRequest);
 
   session.onvalidatemerchant = async (event) => {
-    const merchantSession = await fetch('/api/apple-pay/validate', {
-      method: 'POST',
-      body: JSON.stringify({ validationURL: event.validationURL })
-    }).then(r => r.json());
+    const merchantSession = await fetch("/api/apple-pay/validate", {
+      method: "POST",
+      body: JSON.stringify({ validationURL: event.validationURL }),
+    }).then((r) => r.json());
 
     session.completeMerchantValidation(merchantSession);
   };
@@ -2894,8 +3068,8 @@ async function processApplePay(booking) {
   session.onpaymentauthorized = async (event) => {
     const result = await processPayment({
       bookingId: booking.id,
-      paymentMethod: 'APPLE_PAY',
-      token: event.payment.token
+      paymentMethod: "APPLE_PAY",
+      token: event.payment.token,
     });
 
     session.completePayment(
@@ -2911,30 +3085,30 @@ async function processApplePay(booking) {
 // Google Pay Implementation
 async function processGooglePay(booking) {
   const paymentsClient = new google.payments.api.PaymentsClient({
-    environment: 'PRODUCTION'
+    environment: "PRODUCTION",
   });
 
   const paymentDataRequest = {
     apiVersion: 2,
     apiVersionMinor: 0,
     merchantInfo: {
-      merchantId: 'MERCHANT_ID',
-      merchantName: 'BookMyShow'
+      merchantId: "MERCHANT_ID",
+      merchantName: "BookMyShow",
     },
     transactionInfo: {
-      totalPriceStatus: 'FINAL',
+      totalPriceStatus: "FINAL",
       totalPrice: booking.totalAmount.toString(),
-      currencyCode: 'USD',
-      countryCode: 'US'
-    }
+      currencyCode: "USD",
+      countryCode: "US",
+    },
   };
 
   const paymentData = await paymentsClient.loadPaymentData(paymentDataRequest);
 
   return processPayment({
     bookingId: booking.id,
-    paymentMethod: 'GOOGLE_PAY',
-    token: paymentData.paymentMethodData.tokenizationData.token
+    paymentMethod: "GOOGLE_PAY",
+    token: paymentData.paymentMethodData.tokenizationData.token,
   });
 }
 ```
@@ -2964,14 +3138,12 @@ function TicketWallet({ booking }) {
           <h2>{booking.movieName}</h2>
           <p>{booking.theaterName}</p>
           <p>{formatDate(booking.showTime)}</p>
-          <p>Seats: {booking.seats.join(', ')}</p>
+          <p>Seats: {booking.seats.join(", ")}</p>
           <p>Booking ID: {booking.reference}</p>
         </div>
 
         {isOfflineReady && (
-          <div className="offline-badge">
-            ✓ Available offline
-          </div>
+          <div className="offline-badge">✓ Available offline</div>
         )}
       </div>
 
@@ -2984,17 +3156,17 @@ function TicketWallet({ booking }) {
 
 async function saveTicketOffline(booking) {
   // Save to IndexedDB
-  const db = await openDatabase('tickets');
-  await db.put('bookings', {
+  const db = await openDatabase("tickets");
+  await db.put("bookings", {
     id: booking.id,
     data: booking,
     qrCodeBlob: await generateQRBlob(booking.qrCode),
-    savedAt: Date.now()
+    savedAt: Date.now(),
   });
 
   // Register for background sync
-  if ('serviceWorker' in navigator && 'sync' in registration) {
-    await registration.sync.register('sync-tickets');
+  if ("serviceWorker" in navigator && "sync" in registration) {
+    await registration.sync.register("sync-tickets");
   }
 }
 ```
@@ -3066,14 +3238,14 @@ class BotDetector {
       this.checkDeviceFingerprint(context),
       this.checkRateLimits(request),
       this.checkIP(request),
-      this.checkCaptcha(context)
+      this.checkCaptcha(context),
     ]);
 
     const totalScore = scores.reduce((sum, s) => sum + s, 0);
     return {
       isBot: totalScore > 70,
       score: totalScore,
-      signals: this.signals
+      signals: this.signals,
     };
   }
 
@@ -3093,7 +3265,8 @@ class BotDetector {
       this.signals.noMouseMovement = true;
     }
 
-    if (timing.formFillTime < 1000) { // < 1 second to fill form
+    if (timing.formFillTime < 1000) {
+      // < 1 second to fill form
       score += 30;
       this.signals.instantFormFill = true;
     }
@@ -3110,7 +3283,7 @@ class BotDetector {
     const fingerprint = await generateFingerprint(context);
 
     // Check against known bot fingerprints
-    const isKnownBot = await redis.sismember('bot_fingerprints', fingerprint);
+    const isKnownBot = await redis.sismember("bot_fingerprints", fingerprint);
 
     if (isKnownBot) {
       this.signals.knownBotFingerprint = true;
@@ -3130,7 +3303,7 @@ class BotDetector {
       { key: `rate:ip:${ip}`, limit: 100, window: 60 },
       { key: `rate:user:${userId}`, limit: 50, window: 60 },
       { key: `rate:device:${deviceId}`, limit: 30, window: 60 },
-      { key: `rate:lock:${userId}`, limit: 10, window: 60 } // Seat lock attempts
+      { key: `rate:lock:${userId}`, limit: 10, window: 60 }, // Seat lock attempts
     ];
 
     let score = 0;
@@ -3155,11 +3328,11 @@ async function verifyCaptcha(token, action, minScore = 0.5) {
   const response = await fetch(
     `https://www.google.com/recaptcha/api/siteverify`,
     {
-      method: 'POST',
+      method: "POST",
       body: new URLSearchParams({
         secret: process.env.RECAPTCHA_SECRET,
-        response: token
-      })
+        response: token,
+      }),
     }
   );
 
@@ -3168,23 +3341,23 @@ async function verifyCaptcha(token, action, minScore = 0.5) {
   return {
     valid: result.success && result.score >= minScore,
     score: result.score,
-    action: result.action
+    action: result.action,
   };
 }
 
 // Implement in seat lock endpoint
-app.post('/api/bookings/lock', async (req, res) => {
+app.post("/api/bookings/lock", async (req, res) => {
   // 1. Verify CAPTCHA
-  const captcha = await verifyCaptcha(req.body.captchaToken, 'seat_lock');
+  const captcha = await verifyCaptcha(req.body.captchaToken, "seat_lock");
   if (!captcha.valid) {
-    return res.status(403).json({ error: 'CAPTCHA_FAILED' });
+    return res.status(403).json({ error: "CAPTCHA_FAILED" });
   }
 
   // 2. Bot detection
   const botAnalysis = await botDetector.analyze(req, req.body.context);
   if (botAnalysis.isBot) {
-    logger.warn('Bot detected', { signals: botAnalysis.signals });
-    return res.status(403).json({ error: 'SUSPICIOUS_ACTIVITY' });
+    logger.warn("Bot detected", { signals: botAnalysis.signals });
+    return res.status(403).json({ error: "SUSPICIOUS_ACTIVITY" });
   }
 
   // 3. Proceed with lock
@@ -3202,15 +3375,18 @@ class FraudDetector {
     let riskScore = 0;
 
     // 1. Multiple bookings same show
-    const recentBookings = await db.query(`
+    const recentBookings = await db.query(
+      `
       SELECT COUNT(*) as count
       FROM bookings
       WHERE user_id = $1 AND show_id = $2 AND created_at > NOW() - INTERVAL '1 hour'
-    `, [user.id, booking.showId]);
+    `,
+      [user.id, booking.showId]
+    );
 
     if (recentBookings.count > 2) {
       riskScore += 30;
-      riskFactors.push('MULTIPLE_BOOKINGS_SAME_SHOW');
+      riskFactors.push("MULTIPLE_BOOKINGS_SAME_SHOW");
     }
 
     // 2. New account bulk booking
@@ -3219,26 +3395,29 @@ class FraudDetector {
 
     if (accountAgeDays < 1 && booking.seatCount > 4) {
       riskScore += 40;
-      riskFactors.push('NEW_ACCOUNT_BULK_BOOKING');
+      riskFactors.push("NEW_ACCOUNT_BULK_BOOKING");
     }
 
     // 3. Different cards for same user
-    const uniqueCards = await db.query(`
+    const uniqueCards = await db.query(
+      `
       SELECT COUNT(DISTINCT card_fingerprint) as count
       FROM payments
       WHERE user_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
-    `, [user.id]);
+    `,
+      [user.id]
+    );
 
     if (uniqueCards.count > 3) {
       riskScore += 35;
-      riskFactors.push('MULTIPLE_PAYMENT_METHODS');
+      riskFactors.push("MULTIPLE_PAYMENT_METHODS");
     }
 
     // 4. High-value transaction from new device
     const isNewDevice = !(await isKnownDevice(user.id, booking.deviceId));
     if (isNewDevice && booking.amount > 1000) {
       riskScore += 25;
-      riskFactors.push('NEW_DEVICE_HIGH_VALUE');
+      riskFactors.push("NEW_DEVICE_HIGH_VALUE");
     }
 
     // 5. Geographic anomaly
@@ -3246,56 +3425,61 @@ class FraudDetector {
     const theaterLocation = await getTheaterLocation(booking.theaterId);
     const distance = calculateDistance(userLocation, theaterLocation);
 
-    if (distance > 500) { // > 500 km from theater
+    if (distance > 500) {
+      // > 500 km from theater
       riskScore += 20;
-      riskFactors.push('GEOGRAPHIC_ANOMALY');
+      riskFactors.push("GEOGRAPHIC_ANOMALY");
     }
 
     // 6. Velocity check (too many attempts)
     const recentAttempts = await redis.get(`attempts:${user.id}`);
     if (recentAttempts > 10) {
       riskScore += 25;
-      riskFactors.push('HIGH_ATTEMPT_VELOCITY');
+      riskFactors.push("HIGH_ATTEMPT_VELOCITY");
     }
 
     return {
       riskScore,
       riskFactors,
-      decision: getRiskDecision(riskScore)
+      decision: getRiskDecision(riskScore),
     };
   }
 }
 
 function getRiskDecision(score) {
-  if (score >= 70) return 'BLOCK';
-  if (score >= 50) return 'MANUAL_REVIEW';
-  if (score >= 30) return 'STEP_UP_AUTH'; // Additional verification
-  return 'ALLOW';
+  if (score >= 70) return "BLOCK";
+  if (score >= 50) return "MANUAL_REVIEW";
+  if (score >= 30) return "STEP_UP_AUTH"; // Additional verification
+  return "ALLOW";
 }
 
 // Apply fraud check in booking flow
-app.post('/api/bookings', async (req, res) => {
+app.post("/api/bookings", async (req, res) => {
   const fraudResult = await fraudDetector.analyzeBooking(req.body, req.user);
 
   switch (fraudResult.decision) {
-    case 'BLOCK':
-      logger.warn('Booking blocked - fraud', { factors: fraudResult.riskFactors });
+    case "BLOCK":
+      logger.warn("Booking blocked - fraud", {
+        factors: fraudResult.riskFactors,
+      });
       return res.status(403).json({
-        error: 'BOOKING_BLOCKED',
-        message: 'Unable to process booking. Contact support.'
+        error: "BOOKING_BLOCKED",
+        message: "Unable to process booking. Contact support.",
       });
 
-    case 'MANUAL_REVIEW':
+    case "MANUAL_REVIEW":
       // Create booking but hold for review
-      const booking = await createBooking(req.body, { status: 'PENDING_REVIEW' });
+      const booking = await createBooking(req.body, {
+        status: "PENDING_REVIEW",
+      });
       await notifyFraudTeam(booking, fraudResult);
       return res.json({ ...booking, requiresReview: true });
 
-    case 'STEP_UP_AUTH':
+    case "STEP_UP_AUTH":
       // Request additional verification
       return res.status(428).json({
-        error: 'VERIFICATION_REQUIRED',
-        verificationType: 'OTP'
+        error: "VERIFICATION_REQUIRED",
+        verificationType: "OTP",
       });
 
     default:
@@ -3315,35 +3499,38 @@ const SCALPER_RULES = {
   maxBookingsPerDay: 5,
   maxBookingsPerWeek: 20,
   cooldownBetweenBookings: 60, // seconds
-  blacklistedPatterns: [
-    /ticket.*(resale|sell)/i,
-    /bulk.*purchase/i
-  ]
+  blacklistedPatterns: [/ticket.*(resale|sell)/i, /bulk.*purchase/i],
 };
 
 async function checkScalperActivity(userId, booking) {
   const violations = [];
 
   // 1. Seats per show limit
-  const seatsThisShow = await db.query(`
+  const seatsThisShow = await db.query(
+    `
     SELECT SUM(seat_count) as total
     FROM bookings
     WHERE user_id = $1 AND show_id = $2 AND status = 'CONFIRMED'
-  `, [userId, booking.showId]);
+  `,
+    [userId, booking.showId]
+  );
 
   if (seatsThisShow.total + booking.seatCount > SCALPER_RULES.maxSeatsPerShow) {
-    violations.push('MAX_SEATS_PER_SHOW');
+    violations.push("MAX_SEATS_PER_SHOW");
   }
 
   // 2. Daily booking limit
-  const bookingsToday = await db.query(`
+  const bookingsToday = await db.query(
+    `
     SELECT COUNT(*) as count
     FROM bookings
     WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE AND status = 'CONFIRMED'
-  `, [userId]);
+  `,
+    [userId]
+  );
 
   if (bookingsToday.count >= SCALPER_RULES.maxBookingsPerDay) {
-    violations.push('MAX_BOOKINGS_PER_DAY');
+    violations.push("MAX_BOOKINGS_PER_DAY");
   }
 
   // 3. Cooldown between bookings
@@ -3351,31 +3538,34 @@ async function checkScalperActivity(userId, booking) {
   if (lastBooking) {
     const elapsed = Date.now() - parseInt(lastBooking);
     if (elapsed < SCALPER_RULES.cooldownBetweenBookings * 1000) {
-      violations.push('COOLDOWN_VIOLATION');
+      violations.push("COOLDOWN_VIOLATION");
     }
   }
 
   // 4. IP-based detection (same IP, multiple accounts)
   const accountsFromIP = await redis.smembers(`ip_accounts:${booking.ip}`);
   if (accountsFromIP.length > 3) {
-    violations.push('MULTIPLE_ACCOUNTS_SAME_IP');
+    violations.push("MULTIPLE_ACCOUNTS_SAME_IP");
   }
 
   // 5. Phone number sharing
-  const accountsWithPhone = await db.query(`
+  const accountsWithPhone = await db.query(
+    `
     SELECT COUNT(DISTINCT id) as count
     FROM users
     WHERE phone = $1
-  `, [booking.user.phone]);
+  `,
+    [booking.user.phone]
+  );
 
   if (accountsWithPhone.count > 1) {
-    violations.push('SHARED_PHONE_NUMBER');
+    violations.push("SHARED_PHONE_NUMBER");
   }
 
   return {
     isScalper: violations.length >= 2,
     violations,
-    action: violations.length >= 2 ? 'BLOCK' : 'ALLOW'
+    action: violations.length >= 2 ? "BLOCK" : "ALLOW",
   };
 }
 ```
@@ -3388,7 +3578,7 @@ async function checkScalperActivity(userId, booking) {
 
 ```javascript
 // Seat Lock Unit Tests
-describe('SeatLockManager', () => {
+describe("SeatLockManager", () => {
   let lockManager;
   let redisMock;
   let dbMock;
@@ -3399,122 +3589,132 @@ describe('SeatLockManager', () => {
     lockManager = new SeatLockManager(redisMock, dbMock);
   });
 
-  describe('acquireLock', () => {
-    it('should acquire lock for available seat', async () => {
-      redisMock.set.mockResolvedValue('OK');
-      dbMock.query.mockResolvedValue({ rows: [{ status: 'AVAILABLE' }] });
+  describe("acquireLock", () => {
+    it("should acquire lock for available seat", async () => {
+      redisMock.set.mockResolvedValue("OK");
+      dbMock.query.mockResolvedValue({ rows: [{ status: "AVAILABLE" }] });
 
-      const result = await lockManager.acquireLock('show1', 'A1', 'user1');
+      const result = await lockManager.acquireLock("show1", "A1", "user1");
 
       expect(result.success).toBe(true);
       expect(result.lockId).toBeDefined();
       expect(redisMock.set).toHaveBeenCalledWith(
-        'lock:show:show1:seat:A1',
+        "lock:show:show1:seat:A1",
         expect.any(String),
-        'NX', 'EX', 600
+        "NX",
+        "EX",
+        600
       );
     });
 
-    it('should fail when seat already locked', async () => {
+    it("should fail when seat already locked", async () => {
       redisMock.set.mockResolvedValue(null); // SETNX returns null if key exists
 
-      const result = await lockManager.acquireLock('show1', 'A1', 'user1');
+      const result = await lockManager.acquireLock("show1", "A1", "user1");
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('SEAT_LOCKED');
+      expect(result.error).toBe("SEAT_LOCKED");
     });
 
-    it('should fail when seat already booked', async () => {
-      redisMock.set.mockResolvedValue('OK');
-      dbMock.query.mockResolvedValue({ rows: [{ status: 'BOOKED' }] });
+    it("should fail when seat already booked", async () => {
+      redisMock.set.mockResolvedValue("OK");
+      dbMock.query.mockResolvedValue({ rows: [{ status: "BOOKED" }] });
 
-      const result = await lockManager.acquireLock('show1', 'A1', 'user1');
+      const result = await lockManager.acquireLock("show1", "A1", "user1");
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('SEAT_UNAVAILABLE');
+      expect(result.error).toBe("SEAT_UNAVAILABLE");
       // Should cleanup Redis lock
       expect(redisMock.del).toHaveBeenCalled();
     });
 
-    it('should handle multiple seats atomically', async () => {
-      const seatIds = ['A1', 'A2', 'A3'];
+    it("should handle multiple seats atomically", async () => {
+      const seatIds = ["A1", "A2", "A3"];
       redisMock.multi.mockReturnThis();
       redisMock.set.mockReturnThis();
-      redisMock.exec.mockResolvedValue([['OK'], ['OK'], ['OK']]);
+      redisMock.exec.mockResolvedValue([["OK"], ["OK"], ["OK"]]);
 
-      const result = await lockManager.acquireMultiple('show1', seatIds, 'user1');
+      const result = await lockManager.acquireMultiple(
+        "show1",
+        seatIds,
+        "user1"
+      );
 
       expect(result.success).toBe(true);
       expect(result.lockedSeats).toHaveLength(3);
     });
 
-    it('should rollback on partial failure', async () => {
-      const seatIds = ['A1', 'A2', 'A3'];
+    it("should rollback on partial failure", async () => {
+      const seatIds = ["A1", "A2", "A3"];
       redisMock.multi.mockReturnThis();
-      redisMock.exec.mockResolvedValue([['OK'], [null], ['OK']]); // A2 fails
+      redisMock.exec.mockResolvedValue([["OK"], [null], ["OK"]]); // A2 fails
 
-      const result = await lockManager.acquireMultiple('show1', seatIds, 'user1');
+      const result = await lockManager.acquireMultiple(
+        "show1",
+        seatIds,
+        "user1"
+      );
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('PARTIAL_LOCK_FAILURE');
+      expect(result.error).toBe("PARTIAL_LOCK_FAILURE");
       // Should release A1 and A3
       expect(redisMock.del).toHaveBeenCalledTimes(2);
     });
   });
 
-  describe('releaseLock', () => {
-    it('should release lock owned by user', async () => {
-      redisMock.get.mockResolvedValue('user1:lock123');
+  describe("releaseLock", () => {
+    it("should release lock owned by user", async () => {
+      redisMock.get.mockResolvedValue("user1:lock123");
       redisMock.del.mockResolvedValue(1);
 
-      const result = await lockManager.releaseLock('lock123', 'user1');
+      const result = await lockManager.releaseLock("lock123", "user1");
 
       expect(result.success).toBe(true);
     });
 
-    it('should not release lock owned by another user', async () => {
-      redisMock.get.mockResolvedValue('user2:lock123'); // Different user
+    it("should not release lock owned by another user", async () => {
+      redisMock.get.mockResolvedValue("user2:lock123"); // Different user
 
-      const result = await lockManager.releaseLock('lock123', 'user1');
+      const result = await lockManager.releaseLock("lock123", "user1");
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('NOT_LOCK_OWNER');
+      expect(result.error).toBe("NOT_LOCK_OWNER");
     });
   });
 });
 
 // Payment Service Unit Tests
-describe('PaymentService', () => {
-  describe('processPayment', () => {
-    it('should handle idempotent requests', async () => {
-      const idempotencyKey = 'key123';
+describe("PaymentService", () => {
+  describe("processPayment", () => {
+    it("should handle idempotent requests", async () => {
+      const idempotencyKey = "key123";
 
       // First request
       const result1 = await paymentService.processPayment({
-        bookingId: 'b1',
+        bookingId: "b1",
         amount: 100,
-        idempotencyKey
+        idempotencyKey,
       });
 
       // Second request with same key
       const result2 = await paymentService.processPayment({
-        bookingId: 'b1',
+        bookingId: "b1",
         amount: 100,
-        idempotencyKey
+        idempotencyKey,
       });
 
       expect(result1.paymentId).toBe(result2.paymentId);
       expect(gatewayMock.charge).toHaveBeenCalledTimes(1); // Only once
     });
 
-    it('should extend lock before payment', async () => {
+    it("should extend lock before payment", async () => {
       await paymentService.processPayment({
-        bookingId: 'b1',
-        lockId: 'lock1',
-        amount: 100
+        bookingId: "b1",
+        lockId: "lock1",
+        amount: 100,
       });
 
-      expect(lockManager.extendLock).toHaveBeenCalledWith('lock1', 300); // 5 mins
+      expect(lockManager.extendLock).toHaveBeenCalledWith("lock1", 300); // 5 mins
     });
   });
 });
@@ -3524,7 +3724,7 @@ describe('PaymentService', () => {
 
 ```javascript
 // Integration test with real Redis and DB
-describe('Booking Flow Integration', () => {
+describe("Booking Flow Integration", () => {
   let app;
   let redis;
   let db;
@@ -3542,31 +3742,31 @@ describe('Booking Flow Integration', () => {
 
   beforeEach(async () => {
     await redis.flushall();
-    await db.query('TRUNCATE bookings, seat_locks, show_seats CASCADE');
+    await db.query("TRUNCATE bookings, seat_locks, show_seats CASCADE");
     await seedTestData(db);
   });
 
-  describe('Complete Booking Flow', () => {
-    it('should complete booking successfully', async () => {
+  describe("Complete Booking Flow", () => {
+    it("should complete booking successfully", async () => {
       const user = await createTestUser();
 
       // 1. Get seat availability
       const seatsResponse = await request(app)
-        .get('/api/v1/shows/show1/seats')
-        .set('Authorization', `Bearer ${user.token}`);
+        .get("/api/v1/shows/show1/seats")
+        .set("Authorization", `Bearer ${user.token}`);
 
       expect(seatsResponse.status).toBe(200);
       const availableSeats = seatsResponse.body.seats
-        .filter(s => s.status === 'AVAILABLE')
+        .filter((s) => s.status === "AVAILABLE")
         .slice(0, 2);
 
       // 2. Lock seats
       const lockResponse = await request(app)
-        .post('/api/v1/bookings/lock')
-        .set('Authorization', `Bearer ${user.token}`)
+        .post("/api/v1/bookings/lock")
+        .set("Authorization", `Bearer ${user.token}`)
         .send({
-          showId: 'show1',
-          seatIds: availableSeats.map(s => s.id)
+          showId: "show1",
+          seatIds: availableSeats.map((s) => s.id),
         });
 
       expect(lockResponse.status).toBe(200);
@@ -3580,44 +3780,44 @@ describe('Booking Flow Integration', () => {
 
       // 3. Create booking
       const bookingResponse = await request(app)
-        .post('/api/v1/bookings')
-        .set('Authorization', `Bearer ${user.token}`)
+        .post("/api/v1/bookings")
+        .set("Authorization", `Bearer ${user.token}`)
         .send({
           lockId: lockResponse.body.lockId,
-          paymentMethod: 'CARD'
+          paymentMethod: "CARD",
         });
 
       expect(bookingResponse.status).toBe(201);
-      expect(bookingResponse.body.status).toBe('PENDING');
+      expect(bookingResponse.body.status).toBe("PENDING");
 
       // 4. Simulate payment webhook
       const webhookResponse = await request(app)
-        .post('/api/v1/payments/webhook')
-        .set('X-Razorpay-Signature', generateSignature(paymentData))
+        .post("/api/v1/payments/webhook")
+        .set("X-Razorpay-Signature", generateSignature(paymentData))
         .send({
           paymentId: bookingResponse.body.paymentId,
-          status: 'SUCCESS'
+          status: "SUCCESS",
         });
 
       expect(webhookResponse.status).toBe(200);
 
       // 5. Verify final state
       const finalBooking = await db.query(
-        'SELECT * FROM bookings WHERE id = $1',
+        "SELECT * FROM bookings WHERE id = $1",
         [bookingResponse.body.bookingId]
       );
 
-      expect(finalBooking.rows[0].status).toBe('CONFIRMED');
+      expect(finalBooking.rows[0].status).toBe("CONFIRMED");
 
       // Verify seats are booked
       const seats = await db.query(
-        'SELECT * FROM show_seats WHERE booking_id = $1',
+        "SELECT * FROM show_seats WHERE booking_id = $1",
         [bookingResponse.body.bookingId]
       );
 
       expect(seats.rows).toHaveLength(2);
-      seats.rows.forEach(seat => {
-        expect(seat.status).toBe('BOOKED');
+      seats.rows.forEach((seat) => {
+        expect(seat.status).toBe("BOOKED");
       });
 
       // Verify locks released
@@ -3627,26 +3827,26 @@ describe('Booking Flow Integration', () => {
       }
     });
 
-    it('should handle concurrent lock attempts', async () => {
+    it("should handle concurrent lock attempts", async () => {
       const user1 = await createTestUser();
       const user2 = await createTestUser();
-      const seatId = 'A1';
+      const seatId = "A1";
 
       // Concurrent lock attempts
       const [result1, result2] = await Promise.all([
         request(app)
-          .post('/api/v1/bookings/lock')
-          .set('Authorization', `Bearer ${user1.token}`)
-          .send({ showId: 'show1', seatIds: [seatId] }),
+          .post("/api/v1/bookings/lock")
+          .set("Authorization", `Bearer ${user1.token}`)
+          .send({ showId: "show1", seatIds: [seatId] }),
         request(app)
-          .post('/api/v1/bookings/lock')
-          .set('Authorization', `Bearer ${user2.token}`)
-          .send({ showId: 'show1', seatIds: [seatId] })
+          .post("/api/v1/bookings/lock")
+          .set("Authorization", `Bearer ${user2.token}`)
+          .send({ showId: "show1", seatIds: [seatId] }),
       ]);
 
       // Exactly one should succeed
-      const successes = [result1, result2].filter(r => r.status === 200);
-      const failures = [result1, result2].filter(r => r.status === 409);
+      const successes = [result1, result2].filter((r) => r.status === 200);
+      const failures = [result1, result2].filter((r) => r.status === 409);
 
       expect(successes).toHaveLength(1);
       expect(failures).toHaveLength(1);
@@ -3659,78 +3859,78 @@ describe('Booking Flow Integration', () => {
 
 ```javascript
 // k6 load test script
-import http from 'k6/http';
-import { check, sleep, group } from 'k6';
-import { Rate, Trend } from 'k6/metrics';
+import http from "k6/http";
+import { check, sleep, group } from "k6";
+import { Rate, Trend } from "k6/metrics";
 
-const errorRate = new Rate('errors');
-const lockLatency = new Trend('lock_latency');
-const bookingLatency = new Trend('booking_latency');
+const errorRate = new Rate("errors");
+const lockLatency = new Trend("lock_latency");
+const bookingLatency = new Trend("booking_latency");
 
 export const options = {
   scenarios: {
     // Simulate normal load
     normal_load: {
-      executor: 'ramping-vus',
+      executor: "ramping-vus",
       startVUs: 0,
       stages: [
-        { duration: '2m', target: 100 },
-        { duration: '5m', target: 100 },
-        { duration: '2m', target: 0 }
-      ]
+        { duration: "2m", target: 100 },
+        { duration: "5m", target: 100 },
+        { duration: "2m", target: 0 },
+      ],
     },
 
     // Simulate peak load (movie premiere)
     peak_load: {
-      executor: 'ramping-arrival-rate',
+      executor: "ramping-arrival-rate",
       startRate: 0,
-      timeUnit: '1s',
+      timeUnit: "1s",
       preAllocatedVUs: 500,
       stages: [
-        { duration: '1m', target: 100 },
-        { duration: '3m', target: 500 },
-        { duration: '1m', target: 0 }
-      ]
+        { duration: "1m", target: 100 },
+        { duration: "3m", target: 500 },
+        { duration: "1m", target: 0 },
+      ],
     },
 
     // Simulate seat contention
     seat_contention: {
-      executor: 'per-vu-iterations',
+      executor: "per-vu-iterations",
       vus: 50,
       iterations: 10,
-      maxDuration: '5m'
-    }
+      maxDuration: "5m",
+    },
   },
 
   thresholds: {
-    http_req_duration: ['p(95)<500', 'p(99)<1000'],
-    errors: ['rate<0.01'],
-    lock_latency: ['p(95)<200'],
-    booking_latency: ['p(95)<1000']
-  }
+    http_req_duration: ["p(95)<500", "p(99)<1000"],
+    errors: ["rate<0.01"],
+    lock_latency: ["p(95)<200"],
+    booking_latency: ["p(95)<1000"],
+  },
 };
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
-const SHOW_ID = __ENV.SHOW_ID || 'test-show-1';
+const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
+const SHOW_ID = __ENV.SHOW_ID || "test-show-1";
 
-export default function() {
+export default function () {
   const userToken = login();
 
-  group('Seat Selection Flow', () => {
+  group("Seat Selection Flow", () => {
     // 1. Get available seats
     const seatsRes = http.get(`${BASE_URL}/api/v1/shows/${SHOW_ID}/seats`, {
-      headers: { Authorization: `Bearer ${userToken}` }
+      headers: { Authorization: `Bearer ${userToken}` },
     });
 
     check(seatsRes, {
-      'seats retrieved': (r) => r.status === 200
+      "seats retrieved": (r) => r.status === 200,
     });
 
     const seats = JSON.parse(seatsRes.body).seats;
-    const available = seats.filter(s => s.status === 'AVAILABLE');
+    const available = seats.filter((s) => s.status === "AVAILABLE");
 
     if (available.length === 0) {
-      console.log('No seats available');
+      console.log("No seats available");
       return;
     }
 
@@ -3742,20 +3942,20 @@ export default function() {
       `${BASE_URL}/api/v1/bookings/lock`,
       JSON.stringify({
         showId: SHOW_ID,
-        seatIds: [seatToLock.id]
+        seatIds: [seatToLock.id],
       }),
       {
         headers: {
           Authorization: `Bearer ${userToken}`,
-          'Content-Type': 'application/json'
-        }
+          "Content-Type": "application/json",
+        },
       }
     );
     lockLatency.add(Date.now() - lockStart);
 
     const lockSuccess = check(lockRes, {
-      'lock acquired': (r) => r.status === 200,
-      'lock conflict': (r) => r.status === 409
+      "lock acquired": (r) => r.status === 200,
+      "lock conflict": (r) => r.status === 409,
     });
 
     if (lockRes.status !== 200) {
@@ -3775,29 +3975,27 @@ export default function() {
         `${BASE_URL}/api/v1/bookings`,
         JSON.stringify({
           lockId: lockData.lockId,
-          paymentMethod: 'CARD'
+          paymentMethod: "CARD",
         }),
         {
           headers: {
             Authorization: `Bearer ${userToken}`,
-            'Content-Type': 'application/json'
-          }
+            "Content-Type": "application/json",
+          },
         }
       );
       bookingLatency.add(Date.now() - bookingStart);
 
       check(bookingRes, {
-        'booking created': (r) => r.status === 201
+        "booking created": (r) => r.status === 201,
       });
 
       errorRate.add(bookingRes.status >= 400);
     } else {
       // Abandon - release lock
-      http.del(
-        `${BASE_URL}/api/v1/bookings/lock/${lockData.lockId}`,
-        null,
-        { headers: { Authorization: `Bearer ${userToken}` } }
-      );
+      http.del(`${BASE_URL}/api/v1/bookings/lock/${lockData.lockId}`, null, {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
     }
   });
 
@@ -3808,7 +4006,7 @@ function login() {
   // Use test user pool
   const userId = Math.floor(Math.random() * 1000);
   const res = http.post(`${BASE_URL}/api/v1/auth/test-login`, {
-    userId: `test-user-${userId}`
+    userId: `test-user-${userId}`,
   });
   return JSON.parse(res.body).token;
 }
@@ -3818,34 +4016,34 @@ function login() {
 
 ```javascript
 // Chaos tests using Gremlin/Chaos Monkey patterns
-describe('Chaos Engineering Tests', () => {
-  describe('Redis Failure', () => {
-    it('should fallback to DB when Redis is down', async () => {
+describe("Chaos Engineering Tests", () => {
+  describe("Redis Failure", () => {
+    it("should fallback to DB when Redis is down", async () => {
       // 1. Make a successful lock with Redis
-      const lock1 = await lockManager.acquireLock('show1', 'A1', 'user1');
+      const lock1 = await lockManager.acquireLock("show1", "A1", "user1");
       expect(lock1.success).toBe(true);
 
       // 2. Kill Redis connection
       await redis.disconnect();
 
       // 3. Attempt another lock (should fallback to DB)
-      const lock2 = await lockManager.acquireLock('show1', 'A2', 'user1');
+      const lock2 = await lockManager.acquireLock("show1", "A2", "user1");
       expect(lock2.success).toBe(true);
-      expect(lock2.fallback).toBe('database');
+      expect(lock2.fallback).toBe("database");
 
       // 4. Verify DB has the lock
       const dbLock = await db.query(
-        'SELECT * FROM seat_locks WHERE seat_id = $1 AND status = $2',
-        ['A2', 'ACTIVE']
+        "SELECT * FROM seat_locks WHERE seat_id = $1 AND status = $2",
+        ["A2", "ACTIVE"]
       );
       expect(dbLock.rows).toHaveLength(1);
     });
 
-    it('should release locks from DB when Redis recovers', async () => {
+    it("should release locks from DB when Redis recovers", async () => {
       await redis.disconnect();
 
       // Lock with DB fallback
-      await lockManager.acquireLock('show1', 'A1', 'user1');
+      await lockManager.acquireLock("show1", "A1", "user1");
 
       // Reconnect Redis
       await redis.connect();
@@ -3854,15 +4052,15 @@ describe('Chaos Engineering Tests', () => {
       await lockManager.reconcile();
 
       // Verify lock is in Redis
-      const redisLock = await redis.get('lock:show:show1:seat:A1');
+      const redisLock = await redis.get("lock:show:show1:seat:A1");
       expect(redisLock).toBeDefined();
     });
   });
 
-  describe('Database Failure', () => {
-    it('should handle DB connection failures gracefully', async () => {
+  describe("Database Failure", () => {
+    it("should handle DB connection failures gracefully", async () => {
       // Lock succeeds in Redis
-      const lock = await lockManager.acquireLock('show1', 'A1', 'user1');
+      const lock = await lockManager.acquireLock("show1", "A1", "user1");
       expect(lock.success).toBe(true);
 
       // Kill DB
@@ -3871,11 +4069,11 @@ describe('Chaos Engineering Tests', () => {
       // Attempt booking (should fail gracefully)
       const booking = await bookingService.createBooking({
         lockId: lock.lockId,
-        userId: 'user1'
+        userId: "user1",
       });
 
       expect(booking.success).toBe(false);
-      expect(booking.error).toBe('SERVICE_TEMPORARILY_UNAVAILABLE');
+      expect(booking.error).toBe("SERVICE_TEMPORARILY_UNAVAILABLE");
 
       // Lock should still be valid in Redis
       const redisLock = await redis.get(`lock:show:show1:seat:A1`);
@@ -3883,30 +4081,31 @@ describe('Chaos Engineering Tests', () => {
     });
   });
 
-  describe('Network Partition', () => {
-    it('should handle payment gateway timeout', async () => {
+  describe("Network Partition", () => {
+    it("should handle payment gateway timeout", async () => {
       // Mock gateway timeout
-      gatewayMock.charge.mockImplementation(() =>
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout')), 5000)
-        )
+      gatewayMock.charge.mockImplementation(
+        () =>
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout")), 5000)
+          )
       );
 
       const result = await paymentService.processPayment({
-        bookingId: 'b1',
+        bookingId: "b1",
         amount: 100,
-        timeout: 3000
+        timeout: 3000,
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('GATEWAY_TIMEOUT');
+      expect(result.error).toBe("GATEWAY_TIMEOUT");
 
       // Lock should still be active
-      const lock = await lockManager.getLock('b1');
-      expect(lock.status).toBe('ACTIVE');
+      const lock = await lockManager.getLock("b1");
+      expect(lock.status).toBe("ACTIVE");
 
       // Should schedule retry
-      const retryJob = await queue.getJob('retry-payment-b1');
+      const retryJob = await queue.getJob("retry-payment-b1");
       expect(retryJob).toBeDefined();
     });
   });
@@ -3921,20 +4120,20 @@ describe('Chaos Engineering Tests', () => {
 
 ```javascript
 // sw.js - Service Worker
-const CACHE_NAME = 'bookmyshow-v1';
-const TICKET_CACHE = 'tickets-v1';
+const CACHE_NAME = "bookmyshow-v1";
+const TICKET_CACHE = "tickets-v1";
 
 // Assets to cache
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/static/js/main.js',
-  '/static/css/main.css',
-  '/offline.html'
+  "/",
+  "/index.html",
+  "/static/js/main.js",
+  "/static/css/main.css",
+  "/offline.html",
 ];
 
 // Install event
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
@@ -3944,11 +4143,14 @@ self.addEventListener('install', (event) => {
 });
 
 // Fetch event
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   // Ticket API - Network first, cache fallback
-  if (url.pathname.startsWith('/api/v1/bookings/') && url.pathname.includes('/ticket')) {
+  if (
+    url.pathname.startsWith("/api/v1/bookings/") &&
+    url.pathname.includes("/ticket")
+  ) {
     event.respondWith(handleTicketRequest(event.request));
     return;
   }
@@ -3964,7 +4166,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Other API calls - Network only
-  if (url.pathname.startsWith('/api/')) {
+  if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request));
     return;
   }
@@ -3972,7 +4174,7 @@ self.addEventListener('fetch', (event) => {
   // Default - Network first, offline fallback
   event.respondWith(
     fetch(event.request).catch(() => {
-      return caches.match('/offline.html');
+      return caches.match("/offline.html");
     })
   );
 });
@@ -3998,26 +4200,29 @@ async function handleTicketRequest(request) {
     }
 
     // Return offline ticket template
-    return new Response(JSON.stringify({
-      offline: true,
-      message: 'Ticket available offline. Show QR code at venue.'
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(
+      JSON.stringify({
+        offline: true,
+        message: "Ticket available offline. Show QR code at venue.",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 }
 
 // Background sync for booking status
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-booking-status') {
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-booking-status") {
     event.waitUntil(syncBookingStatus());
   }
 });
 
 async function syncBookingStatus() {
-  const db = await openDatabase('pending-syncs');
-  const pendingBookings = await db.getAll('booking-checks');
+  const db = await openDatabase("pending-syncs");
+  const pendingBookings = await db.getAll("booking-checks");
 
   for (const booking of pendingBookings) {
     try {
@@ -4028,7 +4233,7 @@ async function syncBookingStatus() {
       await updateLocalBooking(booking.id, data);
 
       // Remove from pending
-      await db.delete('booking-checks', booking.id);
+      await db.delete("booking-checks", booking.id);
     } catch (error) {
       // Will retry on next sync
     }
@@ -4042,7 +4247,7 @@ async function syncBookingStatus() {
 // ticket-storage.js
 class TicketStorage {
   constructor() {
-    this.dbName = 'BookMyShowTickets';
+    this.dbName = "BookMyShowTickets";
     this.version = 1;
   }
 
@@ -4060,25 +4265,30 @@ class TicketStorage {
         const db = event.target.result;
 
         // Tickets store
-        if (!db.objectStoreNames.contains('tickets')) {
-          const store = db.createObjectStore('tickets', { keyPath: 'bookingId' });
-          store.createIndex('showTime', 'showTime');
-          store.createIndex('status', 'status');
+        if (!db.objectStoreNames.contains("tickets")) {
+          const store = db.createObjectStore("tickets", {
+            keyPath: "bookingId",
+          });
+          store.createIndex("showTime", "showTime");
+          store.createIndex("status", "status");
         }
 
         // QR codes store (blobs)
-        if (!db.objectStoreNames.contains('qrcodes')) {
-          db.createObjectStore('qrcodes', { keyPath: 'bookingId' });
+        if (!db.objectStoreNames.contains("qrcodes")) {
+          db.createObjectStore("qrcodes", { keyPath: "bookingId" });
         }
       };
     });
   }
 
   async saveTicket(booking) {
-    const transaction = this.db.transaction(['tickets', 'qrcodes'], 'readwrite');
+    const transaction = this.db.transaction(
+      ["tickets", "qrcodes"],
+      "readwrite"
+    );
 
     // Save booking details
-    await transaction.objectStore('tickets').put({
+    await transaction.objectStore("tickets").put({
       bookingId: booking.id,
       movieName: booking.movieName,
       theaterName: booking.theaterName,
@@ -4087,29 +4297,29 @@ class TicketStorage {
       status: booking.status,
       reference: booking.reference,
       qrCodeData: booking.qrCode,
-      savedAt: Date.now()
+      savedAt: Date.now(),
     });
 
     // Save QR code as blob
     const qrBlob = await this.generateQRBlob(booking.qrCode);
-    await transaction.objectStore('qrcodes').put({
+    await transaction.objectStore("qrcodes").put({
       bookingId: booking.id,
-      blob: qrBlob
+      blob: qrBlob,
     });
   }
 
   async getTicket(bookingId) {
-    const transaction = this.db.transaction(['tickets', 'qrcodes'], 'readonly');
+    const transaction = this.db.transaction(["tickets", "qrcodes"], "readonly");
 
     const ticket = await new Promise((resolve) => {
-      const request = transaction.objectStore('tickets').get(bookingId);
+      const request = transaction.objectStore("tickets").get(bookingId);
       request.onsuccess = () => resolve(request.result);
     });
 
     if (!ticket) return null;
 
     const qrCode = await new Promise((resolve) => {
-      const request = transaction.objectStore('qrcodes').get(bookingId);
+      const request = transaction.objectStore("qrcodes").get(bookingId);
       request.onsuccess = () => resolve(request.result?.blob);
     });
 
@@ -4118,8 +4328,8 @@ class TicketStorage {
 
   async getUpcomingTickets() {
     const now = Date.now();
-    const transaction = this.db.transaction('tickets', 'readonly');
-    const index = transaction.objectStore('tickets').index('showTime');
+    const transaction = this.db.transaction("tickets", "readonly");
+    const index = transaction.objectStore("tickets").index("showTime");
 
     return new Promise((resolve) => {
       const tickets = [];
@@ -4138,17 +4348,23 @@ class TicketStorage {
   }
 
   async generateQRBlob(qrData) {
-    const canvas = document.createElement('canvas');
-    await QRCode.toCanvas(canvas, qrData, { width: 300, errorCorrectionLevel: 'H' });
+    const canvas = document.createElement("canvas");
+    await QRCode.toCanvas(canvas, qrData, {
+      width: 300,
+      errorCorrectionLevel: "H",
+    });
     return new Promise((resolve) => {
-      canvas.toBlob(resolve, 'image/png');
+      canvas.toBlob(resolve, "image/png");
     });
   }
 
   async cleanupOldTickets() {
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const transaction = this.db.transaction(['tickets', 'qrcodes'], 'readwrite');
-    const index = transaction.objectStore('tickets').index('showTime');
+    const transaction = this.db.transaction(
+      ["tickets", "qrcodes"],
+      "readwrite"
+    );
+    const index = transaction.objectStore("tickets").index("showTime");
 
     const range = IDBKeyRange.upperBound(oneWeekAgo);
 
@@ -4156,8 +4372,8 @@ class TicketStorage {
       const cursor = event.target.result;
       if (cursor) {
         const bookingId = cursor.value.bookingId;
-        transaction.objectStore('tickets').delete(bookingId);
-        transaction.objectStore('qrcodes').delete(bookingId);
+        transaction.objectStore("tickets").delete(bookingId);
+        transaction.objectStore("qrcodes").delete(bookingId);
         cursor.continue();
       }
     };
@@ -4175,8 +4391,8 @@ function useOfflineTickets() {
       loadTickets();
     });
 
-    window.addEventListener('online', () => setIsOffline(false));
-    window.addEventListener('offline', () => setIsOffline(true));
+    window.addEventListener("online", () => setIsOffline(false));
+    window.addEventListener("offline", () => setIsOffline(true));
   }, []);
 
   const loadTickets = async () => {
@@ -4232,8 +4448,8 @@ function useOfflineTickets() {
 
 ```javascript
 // websocket-server.js
-const WebSocket = require('ws');
-const Redis = require('ioredis');
+const WebSocket = require("ws");
+const Redis = require("ioredis");
 
 class SeatUpdateServer {
   constructor(server) {
@@ -4247,17 +4463,17 @@ class SeatUpdateServer {
   }
 
   setupRedisSubscriber() {
-    this.subscriber.on('message', (channel, message) => {
-      const showId = channel.replace('show:', '');
+    this.subscriber.on("message", (channel, message) => {
+      const showId = channel.replace("show:", "");
       this.broadcastToShow(showId, JSON.parse(message));
     });
   }
 
   setupWebSocket() {
-    this.wss.on('connection', (ws, req) => {
+    this.wss.on("connection", (ws, req) => {
       const userId = this.authenticate(req);
       if (!userId) {
-        ws.close(4001, 'Unauthorized');
+        ws.close(4001, "Unauthorized");
         return;
       }
 
@@ -4265,18 +4481,20 @@ class SeatUpdateServer {
       ws.isAlive = true;
       ws.subscribedShows = new Set();
 
-      ws.on('pong', () => { ws.isAlive = true; });
+      ws.on("pong", () => {
+        ws.isAlive = true;
+      });
 
-      ws.on('message', (data) => {
+      ws.on("message", (data) => {
         try {
           const message = JSON.parse(data);
           this.handleMessage(ws, message);
         } catch (err) {
-          ws.send(JSON.stringify({ error: 'Invalid message format' }));
+          ws.send(JSON.stringify({ error: "Invalid message format" }));
         }
       });
 
-      ws.on('close', () => {
+      ws.on("close", () => {
         this.handleDisconnect(ws);
       });
     });
@@ -4296,16 +4514,16 @@ class SeatUpdateServer {
 
   handleMessage(ws, message) {
     switch (message.type) {
-      case 'SUBSCRIBE':
+      case "SUBSCRIBE":
         this.subscribeToShow(ws, message.showId);
         break;
 
-      case 'UNSUBSCRIBE':
+      case "UNSUBSCRIBE":
         this.unsubscribeFromShow(ws, message.showId);
         break;
 
-      case 'PING':
-        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
+      case "PING":
+        ws.send(JSON.stringify({ type: "PONG", timestamp: Date.now() }));
         break;
     }
   }
@@ -4313,10 +4531,12 @@ class SeatUpdateServer {
   async subscribeToShow(ws, showId) {
     // Rate limit: max 5 shows per connection
     if (ws.subscribedShows.size >= 5) {
-      ws.send(JSON.stringify({
-        type: 'ERROR',
-        message: 'Maximum subscriptions reached'
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "ERROR",
+          message: "Maximum subscriptions reached",
+        })
+      );
       return;
     }
 
@@ -4332,11 +4552,13 @@ class SeatUpdateServer {
 
     // Send current state
     const currentState = await this.getShowState(showId);
-    ws.send(JSON.stringify({
-      type: 'SHOW_STATE',
-      showId,
-      seats: currentState
-    }));
+    ws.send(
+      JSON.stringify({
+        type: "SHOW_STATE",
+        showId,
+        seats: currentState,
+      })
+    );
   }
 
   unsubscribeFromShow(ws, showId) {
@@ -4377,13 +4599,13 @@ class SeatUpdateServer {
     // Get current seat states from Redis
     const seatMap = await this.redis.hgetall(`seats:show:${showId}`);
     return Object.entries(seatMap).map(([seatId, data]) => {
-      const [status, price] = data.split(':');
+      const [status, price] = data.split(":");
       return { seatId, status, price: parseInt(price) };
     });
   }
 
   authenticate(req) {
-    const token = req.headers['authorization']?.replace('Bearer ', '');
+    const token = req.headers["authorization"]?.replace("Bearer ", "");
     if (!token) return null;
 
     try {
@@ -4407,14 +4629,21 @@ async function publishSeatUpdate(showId, seatId, status, userId = null) {
   );
 
   // Publish event
-  await redis.publish(`show:${showId}`, JSON.stringify({
-    type: status === 'LOCKED' ? 'SEAT_LOCKED' :
-          status === 'BOOKED' ? 'SEAT_BOOKED' : 'SEAT_RELEASED',
-    seatId,
-    status,
-    userId: userId ? hashUserId(userId) : null, // Privacy
-    timestamp: Date.now()
-  }));
+  await redis.publish(
+    `show:${showId}`,
+    JSON.stringify({
+      type:
+        status === "LOCKED"
+          ? "SEAT_LOCKED"
+          : status === "BOOKED"
+          ? "SEAT_BOOKED"
+          : "SEAT_RELEASED",
+      seatId,
+      status,
+      userId: userId ? hashUserId(userId) : null, // Privacy
+      timestamp: Date.now(),
+    })
+  );
 }
 ```
 
@@ -4441,10 +4670,12 @@ function useSeatUpdates(showId) {
 
     ws.onopen = () => {
       setConnected(true);
-      ws.send(JSON.stringify({
-        type: 'SUBSCRIBE',
-        showId
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "SUBSCRIBE",
+          showId,
+        })
+      );
     };
 
     ws.onmessage = (event) => {
@@ -4459,7 +4690,7 @@ function useSeatUpdates(showId) {
     };
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error("WebSocket error:", error);
     };
 
     wsRef.current = ws;
@@ -4481,33 +4712,33 @@ function useSeatUpdates(showId) {
 
   const handleMessage = (message) => {
     switch (message.type) {
-      case 'SHOW_STATE':
+      case "SHOW_STATE":
         // Initial state
         const seatMap = {};
-        message.seats.forEach(seat => {
+        message.seats.forEach((seat) => {
           seatMap[seat.seatId] = seat;
         });
         setSeats(seatMap);
         break;
 
-      case 'SEAT_LOCKED':
-        setSeats(prev => ({
+      case "SEAT_LOCKED":
+        setSeats((prev) => ({
           ...prev,
-          [message.seatId]: { ...prev[message.seatId], status: 'LOCKED' }
+          [message.seatId]: { ...prev[message.seatId], status: "LOCKED" },
         }));
         break;
 
-      case 'SEAT_BOOKED':
-        setSeats(prev => ({
+      case "SEAT_BOOKED":
+        setSeats((prev) => ({
           ...prev,
-          [message.seatId]: { ...prev[message.seatId], status: 'BOOKED' }
+          [message.seatId]: { ...prev[message.seatId], status: "BOOKED" },
         }));
         break;
 
-      case 'SEAT_RELEASED':
-        setSeats(prev => ({
+      case "SEAT_RELEASED":
+        setSeats((prev) => ({
           ...prev,
-          [message.seatId]: { ...prev[message.seatId], status: 'AVAILABLE' }
+          [message.seatId]: { ...prev[message.seatId], status: "AVAILABLE" },
         }));
         break;
     }
@@ -4531,7 +4762,7 @@ function useSeatUpdatesWithFallback(showId) {
         const data = await response.json();
         setPollingData(data.seats);
       } catch (error) {
-        console.error('Polling failed:', error);
+        console.error("Polling failed:", error);
       }
     }, 5000);
 
@@ -4541,7 +4772,7 @@ function useSeatUpdatesWithFallback(showId) {
   return {
     seats: ws.connected ? ws.seats : pollingData,
     connected: ws.connected,
-    isPolling: !ws.connected
+    isPolling: !ws.connected,
   };
 }
 ```
@@ -4619,14 +4850,14 @@ class VirtualQueue {
     const token = jwt.sign(
       { showId, userId, joinedAt: timestamp },
       process.env.QUEUE_SECRET,
-      { expiresIn: '2h' }
+      { expiresIn: "2h" }
     );
 
     return {
       position: position + 1,
       estimatedWaitMinutes: estimatedWait,
       token,
-      totalInQueue: await this.redis.zcard(queueKey)
+      totalInQueue: await this.redis.zcard(queueKey),
     };
   }
 
@@ -4636,7 +4867,7 @@ class VirtualQueue {
 
     return {
       position: position + 1,
-      estimatedWaitMinutes: await this.calculateWait(showId, position)
+      estimatedWaitMinutes: await this.calculateWait(showId, position),
     };
   }
 
@@ -4656,7 +4887,7 @@ class VirtualQueue {
       const accessToken = jwt.sign(
         { showId, userId, grantedAt: Date.now() },
         process.env.ACCESS_SECRET,
-        { expiresIn: '5m' } // 5 minute session
+        { expiresIn: "5m" } // 5 minute session
       );
 
       // Store access grant
@@ -4680,20 +4911,19 @@ class VirtualQueue {
       const decoded = jwt.verify(token, process.env.ACCESS_SECRET);
 
       if (decoded.showId !== showId || decoded.userId !== userId) {
-        return { valid: false, error: 'TOKEN_MISMATCH' };
+        return { valid: false, error: "TOKEN_MISMATCH" };
       }
 
       // Check if still in access list
       const accessToken = await this.redis.hget(`access:${showId}`, userId);
 
       if (!accessToken || accessToken !== token) {
-        return { valid: false, error: 'ACCESS_EXPIRED' };
+        return { valid: false, error: "ACCESS_EXPIRED" };
       }
 
       return { valid: true, expiresIn: decoded.exp - Date.now() / 1000 };
-
     } catch (error) {
-      return { valid: false, error: 'INVALID_TOKEN' };
+      return { valid: false, error: "INVALID_TOKEN" };
     }
   }
 
@@ -4711,7 +4941,7 @@ class VirtualQueue {
 
 // Queue processor (runs every minute)
 async function processQueues() {
-  const activeShows = await redis.smembers('active_queues');
+  const activeShows = await redis.smembers("active_queues");
 
   for (const showId of activeShows) {
     const queue = new VirtualQueue(redis);
@@ -4744,8 +4974,8 @@ function WaitingRoom({ showId }) {
 
   const joinQueue = async () => {
     const response = await fetch(`/api/v1/queue/${showId}/join`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
     });
 
     const data = await response.json();
@@ -4759,8 +4989,8 @@ function WaitingRoom({ showId }) {
     const response = await fetch(`/api/v1/queue/${showId}/status`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        'X-Queue-Token': queueToken
-      }
+        "X-Queue-Token": queueToken,
+      },
     });
 
     const data = await response.json();
@@ -4795,7 +5025,7 @@ function WaitingRoom({ showId }) {
           <div
             className="progress-fill"
             style={{
-              width: `${calculateProgress(queueStatus)}%`
+              width: `${calculateProgress(queueStatus)}%`,
             }}
           />
         </div>
@@ -4809,8 +5039,8 @@ function WaitingRoom({ showId }) {
 
         <div className="queue-info">
           <p>
-            <strong>{queueStatus?.totalInQueue?.toLocaleString()}</strong>
-            {' '}people in queue
+            <strong>{queueStatus?.totalInQueue?.toLocaleString()}</strong>{" "}
+            people in queue
           </p>
           <p>
             Processing <strong>500</strong> users per minute
@@ -4820,8 +5050,8 @@ function WaitingRoom({ showId }) {
         <div className="warning">
           <AlertIcon />
           <p>
-            Don't close or refresh this page!
-            You'll lose your position in the queue.
+            Don't close or refresh this page! You'll lose your position in the
+            queue.
           </p>
         </div>
       </div>
@@ -4851,98 +5081,98 @@ class BookingAnalytics {
 
   // Funnel events
   trackShowViewed(showId, userId, source) {
-    this.provider.track('show_viewed', {
+    this.provider.track("show_viewed", {
       showId,
       userId,
       source, // 'search', 'browse', 'direct'
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackSeatSelectionStarted(showId, userId) {
-    this.provider.track('seat_selection_started', {
+    this.provider.track("seat_selection_started", {
       showId,
       userId,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackSeatsSelected(showId, userId, seatCount, seatTypes) {
-    this.provider.track('seats_selected', {
+    this.provider.track("seats_selected", {
       showId,
       userId,
       seatCount,
       seatTypes, // ['REGULAR', 'PREMIUM']
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackLockAcquired(showId, userId, seatCount, lockId) {
-    this.provider.track('lock_acquired', {
+    this.provider.track("lock_acquired", {
       showId,
       userId,
       seatCount,
       lockId,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackLockFailed(showId, userId, reason, attemptedSeats) {
-    this.provider.track('lock_failed', {
+    this.provider.track("lock_failed", {
       showId,
       userId,
       reason, // 'SEAT_UNAVAILABLE', 'TIMEOUT', 'ERROR'
       attemptedSeats,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackPaymentInitiated(bookingId, amount, method) {
-    this.provider.track('payment_initiated', {
+    this.provider.track("payment_initiated", {
       bookingId,
       amount,
       method,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackPaymentCompleted(bookingId, amount, method, duration) {
-    this.provider.track('payment_completed', {
+    this.provider.track("payment_completed", {
       bookingId,
       amount,
       method,
       paymentDuration: duration,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackBookingConfirmed(bookingId, showId, seatCount, amount) {
-    this.provider.track('booking_confirmed', {
+    this.provider.track("booking_confirmed", {
       bookingId,
       showId,
       seatCount,
       amount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackBookingAbandoned(showId, userId, stage, timeSpent) {
-    this.provider.track('booking_abandoned', {
+    this.provider.track("booking_abandoned", {
       showId,
       userId,
       stage, // 'seat_selection', 'lock_acquired', 'payment'
       timeSpent,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   trackLockExpired(lockId, showId, userId, seatCount) {
-    this.provider.track('lock_expired', {
+    this.provider.track("lock_expired", {
       lockId,
       showId,
       userId,
       seatCount,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 }
@@ -5091,21 +5321,21 @@ ORDER BY stage, count DESC;
 ```javascript
 // currency-service.js
 const CURRENCIES = {
-  USD: { symbol: '$', position: 'before', decimals: 2 },
-  EUR: { symbol: '€', position: 'before', decimals: 2 },
-  GBP: { symbol: '£', position: 'before', decimals: 2 },
-  INR: { symbol: '₹', position: 'before', decimals: 0 },
-  JPY: { symbol: '¥', position: 'before', decimals: 0 }
+  USD: { symbol: "$", position: "before", decimals: 2 },
+  EUR: { symbol: "€", position: "before", decimals: 2 },
+  GBP: { symbol: "£", position: "before", decimals: 2 },
+  INR: { symbol: "₹", position: "before", decimals: 0 },
+  JPY: { symbol: "¥", position: "before", decimals: 0 },
 };
 
 class CurrencyService {
-  constructor(baseCurrency = 'USD') {
+  constructor(baseCurrency = "USD") {
     this.baseCurrency = baseCurrency;
     this.rates = {};
   }
 
   async loadRates() {
-    const response = await fetch('/api/v1/exchange-rates');
+    const response = await fetch("/api/v1/exchange-rates");
     this.rates = await response.json();
   }
 
@@ -5120,10 +5350,10 @@ class CurrencyService {
     const config = CURRENCIES[currency];
     const formatted = amount.toLocaleString(undefined, {
       minimumFractionDigits: config.decimals,
-      maximumFractionDigits: config.decimals
+      maximumFractionDigits: config.decimals,
     });
 
-    return config.position === 'before'
+    return config.position === "before"
       ? `${config.symbol}${formatted}`
       : `${formatted}${config.symbol}`;
   }
@@ -5138,10 +5368,13 @@ function useCurrency() {
     service.current.loadRates();
   }, []);
 
-  const formatPrice = useCallback((amount, baseCurrency = 'USD') => {
-    const converted = service.current.convert(amount, baseCurrency, currency);
-    return service.current.format(converted, currency);
-  }, [currency]);
+  const formatPrice = useCallback(
+    (amount, baseCurrency = "USD") => {
+      const converted = service.current.convert(amount, baseCurrency, currency);
+      return service.current.format(converted, currency);
+    },
+    [currency]
+  );
 
   return { currency, setCurrency, formatPrice };
 }
@@ -5155,19 +5388,19 @@ function formatShowTime(dateString, locale, timezone) {
   const date = new Date(dateString);
 
   return new Intl.DateTimeFormat(locale, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZone: timezone,
-    hour12: shouldUse12Hour(locale)
+    hour12: shouldUse12Hour(locale),
   }).format(date);
 }
 
 function shouldUse12Hour(locale) {
-  const hour12Locales = ['en-US', 'en-AU', 'en-IN'];
-  return hour12Locales.some(l => locale.startsWith(l.split('-')[0]));
+  const hour12Locales = ["en-US", "en-AU", "en-IN"];
+  return hour12Locales.some((l) => locale.startsWith(l.split("-")[0]));
 }
 
 // Relative time (e.g., "in 2 hours")
@@ -5177,14 +5410,14 @@ function formatRelativeTime(dateString, locale) {
   const diffMs = date - now;
   const diffHours = Math.round(diffMs / (1000 * 60 * 60));
 
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
 
   if (Math.abs(diffHours) < 24) {
-    return rtf.format(diffHours, 'hour');
+    return rtf.format(diffHours, "hour");
   }
 
   const diffDays = Math.round(diffHours / 24);
-  return rtf.format(diffDays, 'day');
+  return rtf.format(diffDays, "day");
 }
 
 // React component
@@ -5207,26 +5440,26 @@ function ShowTime({ showTime }) {
 ```javascript
 // Different markets use different seat labeling conventions
 const SEAT_LABELS = {
-  'en-US': {
-    rows: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
-    columns: (n) => n.toString()
+  "en-US": {
+    rows: "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""),
+    columns: (n) => n.toString(),
   },
-  'ja-JP': {
-    rows: 'あいうえおかきくけこ'.split(''),
-    columns: (n) => n.toString()
+  "ja-JP": {
+    rows: "あいうえおかきくけこ".split(""),
+    columns: (n) => n.toString(),
   },
-  'zh-CN': {
+  "zh-CN": {
     rows: Array.from({ length: 26 }, (_, i) => `${i + 1}排`),
-    columns: (n) => `${n}座`
+    columns: (n) => `${n}座`,
   },
-  'ar-SA': {
-    rows: 'أبتثجحخدذرزسشصضطظعغفقكلمنهوي'.split(''),
-    columns: (n) => n.toLocaleString('ar-SA')
-  }
+  "ar-SA": {
+    rows: "أبتثجحخدذرزسشصضطظعغفقكلمنهوي".split(""),
+    columns: (n) => n.toLocaleString("ar-SA"),
+  },
 };
 
 function getSeatLabel(row, col, locale) {
-  const labels = SEAT_LABELS[locale] || SEAT_LABELS['en-US'];
+  const labels = SEAT_LABELS[locale] || SEAT_LABELS["en-US"];
 
   const rowLabel = labels.rows[row] || labels.rows[row % labels.rows.length];
   const colLabel = labels.columns(col + 1);
@@ -5240,7 +5473,7 @@ function getSeatLabel(row, col, locale) {
 }
 
 function isRTL(locale) {
-  return ['ar', 'he', 'fa', 'ur'].some(l => locale.startsWith(l));
+  return ["ar", "he", "fa", "ur"].some((l) => locale.startsWith(l));
 }
 ```
 
@@ -5293,20 +5526,20 @@ function isRTL(locale) {
 // health-check-service.js
 class HealthChecker {
   constructor() {
-    this.services = ['database', 'redis', 'payment-gateway', 'notification'];
+    this.services = ["database", "redis", "payment-gateway", "notification"];
     this.thresholds = {
       database: { maxLatency: 100, maxErrors: 5 },
       redis: { maxLatency: 10, maxErrors: 3 },
-      'payment-gateway': { maxLatency: 5000, maxErrors: 2 }
+      "payment-gateway": { maxLatency: 5000, maxErrors: 2 },
     };
   }
 
   async checkAll() {
     const results = await Promise.all(
-      this.services.map(service => this.checkService(service))
+      this.services.map((service) => this.checkService(service))
     );
 
-    const unhealthy = results.filter(r => !r.healthy);
+    const unhealthy = results.filter((r) => !r.healthy);
 
     if (unhealthy.length > 0) {
       await this.handleUnhealthy(unhealthy);
@@ -5320,13 +5553,13 @@ class HealthChecker {
 
     try {
       switch (service) {
-        case 'database':
-          await db.query('SELECT 1');
+        case "database":
+          await db.query("SELECT 1");
           break;
-        case 'redis':
+        case "redis":
           await redis.ping();
           break;
-        case 'payment-gateway':
+        case "payment-gateway":
           await fetch(`${GATEWAY_URL}/health`);
           break;
       }
@@ -5338,15 +5571,14 @@ class HealthChecker {
         service,
         healthy: latency <= threshold.maxLatency,
         latency,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
-
     } catch (error) {
       return {
         service,
         healthy: false,
         error: error.message,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
     }
   }
@@ -5371,10 +5603,10 @@ class HealthChecker {
     logger.critical(`Triggering failover for ${service}`);
 
     switch (service) {
-      case 'database':
+      case "database":
         await this.failoverDatabase();
         break;
-      case 'redis':
+      case "redis":
         await this.failoverRedis();
         break;
     }
@@ -5385,10 +5617,10 @@ class HealthChecker {
 
   async failoverDatabase() {
     // Promote replica to primary
-    await fetch(`${FAILOVER_API}/database/promote`, { method: 'POST' });
+    await fetch(`${FAILOVER_API}/database/promote`, { method: "POST" });
 
     // Update connection strings
-    await updateDatabaseConfig('secondary');
+    await updateDatabaseConfig("secondary");
 
     // Clear connection pools
     await db.end();
@@ -5404,7 +5636,7 @@ setInterval(() => healthChecker.checkAll(), 10000);
 ```javascript
 // backup-service.js
 class BackupService {
-  async createBackup(type = 'incremental') {
+  async createBackup(type = "incremental") {
     const timestamp = Date.now();
     const backupId = `backup-${timestamp}`;
 
@@ -5412,7 +5644,7 @@ class BackupService {
 
     try {
       // 1. Database backup
-      if (type === 'full') {
+      if (type === "full") {
         await this.fullDatabaseBackup(backupId);
       } else {
         await this.incrementalDatabaseBackup(backupId);
@@ -5428,15 +5660,18 @@ class BackupService {
       await this.verifyBackup(backupId);
 
       // 5. Update backup metadata
-      await this.updateMetadata(backupId, { type, status: 'completed' });
+      await this.updateMetadata(backupId, { type, status: "completed" });
 
       logger.info(`Backup completed: ${backupId}`);
 
-      return { backupId, status: 'success' };
-
+      return { backupId, status: "success" };
     } catch (error) {
       logger.error(`Backup failed: ${backupId}`, error);
-      await this.updateMetadata(backupId, { type, status: 'failed', error: error.message });
+      await this.updateMetadata(backupId, {
+        type,
+        status: "failed",
+        error: error.message,
+      });
       throw error;
     }
   }
@@ -5452,12 +5687,12 @@ class BackupService {
     // 2. Verify checksum
     const isValid = await this.verifyChecksum(backupPath);
     if (!isValid) {
-      throw new Error('Backup checksum verification failed');
+      throw new Error("Backup checksum verification failed");
     }
 
     if (dryRun) {
-      logger.info('Dry run complete - backup is valid');
-      return { status: 'dry-run-success' };
+      logger.info("Dry run complete - backup is valid");
+      return { status: "dry-run-success" };
     }
 
     // 3. Stop incoming traffic
@@ -5477,10 +5712,9 @@ class BackupService {
       await this.disableMaintenanceMode();
 
       logger.info(`Restore completed from: ${backupId}`);
-      return { status: 'success' };
-
+      return { status: "success" };
     } catch (error) {
-      logger.error('Restore failed', error);
+      logger.error("Restore failed", error);
       await this.rollback();
       throw error;
     }
@@ -5511,6 +5745,7 @@ This High-Level Design covers a comprehensive ticket booking system with emphasi
 10. **Resilience**: Multi-region DR, automated failover, backup/restore
 
 **Key Technical Decisions**:
+
 - Redis for distributed locks (performance + TTL)
 - PostgreSQL for transactional data (ACID guarantees)
 - Optimistic + Pessimistic locking (defense in depth)
@@ -5520,11 +5755,13 @@ This High-Level Design covers a comprehensive ticket booking system with emphasi
 - Virtual waiting room for high-traffic events
 
 **Critical Path**: Seat Selection → Lock Acquisition → Payment → Booking Confirmation
+
 - Each step has fallback and retry mechanisms
 - Idempotency ensures safe retries
 - Atomic operations prevent race conditions
 
 **Comprehensive Checklist**:
+
 ```
 Pre-Interview Preparation:
 
@@ -5573,6 +5810,7 @@ Production:
 5. **User Experience**: Real-time seat updates, clear error messages, smooth flow
 
 **Key Technical Decisions**:
+
 - Redis for distributed locks (performance + TTL)
 - PostgreSQL for transactional data (ACID guarantees)
 - Optimistic + Pessimistic locking (defense in depth)
@@ -5580,6 +5818,7 @@ Production:
 - Strong consistency for bookings, eventual for catalog
 
 **Critical Path**: Seat Selection → Lock Acquisition → Payment → Booking Confirmation
+
 - Each step has fallback and retry mechanisms
 - Idempotency ensures safe retries
 - Atomic operations prevent race conditions

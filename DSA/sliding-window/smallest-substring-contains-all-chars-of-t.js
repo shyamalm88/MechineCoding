@@ -29,66 +29,60 @@
  * 2. Once valid, shrink `left` to minimize the window size while keeping it valid.
  * 3. Track the minimum length found.
  *
- * We use a `need` map for counts of T, and a `windowMap` for counts in current window.
- * `formed` tracks how many unique characters have met the required frequency.
+ * Implementation Details:
+ * - We use a single frequency map (`need`) initialized with counts from `t`.
+ * - We maintain a `missing` counter for the total number of characters from `t` still needed in the window.
+ * - When `missing` reaches 0, we try to shrink the window from the left.
  *
- * Time Complexity: O(S + T)
- * Space Complexity: O(1) (since alphabet size is limited to 52/128 chars)
+ * Time Complexity: O(S + T) - Each char in s is added and removed at most once.
+ * Space Complexity: O(1) - Map size is bounded by alphabet size (e.g., 128 ASCII).
  */
 const minWindow = (s, t) => {
-  if (t.length > s.length) return "";
-
-  // 1. Frequency map for T
+  // 1. Build frequency map for target string t
   const need = new Map();
-  for (const ch of t) {
-    need.set(ch, (need.get(ch) || 0) + 1);
+  for (const c of t) {
+    need.set(c, (need.get(c) || 0) + 1);
   }
 
-  const windowMap = new Map();
+  // 2. Initialize pointers and tracking variables
+  let missing = t.length;
   let left = 0;
-  let right = 0;
-  let formed = 0;
-  const required = need.size;
+  let bestLen = Infinity;
+  let bestStart = 0;
 
-  // Result tuple: [length, left, right]
-  // Initialized to -1 length to indicate no result found yet
-  let ans = [-1, 0, 0];
+  // 3. Expand the window by moving 'right'
+  for (let right = 0; right < s.length; right++) {
+    const ch = s[right];
 
-  while (right < s.length) {
-    const charRight = s[right];
-    windowMap.set(charRight, (windowMap.get(charRight) || 0) + 1);
-
-    // If current char matches the requirement count in T, increment formed
-    if (
-      need.has(charRight) &&
-      windowMap.get(charRight) === need.get(charRight)
-    ) {
-      formed++;
+    // If current char is in t, decrement its count in 'need'
+    // If count > 0, it means this char contributes to satisfying t
+    if (need.has(ch)) {
+      if (need.get(ch) > 0) missing--;
+      need.set(ch, need.get(ch) - 1); // Can go negative (indicates surplus)
     }
 
-    // Try to shrink the window while it remains valid
-    while (left <= right && formed === required) {
-      const currentLen = right - left + 1;
-
-      // Update smallest window if current is smaller
-      if (ans[0] === -1 || currentLen < ans[0]) {
-        ans = [currentLen, left, right];
+    // 4. Shrink window from 'left' while it remains valid (missing === 0)
+    while (missing === 0) {
+      // Update minimum window found so far
+      if (right - left + 1 < bestLen) {
+        bestLen = right - left + 1;
+        bestStart = left;
       }
 
-      // Remove left character
-      const charLeft = s[left];
-      windowMap.set(charLeft, (windowMap.get(charLeft) || 0) - 1);
-
-      // If removing this char breaks the requirement, decrement formed
-      if (need.has(charLeft) && windowMap.get(charLeft) < need.get(charLeft)) {
-        formed--;
+      // Try to remove the leftmost character
+      const leftChar = s[left];
+      if (need.has(leftChar)) {
+        need.set(leftChar, need.get(leftChar) + 1);
+        // If count becomes > 0, we are now missing a required char
+        if (need.get(leftChar) > 0) missing++;
       }
-      left++;
+      left++; // Shrink
     }
-    right++;
   }
 
-  return ans[0] === -1 ? "" : s.substring(ans[1], ans[2] + 1);
+  return bestLen === Infinity
+    ? ""
+    : s.substring(bestStart, bestStart + bestLen);
 };
 
 // ============================================================================

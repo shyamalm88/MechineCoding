@@ -3,11 +3,13 @@
 ## 1. Problem Statement & Requirements
 
 ### Problem Statement
+
 Design a scalable food delivery platform that connects customers with restaurants and delivery partners, enabling seamless browsing, ordering, real-time tracking, and delivery of food items.
 
 ### Functional Requirements
 
 #### Core Features
+
 - **User Management**: Registration, login, profile management for customers, restaurants, and delivery partners
 - **Restaurant Discovery**: Browse restaurants by cuisine, location, ratings, delivery time
 - **Menu Browsing**: View restaurant menus with items, prices, descriptions, images
@@ -23,6 +25,7 @@ Design a scalable food delivery platform that connects customers with restaurant
 - **Notifications**: Order status updates, offers, delivery updates
 
 #### User Roles
+
 1. **Customer**: Browse, order, track, review
 2. **Restaurant Owner**: Manage menu, prices, availability, view orders
 3. **Delivery Partner**: Accept orders, navigate, update delivery status
@@ -37,13 +40,36 @@ Design a scalable food delivery platform that connects customers with restaurant
   - Order placement: < 2s
   - Real-time tracking updates: < 1s latency
 - **Availability**: 99.9% uptime
-- **Consistency**: Strong consistency for orders, eventual consistency for restaurant listings
+
+### Consistency Model
+
+Different parts of the system use different consistency guarantees based on business risk.
+
+| Domain              | Consistency           | Why                             |
+| ------------------- | --------------------- | ------------------------------- |
+| Orders              | Strong (ACID)         | Cannot lose or duplicate orders |
+| Payments            | Strong                | Financial correctness           |
+| Inventory           | Strong per restaurant | Prevent overselling             |
+| Delivery assignment | Strong                | One rider per order             |
+| Tracking updates    | Eventual              | GPS jitter acceptable           |
+| Restaurant listing  | Eventual              | Slight staleness is fine        |
+| Reviews & ratings   | Eventual              | Not business-critical           |
+| Search results      | Eventual              | Cached & indexed                |
+
+**Implementation**
+
+- PostgreSQL transactions for Orders & Payments
+- Redis locks for Delivery assignment
+- Kafka for async state propagation
+- Elasticsearch for eventually-consistent search
+
 - **Real-time**: Live order tracking with WebSocket connections
 - **Reliability**: No order loss, accurate billing
 - **Security**: Secure payments, data encryption, PCI-DSS compliance
 - **Geo-distribution**: Location-based services with low latency
 
 ### Scale Estimates
+
 - **Users**: 50M active users
 - **Daily Orders**: 5M orders/day (~60 orders/second average, 300 peak)
 - **Restaurants**: 500K restaurants
@@ -134,12 +160,47 @@ Design a scalable food delivery platform that connects customers with restaurant
 ```
 
 ### Architecture Principles
+
 - **Microservices**: Independent, scalable services
 - **Event-Driven**: Kafka for asynchronous communication
 - **API Gateway**: Single entry point, handles auth, rate limiting
 - **Caching**: Multi-layer caching (CDN, Redis)
 - **Database Per Service**: Polyglot persistence
 - **Real-time Communication**: WebSocket for live tracking
+
+---
+
+## System Invariants
+
+These rules must always hold true across all services, databases, and regions.
+
+### Order & Payment Invariants
+
+- An order can never be in `CONFIRMED` unless payment is successful.
+- An order can never be in `PREPARING` unless the restaurant has acknowledged it.
+- An order can never be `PICKED_UP` unless a delivery partner is assigned.
+- A delivery partner can never have more than one active order.
+- A payment can only be applied to exactly one order (idempotency required).
+
+### Inventory & Pricing Invariants
+
+- Items cannot be sold if marked unavailable by the restaurant.
+- Price at checkout must be re-validated before payment is initiated.
+- If price changes, the cart must be recomputed before allowing checkout.
+
+### Delivery & Tracking Invariants
+
+- Tracking starts only after `PICKED_UP`.
+- GPS updates must always correspond to exactly one order.
+- ETA can change, but order state cannot move backward.
+
+### Failure Safety Invariants
+
+- No order may be lost after payment succeeds.
+- No refund may occur without a recorded payment.
+- All state transitions must be recorded and auditable.
+
+These invariants allow the system to be **eventually consistent everywhere except money and orders**, which must always be strongly consistent.
 
 ---
 
@@ -391,6 +452,35 @@ Design a scalable food delivery platform that connects customers with restaurant
    │            │              │              │              │               │
 ```
 
+### 4.3.1 Delivery Partner Assignment Flow
+
+Once payment succeeds and the restaurant confirms the order, the system must find a delivery partner.
+
+```text
+┌──────────┐ ┌────────────┐ ┌──────────────┐ ┌──────────────────┐
+│ OrderSvc │ → │ DeliverySvc│ → │ Redis (Geo) │ → │ Partner App│
+└──────────┘ └────────────┘ └──────────────┘ └──────────────────┘
+```
+
+Steps:
+
+1. Order Service emits `order.confirmed` event.
+2. Delivery Service queries Redis Geo Index:
+   - radius = 5km
+   - sorted by distance
+3. Closest available partner is locked using:
+   `SETNX partner:{id}:lock`
+4. Partner receives push notification.
+5. Partner accepts → Order assigned.
+6. If no partner found:
+   - Order moves to `WAITING_FOR_PARTNER`
+   - Retry every 30 seconds for 5 minutes
+
+This prevents:
+
+- Two riders getting same order
+- Orders stuck without riders
+
 ### 4.4 Real-time Order Tracking Flow (Key Differentiator)
 
 ```
@@ -480,11 +570,61 @@ CANCELLED       → Order cancelled (before PICKED_UP)
 
 ---
 
+## Failure Scenarios & Recovery
+
+These define how the system behaves when things go wrong.
+
+### Payment Succeeds but Restaurant Fails
+
+- Order remains in `CONFIRMED`
+- Restaurant is retried
+- If timeout → auto cancel + refund
+
+### Payment Fails After Order Created
+
+- Order stays `PENDING`
+- Payment retry allowed
+- Auto-cancel after 15 minutes
+
+### Rider Cancels After Accepting
+
+- Order returns to `WAITING_FOR_PARTNER`
+- New partner assigned
+- Customer notified of delay
+
+### Restaurant Marks Item Unavailable
+
+- Before cooking → auto cancel + refund
+- After cooking → partial refund + credits
+
+### WebSocket Disconnects
+
+- Client falls back to REST polling
+- No tracking data lost
+
+### Kafka Outage
+
+- Orders & payments continue (direct DB)
+- Tracking delayed
+- Events replayed later
+
+### Redis Failure
+
+- Partner assignment falls back to DB locks
+- Tracking switches to polling
+- Write queues buffer until leader restored
+
+### Data Center Failure
+
+- DNS routes to nearest healthy region
+- Read replicas continue serving
+
 ## 5. API Design & Communication Protocols
 
 ### 5.1 REST API Endpoints
 
 #### User Service
+
 ```
 POST   /api/v1/auth/register
 POST   /api/v1/auth/login
@@ -498,6 +638,7 @@ DELETE /api/v1/users/addresses/{id}
 ```
 
 #### Restaurant Service
+
 ```
 GET    /api/v1/restaurants
        ?lat=12.34&lng=56.78
@@ -514,6 +655,7 @@ PUT    /api/v1/restaurants/{id}
 ```
 
 #### Search Service
+
 ```
 GET    /api/v1/search
        ?q=biryani
@@ -524,6 +666,7 @@ GET    /api/v1/search/suggestions?q=bir
 ```
 
 #### Cart Service
+
 ```
 POST   /api/v1/cart/items
        Body: {restaurant_id, item_id, quantity, customizations}
@@ -537,6 +680,7 @@ DELETE /api/v1/cart/clear
 ```
 
 #### Order Service
+
 ```
 POST   /api/v1/orders
        Body: {
@@ -560,6 +704,7 @@ POST   /api/v1/orders/{id}/reorder
 ```
 
 #### Payment Service
+
 ```
 POST   /api/v1/payments/initiate
        Body: {order_id, amount, method}
@@ -571,6 +716,7 @@ POST   /api/v1/payments/{id}/refund
 ```
 
 #### Tracking Service
+
 ```
 GET    /api/v1/tracking/{order_id}
        Response: {
@@ -582,6 +728,7 @@ GET    /api/v1/tracking/{order_id}
 ```
 
 #### Rating Service
+
 ```
 POST   /api/v1/ratings
        Body: {
@@ -597,6 +744,7 @@ GET    /api/v1/ratings/restaurant/{id}?page=1
 ```
 
 #### Offers Service
+
 ```
 GET    /api/v1/offers
        ?lat=12.34&lng=56.78
@@ -610,6 +758,7 @@ POST   /api/v1/offers/validate
 ```
 
 #### Delivery Service (For Delivery Partners)
+
 ```
 POST   /api/v1/delivery/available
        Body: {lat, lng, available: true}
@@ -1248,9 +1397,9 @@ async function updateRestaurantMenu(restaurantId, menuData) {
   await redis.del(`restaurant:details:${restaurantId}`);
 
   // 4. Publish invalidation event
-  await kafka.publish('cache.invalidate', {
-    type: 'restaurant_menu',
-    restaurant_id: restaurantId
+  await kafka.publish("cache.invalidate", {
+    type: "restaurant_menu",
+    restaurant_id: restaurantId,
   });
 }
 
@@ -1267,8 +1416,8 @@ async function getRestaurantList(lat, lng, filters) {
 
   // Cache miss - fetch from Elasticsearch
   restaurants = await elasticsearch.search({
-    index: 'restaurants',
-    body: buildSearchQuery(lat, lng, filters)
+    index: "restaurants",
+    body: buildSearchQuery(lat, lng, filters),
   });
 
   // Store in cache
@@ -1279,7 +1428,7 @@ async function getRestaurantList(lat, lng, filters) {
 
 // Pattern 3: Time-based Invalidation (for cart)
 async function addToCart(userId, item) {
-  const cart = await redis.get(`cart:${userId}`) || { items: [] };
+  const cart = (await redis.get(`cart:${userId}`)) || { items: [] };
   cart.items.push(item);
 
   // Reset TTL on every update
@@ -1287,14 +1436,14 @@ async function addToCart(userId, item) {
 }
 
 // Pattern 4: Event-based Invalidation
-kafka.subscribe('order.placed', async (event) => {
+kafka.subscribe("order.placed", async (event) => {
   const { restaurant_id } = event;
 
   // Invalidate restaurant's active order cache
   await redis.del(`active_orders:${restaurant_id}`);
 
   // Increment restaurant popularity (for ranking)
-  await redis.zincrby('leaderboard:restaurants:popular', 1, restaurant_id);
+  await redis.zincrby("leaderboard:restaurants:popular", 1, restaurant_id);
 });
 ```
 
@@ -1304,15 +1453,17 @@ kafka.subscribe('order.placed', async (event) => {
 // Warm cache for popular restaurants during low traffic
 async function warmPopularRestaurants() {
   const popularRestaurants = await redis.zrange(
-    'leaderboard:restaurants:popular',
+    "leaderboard:restaurants:popular",
     0,
     99, // Top 100
-    'REV'
+    "REV"
   );
 
   for (const restaurantId of popularRestaurants) {
     // Pre-load restaurant details
-    const details = await db.restaurants.findOne({ restaurant_id: restaurantId });
+    const details = await db.restaurants.findOne({
+      restaurant_id: restaurantId,
+    });
     await redis.setex(
       `restaurant:details:${restaurantId}`,
       600,
@@ -1329,7 +1480,7 @@ async function warmPopularRestaurants() {
 }
 
 // Schedule every 5 minutes during peak hours
-cron.schedule('*/5 17-22 * * *', warmPopularRestaurants);
+cron.schedule("*/5 17-22 * * *", warmPopularRestaurants);
 ```
 
 ---
@@ -1464,7 +1615,7 @@ const useCartStore = create(
         // Clear cart if different restaurant
         if (restaurantId && restaurantId !== restaurant.id) {
           const confirmSwitch = window.confirm(
-            'Your cart contains items from another restaurant. Clear it?'
+            "Your cart contains items from another restaurant. Clear it?"
           );
           if (!confirmSwitch) return;
 
@@ -1472,9 +1623,11 @@ const useCartStore = create(
         }
 
         // Check if item already exists
-        const existingIndex = items.findIndex(i =>
-          i.itemId === item.id &&
-          JSON.stringify(i.customizations) === JSON.stringify(item.customizations)
+        const existingIndex = items.findIndex(
+          (i) =>
+            i.itemId === item.id &&
+            JSON.stringify(i.customizations) ===
+              JSON.stringify(item.customizations)
         );
 
         if (existingIndex >= 0) {
@@ -1485,15 +1638,18 @@ const useCartStore = create(
         } else {
           // Add new item
           set({
-            items: [...items, {
-              itemId: item.id,
-              name: item.name,
-              quantity: 1,
-              price: item.price,
-              customizations: item.customizations,
-              total: calculateItemTotal(item)
-            }],
-            restaurantId: restaurant.id
+            items: [
+              ...items,
+              {
+                itemId: item.id,
+                name: item.name,
+                quantity: 1,
+                price: item.price,
+                customizations: item.customizations,
+                total: calculateItemTotal(item),
+              },
+            ],
+            restaurantId: restaurant.id,
           });
         }
 
@@ -1503,9 +1659,13 @@ const useCartStore = create(
 
       // Remove item
       removeItem: (itemId, customizations) => {
-        const items = get().items.filter(item =>
-          !(item.itemId === itemId &&
-            JSON.stringify(item.customizations) === JSON.stringify(customizations))
+        const items = get().items.filter(
+          (item) =>
+            !(
+              item.itemId === itemId &&
+              JSON.stringify(item.customizations) ===
+                JSON.stringify(customizations)
+            )
         );
         set({ items });
         syncCartToBackend(get());
@@ -1513,7 +1673,7 @@ const useCartStore = create(
 
       // Update quantity
       updateQuantity: (itemId, customizations, quantity) => {
-        const items = get().items.map(item =>
+        const items = get().items.map((item) =>
           item.itemId === itemId &&
           JSON.stringify(item.customizations) === JSON.stringify(customizations)
             ? { ...item, quantity, total: item.price * quantity }
@@ -1528,11 +1688,12 @@ const useCartStore = create(
 
       // Computed values
       getSubtotal: () => get().items.reduce((sum, item) => sum + item.total, 0),
-      getItemCount: () => get().items.reduce((sum, item) => sum + item.quantity, 0)
+      getItemCount: () =>
+        get().items.reduce((sum, item) => sum + item.quantity, 0),
     }),
     {
-      name: 'cart-storage',
-      storage: createJSONStorage(() => localStorage)
+      name: "cart-storage",
+      storage: createJSONStorage(() => localStorage),
     }
   )
 );
@@ -1552,49 +1713,49 @@ const useTrackingStore = create((set, get) => ({
 
     ws.onopen = () => {
       set({ isConnected: true, connection: ws });
-      console.log('Tracking connected');
+      console.log("Tracking connected");
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
       switch (data.type) {
-        case 'status_update':
+        case "status_update":
           set({
             orderStatus: data.status,
-            eta: data.eta_minutes
+            eta: data.eta_minutes,
           });
           break;
 
-        case 'location_update':
+        case "location_update":
           set({
             deliveryPartner: {
               ...get().deliveryPartner,
-              currentLocation: data.location
+              currentLocation: data.location,
             },
-            eta: data.eta_minutes
+            eta: data.eta_minutes,
           });
           break;
 
-        case 'partner_assigned':
+        case "partner_assigned":
           set({ deliveryPartner: data.partner });
           break;
 
-        case 'delivered':
-          set({ orderStatus: 'DELIVERED' });
+        case "delivered":
+          set({ orderStatus: "DELIVERED" });
           ws.close();
           break;
       }
     };
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error("WebSocket error:", error);
       set({ isConnected: false });
     };
 
     ws.onclose = () => {
       set({ isConnected: false, connection: null });
-      console.log('Tracking disconnected');
+      console.log("Tracking disconnected");
     };
 
     set({ connection: ws });
@@ -1606,7 +1767,7 @@ const useTrackingStore = create((set, get) => ({
       connection.close();
       set({ connection: null, isConnected: false });
     }
-  }
+  },
 }));
 ```
 
@@ -1615,15 +1776,15 @@ const useTrackingStore = create((set, get) => ({
 ```javascript
 // Order State Machine
 const ORDER_TRANSITIONS = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY', 'CANCELLED'],
-  READY: ['PICKED_UP'],
-  PICKED_UP: ['OUT_FOR_DELIVERY'],
-  OUT_FOR_DELIVERY: ['DELIVERED'],
-  DELIVERED: ['COMPLETED'],
+  PENDING: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["PREPARING", "CANCELLED"],
+  PREPARING: ["READY", "CANCELLED"],
+  READY: ["PICKED_UP"],
+  PICKED_UP: ["OUT_FOR_DELIVERY"],
+  OUT_FOR_DELIVERY: ["DELIVERED"],
+  DELIVERED: ["COMPLETED"],
   CANCELLED: [],
-  COMPLETED: []
+  COMPLETED: [],
 };
 
 class OrderStateMachine {
@@ -1653,8 +1814,8 @@ class OrderStateMachine {
         {
           $set: {
             order_status: newStatus,
-            updated_at: new Date()
-          }
+            updated_at: new Date(),
+          },
         },
         { session }
       );
@@ -1665,15 +1826,14 @@ class OrderStateMachine {
       await session.commitTransaction();
 
       // Publish event
-      await kafka.publish('order.status.changed', {
+      await kafka.publish("order.status.changed", {
         order_id: this.orderId,
         old_status: currentStatus,
         new_status: newStatus,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
 
       return { success: true, status: newStatus };
-
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -1684,22 +1844,22 @@ class OrderStateMachine {
 
   async executeSideEffects(oldStatus, newStatus, session) {
     switch (newStatus) {
-      case 'CONFIRMED':
+      case "CONFIRMED":
         await this.assignDeliveryPartner(session);
         await this.notifyRestaurant();
         break;
 
-      case 'PICKED_UP':
+      case "PICKED_UP":
         await this.startTracking();
-        await this.notifyCustomer('Order picked up');
+        await this.notifyCustomer("Order picked up");
         break;
 
-      case 'DELIVERED':
+      case "DELIVERED":
         await this.stopTracking();
         await this.requestRating();
         break;
 
-      case 'CANCELLED':
+      case "CANCELLED":
         await this.initiateRefund(session);
         await this.notifyAllParties();
         break;
@@ -1717,9 +1877,9 @@ class OrderStateMachine {
 ```javascript
 // 1. Code Splitting
 // Lazy load components
-const RestaurantDetails = lazy(() => import('./RestaurantDetails'));
-const OrderTracking = lazy(() => import('./OrderTracking'));
-const Checkout = lazy(() => import('./Checkout'));
+const RestaurantDetails = lazy(() => import("./RestaurantDetails"));
+const OrderTracking = lazy(() => import("./OrderTracking"));
+const Checkout = lazy(() => import("./Checkout"));
 
 // 2. Image Optimization
 // Use responsive images with lazy loading
@@ -1733,10 +1893,10 @@ const Checkout = lazy(() => import('./Checkout'));
   sizes="(max-width: 600px) 480px, (max-width: 900px) 800px, 1200px"
   alt={restaurant.name}
   loading="lazy"
-/>
+/>;
 
 // 3. Virtual Scrolling for Long Lists
-import { FixedSizeList } from 'react-window';
+import { FixedSizeList } from "react-window";
 
 function RestaurantList({ restaurants }) {
   const Row = ({ index, style }) => (
@@ -1758,10 +1918,10 @@ function RestaurantList({ restaurants }) {
 }
 
 // 4. Debounced Search
-import { useDebouncedCallback } from 'use-debounce';
+import { useDebouncedCallback } from "use-debounce";
 
 const SearchBar = () => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
 
   const debouncedSearch = useDebouncedCallback(
     async (value) => {
@@ -1787,10 +1947,7 @@ const CartSummary = ({ items }) => {
     [items]
   );
 
-  const taxes = useMemo(
-    () => subtotal * 0.05,
-    [subtotal]
-  );
+  const taxes = useMemo(() => subtotal * 0.05, [subtotal]);
 
   return (
     <div>
@@ -1802,24 +1959,20 @@ const CartSummary = ({ items }) => {
 
 // 6. Service Worker for Offline Support
 // sw.js
-const CACHE_NAME = 'zomato-v1';
-const urlsToCache = [
-  '/',
-  '/static/css/main.css',
-  '/static/js/bundle.js'
-];
+const CACHE_NAME = "zomato-v1";
+const urlsToCache = ["/", "/static/css/main.css", "/static/js/bundle.js"];
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(urlsToCache))
   );
 });
 
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
+    caches
+      .match(event.request)
+      .then((response) => response || fetch(event.request))
   );
 });
 ```
@@ -1835,7 +1988,9 @@ async function getOrdersWithDetails(userId) {
   for (const order of orders) {
     // This creates N additional queries!
     order.items = await db.order_items.find({ order_id: order.order_id });
-    order.restaurant = await db.restaurants.findOne({ id: order.restaurant_id });
+    order.restaurant = await db.restaurants.findOne({
+      id: order.restaurant_id,
+    });
   }
 
   return orders;
@@ -1843,7 +1998,8 @@ async function getOrdersWithDetails(userId) {
 
 // After: Using JOIN / aggregation
 async function getOrdersWithDetails(userId) {
-  return await db.query(`
+  return await db.query(
+    `
     SELECT
       o.*,
       json_agg(oi.*) as items,
@@ -1853,16 +2009,18 @@ async function getOrdersWithDetails(userId) {
     LEFT JOIN restaurants r ON o.restaurant_id = r.restaurant_id
     WHERE o.user_id = $1
     GROUP BY o.order_id, r.restaurant_id
-  `, [userId]);
+  `,
+    [userId]
+  );
 }
 
 // 2. Connection Pooling
 const pool = new Pool({
-  host: 'localhost',
-  database: 'zomato',
+  host: "localhost",
+  database: "zomato",
   max: 20, // Maximum pool size
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000
+  connectionTimeoutMillis: 2000,
 });
 
 // 3. Batch Processing for Notifications
@@ -1890,11 +2048,11 @@ class NotificationBatcher {
 
     // Send batch to notification service
     await fcm.sendMulticast({
-      tokens: batch.map(n => n.token),
+      tokens: batch.map((n) => n.token),
       notification: {
-        title: 'Order Update',
-        body: 'Your order status has changed'
-      }
+        title: "Order Update",
+        body: "Your order status has changed",
+      },
     });
   }
 }
@@ -1916,35 +2074,37 @@ db.restaurants.createIndex({ "is_active": 1, "delivery_time": 1 });
 */
 
 // 5. API Response Compression
-const compression = require('compression');
-app.use(compression({
-  level: 6, // Compression level (0-9)
-  threshold: 1024, // Only compress responses > 1KB
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) {
-      return false;
-    }
-    return compression.filter(req, res);
-  }
-}));
+const compression = require("compression");
+app.use(
+  compression({
+    level: 6, // Compression level (0-9)
+    threshold: 1024, // Only compress responses > 1KB
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // 6. Rate Limiting
-const rateLimit = require('express-rate-limit');
+const rateLimit = require("express-rate-limit");
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP'
+  message: "Too many requests from this IP",
 });
 
 const orderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 10, // Limit order creation to 10 per hour
-  message: 'Too many orders created'
+  message: "Too many orders created",
 });
 
-app.use('/api/', apiLimiter);
-app.use('/api/orders', orderLimiter);
+app.use("/api/", apiLimiter);
+app.use("/api/orders", orderLimiter);
 ```
 
 ### 9.3 Scalability Patterns
@@ -2015,32 +2175,32 @@ class AppError extends Error {
 
 class ValidationError extends AppError {
   constructor(message) {
-    super(message, 400, 'VALIDATION_ERROR');
+    super(message, 400, "VALIDATION_ERROR");
   }
 }
 
 class NotFoundError extends AppError {
   constructor(resource) {
-    super(`${resource} not found`, 404, 'NOT_FOUND');
+    super(`${resource} not found`, 404, "NOT_FOUND");
   }
 }
 
 class PaymentError extends AppError {
   constructor(message) {
-    super(message, 402, 'PAYMENT_FAILED');
+    super(message, 402, "PAYMENT_FAILED");
   }
 }
 
 class RateLimitError extends AppError {
   constructor() {
-    super('Too many requests', 429, 'RATE_LIMIT_EXCEEDED');
+    super("Too many requests", 429, "RATE_LIMIT_EXCEEDED");
   }
 }
 
 // Global Error Handler Middleware
 app.use((err, req, res, next) => {
   err.statusCode = err.statusCode || 500;
-  err.status = err.status || 'error';
+  err.status = err.status || "error";
 
   // Log error
   logger.error({
@@ -2050,7 +2210,7 @@ app.use((err, req, res, next) => {
     errorCode: err.errorCode,
     path: req.path,
     method: req.method,
-    user: req.user?.id
+    user: req.user?.id,
   });
 
   // Send to error monitoring (Sentry)
@@ -2063,7 +2223,7 @@ app.use((err, req, res, next) => {
     status: err.status,
     error_code: err.errorCode,
     message: err.message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
   });
 });
 ```
@@ -2386,21 +2546,21 @@ class CircuitBreaker {
     this.service = service;
     this.failureThreshold = options.failureThreshold || 5;
     this.resetTimeout = options.resetTimeout || 60000; // 1 minute
-    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.state = "CLOSED"; // CLOSED, OPEN, HALF_OPEN
     this.failureCount = 0;
     this.nextAttempt = Date.now();
   }
 
   async execute(fn, ...args) {
-    if (this.state === 'OPEN') {
+    if (this.state === "OPEN") {
       if (Date.now() < this.nextAttempt) {
         throw new AppError(
           `${this.service} service unavailable`,
           503,
-          'SERVICE_UNAVAILABLE'
+          "SERVICE_UNAVAILABLE"
         );
       }
-      this.state = 'HALF_OPEN';
+      this.state = "HALF_OPEN";
     }
 
     try {
@@ -2415,28 +2575,28 @@ class CircuitBreaker {
 
   onSuccess() {
     this.failureCount = 0;
-    this.state = 'CLOSED';
+    this.state = "CLOSED";
   }
 
   onFailure() {
     this.failureCount++;
 
     if (this.failureCount >= this.failureThreshold) {
-      this.state = 'OPEN';
+      this.state = "OPEN";
       this.nextAttempt = Date.now() + this.resetTimeout;
 
       logger.error({
         message: `Circuit breaker opened for ${this.service}`,
-        failureCount: this.failureCount
+        failureCount: this.failureCount,
       });
     }
   }
 }
 
 // Usage
-const paymentBreaker = new CircuitBreaker('Payment Gateway', {
+const paymentBreaker = new CircuitBreaker("Payment Gateway", {
   failureThreshold: 3,
-  resetTimeout: 30000
+  resetTimeout: 30000,
 });
 
 async function processPayment(paymentData) {
@@ -2455,6 +2615,7 @@ async function processPayment(paymentData) {
 **Q1: How do you ensure strong consistency for order placement?**
 
 Answer:
+
 - Use database transactions (ACID properties)
 - Implement distributed locks (Redis) to prevent duplicate orders
 - Idempotency keys for payment gateway webhooks
@@ -2464,6 +2625,7 @@ Answer:
 **Q2: How would you handle millions of concurrent users during peak hours (dinner time)?**
 
 Answer:
+
 - Auto-scaling: Kubernetes HPA based on CPU/memory metrics
 - Database: Read replicas (3-5 per region), connection pooling
 - Caching: Multi-layer (CDN, Redis, browser) to reduce DB load
@@ -2475,6 +2637,7 @@ Answer:
 **Q3: Real-time tracking: WebSocket vs Server-Sent Events vs Polling?**
 
 Answer:
+
 ```
 WebSocket (Chosen):
   Pros: Bi-directional, low latency, efficient
@@ -2497,6 +2660,7 @@ Strategy: Use WebSocket with fallback to long polling
 **Q4: How do you handle search with filters (cuisine, veg/non-veg, rating, price)?**
 
 Answer:
+
 - Primary: Elasticsearch with geo-queries
 - Indexing strategy:
   - Geo-point field for location-based search
@@ -2512,6 +2676,7 @@ Answer:
 **Q5: Database choice: Why PostgreSQL for orders and MongoDB for restaurants?**
 
 Answer:
+
 ```
 PostgreSQL (Orders, Payments):
   - ACID transactions critical for financial data
@@ -2535,6 +2700,7 @@ Cassandra (Tracking, Location):
 **Q6: How to prevent overselling (two users ordering the last item)?**
 
 Answer:
+
 - Pessimistic locking during checkout
 - Optimistic locking with version numbers
 - Redis atomic operations (DECR for inventory)
@@ -2545,17 +2711,21 @@ Answer:
 **Q7: Payment failure handling?**
 
 Answer:
+
 1. During payment initiation:
+
    - Create order with status PENDING
    - Generate payment link (Razorpay/Stripe)
    - Set timeout (15 minutes)
 
 2. Payment success:
+
    - Webhook confirms payment
    - Update order to CONFIRMED
    - Publish order.placed event
 
 3. Payment failure:
+
    - Update order to CANCELLED
    - Send notification to user
    - Retry option with different payment method
@@ -2568,6 +2738,7 @@ Answer:
 **Q8: How to calculate accurate ETA for delivery?**
 
 Answer:
+
 ```javascript
 function calculateETA(order, restaurant, deliveryPartner) {
   const preparationTime = restaurant.avg_preparation_time || 20; // minutes
@@ -2606,11 +2777,13 @@ function calculateETA(order, restaurant, deliveryPartner) {
 **Q9: Offer/Promo code validation at scale?**
 
 Answer:
+
 - Cache active offers in Redis (Hash: offer_code → details)
 - Rate limiting per user (prevent brute force)
 - Idempotency: Mark offer as used immediately
 - Distributed counter for usage limits (Redis INCR)
 - Handle race conditions with Lua scripts:
+
 ```lua
 -- Atomic offer validation
 local usage = redis.call('GET', KEYS[1])
@@ -2625,6 +2798,7 @@ end
 **Q10: How to handle restaurant onboarding at scale?**
 
 Answer:
+
 - Self-service portal for restaurant owners
 - Workflow:
   1. Registration (basic details, documents)
@@ -2643,6 +2817,7 @@ Answer:
 **Q11: How many database connections do you need?**
 
 Answer:
+
 ```
 Calculation:
 - Application servers: 50 instances
@@ -2665,6 +2840,7 @@ Connection pooling is critical to prevent exhaustion.
 **Q12: Redis memory estimation?**
 
 Answer:
+
 ```
 User sessions: 1M concurrent users * 1KB = 1GB
 Cart data: 500K active carts * 2KB = 1GB
@@ -2681,6 +2857,7 @@ Eviction policy: allkeys-lru
 **Q13: How to handle Black Friday / Big Billion Day traffic (100x spike)?**
 
 Answer:
+
 - Pre-scale infrastructure (1 week before)
 - Database: Increase read replicas
 - Cache warmup: Pre-load popular restaurants
@@ -2694,6 +2871,7 @@ Answer:
 **Q14: CAP theorem: Where do you sacrifice?**
 
 Answer:
+
 ```
 High Consistency (CP):
 - Orders, Payments (PostgreSQL)
@@ -2716,6 +2894,7 @@ Partition Tolerance (Always required):
 **Q15: How would you implement a "Repeat Last Order" feature efficiently?**
 
 Answer:
+
 - Store order history in user profile (denormalized)
 - Cache last 5 orders in Redis (user:orders:{user_id})
 - Validate:
@@ -2731,6 +2910,7 @@ Answer:
 Currently not supported (complexity: multiple deliveries, payments)
 
 If required:
+
 - Split into separate orders internally
 - Single payment, multiple settlements
 - Coordinate deliveries (estimate arrival)
@@ -2739,6 +2919,7 @@ If required:
 **Q17: Fraud detection?**
 
 Answer:
+
 - Pattern detection:
   - Multiple failed payment attempts
   - High-value orders from new users
@@ -2754,6 +2935,7 @@ Answer:
 **Q18: How to handle disputes (customer vs restaurant)?**
 
 Answer:
+
 - Evidence collection:
   - Order photos (delivery partner)
   - GPS location proof
@@ -2770,6 +2952,7 @@ Answer:
 **Q19: Dark kitchens / Cloud kitchens support?**
 
 Answer:
+
 - Single physical location, multiple virtual restaurants
 - Database: Add `is_cloud_kitchen` flag
 - Shared:
@@ -2784,7 +2967,9 @@ Answer:
 **Q20: Internationalization (i18n)?**
 
 Answer:
+
 - Database: Store text in multiple languages
+
 ```javascript
 {
   "name": {
@@ -2794,6 +2979,7 @@ Answer:
   }
 }
 ```
+
 - Currency: Convert based on country (INR, USD, EUR)
 - Date/Time: Timezone handling (moment-timezone)
 - RTL support: Arabic, Hebrew
@@ -2815,6 +3001,7 @@ This Food Delivery App HLD covers:
 7. **Edge Cases**: Payment failures, no delivery partners, item unavailability, price changes
 
 ### Key Differentiators from Restaurant Listing Apps:
+
 - **Order Flow**: Complete checkout, payment, and confirmation
 - **Real-time Tracking**: Live delivery partner location updates
 - **State Management**: Complex order lifecycle with multiple actors
@@ -2822,3 +3009,179 @@ This Food Delivery App HLD covers:
 - **Payment Processing**: Multiple gateways, refunds, settlements
 
 This design can handle millions of daily orders with high availability and low latency.
+
+## Architecture Rationale (Interview-Grade)
+
+### Why Microservices
+
+The system is split into microservices (User, Order, Payment, Delivery, Search, Tracking) to allow independent scaling and failure isolation.  
+A failure in search or recommendations must never block checkout or payments.
+
+### Why Event-Driven (Kafka)
+
+Kafka is used for:
+
+- order placement
+- payment confirmation
+- delivery status
+- tracking updates
+- notifications
+
+This ensures:
+
+- Checkout is never blocked by downstream failures
+- All events are replayable
+- Services can recover by re-consuming events
+
+---
+
+## Strong Consistency & Money Safety
+
+### Idempotency & Deduplication
+
+Every payment, order creation, and webhook includes a unique idempotency key.
+
+- Stored in Redis
+- Checked before processing
+- Prevents duplicate charges and duplicate orders
+
+### Atomic Order + Payment Guarantees
+
+Order and payment state changes are committed using database transactions.
+
+If payment succeeds but Kafka fails:
+
+- Order remains CONFIRMED in PostgreSQL
+- Kafka events can be replayed later
+- Money is never lost
+
+---
+
+## Delivery Partner Ownership Model
+
+Each delivery partner can have only one active order.
+
+Assignment uses a Redis distributed lock:
+
+SETNX partner:{partner_id}:active_order
+
+If the lock exists:
+
+- Partner is skipped
+- Next nearest partner is tried
+
+Locks have TTL so crashes don’t permanently block riders.
+
+---
+
+## Real-Time Tracking Scalability
+
+WebSockets are scaled using:
+
+- Sticky sessions at load balancer
+- Redis Streams for fan-out
+- Kafka for durable event storage
+
+Tracking updates are:
+Delivery App → Kafka → Redis Streams → WebSocket Server → Client
+
+---
+
+## Graceful Degradation Strategy
+
+Under extreme load:
+
+1. Checkout and Payments are always preserved
+2. Order Tracking is preserved
+3. Restaurant Search & Reviews degrade first
+4. Recommendations and Analytics may be temporarily disabled
+
+---
+
+## Cache Safety Rules
+
+The following data is **never served from cache**:
+
+- Orders
+- Payments
+- Inventory
+- Delivery assignment
+
+Redis is used only for:
+
+- Search results
+- Restaurant menus
+- Sessions
+- Tracking snapshots
+
+---
+
+## Database Selection Rationale
+
+PostgreSQL:
+
+- Orders
+- Payments
+- Transactions
+- Financial correctness
+
+MongoDB:
+
+- Restaurant menus
+- Flexible schema
+- Nested documents
+
+Cassandra:
+
+- GPS tracking
+- Time-series data
+- High write throughput
+
+Elasticsearch:
+
+- Geo-search
+- Text search
+- Ranking and filters
+
+---
+
+## Failure Handling Guarantees
+
+### Kafka Failure
+
+Orders and payments continue via direct DB writes.  
+Events are replayed later.
+
+### Redis Failure
+
+Delivery assignment falls back to DB locking.  
+Tracking switches to polling.
+
+### WebSocket Failure
+
+Clients fall back to REST polling.
+
+### Restaurant Failure
+
+Order is auto-cancelled and refunded.
+
+### Rider Failure
+
+Order is re-queued for reassignment.
+
+---
+
+## Audit & Traceability
+
+Every state transition is stored:
+
+- Order status history
+- Payment events
+- Delivery partner assignments
+- GPS updates
+
+This allows:
+
+- Dispute resolution
+- Fraud detection
+- Regulatory compliance
