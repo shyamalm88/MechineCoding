@@ -817,87 +817,133 @@ CREATE TABLE payments (
 
 ### 6.2 Seat Locking Mechanism (CRITICAL)
 
-#### Distributed Lock Using Redis
+Seat locking is the **most critical correctness problem** in a ticketing system.  
+The system must enforce one non-negotiable invariant:
 
-````
-Key Pattern: lock:show:{showId}:seat:{seatId}
-Value: {userId}:{lockId}:{timestamp}
-TTL: 600 seconds (10 minutes)
+> **A seat can be sold to at most one user — even during crashes, retries, or peak traffic.**
 
-Atomic Operations:
-1. Acquire Lock:
-   SET lock:show:123:seat:A1 "user456:lock789:1640000000" NX EX 600
-
-2. Check Lock:
-   GET lock:show:123:seat:A1
-
-3. Extend Lock:
-   EXPIRE lock:show:123:seat:A1 600
-
-4. Release Lock:
-   DEL lock:show:123:seat:A1
-
-Lua Script for Atomic Lock Release (prevent race conditions):
-```lua
-if redis.call("get", KEYS[1]) == ARGV[1] then
-    return redis.call("del", KEYS[1])
-else
-    return 0
-end
-````
-
-````
-
-#### Database Transaction for Seat Lock
-```sql
--- Acquire Lock (with optimistic locking)
-BEGIN TRANSACTION;
-
--- Check if seat is available
-SELECT status, version
-FROM show_seats
-WHERE show_id = ? AND seat_id = ?
-FOR UPDATE;
-
--- If AVAILABLE, acquire lock
-UPDATE show_seats
-SET
-    status = 'LOCKED',
-    locked_by = ?,
-    locked_at = NOW(),
-    version = version + 1
-WHERE
-    show_id = ?
-    AND seat_id = ?
-    AND status = 'AVAILABLE'
-    AND version = ?; -- Optimistic lock check
-
--- Insert lock record
-INSERT INTO seat_locks (show_id, seat_id, user_id, expires_at)
-VALUES (?, ?, ?, NOW() + INTERVAL '10 minutes');
-
-COMMIT;
-````
-
-#### Race Condition Prevention
-
-```
-Scenario: Two users (A and B) click same seat simultaneously
-
-Time  User A                    User B                  Redis
-----  ----------------------    --------------------    ---------
-T1    Click seat A1
-T2    Redis SET NX → SUCCESS
-T3                              Click seat A1
-T4                              Redis SET NX → FAIL
-T5    DB UPDATE → SUCCESS
-T6                              409 Conflict returned
-T7    Lock acquired ✓          Lock failed ✗
-
-Result: Only User A gets the seat
-```
+This is a **financially sensitive distributed system**, not a UI feature.
 
 ---
+
+## **6.2.1 First Principles**
+
+Seat locking must satisfy three fundamental constraints:
+
+- **Atomicity** – Two users must never hold the same seat at the same time
+- **Durability** – Locks must survive crashes and restarts
+- **Expiry** – Abandoned locks must be automatically released
+
+Only a transactional database can guarantee all three.
+
+Therefore:
+
+> **The database is the single source of truth for seat ownership.**  
+> Redis is used only for performance and contention control.
+
+---
+
+## **6.2.2 Single Source of Truth**
+
+Each seat has exactly one authoritative state stored in the database:
+
+- `AVAILABLE`
+- `LOCKED`
+- `BOOKED`
+
+A seat always follows this lifecycle:
+
+```
+"AVAILABLE" ==> "LOCKED" ==> "BOOKED"
+
+```
+
+A `LOCKED` seat stores:
+
+- which user owns it
+- when the lock expires
+
+This guarantees:
+
+- no double booking
+- crash safety
+- automatic recovery
+
+---
+
+## **6.2.3 How Seat Locking Works**
+
+When a user selects a seat:
+
+1. The system attempts to lock the seat in the database
+2. The database checks:
+   - Is the seat `AVAILABLE`?
+   - Or was it `LOCKED` but already expired?
+3. If yes, the seat becomes `LOCKED` for this user with a 10-minute expiry
+4. If no, the seat is already taken and the user is rejected
+
+This operation is **atomic**, so even if thousands of users click the same seat at the same time, only one will succeed.
+
+---
+
+## **6.2.4 Why Redis Is Still Used**
+
+During peak demand, many users may click the same popular seats simultaneously.  
+To avoid overwhelming the database, Redis acts as a **high-speed contention filter**:
+
+- Temporarily marks hot seats as busy
+- Rejects duplicate clicks early
+- Prevents thundering-herd traffic
+
+Redis never decides who owns a seat.  
+It only protects the database from overload.
+
+---
+
+## **6.2.5 Crash and Failure Safety**
+
+If the application crashes:
+
+- The database still knows who owns every seat
+- Expired locks are automatically reclaimed
+
+If Redis crashes:
+
+- The database still enforces correctness
+
+This design prevents:
+
+- ghost locks
+- double bookings
+- inconsistent state
+
+---
+
+## **6.2.6 Final Booking**
+
+After payment succeeds:
+
+- Only the user holding the seat lock can complete the booking
+- The seat transitions from `LOCKED` to `BOOKED`
+- All other users are rejected
+
+This ensures **money and inventory never diverge**.
+
+---
+
+## **Why This Design Works**
+
+This model is used by:
+
+- Airlines
+- Concert ticketing platforms
+- Railways
+- Movie booking systems
+
+Because:
+
+> **Redis improves performance.**  
+> **The database guarantees correctness.**
 
 ## 7. Caching Strategy
 
@@ -905,7 +951,7 @@ Result: Only User A gets the seat
 
 #### L1: Browser Cache
 
-```
+```text
 - Static assets (images, CSS, JS): 1 week
 - Movie posters: 1 day
 - Theater info: 1 day

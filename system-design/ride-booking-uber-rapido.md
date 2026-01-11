@@ -1,6 +1,7 @@
 # Ride Booking Flow - Uber/Rapido (HLD)
 
 ## Table of Contents
+
 1. [Problem Statement & Requirements](#1-problem-statement--requirements)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Component Architecture](#3-component-architecture)
@@ -28,6 +29,7 @@
 ## 1. Problem Statement & Requirements
 
 ### Functional Requirements
+
 - Location input (pickup & drop) with autocomplete
 - Real-time map with driver locations
 - Ride type selection (Auto, Bike, Car, Premium)
@@ -40,6 +42,7 @@
 - Cancel/modify ride
 
 ### Non-Functional Requirements
+
 - **Latency**: Fare estimate < 500ms, driver match < 5s
 - **Availability**: 99.99% uptime
 - **Scalability**: Handle 10M concurrent requests
@@ -47,6 +50,7 @@
 - **Consistency**: Payment must be strongly consistent
 
 ### Capacity Estimation
+
 ```
 Daily Active Users: 50 million
 Rides per day: 20 million
@@ -285,14 +289,14 @@ WebSocket connections: 10 million (users + drivers)
 
 ### Key Component Responsibilities
 
-| Component | Responsibility |
-|-----------|---------------|
-| `MapView` | Google Maps integration, driver markers, route display |
-| `LocationInput` | Autocomplete, recent searches, saved places |
-| `RideOptionCard` | Display ride type, price estimate, ETA |
-| `DriverCard` | Driver info, vehicle details, OTP display |
-| `TripTracker` | Real-time location updates, ETA countdown |
-| `BottomSheet` | State-based UI container (draggable) |
+| Component        | Responsibility                                         |
+| ---------------- | ------------------------------------------------------ |
+| `MapView`        | Google Maps integration, driver markers, route display |
+| `LocationInput`  | Autocomplete, recent searches, saved places            |
+| `RideOptionCard` | Display ride type, price estimate, ETA                 |
+| `DriverCard`     | Driver info, vehicle details, OTP display              |
+| `TripTracker`    | Real-time location updates, ETA countdown              |
+| `BottomSheet`    | State-based UI container (draggable)                   |
 
 ---
 
@@ -1466,16 +1470,12 @@ const LocationAutocomplete = () => {
       />
 
       <span id="pickup-hint" className="sr-only">
-        Type to search locations. Use up and down arrows to navigate suggestions.
-        Press Enter to select.
+        Type to search locations. Use up and down arrows to navigate
+        suggestions. Press Enter to select.
       </span>
 
       {isOpen && (
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label="Location suggestions"
-        >
+        <ul id={listId} role="listbox" aria-label="Location suggestions">
           {suggestions.map((suggestion, index) => (
             <li
               key={suggestion.placeId}
@@ -1494,8 +1494,7 @@ const LocationAutocomplete = () => {
       {/* Live region for announcements */}
       <div aria-live="polite" className="sr-only">
         {suggestions.length > 0 &&
-          `${suggestions.length} suggestions available`
-        }
+          `${suggestions.length} suggestions available`}
       </div>
     </div>
   );
@@ -1508,40 +1507,48 @@ const LocationAutocomplete = () => {
 // useRideStatusAnnouncer.ts
 const useRideStatusAnnouncer = () => {
   const announcer = useRef<HTMLDivElement>(null);
-  const prevStatus = useRef<string>('');
+  const prevStatus = useRef<string>("");
 
-  const announce = useCallback((message: string, priority: 'polite' | 'assertive' = 'polite') => {
-    if (announcer.current) {
-      announcer.current.setAttribute('aria-live', priority);
-      announcer.current.textContent = message;
+  const announce = useCallback(
+    (message: string, priority: "polite" | "assertive" = "polite") => {
+      if (announcer.current) {
+        announcer.current.setAttribute("aria-live", priority);
+        announcer.current.textContent = message;
 
-      // Clear after announcement
-      setTimeout(() => {
-        if (announcer.current) {
-          announcer.current.textContent = '';
-        }
-      }, 1000);
-    }
-  }, []);
+        // Clear after announcement
+        setTimeout(() => {
+          if (announcer.current) {
+            announcer.current.textContent = "";
+          }
+        }, 1000);
+      }
+    },
+    []
+  );
 
-  const announceStatus = useCallback((status: RideStatus, details: RideDetails) => {
-    if (status === prevStatus.current) return;
-    prevStatus.current = status;
+  const announceStatus = useCallback(
+    (status: RideStatus, details: RideDetails) => {
+      if (status === prevStatus.current) return;
+      prevStatus.current = status;
 
-    const messages: Record<RideStatus, string> = {
-      searching: 'Searching for nearby drivers. Please wait.',
-      matched: `Driver found! ${details.driverName} will arrive in ${details.eta} minutes. ` +
-               `Vehicle: ${details.vehicleColor} ${details.vehicleModel}, ` +
-               `License plate: ${details.vehiclePlate}. Your OTP is ${details.otp}.`,
-      driver_arriving: `Driver is arriving. ${details.eta} minute away.`,
-      driver_arrived: 'Driver has arrived at pickup location. Please proceed to vehicle.',
-      trip_started: `Trip started. Estimated arrival at destination: ${details.tripEta} minutes.`,
-      trip_completed: `Trip completed. Total fare: ${details.fare}. Please rate your ride.`,
-      cancelled: 'Ride has been cancelled.'
-    };
+      const messages: Record<RideStatus, string> = {
+        searching: "Searching for nearby drivers. Please wait.",
+        matched:
+          `Driver found! ${details.driverName} will arrive in ${details.eta} minutes. ` +
+          `Vehicle: ${details.vehicleColor} ${details.vehicleModel}, ` +
+          `License plate: ${details.vehiclePlate}. Your OTP is ${details.otp}.`,
+        driver_arriving: `Driver is arriving. ${details.eta} minute away.`,
+        driver_arrived:
+          "Driver has arrived at pickup location. Please proceed to vehicle.",
+        trip_started: `Trip started. Estimated arrival at destination: ${details.tripEta} minutes.`,
+        trip_completed: `Trip completed. Total fare: ${details.fare}. Please rate your ride.`,
+        cancelled: "Ride has been cancelled.",
+      };
 
-    announce(messages[status], status === 'matched' ? 'assertive' : 'polite');
-  }, [announce]);
+      announce(messages[status], status === "matched" ? "assertive" : "polite");
+    },
+    [announce]
+  );
 
   return { announce, announceStatus, announcer };
 };
@@ -1639,8 +1646,8 @@ const DriverCard = ({ driver, otp, eta }: DriverCardProps) => {
 
         <p id="driver-details">
           <span aria-label={`Rating: ${driver.rating} out of 5 stars`}>
-            {'★'.repeat(Math.floor(driver.rating))}
-            {'☆'.repeat(5 - Math.floor(driver.rating))}
+            {"★".repeat(Math.floor(driver.rating))}
+            {"☆".repeat(5 - Math.floor(driver.rating))}
             <span className="sr-only">{driver.rating} stars</span>
           </span>
 
@@ -1649,7 +1656,9 @@ const DriverCard = ({ driver, otp, eta }: DriverCardProps) => {
           </span>
         </p>
 
-        <p aria-label={`Vehicle: ${driver.vehicle.color} ${driver.vehicle.model}`}>
+        <p
+          aria-label={`Vehicle: ${driver.vehicle.color} ${driver.vehicle.model}`}
+        >
           {driver.vehicle.color} {driver.vehicle.model}
         </p>
 
@@ -1661,20 +1670,23 @@ const DriverCard = ({ driver, otp, eta }: DriverCardProps) => {
       <div
         className="otp-display"
         role="alert"
-        aria-label={`Your OTP is ${otp.split('').join(' ')}`}
+        aria-label={`Your OTP is ${otp.split("").join(" ")}`}
       >
         <span className="otp-label">OTP</span>
-        <span className="otp-digits" aria-hidden="true">{otp}</span>
+        <span className="otp-digits" aria-hidden="true">
+          {otp}
+        </span>
       </div>
 
-      <p
-        aria-live="polite"
-        aria-label={`Driver arriving in ${eta} minutes`}
-      >
+      <p aria-live="polite" aria-label={`Driver arriving in ${eta} minutes`}>
         Arriving in {eta} min
       </p>
 
-      <div className="driver-actions" role="group" aria-label="Driver contact options">
+      <div
+        className="driver-actions"
+        role="group"
+        aria-label="Driver contact options"
+      >
         <button aria-label={`Call driver ${driver.name}`}>
           <PhoneIcon aria-hidden="true" />
           <span>Call</span>
@@ -1759,7 +1771,7 @@ const SOSButton = ({ rideId, riderLocation }: SOSProps) => {
 
   const startCountdown = () => {
     countdownTimer.current = setInterval(() => {
-      setCountdown(prev => {
+      setCountdown((prev) => {
         if (prev <= 1) {
           triggerSOS();
           return 0;
@@ -1784,8 +1796,8 @@ const SOSButton = ({ rideId, riderLocation }: SOSProps) => {
     }
 
     try {
-      await fetch('/api/v1/sos', {
-        method: 'POST',
+      await fetch("/api/v1/sos", {
+        method: "POST",
         body: JSON.stringify({
           rideId,
           location: riderLocation,
@@ -1799,10 +1811,9 @@ const SOSButton = ({ rideId, riderLocation }: SOSProps) => {
       // 2. Share live location with police
       // 3. Record audio (with consent)
       // 4. Flag ride for immediate support review
-
     } catch (error) {
       // Fallback: Direct call to emergency number
-      window.location.href = 'tel:112';
+      window.location.href = "tel:112";
     }
   };
 
@@ -1840,11 +1851,11 @@ const SOSButton = ({ rideId, riderLocation }: SOSProps) => {
 // TripSharing.tsx
 const TripSharing = ({ ride }: { ride: RideDetails }) => {
   const [sharedWith, setSharedWith] = useState<Contact[]>([]);
-  const [shareLink, setShareLink] = useState<string>('');
+  const [shareLink, setShareLink] = useState<string>("");
 
   const generateShareLink = async () => {
-    const response = await fetch('/api/v1/rides/share', {
-      method: 'POST',
+    const response = await fetch("/api/v1/rides/share", {
+      method: "POST",
       body: JSON.stringify({
         rideId: ride.id,
         expiresAt: ride.estimatedEndTime,
@@ -1858,19 +1869,19 @@ const TripSharing = ({ ride }: { ride: RideDetails }) => {
   };
 
   const shareViaWhatsApp = async () => {
-    const link = shareLink || await generateShareLink();
+    const link = shareLink || (await generateShareLink());
     const message = encodeURIComponent(
       `I'm on a ride with ${ride.driver.name}. ` +
-      `Track my trip: ${link}\n\n` +
-      `Vehicle: ${ride.driver.vehicle.plate} (${ride.driver.vehicle.model})\n` +
-      `From: ${ride.pickup.address}\n` +
-      `To: ${ride.drop.address}`
+        `Track my trip: ${link}\n\n` +
+        `Vehicle: ${ride.driver.vehicle.plate} (${ride.driver.vehicle.model})\n` +
+        `From: ${ride.pickup.address}\n` +
+        `To: ${ride.drop.address}`
     );
     window.open(`https://wa.me/?text=${message}`);
   };
 
   const shareViaSMS = async (phoneNumber: string) => {
-    const link = shareLink || await generateShareLink();
+    const link = shareLink || (await generateShareLink());
     window.location.href = `sms:${phoneNumber}?body=${encodeURIComponent(
       `Track my ride: ${link}`
     )}`;
@@ -1906,7 +1917,7 @@ const TripSharing = ({ ride }: { ride: RideDetails }) => {
       {sharedWith.length > 0 && (
         <div className="shared-with">
           <p>Shared with:</p>
-          {sharedWith.map(contact => (
+          {sharedWith.map((contact) => (
             <span key={contact.id} className="contact-chip">
               {contact.name} ✓
             </span>
@@ -1981,37 +1992,38 @@ const useFraudDetection = (ride: RideDetails) => {
       const newAlerts: FraudAlert[] = [];
 
       // 1. Route deviation detection
-      if (ride.status === 'on_trip') {
+      if (ride.status === "on_trip") {
         const expectedRoute = ride.expectedPolyline;
         const currentLocation = ride.driverLocation;
 
-        if (isDeviatingFromRoute(currentLocation, expectedRoute, 500)) { // 500m threshold
+        if (isDeviatingFromRoute(currentLocation, expectedRoute, 500)) {
+          // 500m threshold
           newAlerts.push({
-            type: 'route_deviation',
-            severity: 'warning',
-            message: 'Driver appears to be taking a different route',
-            action: 'report_route',
+            type: "route_deviation",
+            severity: "warning",
+            message: "Driver appears to be taking a different route",
+            action: "report_route",
           });
         }
       }
 
       // 2. Unusual stop detection
-      if (ride.status === 'on_trip' && hasUnusualStop(ride.locationHistory)) {
+      if (ride.status === "on_trip" && hasUnusualStop(ride.locationHistory)) {
         newAlerts.push({
-          type: 'unusual_stop',
-          severity: 'info',
-          message: 'Vehicle has stopped for an extended period',
-          action: 'check_status',
+          type: "unusual_stop",
+          severity: "info",
+          message: "Vehicle has stopped for an extended period",
+          action: "check_status",
         });
       }
 
       // 3. Fare tampering indication
       if (ride.currentFare > ride.estimatedFare * 1.5) {
         newAlerts.push({
-          type: 'fare_warning',
-          severity: 'warning',
-          message: 'Fare is significantly higher than estimate',
-          action: 'view_breakdown',
+          type: "fare_warning",
+          severity: "warning",
+          message: "Fare is significantly higher than estimate",
+          action: "view_breakdown",
         });
       }
 
@@ -2032,10 +2044,7 @@ const SafetyAlerts = ({ alerts }: { alerts: FraudAlert[] }) => {
   return (
     <div className="safety-alerts" role="alert">
       {alerts.map((alert, index) => (
-        <div
-          key={index}
-          className={`alert alert-${alert.severity}`}
-        >
+        <div key={index} className={`alert alert-${alert.severity}`}>
           <AlertIcon type={alert.severity} />
           <p>{alert.message}</p>
           <button onClick={() => handleAlertAction(alert.action)}>
@@ -2056,11 +2065,11 @@ const SafetyAlerts = ({ alerts }: { alerts: FraudAlert[] }) => {
 
 ```typescript
 // DraggableBottomSheet.tsx
-import { useSpring, animated, config } from '@react-spring/web';
-import { useDrag } from '@use-gesture/react';
+import { useSpring, animated, config } from "@react-spring/web";
+import { useDrag } from "@use-gesture/react";
 
 const SNAP_POINTS = {
-  collapsed: 120,   // Just the handle visible
+  collapsed: 120, // Just the handle visible
   half: window.innerHeight * 0.5,
   full: window.innerHeight * 0.9,
 };
@@ -2072,7 +2081,13 @@ const DraggableBottomSheet = ({ children, state }: BottomSheetProps) => {
   }));
 
   const bind = useDrag(
-    ({ movement: [, my], velocity: [, vy], direction: [, dy], cancel, active }) => {
+    ({
+      movement: [, my],
+      velocity: [, vy],
+      direction: [, dy],
+      cancel,
+      active,
+    }) => {
       // Prevent dragging beyond bounds
       if (my < -SNAP_POINTS.full) cancel();
 
@@ -2129,7 +2144,7 @@ const DraggableBottomSheet = ({ children, state }: BottomSheetProps) => {
       className="bottom-sheet"
       style={{
         height: y,
-        touchAction: 'none',
+        touchAction: "none",
       }}
     >
       <div className="drag-handle" aria-hidden="true">
@@ -2203,20 +2218,24 @@ const DraggableBottomSheet = ({ children, state }: BottomSheetProps) => {
 
 ```typescript
 // SwipeableRideOption.tsx
-import { useSwipeable } from 'react-swipeable';
+import { useSwipeable } from "react-swipeable";
 
-const SwipeableRideCard = ({ ride, onSchedule, onShare }: SwipeableCardProps) => {
+const SwipeableRideCard = ({
+  ride,
+  onSchedule,
+  onShare,
+}: SwipeableCardProps) => {
   const [swipeOffset, setSwipeOffset] = useState(0);
-  const [showActions, setShowActions] = useState<'left' | 'right' | null>(null);
+  const [showActions, setShowActions] = useState<"left" | "right" | null>(null);
 
   const handlers = useSwipeable({
     onSwiping: (e) => {
       setSwipeOffset(e.deltaX);
 
       if (e.deltaX > 50) {
-        setShowActions('right'); // Schedule action
+        setShowActions("right"); // Schedule action
       } else if (e.deltaX < -50) {
-        setShowActions('left'); // Share action
+        setShowActions("left"); // Share action
       } else {
         setShowActions(null);
       }
@@ -2251,10 +2270,14 @@ const SwipeableRideCard = ({ ride, onSchedule, onShare }: SwipeableCardProps) =>
     <div className="swipeable-container">
       {/* Background actions */}
       <div className="swipe-actions">
-        <div className={`action-left ${showActions === 'left' ? 'active' : ''}`}>
+        <div
+          className={`action-left ${showActions === "left" ? "active" : ""}`}
+        >
           <ShareIcon /> Share
         </div>
-        <div className={`action-right ${showActions === 'right' ? 'active' : ''}`}>
+        <div
+          className={`action-right ${showActions === "right" ? "active" : ""}`}
+        >
           <ClockIcon /> Schedule
         </div>
       </div>
@@ -2265,7 +2288,7 @@ const SwipeableRideCard = ({ ride, onSchedule, onShare }: SwipeableCardProps) =>
         className="ride-card"
         style={{
           transform: `translateX(${swipeOffset}px)`,
-          transition: swipeOffset === 0 ? 'transform 0.3s ease' : 'none',
+          transition: swipeOffset === 0 ? "transform 0.3s ease" : "none",
         }}
       >
         <RideOptionCard ride={ride} />
@@ -2281,7 +2304,7 @@ const SwipeableRideCard = ({ ride, onSchedule, onShare }: SwipeableCardProps) =>
 // useHaptics.ts
 const useHaptics = () => {
   const vibrate = useCallback((pattern: number | number[]) => {
-    if ('vibrate' in navigator) {
+    if ("vibrate" in navigator) {
       navigator.vibrate(pattern);
     }
   }, []);
@@ -2399,7 +2422,7 @@ const PullToRefresh = ({ onRefresh, children }: PullToRefreshProps) => {
           <ArrowDown
             style={{
               transform: `rotate(${pullDistance >= THRESHOLD ? 180 : 0}deg)`,
-              transition: 'transform 0.2s',
+              transition: "transform 0.2s",
             }}
           />
         )}
@@ -2408,7 +2431,7 @@ const PullToRefresh = ({ onRefresh, children }: PullToRefreshProps) => {
       <div
         style={{
           transform: `translateY(${pullDistance}px)`,
-          transition: pulling ? 'none' : 'transform 0.3s ease',
+          transition: pulling ? "none" : "transform 0.3s ease",
         }}
       >
         {children}
@@ -2503,94 +2526,94 @@ const PullToRefresh = ({ onRefresh, children }: PullToRefreshProps) => {
 
 ```typescript
 // rideStateMachine.test.ts
-import { rideReducer, initialState, RideAction } from './rideStateMachine';
+import { rideReducer, initialState, RideAction } from "./rideStateMachine";
 
-describe('Ride State Machine', () => {
-  it('should transition from idle to searching on ride request', () => {
+describe("Ride State Machine", () => {
+  it("should transition from idle to searching on ride request", () => {
     const action: RideAction = {
-      type: 'REQUEST_RIDE',
+      type: "REQUEST_RIDE",
       payload: {
-        pickup: { lat: 12.97, lng: 77.59, address: 'MG Road' },
-        drop: { lat: 12.93, lng: 77.62, address: 'Indiranagar' },
-        vehicleType: 'auto',
+        pickup: { lat: 12.97, lng: 77.59, address: "MG Road" },
+        drop: { lat: 12.93, lng: 77.62, address: "Indiranagar" },
+        vehicleType: "auto",
       },
     };
 
     const newState = rideReducer(initialState, action);
 
-    expect(newState.status).toBe('searching');
+    expect(newState.status).toBe("searching");
     expect(newState.pickup).toEqual(action.payload.pickup);
     expect(newState.drop).toEqual(action.payload.drop);
   });
 
-  it('should transition from searching to matched when driver found', () => {
-    const searchingState = { ...initialState, status: 'searching' };
+  it("should transition from searching to matched when driver found", () => {
+    const searchingState = { ...initialState, status: "searching" };
 
     const action: RideAction = {
-      type: 'DRIVER_MATCHED',
+      type: "DRIVER_MATCHED",
       payload: {
         driver: {
-          id: 'driver_123',
-          name: 'Rajesh',
+          id: "driver_123",
+          name: "Rajesh",
           rating: 4.8,
-          vehicle: { model: 'Activa', plate: 'KA-01-1234' },
+          vehicle: { model: "Activa", plate: "KA-01-1234" },
         },
-        otp: '4521',
+        otp: "4521",
         eta: 3,
       },
     };
 
     const newState = rideReducer(searchingState, action);
 
-    expect(newState.status).toBe('matched');
+    expect(newState.status).toBe("matched");
     expect(newState.driver).toEqual(action.payload.driver);
-    expect(newState.otp).toBe('4521');
+    expect(newState.otp).toBe("4521");
   });
 
-  it('should allow cancellation from any active state', () => {
-    const activeStates = ['searching', 'matched', 'driver_arriving'];
+  it("should allow cancellation from any active state", () => {
+    const activeStates = ["searching", "matched", "driver_arriving"];
 
-    activeStates.forEach(status => {
+    activeStates.forEach((status) => {
       const state = { ...initialState, status };
       const action: RideAction = {
-        type: 'CANCEL_RIDE',
-        payload: { reason: 'Changed plans' },
+        type: "CANCEL_RIDE",
+        payload: { reason: "Changed plans" },
       };
 
       const newState = rideReducer(state, action);
-      expect(newState.status).toBe('cancelled');
+      expect(newState.status).toBe("cancelled");
     });
   });
 
-  it('should NOT allow cancellation once trip started', () => {
-    const onTripState = { ...initialState, status: 'on_trip' };
+  it("should NOT allow cancellation once trip started", () => {
+    const onTripState = { ...initialState, status: "on_trip" };
 
     const action: RideAction = {
-      type: 'CANCEL_RIDE',
-      payload: { reason: 'Changed plans' },
+      type: "CANCEL_RIDE",
+      payload: { reason: "Changed plans" },
     };
 
     const newState = rideReducer(onTripState, action);
 
     // State should not change
-    expect(newState.status).toBe('on_trip');
+    expect(newState.status).toBe("on_trip");
   });
 
-  it('should update driver location without changing ride status', () => {
+  it("should update driver location without changing ride status", () => {
     const matchedState = {
       ...initialState,
-      status: 'matched',
+      status: "matched",
       driverLocation: { lat: 12.97, lng: 77.59 },
     };
 
     const action: RideAction = {
-      type: 'UPDATE_DRIVER_LOCATION',
+      type: "UPDATE_DRIVER_LOCATION",
       payload: { lat: 12.971, lng: 77.591, heading: 45 },
     };
 
     const newState = rideReducer(matchedState, action);
 
-    expect(newState.status).toBe('matched'); // Unchanged
+    expect(newState.status).toBe("matched"); // Unchanged
     expect(newState.driverLocation).toEqual(action.payload);
   });
 });
@@ -2600,23 +2623,23 @@ describe('Ride State Machine', () => {
 
 ```typescript
 // websocket.test.ts
-import { render, screen, waitFor } from '@testing-library/react';
-import WS from 'jest-websocket-mock';
-import { RideTracker } from './RideTracker';
-import { WebSocketProvider } from './WebSocketContext';
+import { render, screen, waitFor } from "@testing-library/react";
+import WS from "jest-websocket-mock";
+import { RideTracker } from "./RideTracker";
+import { WebSocketProvider } from "./WebSocketContext";
 
-describe('WebSocket Integration', () => {
+describe("WebSocket Integration", () => {
   let server: WS;
 
   beforeEach(() => {
-    server = new WS('wss://api.ride.com/ws');
+    server = new WS("wss://api.ride.com/ws");
   });
 
   afterEach(() => {
     WS.clean();
   });
 
-  it('should update driver location on WebSocket message', async () => {
+  it("should update driver location on WebSocket message", async () => {
     render(
       <WebSocketProvider>
         <RideTracker rideId="ride_123" />
@@ -2626,19 +2649,21 @@ describe('WebSocket Integration', () => {
     await server.connected;
 
     // Simulate server sending driver location
-    server.send(JSON.stringify({
-      type: 'driver_location',
-      rideId: 'ride_123',
-      location: { lat: 12.97, lng: 77.59 },
-      eta: 2,
-    }));
+    server.send(
+      JSON.stringify({
+        type: "driver_location",
+        rideId: "ride_123",
+        location: { lat: 12.97, lng: 77.59 },
+        eta: 2,
+      })
+    );
 
     await waitFor(() => {
-      expect(screen.getByText('2 min away')).toBeInTheDocument();
+      expect(screen.getByText("2 min away")).toBeInTheDocument();
     });
   });
 
-  it('should show driver matched notification', async () => {
+  it("should show driver matched notification", async () => {
     render(
       <WebSocketProvider>
         <RideTracker rideId="ride_123" />
@@ -2647,25 +2672,27 @@ describe('WebSocket Integration', () => {
 
     await server.connected;
 
-    server.send(JSON.stringify({
-      type: 'driver_matched',
-      rideId: 'ride_123',
-      driver: {
-        name: 'Rajesh',
-        rating: 4.8,
-        vehicle: { model: 'Honda Activa', plate: 'KA-01-1234' },
-      },
-      otp: '4521',
-      eta: 3,
-    }));
+    server.send(
+      JSON.stringify({
+        type: "driver_matched",
+        rideId: "ride_123",
+        driver: {
+          name: "Rajesh",
+          rating: 4.8,
+          vehicle: { model: "Honda Activa", plate: "KA-01-1234" },
+        },
+        otp: "4521",
+        eta: 3,
+      })
+    );
 
     await waitFor(() => {
-      expect(screen.getByText('Rajesh')).toBeInTheDocument();
-      expect(screen.getByText('4521')).toBeInTheDocument();
+      expect(screen.getByText("Rajesh")).toBeInTheDocument();
+      expect(screen.getByText("4521")).toBeInTheDocument();
     });
   });
 
-  it('should handle WebSocket reconnection', async () => {
+  it("should handle WebSocket reconnection", async () => {
     const onReconnect = jest.fn();
 
     render(
@@ -2680,14 +2707,14 @@ describe('WebSocket Integration', () => {
     server.close();
 
     // Create new server for reconnection
-    server = new WS('wss://api.ride.com/ws');
+    server = new WS("wss://api.ride.com/ws");
 
     await waitFor(() => {
       expect(onReconnect).toHaveBeenCalled();
     });
   });
 
-  it('should queue messages during reconnection', async () => {
+  it("should queue messages during reconnection", async () => {
     render(
       <WebSocketProvider>
         <RideTracker rideId="ride_123" />
@@ -2703,12 +2730,12 @@ describe('WebSocket Integration', () => {
     // (would be queued)
 
     // Reconnect
-    server = new WS('wss://api.ride.com/ws');
+    server = new WS("wss://api.ride.com/ws");
     await server.connected;
 
     // Verify queued message was sent
     await expect(server).toReceiveMessage(
-      expect.stringContaining('location_update')
+      expect.stringContaining("location_update")
     );
   });
 });
@@ -2718,8 +2745,8 @@ describe('WebSocket Integration', () => {
 
 ```typescript
 // geolocation.test.ts
-import { renderHook, act } from '@testing-library/react';
-import { useCurrentLocation } from './useCurrentLocation';
+import { renderHook, act } from "@testing-library/react";
+import { useCurrentLocation } from "./useCurrentLocation";
 
 const mockGeolocation = {
   getCurrentPosition: jest.fn(),
@@ -2727,17 +2754,17 @@ const mockGeolocation = {
   clearWatch: jest.fn(),
 };
 
-Object.defineProperty(global.navigator, 'geolocation', {
+Object.defineProperty(global.navigator, "geolocation", {
   value: mockGeolocation,
   writable: true,
 });
 
-describe('useCurrentLocation', () => {
+describe("useCurrentLocation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should return current location on success', async () => {
+  it("should return current location on success", async () => {
     const mockPosition = {
       coords: {
         latitude: 12.9716,
@@ -2764,10 +2791,10 @@ describe('useCurrentLocation', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('should handle permission denied error', async () => {
+  it("should handle permission denied error", async () => {
     const permissionError = {
       code: 1,
-      message: 'User denied geolocation',
+      message: "User denied geolocation",
       PERMISSION_DENIED: 1,
     };
 
@@ -2782,10 +2809,10 @@ describe('useCurrentLocation', () => {
     });
 
     expect(result.current.location).toBeNull();
-    expect(result.current.error).toBe('Location permission denied');
+    expect(result.current.error).toBe("Location permission denied");
   });
 
-  it('should watch location updates', async () => {
+  it("should watch location updates", async () => {
     const watchId = 123;
     mockGeolocation.watchPosition.mockReturnValue(watchId);
 
@@ -2808,39 +2835,45 @@ describe('useCurrentLocation', () => {
 
 ```typescript
 // bookingFlow.integration.test.tsx
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { rest } from 'msw';
-import { setupServer } from 'msw/node';
-import { RideBookingApp } from './RideBookingApp';
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { rest } from "msw";
+import { setupServer } from "msw/node";
+import { RideBookingApp } from "./RideBookingApp";
 
 const server = setupServer(
   // Autocomplete API
-  rest.get('/api/v1/places/autocomplete', (req, res, ctx) => {
-    return res(ctx.json({
-      predictions: [
-        { placeId: 'place_1', name: 'MG Road', address: 'Bangalore' },
-        { placeId: 'place_2', name: 'MG Road Metro', address: 'Bangalore' },
-      ],
-    }));
+  rest.get("/api/v1/places/autocomplete", (req, res, ctx) => {
+    return res(
+      ctx.json({
+        predictions: [
+          { placeId: "place_1", name: "MG Road", address: "Bangalore" },
+          { placeId: "place_2", name: "MG Road Metro", address: "Bangalore" },
+        ],
+      })
+    );
   }),
 
   // Fare estimate API
-  rest.post('/api/v1/rides/estimate', (req, res, ctx) => {
-    return res(ctx.json({
-      options: [
-        { type: 'auto', fareRange: { min: 85, max: 95 }, eta: 3 },
-        { type: 'bike', fareRange: { min: 45, max: 55 }, eta: 2 },
-      ],
-    }));
+  rest.post("/api/v1/rides/estimate", (req, res, ctx) => {
+    return res(
+      ctx.json({
+        options: [
+          { type: "auto", fareRange: { min: 85, max: 95 }, eta: 3 },
+          { type: "bike", fareRange: { min: 45, max: 55 }, eta: 2 },
+        ],
+      })
+    );
   }),
 
   // Book ride API
-  rest.post('/api/v1/rides', (req, res, ctx) => {
-    return res(ctx.json({
-      rideId: 'ride_123',
-      status: 'searching',
-    }));
+  rest.post("/api/v1/rides", (req, res, ctx) => {
+    return res(
+      ctx.json({
+        rideId: "ride_123",
+        status: "searching",
+      })
+    );
   })
 );
 
@@ -2848,40 +2881,40 @@ beforeAll(() => server.listen());
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-describe('Ride Booking Flow', () => {
-  it('should complete full booking flow', async () => {
+describe("Ride Booking Flow", () => {
+  it("should complete full booking flow", async () => {
     const user = userEvent.setup();
     render(<RideBookingApp />);
 
     // Step 1: Enter pickup location
-    const pickupInput = screen.getByPlaceholderText('Enter pickup location');
-    await user.type(pickupInput, 'MG Road');
+    const pickupInput = screen.getByPlaceholderText("Enter pickup location");
+    await user.type(pickupInput, "MG Road");
 
     await waitFor(() => {
-      expect(screen.getByText('MG Road Metro')).toBeInTheDocument();
+      expect(screen.getByText("MG Road Metro")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText('MG Road Metro'));
+    await user.click(screen.getByText("MG Road Metro"));
 
     // Step 2: Enter drop location
-    const dropInput = screen.getByPlaceholderText('Enter destination');
-    await user.type(dropInput, 'Indiranagar');
+    const dropInput = screen.getByPlaceholderText("Enter destination");
+    await user.type(dropInput, "Indiranagar");
 
     await waitFor(() => {
-      expect(screen.getByText('Indiranagar')).toBeInTheDocument();
+      expect(screen.getByText("Indiranagar")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText('Indiranagar'));
+    await user.click(screen.getByText("Indiranagar"));
 
     // Step 3: Verify fare options shown
     await waitFor(() => {
-      expect(screen.getByText('₹85-95')).toBeInTheDocument();
-      expect(screen.getByText('Auto')).toBeInTheDocument();
+      expect(screen.getByText("₹85-95")).toBeInTheDocument();
+      expect(screen.getByText("Auto")).toBeInTheDocument();
     });
 
     // Step 4: Select ride type and book
-    await user.click(screen.getByText('Auto'));
-    await user.click(screen.getByRole('button', { name: /book/i }));
+    await user.click(screen.getByText("Auto"));
+    await user.click(screen.getByRole("button", { name: /book/i }));
 
     // Step 5: Verify searching state
     await waitFor(() => {
@@ -2889,10 +2922,10 @@ describe('Ride Booking Flow', () => {
     });
   });
 
-  it('should handle fare estimation error gracefully', async () => {
+  it("should handle fare estimation error gracefully", async () => {
     server.use(
-      rest.post('/api/v1/rides/estimate', (req, res, ctx) => {
-        return res(ctx.status(500), ctx.json({ error: 'Service unavailable' }));
+      rest.post("/api/v1/rides/estimate", (req, res, ctx) => {
+        return res(ctx.status(500), ctx.json({ error: "Service unavailable" }));
       })
     );
 
@@ -2904,7 +2937,9 @@ describe('Ride Booking Flow', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/unable to get fare/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /retry/i })
+      ).toBeInTheDocument();
     });
   });
 });
@@ -2914,68 +2949,74 @@ describe('Ride Booking Flow', () => {
 
 ```typescript
 // ride-booking.e2e.spec.ts (Playwright)
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-test.describe('Ride Booking E2E', () => {
+test.describe("Ride Booking E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Mock geolocation
-    await page.context().setGeolocation({ latitude: 12.9716, longitude: 77.5946 });
-    await page.context().grantPermissions(['geolocation']);
+    await page
+      .context()
+      .setGeolocation({ latitude: 12.9716, longitude: 77.5946 });
+    await page.context().grantPermissions(["geolocation"]);
   });
 
-  test('complete ride booking from search to driver match', async ({ page }) => {
-    await page.goto('/');
+  test("complete ride booking from search to driver match", async ({
+    page,
+  }) => {
+    await page.goto("/");
 
     // Enter pickup
-    await page.getByPlaceholder('Enter pickup location').fill('MG Road');
-    await page.getByText('MG Road Metro Station').click();
+    await page.getByPlaceholder("Enter pickup location").fill("MG Road");
+    await page.getByText("MG Road Metro Station").click();
 
     // Enter destination
-    await page.getByPlaceholder('Enter destination').fill('Indiranagar');
-    await page.getByText('Indiranagar 100ft Road').click();
+    await page.getByPlaceholder("Enter destination").fill("Indiranagar");
+    await page.getByText("Indiranagar 100ft Road").click();
 
     // Wait for fare estimates
-    await expect(page.getByText('Auto')).toBeVisible();
+    await expect(page.getByText("Auto")).toBeVisible();
     await expect(page.getByText(/₹\d+-\d+/)).toBeVisible();
 
     // Select ride type
-    await page.getByText('Auto').click();
+    await page.getByText("Auto").click();
 
     // Click book
-    await page.getByRole('button', { name: 'Book Auto' }).click();
+    await page.getByRole("button", { name: "Book Auto" }).click();
 
     // Verify searching state
-    await expect(page.getByText('Finding your ride')).toBeVisible();
+    await expect(page.getByText("Finding your ride")).toBeVisible();
 
     // Wait for driver match (mocked via WebSocket)
-    await expect(page.getByText('Driver found!')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Driver found!")).toBeVisible({
+      timeout: 10000,
+    });
 
     // Verify driver details shown
-    await expect(page.getByText('OTP')).toBeVisible();
+    await expect(page.getByText("OTP")).toBeVisible();
     await expect(page.getByText(/KA-\d{2}-[A-Z]{2}-\d{4}/)).toBeVisible();
   });
 
-  test('should handle ride cancellation', async ({ page }) => {
-    await page.goto('/ride/active');
+  test("should handle ride cancellation", async ({ page }) => {
+    await page.goto("/ride/active");
 
     // Assume we're in matched state
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole("button", { name: "Cancel" }).click();
 
     // Confirm cancellation
-    await page.getByRole('button', { name: 'Yes, Cancel Ride' }).click();
+    await page.getByRole("button", { name: "Yes, Cancel Ride" }).click();
 
     // Verify cancellation
-    await expect(page.getByText('Ride cancelled')).toBeVisible();
+    await expect(page.getByText("Ride cancelled")).toBeVisible();
 
     // Should show cancellation fee if applicable
     // await expect(page.getByText(/cancellation fee/i)).toBeVisible();
   });
 
-  test('should show SOS button during active ride', async ({ page }) => {
-    await page.goto('/ride/active?status=on_trip');
+  test("should show SOS button during active ride", async ({ page }) => {
+    await page.goto("/ride/active?status=on_trip");
 
     // SOS button should be visible
-    const sosButton = page.getByRole('button', { name: /sos/i });
+    const sosButton = page.getByRole("button", { name: /sos/i });
     await expect(sosButton).toBeVisible();
 
     // Long press to activate
@@ -2985,7 +3026,7 @@ test.describe('Ride Booking E2E', () => {
     await expect(page.getByText(/contacting emergency/i)).toBeVisible();
 
     // Cancel before it triggers
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole("button", { name: "Cancel" }).click();
   });
 });
 ```
@@ -3033,25 +3074,26 @@ test.describe('Ride Booking E2E', () => {
 
 ```typescript
 // service-worker.ts (Workbox)
-import { precacheAndRoute } from 'workbox-precaching';
-import { registerRoute } from 'workbox-routing';
+import { precacheAndRoute } from "workbox-precaching";
+import { registerRoute } from "workbox-routing";
 import {
   CacheFirst,
   NetworkFirst,
   StaleWhileRevalidate,
-} from 'workbox-strategies';
-import { ExpirationPlugin } from 'workbox-expiration';
-import { BackgroundSyncPlugin } from 'workbox-background-sync';
+} from "workbox-strategies";
+import { ExpirationPlugin } from "workbox-expiration";
+import { BackgroundSyncPlugin } from "workbox-background-sync";
 
 // Precache app shell
 precacheAndRoute(self.__WB_MANIFEST);
 
 // Map tiles - Cache first with expiration
 registerRoute(
-  ({ url }) => url.hostname.includes('maps.googleapis.com') ||
-               url.hostname.includes('tiles.mapbox.com'),
+  ({ url }) =>
+    url.hostname.includes("maps.googleapis.com") ||
+    url.hostname.includes("tiles.mapbox.com"),
   new CacheFirst({
-    cacheName: 'map-tiles',
+    cacheName: "map-tiles",
     plugins: [
       new ExpirationPlugin({
         maxEntries: 500, // Limit cache size
@@ -3063,18 +3105,18 @@ registerRoute(
 
 // User profile - Stale while revalidate
 registerRoute(
-  ({ url }) => url.pathname.includes('/api/v1/users/me'),
+  ({ url }) => url.pathname.includes("/api/v1/users/me"),
   new StaleWhileRevalidate({
-    cacheName: 'user-profile',
+    cacheName: "user-profile",
   })
 );
 
 // Ride history - Network first with cache fallback
 registerRoute(
-  ({ url }) => url.pathname.includes('/api/v1/rides') &&
-               url.searchParams.has('history'),
+  ({ url }) =>
+    url.pathname.includes("/api/v1/rides") && url.searchParams.has("history"),
   new NetworkFirst({
-    cacheName: 'ride-history',
+    cacheName: "ride-history",
     networkTimeoutSeconds: 5,
     plugins: [
       new ExpirationPlugin({
@@ -3086,17 +3128,18 @@ registerRoute(
 );
 
 // Background sync for ride actions
-const bgSyncPlugin = new BackgroundSyncPlugin('rideActions', {
+const bgSyncPlugin = new BackgroundSyncPlugin("rideActions", {
   maxRetentionTime: 24 * 60, // 24 hours in minutes
 });
 
 registerRoute(
-  ({ url }) => url.pathname.includes('/api/v1/rides') &&
-               ['POST', 'PUT', 'DELETE'].includes(request.method),
+  ({ url }) =>
+    url.pathname.includes("/api/v1/rides") &&
+    ["POST", "PUT", "DELETE"].includes(request.method),
   new NetworkFirst({
     plugins: [bgSyncPlugin],
   }),
-  'POST'
+  "POST"
 );
 ```
 
@@ -3104,7 +3147,7 @@ registerRoute(
 
 ```typescript
 // offlineRideHistory.ts
-import Dexie from 'dexie';
+import Dexie from "dexie";
 
 interface RideRecord {
   id: string;
@@ -3121,9 +3164,9 @@ class RideDatabase extends Dexie {
   rides!: Dexie.Table<RideRecord, string>;
 
   constructor() {
-    super('RideBookingDB');
+    super("RideBookingDB");
     this.version(1).stores({
-      rides: 'id, date, status, synced',
+      rides: "id, date, status, synced",
     });
   }
 }
@@ -3137,35 +3180,28 @@ export const saveRideLocally = async (ride: RideRecord) => {
 
 // Get ride history (offline-capable)
 export const getRideHistory = async (limit = 20): Promise<RideRecord[]> => {
-  return await db.rides
-    .orderBy('date')
-    .reverse()
-    .limit(limit)
-    .toArray();
+  return await db.rides.orderBy("date").reverse().limit(limit).toArray();
 };
 
 // Sync unsynced rides when online
 export const syncPendingRides = async () => {
-  const unsyncedRides = await db.rides
-    .where('synced')
-    .equals(false)
-    .toArray();
+  const unsyncedRides = await db.rides.where("synced").equals(false).toArray();
 
   for (const ride of unsyncedRides) {
     try {
-      await fetch('/api/v1/rides/sync', {
-        method: 'POST',
+      await fetch("/api/v1/rides/sync", {
+        method: "POST",
         body: JSON.stringify(ride),
       });
       await db.rides.update(ride.id, { synced: true });
     } catch (error) {
-      console.error('Failed to sync ride:', ride.id);
+      console.error("Failed to sync ride:", ride.id);
     }
   }
 };
 
 // Listen for online event
-window.addEventListener('online', syncPendingRides);
+window.addEventListener("online", syncPendingRides);
 ```
 
 ### Connection Status Handler
@@ -3174,7 +3210,9 @@ window.addEventListener('online', syncPendingRides);
 // useConnectionStatus.ts
 const useConnectionStatus = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [connectionQuality, setConnectionQuality] = useState<'good' | 'slow' | 'offline'>('good');
+  const [connectionQuality, setConnectionQuality] = useState<
+    "good" | "slow" | "offline"
+  >("good");
 
   useEffect(() => {
     const handleOnline = () => {
@@ -3184,25 +3222,25 @@ const useConnectionStatus = () => {
 
     const handleOffline = () => {
       setIsOnline(false);
-      setConnectionQuality('offline');
+      setConnectionQuality("offline");
     };
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     // Check connection quality periodically
     const checkConnectionQuality = async () => {
       if (!navigator.onLine) {
-        setConnectionQuality('offline');
+        setConnectionQuality("offline");
         return;
       }
 
       const connection = (navigator as any).connection;
       if (connection) {
-        if (connection.effectiveType === '4g') {
-          setConnectionQuality('good');
-        } else if (['3g', '2g'].includes(connection.effectiveType)) {
-          setConnectionQuality('slow');
+        if (connection.effectiveType === "4g") {
+          setConnectionQuality("good");
+        } else if (["3g", "2g"].includes(connection.effectiveType)) {
+          setConnectionQuality("slow");
         }
       }
     };
@@ -3210,8 +3248,8 @@ const useConnectionStatus = () => {
     const interval = setInterval(checkConnectionQuality, 30000);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
       clearInterval(interval);
     };
   }, []);
@@ -3223,7 +3261,7 @@ const useConnectionStatus = () => {
 const ConnectionBanner = () => {
   const { isOnline, connectionQuality } = useConnectionStatus();
 
-  if (isOnline && connectionQuality === 'good') return null;
+  if (isOnline && connectionQuality === "good") return null;
 
   return (
     <div
@@ -3236,7 +3274,7 @@ const ConnectionBanner = () => {
           <WifiOffIcon />
           <span>You're offline. Some features may be limited.</span>
         </>
-      ) : connectionQuality === 'slow' ? (
+      ) : connectionQuality === "slow" ? (
         <>
           <SlowConnectionIcon />
           <span>Slow connection detected. Updates may be delayed.</span>
@@ -3253,16 +3291,18 @@ const ConnectionBanner = () => {
 // queuedActions.ts
 interface QueuedAction {
   id: string;
-  type: 'cancel_ride' | 'rate_ride' | 'report_issue';
+  type: "cancel_ride" | "rate_ride" | "report_issue";
   payload: any;
   timestamp: number;
   retries: number;
 }
 
-const ACTION_QUEUE_KEY = 'ride_action_queue';
+const ACTION_QUEUE_KEY = "ride_action_queue";
 
 // Add action to queue
-export const queueAction = (action: Omit<QueuedAction, 'id' | 'timestamp' | 'retries'>) => {
+export const queueAction = (
+  action: Omit<QueuedAction, "id" | "timestamp" | "retries">
+) => {
   const queue = getActionQueue();
   const newAction: QueuedAction = {
     ...action,
@@ -3299,7 +3339,7 @@ export const processActionQueue = async () => {
         remainingActions.push({ ...action, retries: action.retries + 1 });
       } else {
         // Log failed action for manual review
-        console.error('Action failed after 3 retries:', action);
+        console.error("Action failed after 3 retries:", action);
       }
     }
   }
@@ -3309,14 +3349,14 @@ export const processActionQueue = async () => {
 
 const processAction = async (action: QueuedAction) => {
   const endpoints: Record<string, string> = {
-    cancel_ride: '/api/v1/rides/cancel',
-    rate_ride: '/api/v1/rides/rate',
-    report_issue: '/api/v1/support/report',
+    cancel_ride: "/api/v1/rides/cancel",
+    rate_ride: "/api/v1/rides/rate",
+    report_issue: "/api/v1/support/report",
   };
 
   const response = await fetch(endpoints[action.type], {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(action.payload),
   });
 
@@ -3326,10 +3366,10 @@ const processAction = async (action: QueuedAction) => {
 };
 
 // Register background sync
-if ('serviceWorker' in navigator && 'SyncManager' in window) {
+if ("serviceWorker" in navigator && "SyncManager" in window) {
   navigator.serviceWorker.ready.then((registration) => {
     // Request background sync when actions are queued
-    return registration.sync.register('sync-ride-actions');
+    return registration.sync.register("sync-ride-actions");
   });
 }
 ```
@@ -3344,7 +3384,7 @@ const usePWAInstall = () => {
 
   useEffect(() => {
     // Check if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    if (window.matchMedia("(display-mode: standalone)").matches) {
       setIsInstalled(true);
       return;
     }
@@ -3359,12 +3399,12 @@ const usePWAInstall = () => {
       setInstallPrompt(null);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
 
@@ -3375,7 +3415,7 @@ const usePWAInstall = () => {
     const { outcome } = await installPrompt.userChoice;
 
     setInstallPrompt(null);
-    return outcome === 'accepted';
+    return outcome === "accepted";
   };
 
   return {
@@ -3403,7 +3443,9 @@ const InstallBanner = () => {
       </div>
       <div className="install-actions">
         <button onClick={() => setDismissed(true)}>Not now</button>
-        <button onClick={promptInstall} className="primary">Install</button>
+        <button onClick={promptInstall} className="primary">
+          Install
+        </button>
       </div>
     </div>
   );
@@ -3454,16 +3496,21 @@ const InstallBanner = () => {
 
 ```typescript
 // DriverMarker.tsx
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
 interface DriverMarkerProps {
   position: { lat: number; lng: number };
   heading: number; // 0-360 degrees
-  vehicleType: 'auto' | 'bike' | 'car';
+  vehicleType: "auto" | "bike" | "car";
   isSelected?: boolean;
 }
 
-const DriverMarker = ({ position, heading, vehicleType, isSelected }: DriverMarkerProps) => {
+const DriverMarker = ({
+  position,
+  heading,
+  vehicleType,
+  isSelected,
+}: DriverMarkerProps) => {
   const markerRef = useRef<google.maps.Marker | null>(null);
   const [prevPosition, setPrevPosition] = useState(position);
 
@@ -3520,15 +3567,15 @@ const DriverMarker = ({ position, heading, vehicleType, isSelected }: DriverMark
   const getVehicleIcon = (): google.maps.Symbol => {
     const icons = {
       auto: `M12 2L4 8v6l8 6 8-6V8l-8-6z`, // Auto rickshaw shape
-      bike: `M12 2L6 8v4l6 6 6-6V8l-6-6z`,  // Bike shape
+      bike: `M12 2L6 8v4l6 6 6-6V8l-6-6z`, // Bike shape
       car: `M5 11l2-6h10l2 6H5zm1 3a2 2 0 104 0 2 2 0 00-4 0zm8 0a2 2 0 104 0 2 2 0 00-4 0z`,
     };
 
     return {
       path: icons[vehicleType],
-      fillColor: isSelected ? '#2196F3' : '#4CAF50',
+      fillColor: isSelected ? "#2196F3" : "#4CAF50",
       fillOpacity: 1,
-      strokeColor: '#FFFFFF',
+      strokeColor: "#FFFFFF",
       strokeWeight: 2,
       scale: isSelected ? 2 : 1.5,
       rotation: heading,
@@ -3550,7 +3597,7 @@ const DriverMarker = ({ position, heading, vehicleType, isSelected }: DriverMark
 const DriversOnMap = ({ drivers, selectedDriverId }: DriversOnMapProps) => {
   return (
     <>
-      {drivers.map(driver => (
+      {drivers.map((driver) => (
         <DriverMarker
           key={driver.id}
           position={driver.location}
@@ -3611,7 +3658,7 @@ const AnimatedRoute = ({ encodedPath, isActive }: AnimatedRouteProps) => {
       <Polyline
         path={decodedPath}
         options={{
-          strokeColor: '#E0E0E0',
+          strokeColor: "#E0E0E0",
           strokeWeight: 6,
           strokeOpacity: 0.8,
         }}
@@ -3621,18 +3668,20 @@ const AnimatedRoute = ({ encodedPath, isActive }: AnimatedRouteProps) => {
       <Polyline
         path={animatedPath}
         options={{
-          strokeColor: '#2196F3',
+          strokeColor: "#2196F3",
           strokeWeight: 6,
           strokeOpacity: 1,
-          icons: [{
-            icon: {
-              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-              scale: 3,
-              fillColor: '#2196F3',
-              fillOpacity: 1,
+          icons: [
+            {
+              icon: {
+                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                scale: 3,
+                fillColor: "#2196F3",
+                fillOpacity: 1,
+              },
+              offset: "100%",
             },
-            offset: '100%',
-          }],
+          ],
         }}
       />
     </>
@@ -3644,7 +3693,7 @@ const AnimatedRoute = ({ encodedPath, isActive }: AnimatedRouteProps) => {
 
 ```typescript
 // MarkerClusterer.tsx
-import { MarkerClusterer } from '@googlemaps/markerclusterer';
+import { MarkerClusterer } from "@googlemaps/markerclusterer";
 
 const DriverClusterer = ({ map, drivers }: DriverClustererProps) => {
   const clustererRef = useRef<MarkerClusterer | null>(null);
@@ -3653,7 +3702,7 @@ const DriverClusterer = ({ map, drivers }: DriverClustererProps) => {
     if (!map) return;
 
     // Create markers
-    const markers = drivers.map(driver => {
+    const markers = drivers.map((driver) => {
       return new google.maps.Marker({
         position: driver.location,
         icon: getDriverIcon(driver.vehicleType),
@@ -3672,16 +3721,16 @@ const DriverClusterer = ({ map, drivers }: DriverClustererProps) => {
             icon: {
               path: google.maps.SymbolPath.CIRCLE,
               scale: 20 + Math.log(count) * 5,
-              fillColor: '#4CAF50',
+              fillColor: "#4CAF50",
               fillOpacity: 0.9,
-              strokeColor: '#FFFFFF',
+              strokeColor: "#FFFFFF",
               strokeWeight: 2,
             },
             label: {
               text: String(count),
-              color: '#FFFFFF',
-              fontSize: '12px',
-              fontWeight: 'bold',
+              color: "#FFFFFF",
+              fontSize: "12px",
+              fontWeight: "bold",
             },
             zIndex: 1000 + count,
           });
@@ -3711,55 +3760,53 @@ const useGeocoding = () => {
   const geocoder = useMemo(() => new google.maps.Geocoder(), []);
   const [cache, setCache] = useState<Map<string, string>>(new Map());
 
-  const reverseGeocode = useCallback(async (
-    lat: number,
-    lng: number
-  ): Promise<string> => {
-    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  const reverseGeocode = useCallback(
+    async (lat: number, lng: number): Promise<string> => {
+      const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
 
-    // Check cache first
-    if (cache.has(cacheKey)) {
-      return cache.get(cacheKey)!;
-    }
-
-    try {
-      const response = await geocoder.geocode({
-        location: { lat, lng },
-      });
-
-      if (response.results[0]) {
-        // Get most relevant address component
-        const result = response.results[0];
-        const address = formatAddress(result);
-
-        // Cache result
-        setCache(prev => new Map(prev).set(cacheKey, address));
-
-        return address;
+      // Check cache first
+      if (cache.has(cacheKey)) {
+        return cache.get(cacheKey)!;
       }
 
-      return 'Unknown location';
-    } catch (error) {
-      console.error('Geocoding failed:', error);
-      return 'Unknown location';
-    }
-  }, [geocoder, cache]);
+      try {
+        const response = await geocoder.geocode({
+          location: { lat, lng },
+        });
+
+        if (response.results[0]) {
+          // Get most relevant address component
+          const result = response.results[0];
+          const address = formatAddress(result);
+
+          // Cache result
+          setCache((prev) => new Map(prev).set(cacheKey, address));
+
+          return address;
+        }
+
+        return "Unknown location";
+      } catch (error) {
+        console.error("Geocoding failed:", error);
+        return "Unknown location";
+      }
+    },
+    [geocoder, cache]
+  );
 
   const formatAddress = (result: google.maps.GeocoderResult): string => {
     // Prioritize: sublocality > locality > route
     const components = result.address_components;
 
-    const sublocality = components.find(c =>
-      c.types.includes('sublocality_level_1')
+    const sublocality = components.find((c) =>
+      c.types.includes("sublocality_level_1")
     )?.long_name;
 
-    const locality = components.find(c =>
-      c.types.includes('locality')
+    const locality = components.find((c) =>
+      c.types.includes("locality")
     )?.long_name;
 
-    const route = components.find(c =>
-      c.types.includes('route')
-    )?.long_name;
+    const route = components.find((c) => c.types.includes("route"))?.long_name;
 
     return sublocality || route || locality || result.formatted_address;
   };
@@ -3838,7 +3885,7 @@ const useFitBounds = (
       });
 
       // Don't zoom in too much for nearby points
-      const listener = google.maps.event.addListenerOnce(map, 'idle', () => {
+      const listener = google.maps.event.addListenerOnce(map, "idle", () => {
         const zoom = map.getZoom();
         if (zoom && zoom > 16) {
           map.setZoom(16);
@@ -3861,68 +3908,74 @@ const useFitBounds = (
 
 ```typescript
 // i18n/config.ts
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import LanguageDetector from "i18next-browser-languagedetector";
 
 const resources = {
   en: {
     translation: {
       booking: {
-        whereToGo: 'Where to?',
-        pickupLocation: 'Pickup location',
-        destination: 'Destination',
-        findingRide: 'Finding your ride...',
-        driverFound: 'Driver found!',
-        arrivingIn: 'Arriving in {{minutes}} min',
-        tripStarted: 'Trip started',
-        tripCompleted: 'Trip completed',
-        yourOtp: 'Your OTP',
+        whereToGo: "Where to?",
+        pickupLocation: "Pickup location",
+        destination: "Destination",
+        findingRide: "Finding your ride...",
+        driverFound: "Driver found!",
+        arrivingIn: "Arriving in {{minutes}} min",
+        tripStarted: "Trip started",
+        tripCompleted: "Trip completed",
+        yourOtp: "Your OTP",
       },
       fare: {
-        estimate: '₹{{min}}-{{max}}',
-        surge: '{{multiplier}}x surge pricing',
-        total: 'Total fare: ₹{{amount}}',
+        estimate: "₹{{min}}-{{max}}",
+        surge: "{{multiplier}}x surge pricing",
+        total: "Total fare: ₹{{amount}}",
       },
       actions: {
-        book: 'Book {{vehicleType}}',
-        cancel: 'Cancel ride',
-        call: 'Call driver',
-        share: 'Share trip',
-        sos: 'Emergency SOS',
+        book: "Book {{vehicleType}}",
+        cancel: "Cancel ride",
+        call: "Call driver",
+        share: "Share trip",
+        sos: "Emergency SOS",
       },
     },
   },
   hi: {
     translation: {
       booking: {
-        whereToGo: 'कहाँ जाना है?',
-        pickupLocation: 'पिकअप लोकेशन',
-        destination: 'गंतव्य',
-        findingRide: 'आपकी राइड खोज रहे हैं...',
-        driverFound: 'ड्राइवर मिल गया!',
-        arrivingIn: '{{minutes}} मिनट में आ रहे हैं',
-        tripStarted: 'यात्रा शुरू हुई',
-        tripCompleted: 'यात्रा पूरी हुई',
-        yourOtp: 'आपका OTP',
+        whereToGo: "कहाँ जाना है?",
+        pickupLocation: "पिकअप लोकेशन",
+        destination: "गंतव्य",
+        findingRide: "आपकी राइड खोज रहे हैं...",
+        driverFound: "ड्राइवर मिल गया!",
+        arrivingIn: "{{minutes}} मिनट में आ रहे हैं",
+        tripStarted: "यात्रा शुरू हुई",
+        tripCompleted: "यात्रा पूरी हुई",
+        yourOtp: "आपका OTP",
       },
       fare: {
-        estimate: '₹{{min}}-{{max}}',
-        surge: '{{multiplier}}x सर्ज प्राइसिंग',
-        total: 'कुल किराया: ₹{{amount}}',
+        estimate: "₹{{min}}-{{max}}",
+        surge: "{{multiplier}}x सर्ज प्राइसिंग",
+        total: "कुल किराया: ₹{{amount}}",
       },
       actions: {
-        book: '{{vehicleType}} बुक करें',
-        cancel: 'राइड कैंसल करें',
-        call: 'ड्राइवर को कॉल करें',
-        share: 'ट्रिप शेयर करें',
-        sos: 'आपातकालीन SOS',
+        book: "{{vehicleType}} बुक करें",
+        cancel: "राइड कैंसल करें",
+        call: "ड्राइवर को कॉल करें",
+        share: "ट्रिप शेयर करें",
+        sos: "आपातकालीन SOS",
       },
     },
   },
-  kn: { /* Kannada translations */ },
-  ta: { /* Tamil translations */ },
-  te: { /* Telugu translations */ },
+  kn: {
+    /* Kannada translations */
+  },
+  ta: {
+    /* Tamil translations */
+  },
+  te: {
+    /* Telugu translations */
+  },
 };
 
 i18n
@@ -3930,13 +3983,13 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'en',
+    fallbackLng: "en",
     interpolation: {
       escapeValue: false,
     },
     detection: {
-      order: ['localStorage', 'navigator'],
-      caches: ['localStorage'],
+      order: ["localStorage", "navigator"],
+      caches: ["localStorage"],
     },
   });
 
@@ -3949,11 +4002,11 @@ export default i18n;
 // utils/formatters.ts
 export const formatCurrency = (
   amount: number,
-  currency: string = 'INR',
-  locale: string = 'en-IN'
+  currency: string = "INR",
+  locale: string = "en-IN"
 ): string => {
   return new Intl.NumberFormat(locale, {
-    style: 'currency',
+    style: "currency",
     currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
@@ -3961,31 +4014,31 @@ export const formatCurrency = (
 };
 
 // ₹85 (en-IN), ₹ 85 (hi-IN)
-formatCurrency(85, 'INR', 'en-IN'); // "₹85"
-formatCurrency(85, 'INR', 'hi-IN'); // "₹85"
+formatCurrency(85, "INR", "en-IN"); // "₹85"
+formatCurrency(85, "INR", "hi-IN"); // "₹85"
 
 export const formatDistance = (
   meters: number,
-  locale: string = 'en-IN',
-  unit: 'metric' | 'imperial' = 'metric'
+  locale: string = "en-IN",
+  unit: "metric" | "imperial" = "metric"
 ): string => {
-  if (unit === 'imperial') {
+  if (unit === "imperial") {
     const miles = meters / 1609.344;
     return `${miles.toFixed(1)} mi`;
   }
 
   if (meters < 1000) {
     return new Intl.NumberFormat(locale, {
-      style: 'unit',
-      unit: 'meter',
+      style: "unit",
+      unit: "meter",
       maximumFractionDigits: 0,
     }).format(meters);
   }
 
   const km = meters / 1000;
   return new Intl.NumberFormat(locale, {
-    style: 'unit',
-    unit: 'kilometer',
+    style: "unit",
+    unit: "kilometer",
     maximumFractionDigits: 1,
   }).format(km);
 };
@@ -3994,14 +4047,14 @@ export const formatDistance = (
 
 export const formatDuration = (
   seconds: number,
-  locale: string = 'en-IN'
+  locale: string = "en-IN"
 ): string => {
   const minutes = Math.round(seconds / 60);
 
   if (minutes < 60) {
     return new Intl.NumberFormat(locale, {
-      style: 'unit',
-      unit: 'minute',
+      style: "unit",
+      unit: "minute",
     }).format(minutes);
   }
 
@@ -4009,8 +4062,8 @@ export const formatDuration = (
   const remainingMinutes = minutes % 60;
 
   const hoursStr = new Intl.NumberFormat(locale, {
-    style: 'unit',
-    unit: 'hour',
+    style: "unit",
+    unit: "hour",
   }).format(hours);
 
   if (remainingMinutes === 0) {
@@ -4018,8 +4071,8 @@ export const formatDuration = (
   }
 
   const minutesStr = new Intl.NumberFormat(locale, {
-    style: 'unit',
-    unit: 'minute',
+    style: "unit",
+    unit: "minute",
   }).format(remainingMinutes);
 
   return `${hoursStr} ${minutesStr}`;
@@ -4028,19 +4081,19 @@ export const formatDuration = (
 // Relative time for ride history
 export const formatRelativeTime = (
   date: Date,
-  locale: string = 'en-IN'
+  locale: string = "en-IN"
 ): string => {
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   const now = new Date();
   const diffInSeconds = (date.getTime() - now.getTime()) / 1000;
 
   const units: [Intl.RelativeTimeFormatUnit, number][] = [
-    ['year', 31536000],
-    ['month', 2592000],
-    ['week', 604800],
-    ['day', 86400],
-    ['hour', 3600],
-    ['minute', 60],
+    ["year", 31536000],
+    ["month", 2592000],
+    ["week", 604800],
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
   ];
 
   for (const [unit, secondsInUnit] of units) {
@@ -4050,7 +4103,7 @@ export const formatRelativeTime = (
     }
   }
 
-  return rtf.format(Math.round(diffInSeconds), 'second');
+  return rtf.format(Math.round(diffInSeconds), "second");
 };
 
 // "2 days ago", "कल", "अगले हफ्ते"
@@ -4112,28 +4165,29 @@ export const formatRelativeTime = (
 ```typescript
 // LanguageSelector.tsx
 const LANGUAGES = [
-  { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
-  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ' },
-  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
-  { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
-  { code: 'mr', name: 'Marathi', nativeName: 'मराठी' },
-  { code: 'bn', name: 'Bengali', nativeName: 'বাংলা' },
+  { code: "en", name: "English", nativeName: "English" },
+  { code: "hi", name: "Hindi", nativeName: "हिन्दी" },
+  { code: "kn", name: "Kannada", nativeName: "ಕನ್ನಡ" },
+  { code: "ta", name: "Tamil", nativeName: "தமிழ்" },
+  { code: "te", name: "Telugu", nativeName: "తెలుగు" },
+  { code: "mr", name: "Marathi", nativeName: "मराठी" },
+  { code: "bn", name: "Bengali", nativeName: "বাংলা" },
 ];
 
 const LanguageSelector = () => {
   const { i18n } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
-  const currentLanguage = LANGUAGES.find(l => l.code === i18n.language) || LANGUAGES[0];
+  const currentLanguage =
+    LANGUAGES.find((l) => l.code === i18n.language) || LANGUAGES[0];
 
   const changeLanguage = (code: string) => {
     i18n.changeLanguage(code);
     setIsOpen(false);
 
     // Update document direction
-    const rtlLanguages = ['ar', 'ur'];
-    document.documentElement.dir = rtlLanguages.includes(code) ? 'rtl' : 'ltr';
+    const rtlLanguages = ["ar", "ur"];
+    document.documentElement.dir = rtlLanguages.includes(code) ? "rtl" : "ltr";
   };
 
   return (
@@ -4150,13 +4204,13 @@ const LanguageSelector = () => {
 
       {isOpen && (
         <ul role="listbox" className="language-dropdown">
-          {LANGUAGES.map(lang => (
+          {LANGUAGES.map((lang) => (
             <li
               key={lang.code}
               role="option"
               aria-selected={lang.code === i18n.language}
               onClick={() => changeLanguage(lang.code)}
-              className={lang.code === i18n.language ? 'selected' : ''}
+              className={lang.code === i18n.language ? "selected" : ""}
             >
               <span className="native-name">{lang.nativeName}</span>
               <span className="english-name">{lang.name}</span>
@@ -4180,13 +4234,13 @@ const resources = {
   en: {
     translation: {
       drivers: {
-        count_zero: 'No drivers available',
-        count_one: '{{count}} driver nearby',
-        count_other: '{{count}} drivers nearby',
+        count_zero: "No drivers available",
+        count_one: "{{count}} driver nearby",
+        count_other: "{{count}} drivers nearby",
       },
       minutes: {
-        arriving_one: 'Arriving in {{count}} minute',
-        arriving_other: 'Arriving in {{count}} minutes',
+        arriving_one: "Arriving in {{count}} minute",
+        arriving_other: "Arriving in {{count}} minutes",
       },
     },
   },
@@ -4194,13 +4248,13 @@ const resources = {
     translation: {
       drivers: {
         // Hindi uses same form for 2+
-        count_zero: 'कोई ड्राइवर उपलब्ध नहीं',
-        count_one: '{{count}} ड्राइवर पास में',
-        count_other: '{{count}} ड्राइवर पास में',
+        count_zero: "कोई ड्राइवर उपलब्ध नहीं",
+        count_one: "{{count}} ड्राइवर पास में",
+        count_other: "{{count}} ड्राइवर पास में",
       },
       minutes: {
-        arriving_one: '{{count}} मिनट में पहुंच रहे हैं',
-        arriving_other: '{{count}} मिनट में पहुंच रहे हैं',
+        arriving_one: "{{count}} मिनट में पहुंच रहे हैं",
+        arriving_other: "{{count}} मिनट में पहुंच रहे हैं",
       },
     },
   },
@@ -4208,23 +4262,23 @@ const resources = {
 
 // Usage
 const { t } = useTranslation();
-t('drivers.count', { count: 5 }); // "5 drivers nearby"
-t('minutes.arriving', { count: 3 }); // "Arriving in 3 minutes"
+t("drivers.count", { count: 5 }); // "5 drivers nearby"
+t("minutes.arriving", { count: 3 }); // "Arriving in 3 minutes"
 
 // Gender agreement (important for Hindi/Marathi)
 const resources_extended = {
   hi: {
     translation: {
       driver: {
-        arriving_male: 'ड्राइवर आ रहा है',
-        arriving_female: 'ड्राइवर आ रही है',
+        arriving_male: "ड्राइवर आ रहा है",
+        arriving_female: "ड्राइवर आ रही है",
       },
     },
   },
 };
 
 // Usage with gender context
-t('driver.arriving', { context: driver.gender }); // Uses correct verb form
+t("driver.arriving", { context: driver.gender }); // Uses correct verb form
 ```
 
 ---
@@ -4298,8 +4352,8 @@ const analytics = {
     sendToAnalytics(event);
 
     // Also log to console in dev
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[Analytics]', name, properties);
+    if (process.env.NODE_ENV === "development") {
+      console.log("[Analytics]", name, properties);
     }
   },
 };
@@ -4307,39 +4361,39 @@ const analytics = {
 // Booking funnel events
 export const trackBookingFunnel = {
   appOpened: () => {
-    analytics.track('app_opened', {
-      entry_point: document.referrer || 'direct',
+    analytics.track("app_opened", {
+      entry_point: document.referrer || "direct",
     });
   },
 
-  locationSet: (method: 'gps' | 'search' | 'saved' | 'map') => {
-    analytics.track('location_set', {
+  locationSet: (method: "gps" | "search" | "saved" | "map") => {
+    analytics.track("location_set", {
       method,
-      has_permission: 'geolocation' in navigator,
+      has_permission: "geolocation" in navigator,
     });
   },
 
-  destinationEntered: (method: 'search' | 'saved' | 'map' | 'recent') => {
-    analytics.track('destination_entered', { method });
+  destinationEntered: (method: "search" | "saved" | "map" | "recent") => {
+    analytics.track("destination_entered", { method });
   },
 
   fareEstimateViewed: (options: FareOption[]) => {
-    analytics.track('fare_estimate_viewed', {
+    analytics.track("fare_estimate_viewed", {
       options_count: options.length,
-      cheapest: Math.min(...options.map(o => o.fareRange.min)),
-      has_surge: options.some(o => o.surge > 1),
+      cheapest: Math.min(...options.map((o) => o.fareRange.min)),
+      has_surge: options.some((o) => o.surge > 1),
     });
   },
 
   rideTypeSelected: (vehicleType: string, fare: number) => {
-    analytics.track('ride_type_selected', {
+    analytics.track("ride_type_selected", {
       vehicle_type: vehicleType,
       fare_estimate: fare,
     });
   },
 
   bookButtonTapped: (vehicleType: string, fare: number) => {
-    analytics.track('book_button_tapped', {
+    analytics.track("book_button_tapped", {
       vehicle_type: vehicleType,
       fare_estimate: fare,
       time_since_estimate: getTimeSinceEstimate(),
@@ -4347,14 +4401,14 @@ export const trackBookingFunnel = {
   },
 
   driverMatched: (waitTime: number, driverRating: number) => {
-    analytics.track('driver_matched', {
+    analytics.track("driver_matched", {
       wait_time_seconds: waitTime,
       driver_rating: driverRating,
     });
   },
 
   rideCompleted: (details: RideDetails) => {
-    analytics.track('ride_completed', {
+    analytics.track("ride_completed", {
       duration_minutes: details.duration,
       distance_km: details.distance,
       fare: details.fare,
@@ -4363,8 +4417,12 @@ export const trackBookingFunnel = {
     });
   },
 
-  rideCancelled: (stage: string, reason: string, cancelledBy: 'rider' | 'driver') => {
-    analytics.track('ride_cancelled', {
+  rideCancelled: (
+    stage: string,
+    reason: string,
+    cancelledBy: "rider" | "driver"
+  ) => {
+    analytics.track("ride_cancelled", {
       stage,
       reason,
       cancelled_by: cancelledBy,
@@ -4377,16 +4435,16 @@ export const trackBookingFunnel = {
 
 ```typescript
 // performance/webVitals.ts
-import { getCLS, getFID, getLCP, getFCP, getTTFB } from 'web-vitals';
+import { getCLS, getFID, getLCP, getFCP, getTTFB } from "web-vitals";
 
 interface PerformanceMetric {
   name: string;
   value: number;
-  rating: 'good' | 'needs-improvement' | 'poor';
+  rating: "good" | "needs-improvement" | "poor";
 }
 
 const sendToAnalytics = (metric: PerformanceMetric) => {
-  analytics.track('web_vital', {
+  analytics.track("web_vital", {
     metric_name: metric.name,
     metric_value: metric.value,
     rating: metric.rating,
@@ -4396,49 +4454,59 @@ const sendToAnalytics = (metric: PerformanceMetric) => {
 
 // Initialize web vitals tracking
 export const initWebVitals = () => {
-  getCLS(metric => sendToAnalytics({
-    name: 'CLS',
-    value: metric.value,
-    rating: metric.rating,
-  }));
+  getCLS((metric) =>
+    sendToAnalytics({
+      name: "CLS",
+      value: metric.value,
+      rating: metric.rating,
+    })
+  );
 
-  getFID(metric => sendToAnalytics({
-    name: 'FID',
-    value: metric.value,
-    rating: metric.rating,
-  }));
+  getFID((metric) =>
+    sendToAnalytics({
+      name: "FID",
+      value: metric.value,
+      rating: metric.rating,
+    })
+  );
 
-  getLCP(metric => sendToAnalytics({
-    name: 'LCP',
-    value: metric.value,
-    rating: metric.rating,
-  }));
+  getLCP((metric) =>
+    sendToAnalytics({
+      name: "LCP",
+      value: metric.value,
+      rating: metric.rating,
+    })
+  );
 
-  getFCP(metric => sendToAnalytics({
-    name: 'FCP',
-    value: metric.value,
-    rating: metric.rating,
-  }));
+  getFCP((metric) =>
+    sendToAnalytics({
+      name: "FCP",
+      value: metric.value,
+      rating: metric.rating,
+    })
+  );
 
-  getTTFB(metric => sendToAnalytics({
-    name: 'TTFB',
-    value: metric.value,
-    rating: metric.rating,
-  }));
+  getTTFB((metric) =>
+    sendToAnalytics({
+      name: "TTFB",
+      value: metric.value,
+      rating: metric.rating,
+    })
+  );
 };
 
 // Custom performance metrics for ride booking
 export const trackCustomMetrics = {
   timeToFirstFareEstimate: () => {
-    const start = performance.mark('fare_estimate_start');
+    const start = performance.mark("fare_estimate_start");
     return {
       end: () => {
         const measure = performance.measure(
-          'time_to_fare_estimate',
-          'fare_estimate_start'
+          "time_to_fare_estimate",
+          "fare_estimate_start"
         );
-        analytics.track('custom_metric', {
-          name: 'time_to_fare_estimate',
+        analytics.track("custom_metric", {
+          name: "time_to_fare_estimate",
           value: measure.duration,
         });
       },
@@ -4449,8 +4517,8 @@ export const trackCustomMetrics = {
     const start = Date.now();
     return {
       end: () => {
-        analytics.track('custom_metric', {
-          name: 'time_to_driver_match',
+        analytics.track("custom_metric", {
+          name: "time_to_driver_match",
           value: Date.now() - start,
         });
       },
@@ -4461,8 +4529,8 @@ export const trackCustomMetrics = {
     const start = performance.now();
     return {
       end: () => {
-        analytics.track('custom_metric', {
-          name: 'map_load_time',
+        analytics.track("custom_metric", {
+          name: "map_load_time",
           value: performance.now() - start,
         });
       },
@@ -4517,7 +4585,7 @@ export const trackCustomMetrics = {
 
 ```typescript
 // errorTracking.ts
-import * as Sentry from '@sentry/react';
+import * as Sentry from "@sentry/react";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -4525,7 +4593,7 @@ Sentry.init({
   tracesSampleRate: 0.1, // 10% of transactions
   beforeSend(event) {
     // Filter out known non-critical errors
-    if (event.exception?.values?.[0]?.type === 'ChunkLoadError') {
+    if (event.exception?.values?.[0]?.type === "ChunkLoadError") {
       return null; // Ignore chunk load errors (handled by retry)
     }
     return event;
@@ -4537,14 +4605,14 @@ export const captureRideError = (
   error: Error,
   context: {
     rideId?: string;
-    stage: 'booking' | 'matching' | 'tracking' | 'payment';
+    stage: "booking" | "matching" | "tracking" | "payment";
     userId?: string;
   }
 ) => {
-  Sentry.withScope(scope => {
-    scope.setTag('ride_stage', context.stage);
+  Sentry.withScope((scope) => {
+    scope.setTag("ride_stage", context.stage);
     if (context.rideId) {
-      scope.setExtra('ride_id', context.rideId);
+      scope.setExtra("ride_id", context.rideId);
     }
     if (context.userId) {
       scope.setUser({ id: context.userId });
@@ -4558,8 +4626,8 @@ export const trackWebSocketError = (
   error: Event | Error,
   reconnectAttempt: number
 ) => {
-  Sentry.captureMessage('WebSocket connection error', {
-    level: 'warning',
+  Sentry.captureMessage("WebSocket connection error", {
+    level: "warning",
     extra: {
       error: error.toString(),
       reconnect_attempt: reconnectAttempt,
@@ -4569,16 +4637,14 @@ export const trackWebSocketError = (
 };
 
 // Location error tracking
-export const trackLocationError = (
-  error: GeolocationPositionError
-) => {
+export const trackLocationError = (error: GeolocationPositionError) => {
   const errorMessages: Record<number, string> = {
-    1: 'Permission denied',
-    2: 'Position unavailable',
-    3: 'Timeout',
+    1: "Permission denied",
+    2: "Position unavailable",
+    3: "Timeout",
   };
 
-  analytics.track('location_error', {
+  analytics.track("location_error", {
     error_code: error.code,
     error_message: errorMessages[error.code],
   });
@@ -4613,7 +4679,7 @@ export const getVariant = (experimentId: string): string | null => {
 export const trackExperimentExposure = (experimentId: string) => {
   const experiment = experiments.get(experimentId);
   if (experiment) {
-    analytics.track('experiment_exposure', {
+    analytics.track("experiment_exposure", {
       experiment_id: experimentId,
       variant: experiment.variant,
     });
@@ -4622,13 +4688,13 @@ export const trackExperimentExposure = (experimentId: string) => {
 
 // Usage in components
 const BookingButton = () => {
-  const buttonVariant = getVariant('booking_button_v2');
+  const buttonVariant = getVariant("booking_button_v2");
 
   useEffect(() => {
-    trackExperimentExposure('booking_button_v2');
+    trackExperimentExposure("booking_button_v2");
   }, []);
 
-  if (buttonVariant === 'large_green') {
+  if (buttonVariant === "large_green") {
     return <LargeGreenButton />;
   }
 
@@ -4681,15 +4747,15 @@ const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_KEY;
 
 export const initPushNotifications = async (): Promise<boolean> => {
   // Check support
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.log('Push notifications not supported');
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    console.log("Push notifications not supported");
     return false;
   }
 
   // Request permission
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') {
-    console.log('Notification permission denied');
+  if (permission !== "granted") {
+    console.log("Notification permission denied");
     return false;
   }
 
@@ -4704,29 +4770,29 @@ export const initPushNotifications = async (): Promise<boolean> => {
     });
 
     // Send subscription to server
-    await fetch('/api/v1/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await fetch("/api/v1/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(subscription),
     });
 
     return true;
   } catch (error) {
-    console.error('Push subscription failed:', error);
+    console.error("Push subscription failed:", error);
     return false;
   }
 };
 
 // Service worker push handler
 // sw.js
-self.addEventListener('push', (event: PushEvent) => {
+self.addEventListener("push", (event: PushEvent) => {
   const data = event.data?.json() || {};
 
   const options: NotificationOptions = {
     body: data.body,
-    icon: '/icons/app-icon-192.png',
-    badge: '/icons/badge-72.png',
-    tag: data.tag || 'ride-update',
+    icon: "/icons/app-icon-192.png",
+    badge: "/icons/badge-72.png",
+    tag: data.tag || "ride-update",
     renotify: true,
     data: {
       url: data.url,
@@ -4736,19 +4802,17 @@ self.addEventListener('push', (event: PushEvent) => {
     vibrate: [200, 100, 200],
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
 // Handle notification click
-self.addEventListener('notificationclick', (event: NotificationEvent) => {
+self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
 
   const { url, rideId } = event.notification.data;
 
   // Handle action buttons
-  if (event.action === 'call_driver') {
+  if (event.action === "call_driver") {
     // Open phone dialer
     clients.openWindow(`tel:${event.notification.data.driverPhone}`);
     return;
@@ -4756,10 +4820,10 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
 
   // Open app to ride screen
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then(windowClients => {
+    clients.matchAll({ type: "window" }).then((windowClients) => {
       // Focus existing window if open
       for (const client of windowClients) {
-        if (client.url.includes(url) && 'focus' in client) {
+        if (client.url.includes(url) && "focus" in client) {
           return client.focus();
         }
       }
@@ -4778,78 +4842,75 @@ interface RideNotification {
   type: NotificationType;
   title: string;
   body: string;
-  priority: 'high' | 'normal';
+  priority: "high" | "normal";
   data: Record<string, any>;
   actions?: NotificationAction[];
 }
 
 type NotificationType =
-  | 'driver_matched'
-  | 'driver_arriving'
-  | 'driver_arrived'
-  | 'trip_started'
-  | 'trip_completed'
-  | 'payment_received'
-  | 'ride_cancelled'
-  | 'promo_offer';
+  | "driver_matched"
+  | "driver_arriving"
+  | "driver_arrived"
+  | "trip_started"
+  | "trip_completed"
+  | "payment_received"
+  | "ride_cancelled"
+  | "promo_offer";
 
-const notificationTemplates: Record<NotificationType, (data: any) => RideNotification> = {
+const notificationTemplates: Record<
+  NotificationType,
+  (data: any) => RideNotification
+> = {
   driver_matched: (data) => ({
-    type: 'driver_matched',
-    title: 'Driver Found!',
+    type: "driver_matched",
+    title: "Driver Found!",
     body: `${data.driverName} is on the way. ETA: ${data.eta} min. OTP: ${data.otp}`,
-    priority: 'high',
+    priority: "high",
     data: {
       rideId: data.rideId,
       url: `/ride/${data.rideId}`,
       driverPhone: data.driverPhone,
     },
     actions: [
-      { action: 'call_driver', title: 'Call Driver' },
-      { action: 'view_ride', title: 'View Details' },
+      { action: "call_driver", title: "Call Driver" },
+      { action: "view_ride", title: "View Details" },
     ],
   }),
 
   driver_arriving: (data) => ({
-    type: 'driver_arriving',
-    title: 'Driver is Close!',
+    type: "driver_arriving",
+    title: "Driver is Close!",
     body: `${data.driverName} is ${data.distance}m away. Please be ready.`,
-    priority: 'high',
+    priority: "high",
     data: { rideId: data.rideId },
     actions: [],
   }),
 
   driver_arrived: (data) => ({
-    type: 'driver_arrived',
-    title: 'Driver Has Arrived',
+    type: "driver_arrived",
+    title: "Driver Has Arrived",
     body: `${data.driverName} is waiting at pickup. Look for ${data.vehicleColor} ${data.vehicleModel}.`,
-    priority: 'high',
+    priority: "high",
     data: { rideId: data.rideId },
-    actions: [
-      { action: 'call_driver', title: 'Call Driver' },
-    ],
+    actions: [{ action: "call_driver", title: "Call Driver" }],
   }),
 
   trip_completed: (data) => ({
-    type: 'trip_completed',
-    title: 'Trip Completed',
+    type: "trip_completed",
+    title: "Trip Completed",
     body: `Your ride is complete. Total fare: ₹${data.fare}. Rate your ride!`,
-    priority: 'normal',
+    priority: "normal",
     data: { rideId: data.rideId, url: `/ride/${data.rideId}/rate` },
-    actions: [
-      { action: 'rate_ride', title: 'Rate Now' },
-    ],
+    actions: [{ action: "rate_ride", title: "Rate Now" }],
   }),
 
   promo_offer: (data) => ({
-    type: 'promo_offer',
+    type: "promo_offer",
     title: data.title,
     body: data.body,
-    priority: 'normal',
-    data: { promoCode: data.code, url: '/promos' },
-    actions: [
-      { action: 'apply_promo', title: 'Use Code' },
-    ],
+    priority: "normal",
+    data: { promoCode: data.code, url: "/promos" },
+    actions: [{ action: "apply_promo", title: "Use Code" }],
   }),
 };
 ```
@@ -4876,34 +4937,36 @@ const NotificationCenter = () => {
   // Fetch notifications
   useEffect(() => {
     const fetchNotifications = async () => {
-      const response = await fetch('/api/v1/notifications');
+      const response = await fetch("/api/v1/notifications");
       const data = await response.json();
       setNotifications(data.notifications);
-      setUnreadCount(data.notifications.filter((n: AppNotification) => !n.read).length);
+      setUnreadCount(
+        data.notifications.filter((n: AppNotification) => !n.read).length
+      );
     };
 
     fetchNotifications();
 
     // Subscribe to real-time updates via WebSocket
     const unsubscribe = subscribeToNotifications((notification) => {
-      setNotifications(prev => [notification, ...prev]);
-      setUnreadCount(prev => prev + 1);
+      setNotifications((prev) => [notification, ...prev]);
+      setUnreadCount((prev) => prev + 1);
     });
 
     return unsubscribe;
   }, []);
 
   const markAsRead = async (id: string) => {
-    await fetch(`/api/v1/notifications/${id}/read`, { method: 'POST' });
-    setNotifications(prev =>
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
+    await fetch(`/api/v1/notifications/${id}/read`, { method: "POST" });
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
-    setUnreadCount(prev => Math.max(0, prev - 1));
+    setUnreadCount((prev) => Math.max(0, prev - 1));
   };
 
   const markAllAsRead = async () => {
-    await fetch('/api/v1/notifications/read-all', { method: 'POST' });
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    await fetch("/api/v1/notifications/read-all", { method: "POST" });
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
   };
 
@@ -4917,13 +4980,17 @@ const NotificationCenter = () => {
         <BellIcon />
         {unreadCount > 0 && (
           <span className="badge" aria-hidden="true">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="notification-panel" role="dialog" aria-label="Notifications">
+        <div
+          className="notification-panel"
+          role="dialog"
+          aria-label="Notifications"
+        >
           <div className="panel-header">
             <h2>Notifications</h2>
             {unreadCount > 0 && (
@@ -4935,10 +5002,12 @@ const NotificationCenter = () => {
             {notifications.length === 0 ? (
               <li className="empty-state">No notifications</li>
             ) : (
-              notifications.map(notification => (
+              notifications.map((notification) => (
                 <li
                   key={notification.id}
-                  className={`notification-item ${notification.read ? '' : 'unread'}`}
+                  className={`notification-item ${
+                    notification.read ? "" : "unread"
+                  }`}
                   onClick={() => {
                     markAsRead(notification.id);
                     handleNotificationClick(notification);
@@ -4979,7 +5048,7 @@ const shouldSendNotification = (
   }
 
   // Don't send promo during active ride
-  if (notificationType === 'promo_offer' && context.hasActiveRide) {
+  if (notificationType === "promo_offer" && context.hasActiveRide) {
     return false;
   }
 
@@ -5004,10 +5073,14 @@ const shouldSendNotification = (
 };
 
 // Notification grouping for multiple updates
-const groupNotifications = (notifications: RideNotification[]): RideNotification[] => {
+const groupNotifications = (
+  notifications: RideNotification[]
+): RideNotification[] => {
   // Group location updates into single notification
-  const locationUpdates = notifications.filter(n => n.type === 'driver_arriving');
-  const others = notifications.filter(n => n.type !== 'driver_arriving');
+  const locationUpdates = notifications.filter(
+    (n) => n.type === "driver_arriving"
+  );
+  const others = notifications.filter((n) => n.type !== "driver_arriving");
 
   if (locationUpdates.length > 1) {
     // Keep only the latest location update
@@ -5073,23 +5146,27 @@ const groupNotifications = (notifications: RideNotification[]): RideNotification
 // PaymentMethods.tsx
 interface PaymentMethod {
   id: string;
-  type: 'wallet' | 'upi' | 'card' | 'cash';
+  type: "wallet" | "upi" | "card" | "cash";
   displayName: string;
   details: string;
   isDefault: boolean;
   balance?: number; // For wallet
-  last4?: string;   // For cards
+  last4?: string; // For cards
 }
 
 const PaymentMethods = ({
   fare,
   onSelect,
-  selectedMethod
+  selectedMethod,
 }: PaymentMethodsProps) => {
-  const { data: methods, isLoading } = useQuery('paymentMethods', fetchPaymentMethods);
+  const { data: methods, isLoading } = useQuery(
+    "paymentMethods",
+    fetchPaymentMethods
+  );
   const [showAddCard, setShowAddCard] = useState(false);
 
-  const canPayWithWallet = methods?.find(m => m.type === 'wallet')?.balance >= fare;
+  const canPayWithWallet =
+    methods?.find((m) => m.type === "wallet")?.balance >= fare;
 
   return (
     <div className="payment-methods">
@@ -5099,10 +5176,12 @@ const PaymentMethods = ({
         <Skeleton count={3} />
       ) : (
         <ul role="radiogroup" aria-label="Select payment method">
-          {methods?.map(method => (
+          {methods?.map((method) => (
             <li key={method.id}>
               <label
-                className={`payment-option ${selectedMethod === method.id ? 'selected' : ''}`}
+                className={`payment-option ${
+                  selectedMethod === method.id ? "selected" : ""
+                }`}
               >
                 <input
                   type="radio"
@@ -5110,7 +5189,7 @@ const PaymentMethods = ({
                   value={method.id}
                   checked={selectedMethod === method.id}
                   onChange={() => onSelect(method.id)}
-                  disabled={method.type === 'wallet' && !canPayWithWallet}
+                  disabled={method.type === "wallet" && !canPayWithWallet}
                 />
 
                 <PaymentIcon type={method.type} />
@@ -5118,9 +5197,9 @@ const PaymentMethods = ({
                 <div className="payment-details">
                   <span className="payment-name">{method.displayName}</span>
                   <span className="payment-info">
-                    {method.type === 'wallet' && `Balance: ₹${method.balance}`}
-                    {method.type === 'card' && `****${method.last4}`}
-                    {method.type === 'upi' && method.details}
+                    {method.type === "wallet" && `Balance: ₹${method.balance}`}
+                    {method.type === "card" && `****${method.last4}`}
+                    {method.type === "upi" && method.details}
                   </span>
                 </div>
 
@@ -5128,10 +5207,10 @@ const PaymentMethods = ({
                   <span className="default-badge">Default</span>
                 )}
 
-                {method.type === 'wallet' && !canPayWithWallet && (
+                {method.type === "wallet" && !canPayWithWallet && (
                   <span className="insufficient">
                     Insufficient balance
-                    <button onClick={() => navigate('/wallet/add')}>
+                    <button onClick={() => navigate("/wallet/add")}>
                       Add ₹{fare - method.balance!}
                     </button>
                   </span>
@@ -5152,9 +5231,7 @@ const PaymentMethods = ({
         </ul>
       )}
 
-      {showAddCard && (
-        <AddCardModal onClose={() => setShowAddCard(false)} />
-      )}
+      {showAddCard && <AddCardModal onClose={() => setShowAddCard(false)} />}
     </div>
   );
 };
@@ -5192,13 +5269,13 @@ export const initiateRazorpayPayment = async (
 ): Promise<boolean> => {
   try {
     // 1. Create order on server
-    const orderResponse = await fetch('/api/v1/payments/create-order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const orderResponse = await fetch("/api/v1/payments/create-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         rideId,
         amount: amount * 100, // Razorpay expects paise
-        currency: 'INR',
+        currency: "INR",
       }),
     });
 
@@ -5209,8 +5286,8 @@ export const initiateRazorpayPayment = async (
       const options: RazorpayOptions = {
         key,
         amount: amount * 100,
-        currency: 'INR',
-        name: 'RideApp',
+        currency: "INR",
+        name: "RideApp",
         description: `Ride Payment - ${rideId}`,
         order_id: orderId,
         prefill: {
@@ -5219,13 +5296,13 @@ export const initiateRazorpayPayment = async (
           contact: user.phone,
         },
         theme: {
-          color: '#2196F3',
+          color: "#2196F3",
         },
         handler: async (response) => {
           // 3. Verify payment on server
-          const verifyResponse = await fetch('/api/v1/payments/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const verifyResponse = await fetch("/api/v1/payments/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               orderId: response.razorpay_order_id,
               paymentId: response.razorpay_payment_id,
@@ -5251,7 +5328,7 @@ export const initiateRazorpayPayment = async (
       razorpay.open();
     });
   } catch (error) {
-    console.error('Payment initiation failed:', error);
+    console.error("Payment initiation failed:", error);
     return false;
   }
 };
@@ -5264,9 +5341,9 @@ export const initiateRazorpayPayment = async (
 const PromoCodeInput = ({
   fare,
   onApply,
-  appliedPromo
+  appliedPromo,
 }: PromoCodeInputProps) => {
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -5277,9 +5354,9 @@ const PromoCodeInput = ({
     setError(null);
 
     try {
-      const response = await fetch('/api/v1/promos/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/v1/promos/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: code.toUpperCase(),
           fare,
@@ -5295,19 +5372,19 @@ const PromoCodeInput = ({
           discountType: data.discountType, // 'percentage' | 'flat'
           maxDiscount: data.maxDiscount,
         });
-        setCode('');
+        setCode("");
       } else {
-        setError(data.message || 'Invalid promo code');
+        setError(data.message || "Invalid promo code");
       }
     } catch (error) {
-      setError('Failed to validate promo code');
+      setError("Failed to validate promo code");
     } finally {
       setIsValidating(false);
     }
   };
 
   const calculateDiscount = (promo: AppliedPromo): number => {
-    if (promo.discountType === 'percentage') {
+    if (promo.discountType === "percentage") {
       const discount = (fare * promo.discount) / 100;
       return Math.min(discount, promo.maxDiscount || Infinity);
     }
@@ -5320,9 +5397,7 @@ const PromoCodeInput = ({
         <div className="applied-promo">
           <TagIcon />
           <span>{appliedPromo.code}</span>
-          <span className="discount">
-            -₹{calculateDiscount(appliedPromo)}
-          </span>
+          <span className="discount">-₹{calculateDiscount(appliedPromo)}</span>
           <button onClick={() => onApply(null)} aria-label="Remove promo">
             <XIcon />
           </button>
@@ -5336,13 +5411,13 @@ const PromoCodeInput = ({
             placeholder="Enter promo code"
             aria-label="Promo code"
             aria-invalid={!!error}
-            aria-describedby={error ? 'promo-error' : undefined}
+            aria-describedby={error ? "promo-error" : undefined}
           />
           <button
             onClick={validatePromo}
             disabled={!code.trim() || isValidating}
           >
-            {isValidating ? <Spinner size="small" /> : 'Apply'}
+            {isValidating ? <Spinner size="small" /> : "Apply"}
           </button>
         </div>
       )}
@@ -5378,7 +5453,7 @@ const FareBreakdown = ({
   surgeFare,
   discount,
   taxes,
-  total
+  total,
 }: FareBreakdownProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -5391,7 +5466,7 @@ const FareBreakdown = ({
       >
         <span>Total Fare</span>
         <span className="total">₹{total}</span>
-        <ChevronIcon direction={isExpanded ? 'up' : 'down'} />
+        <ChevronIcon direction={isExpanded ? "up" : "down"} />
       </button>
 
       {isExpanded && (
@@ -5450,13 +5525,13 @@ const FareBreakdown = ({
 ```typescript
 // payments/errorHandling.ts
 type PaymentErrorCode =
-  | 'INSUFFICIENT_BALANCE'
-  | 'CARD_DECLINED'
-  | 'NETWORK_ERROR'
-  | 'TIMEOUT'
-  | 'FRAUD_DETECTED'
-  | 'INVALID_UPI'
-  | 'BANK_SERVER_DOWN';
+  | "INSUFFICIENT_BALANCE"
+  | "CARD_DECLINED"
+  | "NETWORK_ERROR"
+  | "TIMEOUT"
+  | "FRAUD_DETECTED"
+  | "INVALID_UPI"
+  | "BANK_SERVER_DOWN";
 
 interface PaymentError {
   code: PaymentErrorCode;
@@ -5467,46 +5542,48 @@ interface PaymentError {
 
 const paymentErrorHandlers: Record<PaymentErrorCode, PaymentError> = {
   INSUFFICIENT_BALANCE: {
-    code: 'INSUFFICIENT_BALANCE',
-    message: 'Insufficient wallet balance. Please add money or use another method.',
+    code: "INSUFFICIENT_BALANCE",
+    message:
+      "Insufficient wallet balance. Please add money or use another method.",
     retry: false,
-    fallbackOptions: ['card', 'upi', 'cash'],
+    fallbackOptions: ["card", "upi", "cash"],
   },
   CARD_DECLINED: {
-    code: 'CARD_DECLINED',
-    message: 'Card declined. Please try another card or payment method.',
+    code: "CARD_DECLINED",
+    message: "Card declined. Please try another card or payment method.",
     retry: true,
-    fallbackOptions: ['upi', 'wallet', 'cash'],
+    fallbackOptions: ["upi", "wallet", "cash"],
   },
   NETWORK_ERROR: {
-    code: 'NETWORK_ERROR',
-    message: 'Network error. Please check your connection and try again.',
+    code: "NETWORK_ERROR",
+    message: "Network error. Please check your connection and try again.",
     retry: true,
     fallbackOptions: [],
   },
   TIMEOUT: {
-    code: 'TIMEOUT',
-    message: 'Payment timed out. Please try again.',
+    code: "TIMEOUT",
+    message: "Payment timed out. Please try again.",
     retry: true,
     fallbackOptions: [],
   },
   FRAUD_DETECTED: {
-    code: 'FRAUD_DETECTED',
-    message: 'Payment could not be processed. Please contact support.',
+    code: "FRAUD_DETECTED",
+    message: "Payment could not be processed. Please contact support.",
     retry: false,
-    fallbackOptions: ['cash'],
+    fallbackOptions: ["cash"],
   },
   INVALID_UPI: {
-    code: 'INVALID_UPI',
-    message: 'Invalid UPI ID. Please check and try again.',
+    code: "INVALID_UPI",
+    message: "Invalid UPI ID. Please check and try again.",
     retry: true,
-    fallbackOptions: ['card', 'wallet'],
+    fallbackOptions: ["card", "wallet"],
   },
   BANK_SERVER_DOWN: {
-    code: 'BANK_SERVER_DOWN',
-    message: 'Bank server is temporarily unavailable. Please try another method.',
+    code: "BANK_SERVER_DOWN",
+    message:
+      "Bank server is temporarily unavailable. Please try another method.",
     retry: true,
-    fallbackOptions: ['upi', 'wallet', 'cash'],
+    fallbackOptions: ["upi", "wallet", "cash"],
   },
 };
 
@@ -5514,7 +5591,7 @@ const paymentErrorHandlers: Record<PaymentErrorCode, PaymentError> = {
 const PaymentErrorModal = ({
   error,
   onRetry,
-  onChangMethod
+  onChangMethod,
 }: PaymentErrorModalProps) => {
   const errorInfo = paymentErrorHandlers[error.code];
 
@@ -5535,7 +5612,7 @@ const PaymentErrorModal = ({
           <>
             <p>Or pay with:</p>
             <div className="fallback-options">
-              {errorInfo.fallbackOptions.map(option => (
+              {errorInfo.fallbackOptions.map((option) => (
                 <button
                   key={option}
                   onClick={() => onChangMethod(option)}
