@@ -1,0 +1,16 @@
+.App {
+    font-family: sans-serif;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+}
+
+.gridWrapper {
+    display: flex;
+    flex-direction: row;
+    margin: auto;
+}
+
+.cols {
+    border: 1px solid #ccc;
+}

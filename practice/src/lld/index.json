@@ -112,5 +112,17 @@
     "title": "Search Highlighter",
     "summary": "Real-time text search with highlighted matches",
     "path": "src/lld/lld-019-search-highlighter"
+  },
+  {
+    "id": "lld-020-connect-4",
+    "title": "Connect 4",
+    "summary": "Connect 4 Game",
+    "path": "src/lld/lld-020-connect-4"
+  },
+  {
+    "id": "lld-021-data-table",
+    "title": "Data Table",
+    "summary": "Data table",
+    "path": "src/lld/lld-021-data-table"
   }
 ]

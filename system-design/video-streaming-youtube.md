@@ -1,6 +1,7 @@
 # High-Level Design: Video Streaming Platform (YouTube-like)
 
 ## Table of Contents
+
 1. [Problem Statement & Requirements](#1-problem-statement--requirements)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Component Architecture](#3-component-architecture)
@@ -29,6 +30,7 @@
 ## 1. Problem Statement & Requirements
 
 ### Functional Requirements
+
 - **Video Upload**: Users can upload videos in various formats and sizes
 - **Video Streaming**: Users can watch videos with adaptive quality
 - **Video Player Controls**: Play, pause, seek, volume, quality selection, speed control
@@ -42,6 +44,7 @@
 - **Likes/Dislikes**: User engagement metrics
 
 ### Non-Functional Requirements
+
 - **Scalability**: Support millions of concurrent viewers
 - **Availability**: 99.9% uptime for streaming service
 - **Low Latency**: Video start time < 2 seconds, buffering minimal
@@ -52,6 +55,7 @@
 - **Global Reach**: CDN-based delivery for worldwide users
 
 ### Scale Estimations
+
 - **Users**: 500M daily active users
 - **Videos**: 500 hours of video uploaded per minute
 - **Concurrent Viewers**: 10M concurrent video streams
@@ -124,6 +128,111 @@
 
 ---
 
+## 2.0.a System Invariants & Frontend Consistency Model
+
+A video streaming frontend is a distributed system between:
+
+- Browser
+- CDN
+- Player runtime
+- Backend control plane
+
+The UI must enforce correctness even when these components are temporarily inconsistent.
+
+These invariants must never be violated.
+
+---
+
+### 2.0.b Playback State Invariants
+
+| Invariant                                                         | Why it must hold                |
+| ----------------------------------------------------------------- | ------------------------------- |
+| UI must never show “Playing” if no media bytes are being consumed | Prevents fake playback          |
+| UI must never advance timestamp if buffer is empty                | Prevents desync                 |
+| Video time must be monotonic except during user seeks             | Prevents jumps                  |
+| Pause must always stop network fetch                              | Prevents waste + billing errors |
+| A stalled network must never lock UI                              | Prevents dead-UI                |
+
+These are enforced by the player state machine.
+
+---
+
+### 2.0.c Buffering Invariants
+
+The buffer is the frontend’s source of truth for playback.
+
+Rules:
+
+- Playback can start only when buffer ≥ minimum threshold
+- Playback must pause automatically when buffer = 0
+- Video must never outrun buffer
+- Buffer eviction must never remove currently playing segment
+
+Violation of these rules causes:
+
+- Infinite spinner bugs
+- Ghost playback
+- Desync between audio and video
+
+---
+
+### 2.0.d Manifest Consistency
+
+The manifest is the contract between backend and player.
+
+The frontend enforces:
+
+| Rule                                                           | Why                     |
+| -------------------------------------------------------------- | ----------------------- |
+| Manifest must always match codec in buffer                     | Prevents decode failure |
+| Manifest refresh must be idempotent                            | Prevents rewind bugs    |
+| Manifest updates must not invalidate already-buffered segments | Prevents playback drop  |
+
+Frontend always treats manifest as _append-only_ during active playback.
+
+---
+
+### 2.0.e UI vs Network Truth
+
+The UI does not trust the network.
+
+The UI derives state from:
+
+- Player buffer
+- Decoder state
+- Playback clock
+
+Not from:
+
+- CDN responses
+- Backend playback metadata
+
+This prevents:
+
+- “Video says playing but nothing plays”
+- Broken pause/play buttons
+- Wrong seek bar
+
+---
+
+### 2.0.f Live Stream Invariants
+
+For live video:
+
+- The playback head must never go beyond live edge
+- The UI must expose latency vs quality tradeoff
+- Rebuffering must not rewind live edge
+
+Live video correctness is harder than VOD.
+
+The frontend enforces:
+
+- Drift control
+- Jitter smoothing
+- Live-edge correction
+
+---
+
 ## 3. Component Architecture
 
 ### 3.1 Frontend Components
@@ -186,9 +295,24 @@
 └────────────────────────────────────────────────────────┘
 ```
 
+---
+
+### 3.2 Tab Suspension / Mobile App Backgrounding
+
+If browser or app is suspended:
+
+- Freeze playback clock
+- Save buffer state
+- Resume without reloading
+
+Avoids restarting video.
+
+---
+
 ### 3.2 Backend Services
 
 #### Video Upload Service
+
 ```
 ┌─────────────────────────────────────────┐
 │      VIDEO UPLOAD SERVICE               │
@@ -208,51 +332,53 @@
 ```
 
 #### Transcoding Service
+
 ```
 ┌─────────────────────────────────────────┐
 │      TRANSCODING SERVICE                │
 │                                         │
-│  Input: Raw video file                 │
+│  Input: Raw video file                  │
 │                                         │
 │  Process:                               │
-│  1. Read from Object Storage           │
-│  2. Transcode to multiple resolutions: │
-│     - 4K (2160p)                       │
-│     - 1080p                            │
-│     - 720p                             │
-│     - 480p                             │
-│     - 360p                             │
-│     - 240p                             │
-│  3. Encode with H.264/H.265/VP9        │
-│  4. Generate HLS/DASH manifests        │
-│  5. Extract thumbnails (keyframes)     │
-│  6. Store segments in Object Storage   │
-│  7. Update metadata with URLs          │
-│  8. Warm CDN cache                     │
+│  1. Read from Object Storage            │
+│  2. Transcode to multiple resolutions:  │
+│     - 4K (2160p)                        │
+│     - 1080p                             │
+│     - 720p                              │
+│     - 480p                              │
+│     - 360p                              │
+│     - 240p                              │
+│  3. Encode with H.264/H.265/VP9         │
+│  4. Generate HLS/DASH manifests         │
+│  5. Extract thumbnails (keyframes)      │
+│  6. Store segments in Object Storage    │
+│  7. Update metadata with URLs           │
+│  8. Warm CDN cache                      │
 │                                         │
 │  Technologies:                          │
-│  - FFmpeg/Elastic Transcoder           │
-│  - Worker queue (SQS/RabbitMQ)         │
-│  - Distributed workers (Auto-scaling)  │
+│  - FFmpeg/Elastic Transcoder            │
+│  - Worker queue (SQS/RabbitMQ)          │
+│  - Distributed workers (Auto-scaling)   │
 └─────────────────────────────────────────┘
 ```
 
 #### Streaming Service
+
 ```
 ┌─────────────────────────────────────────┐
 │       STREAMING SERVICE                 │
 │                                         │
-│  1. Receive video request              │
-│  2. Check user authentication          │
-│  3. Fetch manifest file (HLS/DASH)     │
-│  4. Serve via CDN                      │
-│  5. Track playback events              │
-│  6. Log analytics                      │
-│                                         │
-│  Protocols:                             │
-│  - HLS (HTTP Live Streaming)           │
-│  - DASH (Dynamic Adaptive Streaming)   │
-│  - WebRTC (for live streaming)         │
+│   Streaming Control Plane               |
+|   - Auth                                |
+|   - Manifest                            |
+|   - Token issuing                       |
+|   - Analytics                           |
+|                                         |
+|   Streaming Data Plane                  |
+|   - CDN edge                            |
+|   - Video segments                      |
+|   - Range requests                      |
+|                                         |
 └─────────────────────────────────────────┘
 ```
 
@@ -447,6 +573,7 @@ Views may be slightly delayed (5-10 min)
 ### 5.1 REST APIs
 
 #### Video Metadata APIs
+
 ```
 GET /api/v1/videos/{videoId}
 Response:
@@ -491,7 +618,8 @@ Response:
 ```
 
 #### Comment APIs
-```
+
+```js
 POST /api/v1/videos/{videoId}/comments
 Headers:
   Authorization: Bearer <token>
@@ -528,7 +656,8 @@ Response:
 ```
 
 #### User Engagement APIs
-```
+
+```js
 POST /api/v1/videos/{videoId}/like
 POST /api/v1/videos/{videoId}/dislike
 POST /api/v1/channels/{channelId}/subscribe
@@ -539,7 +668,8 @@ POST /api/v1/videos/{videoId}/watch
 ### 5.2 Streaming Protocols
 
 #### HLS (HTTP Live Streaming)
-```
+
+```json
 Master Playlist (master.m3u8):
 #EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=3840x2160
@@ -568,7 +698,8 @@ segment_003.ts
 ```
 
 #### DASH (Dynamic Adaptive Streaming over HTTP)
-```
+
+```xml
 MPD (Media Presentation Description):
 <?xml version="1.0"?>
 <MPD>
@@ -589,7 +720,8 @@ MPD (Media Presentation Description):
 ```
 
 ### 5.3 WebSocket (Real-time Updates)
-```
+
+```js
 // Comment updates
 WS /ws/videos/{videoId}/comments
 
@@ -625,6 +757,7 @@ Server -> Client (every 10s):
 ### 6.1 SQL Database (MySQL/PostgreSQL) - Metadata
 
 #### Videos Table
+
 ```sql
 CREATE TABLE videos (
     video_id VARCHAR(36) PRIMARY KEY,
@@ -671,6 +804,7 @@ CREATE TABLE video_stats (
 ```
 
 #### Channels Table
+
 ```sql
 CREATE TABLE channels (
     channel_id VARCHAR(36) PRIMARY KEY,
@@ -696,6 +830,7 @@ CREATE TABLE subscriptions (
 ```
 
 #### Users Table
+
 ```sql
 CREATE TABLE users (
     user_id VARCHAR(36) PRIMARY KEY,
@@ -714,7 +849,8 @@ CREATE TABLE users (
 ### 6.2 NoSQL Database (Cassandra/DynamoDB) - Comments & Engagement
 
 #### Comments Table (Cassandra Schema)
-```cql
+
+```sql
 CREATE TABLE comments (
     video_id TEXT,
     comment_id TIMEUUID,
@@ -749,7 +885,8 @@ CREATE TABLE comment_replies (
 ```
 
 #### Watch History (Cassandra Schema)
-```cql
+
+```sql
 CREATE TABLE watch_history (
     user_id TEXT,
     watched_at TIMESTAMP,
@@ -772,7 +909,8 @@ CREATE TABLE user_preferences (
 ```
 
 #### Video Analytics (Time-Series Data)
-```cql
+
+```sql
 CREATE TABLE video_analytics (
     video_id TEXT,
     time_bucket TIMESTAMP, -- hourly/daily buckets
@@ -784,7 +922,7 @@ CREATE TABLE video_analytics (
 
 ### 6.3 Redis (Caching Layer)
 
-```
+```yml
 # Video metadata cache
 Key: video:{videoId}
 Value: {JSON of video metadata}
@@ -865,7 +1003,8 @@ TTL: 30 minutes
 ### 7.2 CDN Strategy
 
 #### Cache-Control Headers
-```
+
+```yaml
 Video Segments (*.ts, *.m4s):
   Cache-Control: public, max-age=604800, immutable
   (7 days, never changes once created)
@@ -884,7 +1023,8 @@ Video Metadata API:
 ```
 
 #### CDN Optimization Techniques
-```
+
+```yml
 1. Geo-Distributed Edge Servers
    - User routed to nearest edge location
    - Reduces latency from ~200ms to ~20ms
@@ -966,6 +1106,7 @@ Video Metadata API:
 ### 8.2 Server-Side State
 
 #### Session State (Redis)
+
 ```json
 {
   "sessionId": "sess_abc123",
@@ -980,6 +1121,7 @@ Video Metadata API:
 ```
 
 #### Transcoding Job State (DynamoDB)
+
 ```json
 {
   "jobId": "job_xyz",
@@ -996,7 +1138,14 @@ Video Metadata API:
 
 ### 8.3 State Synchronization
 
-```
+| State           | Owner      | Why              |
+| --------------- | ---------- | ---------------- |
+| Playback clock  | Client     | Must be realtime |
+| Resume position | Redis      | Cross-device     |
+| Watch history   | Cassandra  | Durable          |
+| View count      | Kafka → DB | Scalable         |
+
+```yml
 User watches video on Mobile -> Switches to TV
 
 1. Mobile app sends position update:
@@ -1020,6 +1169,7 @@ User watches video on Mobile -> Switches to TV
 ### 9.1 Video Player Optimizations
 
 #### Preloading Strategy
+
 ```javascript
 // Intelligent preloading
 function preloadStrategy(currentTime, duration, bufferHealth) {
@@ -1042,16 +1192,17 @@ function preloadStrategy(currentTime, duration, bufferHealth) {
 ```
 
 #### Adaptive Bitrate Algorithm
+
 ```javascript
 function selectQuality(bandwidth, bufferHealth, currentQuality) {
   // Quality ladder (bitrates in bps)
   const qualities = [
-    { name: '240p', bitrate: 300000 },
-    { name: '360p', bitrate: 800000 },
-    { name: '480p', bitrate: 1400000 },
-    { name: '720p', bitrate: 2800000 },
-    { name: '1080p', bitrate: 5000000 },
-    { name: '2160p', bitrate: 8000000 }
+    { name: "240p", bitrate: 300000 },
+    { name: "360p", bitrate: 800000 },
+    { name: "480p", bitrate: 1400000 },
+    { name: "720p", bitrate: 2800000 },
+    { name: "1080p", bitrate: 5000000 },
+    { name: "2160p", bitrate: 8000000 },
   ];
 
   // Conservative switching (bandwidth * 0.8 safety factor)
@@ -1068,7 +1219,7 @@ function selectQuality(bandwidth, bufferHealth, currentQuality) {
 
   // Downscale immediately if buffering
   if (bufferHealth < 0.3) {
-    const currentIndex = qualities.findIndex(q => q.name === currentQuality);
+    const currentIndex = qualities.findIndex((q) => q.name === currentQuality);
     return qualities[Math.max(0, currentIndex - 1)].name;
   }
 
@@ -1077,7 +1228,8 @@ function selectQuality(bandwidth, bufferHealth, currentQuality) {
 ```
 
 #### Buffering Strategy
-```
+
+```yml
 ┌─────────────────────────────────────────────────┐
 │         Buffer Management Strategy              │
 │                                                 │
@@ -1099,7 +1251,7 @@ function selectQuality(bandwidth, bufferHealth, currentQuality) {
 
 ### 9.2 Thumbnail Optimization
 
-```
+```javaScript
 1. Generate Multiple Thumbnails
    - Sprite sheet (for seek preview)
    - Default thumbnail (720p)
@@ -1122,6 +1274,7 @@ function selectQuality(bandwidth, bufferHealth, currentQuality) {
 ### 9.3 Database Optimizations
 
 #### Read Replicas
+
 ```
 ┌─────────────┐
 │   Master    │ (Writes: Upload, Update)
@@ -1143,6 +1296,7 @@ function selectQuality(bandwidth, bufferHealth, currentQuality) {
 ```
 
 #### Database Indexing
+
 ```sql
 -- Composite indexes for common queries
 CREATE INDEX idx_video_channel_date
@@ -1162,6 +1316,7 @@ CREATE INDEX idx_video_list
 ```
 
 #### Query Optimization
+
 ```sql
 -- Bad: N+1 query problem
 SELECT * FROM videos WHERE channel_id = 'xyz';
@@ -1186,7 +1341,8 @@ LIMIT 20;
 ### 9.4 Backend Optimizations
 
 #### API Response Compression
-```
+
+```yml
 Gzip compression for JSON responses
 Reduces response size by 70-90%
 
@@ -1199,7 +1355,8 @@ Headers:
 ```
 
 #### Database Connection Pooling
-```
+
+```json
 Connection Pool Settings:
   Min Connections: 10
   Max Connections: 100
@@ -1211,7 +1368,8 @@ Reduces latency from ~100ms to ~5ms per query
 ```
 
 #### Async Processing
-```
+
+```sql
 Synchronous Upload Flow (Slow):
 User -> Upload -> Transcode -> Store -> Return
 Total: 10+ minutes
@@ -1233,41 +1391,43 @@ Total user wait: < 5 seconds
 
 ### 10.1 Video Player Errors
 
+`text All error recovery logic is designed to restore the invariants defined in Section 2.0 (Playback, Buffer, Manifest, and Live-Edge invariants).`
+
 ```javascript
 // Comprehensive error handling
 class VideoPlayerErrorHandler {
   handleError(error) {
-    switch(error.code) {
-      case 'MEDIA_ERR_ABORTED':
+    switch (error.code) {
+      case "MEDIA_ERR_ABORTED":
         // User aborted playback
-        this.logError('User aborted', error);
+        this.logError("User aborted", error);
         break;
 
-      case 'MEDIA_ERR_NETWORK':
+      case "MEDIA_ERR_NETWORK":
         // Network error during download
         this.retryWithBackoff();
         this.switchToLowerQuality();
-        this.showUserMessage('Network error. Retrying...');
+        this.showUserMessage("Network error. Retrying...");
         break;
 
-      case 'MEDIA_ERR_DECODE':
+      case "MEDIA_ERR_DECODE":
         // Video decode error
         this.switchToAlternateCodec();
         this.reportCorruptVideo();
         break;
 
-      case 'MEDIA_ERR_SRC_NOT_SUPPORTED':
+      case "MEDIA_ERR_SRC_NOT_SUPPORTED":
         // Unsupported video format
-        this.showUserMessage('Video format not supported');
+        this.showUserMessage("Video format not supported");
         this.fallbackToFlashPlayer(); // Legacy support
         break;
 
-      case 'MANIFEST_LOAD_ERROR':
+      case "MANIFEST_LOAD_ERROR":
         // HLS/DASH manifest failed to load
         this.retryManifestLoad();
         break;
 
-      case 'SEGMENT_LOAD_ERROR':
+      case "SEGMENT_LOAD_ERROR":
         // Individual segment failed
         this.skipSegment();
         this.continuePlayback();
@@ -1290,7 +1450,7 @@ class VideoPlayerErrorHandler {
           attempt++;
         }, delays[attempt]);
       } else {
-        this.showUserMessage('Unable to load video. Please try again later.');
+        this.showUserMessage("Unable to load video. Please try again later.");
       }
     };
 
@@ -1301,7 +1461,7 @@ class VideoPlayerErrorHandler {
 
 ### 10.2 Upload Failures
 
-```
+```yml
 Upload Error Scenarios:
 
 1. File Too Large (>10GB)
@@ -1332,7 +1492,7 @@ Upload Error Scenarios:
 
 ### 10.3 Transcoding Failures
 
-```
+```yml
 Transcoding Error Recovery:
 
 1. Worker Failure
@@ -1363,7 +1523,7 @@ Transcoding Error Recovery:
 
 ### 10.4 CDN Failures
 
-```
+```yml
 CDN Failure Scenarios:
 
 1. Edge Server Down
@@ -1390,6 +1550,7 @@ CDN Failure Scenarios:
 ### 10.5 Edge Cases
 
 #### Concurrent Video Edits
+
 ```
 Problem: User uploads video, then immediately updates title/description
 
@@ -1401,6 +1562,7 @@ Solution:
 ```
 
 #### Deleted Video Still Cached
+
 ```
 Problem: Video deleted but still accessible via CDN
 
@@ -1412,6 +1574,7 @@ Solution:
 ```
 
 #### View Count Inconsistency
+
 ```
 Problem: Different view counts across regions
 
@@ -1424,6 +1587,7 @@ Solution:
 ```
 
 #### Live Stream to VOD Transition
+
 ```
 Problem: Live stream ends, should become video-on-demand
 
@@ -1436,6 +1600,7 @@ Solution:
 ```
 
 #### Seek in Unbuffered Region
+
 ```
 Problem: User seeks to 5:00 but only 0:00-1:00 buffered
 
@@ -1456,6 +1621,7 @@ Solution:
 **Q: How would you handle 10x traffic spike (e.g., breaking news)?**
 
 A: Multi-pronged approach:
+
 1. **Auto-scaling**: Horizontally scale services (API, transcoders, DB read replicas)
 2. **CDN**: Most traffic absorbed by CDN edge caches (95%+ hit rate)
 3. **Rate Limiting**: Protect backend services from overload
@@ -1469,6 +1635,7 @@ A: Multi-pronged approach:
 **Q: How do you handle millions of concurrent uploads?**
 
 A:
+
 1. **Chunked Uploads**: Break into 5MB chunks, upload in parallel
 2. **Upload Service Cluster**: Horizontal scaling with load balancer
 3. **Queue-Based Transcoding**: Decouple upload from processing
@@ -1481,6 +1648,7 @@ A:
 **Q: Video start time is 5 seconds. How to reduce to <2 seconds?**
 
 A:
+
 1. **Reduce Initial Manifest Size**: Serve only first 30s of manifest
 2. **Preload First Segment**: Embed first segment in HTML (inline)
 3. **Adaptive Initial Quality**: Start with 360p, upgrade after buffering
@@ -1492,6 +1660,7 @@ A:
 **Q: How do you optimize for mobile devices with limited bandwidth?**
 
 A:
+
 1. **Aggressive Quality Downscaling**: Start with 240p on slow networks
 2. **Reduce Segment Size**: 2-second segments instead of 10-second
 3. **Thumbnail Sprites**: Single image with all seek thumbnails
@@ -1505,6 +1674,7 @@ A:
 **Q: How do you ensure view counts are accurate?**
 
 A:
+
 - **Challenge**: Exact accuracy is expensive at scale
 - **Solution**: Approximate counting with eventual consistency
   1. Client sends view event after 30s of watch time
@@ -1519,6 +1689,7 @@ A:
 **Q: What happens if transcoding service crashes mid-job?**
 
 A:
+
 1. **Job Queue with Retry**: Job remains in queue until acknowledged
 2. **Worker Heartbeat**: Workers send heartbeat every 30s
 3. **Job Timeout**: If no heartbeat for 2 min, job returns to queue
@@ -1532,7 +1703,9 @@ A:
 **Q: Why use both SQL and NoSQL databases?**
 
 A:
+
 - **SQL (MySQL/PostgreSQL)**:
+
   - Structured data with strong relationships
   - ACID transactions (e.g., user subscriptions)
   - Complex queries (e.g., search, recommendations)
@@ -1548,6 +1721,7 @@ A:
 **Q: How do you handle video deletion while ensuring no orphaned data?**
 
 A:
+
 1. **Soft Delete**: Mark video as deleted, don't remove immediately
 2. **Background Cleanup Job**:
    - Delete all resolutions from S3
@@ -1566,7 +1740,9 @@ A:
 **Q: Video storage and bandwidth costs are very high. How to optimize?**
 
 A:
+
 1. **Storage Optimization**:
+
    - Delete rarely watched videos (after warning user)
    - Archive old videos to cheaper cold storage (Glacier)
    - De-duplicate identical videos
@@ -1574,6 +1750,7 @@ A:
    - Use better compression (H.265, VP9, AV1)
 
 2. **Bandwidth Optimization**:
+
    - Aggressive CDN caching (reduce origin bandwidth)
    - Smart preloading (don't preload if user won't watch)
    - Disable autoplay on mobile
@@ -1589,7 +1766,9 @@ A:
 **Q: How do you decide which videos to cache on CDN?**
 
 A:
+
 - **Multi-factor scoring**:
+
   1. **Popularity**: View count, trending score
   2. **Recency**: Newly uploaded videos
   3. **Geography**: Popular in specific regions
@@ -1597,6 +1776,7 @@ A:
   5. **Content Type**: Music videos, viral content
 
 - **Cache Tiers**:
+
   - **Hot Tier** (SSD, all edges): Top 1% most popular
   - **Warm Tier** (HDD, major edges): Top 10%
   - **Cold Tier** (origin fetch): Long-tail content
@@ -1608,20 +1788,25 @@ A:
 **Q: How would you implement live streaming?**
 
 A:
+
 1. **Ingest**:
+
    - Streamer uses RTMP/WebRTC to push to ingest server
    - Ingest server in nearest region
 
 2. **Transcoding**:
+
    - Real-time transcoding to multiple qualities
    - Low-latency encoding (<3s delay)
 
 3. **Distribution**:
+
    - HLS for regular live (10-30s delay acceptable)
    - WebRTC for ultra-low latency (<1s delay)
    - CDN edge caching of live segments
 
 4. **Playback**:
+
    - Adaptive bitrate streaming
    - Live DVR (rewind live stream)
    - Chat synchronization
@@ -1632,6 +1817,7 @@ A:
 **Q: How do you implement real-time comment updates?**
 
 A:
+
 1. **WebSocket Connection**: Persistent connection for real-time updates
 2. **Pub/Sub System**: Redis Pub/Sub or Kafka
    - User posts comment -> Publish to topic
@@ -1648,6 +1834,7 @@ A:
 **Q: How do you prevent unauthorized video access?**
 
 A:
+
 1. **Authentication**: JWT tokens for user identity
 2. **Authorization**: Check video privacy settings
    - Public: Anyone can watch
@@ -1664,6 +1851,7 @@ A:
 **Q: How do you prevent video piracy?**
 
 A:
+
 1. **DRM Encryption**: Widevine, FairPlay, PlayReady
 2. **Watermarking**: Visible/invisible watermarks with user ID
 3. **HDCP**: Prevent screen recording (hardware-level)
@@ -1677,34 +1865,44 @@ A:
 ## 12. Trade-offs & Design Decisions
 
 ### SQL vs NoSQL for Comments
+
 **Decision**: Use NoSQL (Cassandra)
+
 - **Pro**: Better write scalability for high-volume comments
 - **Pro**: Time-ordered retrieval (TIMEUUID)
 - **Con**: Limited query flexibility
 - **Con**: Eventual consistency
 
 ### HLS vs DASH
+
 **Decision**: Support both, prefer HLS
+
 - **HLS**: Wider browser support (Safari, iOS)
 - **DASH**: Open standard, better features
 - **Solution**: Serve HLS to Apple devices, DASH to others
 
 ### Synchronous vs Asynchronous Transcoding
+
 **Decision**: Asynchronous with job queue
+
 - **Pro**: Fast upload response (<5s)
 - **Pro**: Decouple upload from processing
 - **Con**: Video not immediately available
 - **Mitigation**: Show processing status, estimate completion time
 
 ### CDN vs Self-Hosted Streaming
+
 **Decision**: Use CDN (CloudFront, Akamai)
+
 - **Pro**: Global edge caching, low latency
 - **Pro**: DDoS protection, high availability
 - **Con**: Expensive for high traffic
 - **Mitigation**: Aggressive caching, P2P for live streams
 
 ### Exact vs Approximate View Counting
+
 **Decision**: Approximate counting with 5-min delay
+
 - **Pro**: Massive scalability improvement
 - **Pro**: Reduced database write load
 - **Con**: Slight delay in count updates
@@ -1788,7 +1986,7 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
       announcer.current.textContent = message;
       // Clear after announcement
       setTimeout(() => {
-        if (announcer.current) announcer.current.textContent = '';
+        if (announcer.current) announcer.current.textContent = "";
       }, 1000);
     }
   };
@@ -1802,64 +2000,64 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
     if (e.target instanceof HTMLInputElement) return;
 
     switch (e.key) {
-      case ' ':
-      case 'k':
+      case " ":
+      case "k":
         e.preventDefault();
         togglePlay();
         break;
 
-      case 'j':
+      case "j":
         e.preventDefault();
         seekBy(-10);
-        announce('Rewound 10 seconds');
+        announce("Rewound 10 seconds");
         break;
 
-      case 'l':
+      case "l":
         e.preventDefault();
         seekBy(10);
-        announce('Fast forwarded 10 seconds');
+        announce("Fast forwarded 10 seconds");
         break;
 
-      case 'ArrowLeft':
+      case "ArrowLeft":
         e.preventDefault();
         seekBy(-5);
-        announce('Rewound 5 seconds');
+        announce("Rewound 5 seconds");
         break;
 
-      case 'ArrowRight':
+      case "ArrowRight":
         e.preventDefault();
         seekBy(5);
-        announce('Fast forwarded 5 seconds');
+        announce("Fast forwarded 5 seconds");
         break;
 
-      case 'ArrowUp':
+      case "ArrowUp":
         e.preventDefault();
         adjustVolume(0.05);
         break;
 
-      case 'ArrowDown':
+      case "ArrowDown":
         e.preventDefault();
         adjustVolume(-0.05);
         break;
 
-      case 'm':
+      case "m":
         e.preventDefault();
         toggleMute();
         break;
 
-      case 'f':
+      case "f":
         e.preventDefault();
         toggleFullscreen();
         break;
 
-      case 'c':
+      case "c":
         e.preventDefault();
         toggleCaptions();
         break;
 
       default:
         // Number keys 0-9 for percentage seek
-        if (e.key >= '0' && e.key <= '9') {
+        if (e.key >= "0" && e.key <= "9") {
           e.preventDefault();
           const percent = parseInt(e.key) * 10;
           seekToPercent(percent);
@@ -1875,11 +2073,11 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
     if (video.paused) {
       video.play();
       setIsPlaying(true);
-      announce('Playing');
+      announce("Playing");
     } else {
       video.pause();
       setIsPlaying(false);
-      announce('Paused');
+      announce("Paused");
     }
   };
 
@@ -1895,7 +2093,7 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
 
   const toggleCaptions = () => {
     setCaptionsEnabled(!captionsEnabled);
-    announce(captionsEnabled ? 'Captions off' : 'Captions on');
+    announce(captionsEnabled ? "Captions off" : "Captions on");
   };
 
   return (
@@ -1921,16 +2119,17 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
         onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime || 0)}
         onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
       >
-        {captionsEnabled && captions.map(caption => (
-          <track
-            key={caption.language}
-            kind="captions"
-            src={caption.url}
-            srcLang={caption.language}
-            label={caption.label}
-            default={caption.isDefault}
-          />
-        ))}
+        {captionsEnabled &&
+          captions.map((caption) => (
+            <track
+              key={caption.language}
+              kind="captions"
+              src={caption.url}
+              srcLang={caption.language}
+              label={caption.label}
+              default={caption.isDefault}
+            />
+          ))}
       </video>
 
       {/* Accessible controls */}
@@ -1940,7 +2139,7 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
         aria-label="Video controls"
       >
         <button
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? "Pause" : "Play"}
           aria-pressed={isPlaying}
           onClick={togglePlay}
         >
@@ -1965,7 +2164,7 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
         </div>
 
         <button
-          aria-label={isMuted ? 'Unmute' : 'Mute'}
+          aria-label={isMuted ? "Unmute" : "Mute"}
           aria-pressed={isMuted}
           onClick={toggleMute}
         >
@@ -1984,17 +2183,16 @@ const AccessibleVideoPlayer = ({ videoId, captions }: VideoPlayerProps) => {
         />
 
         <button
-          aria-label={captionsEnabled ? 'Turn off captions' : 'Turn on captions'}
+          aria-label={
+            captionsEnabled ? "Turn off captions" : "Turn on captions"
+          }
           aria-pressed={captionsEnabled}
           onClick={toggleCaptions}
         >
           <CaptionsIcon />
         </button>
 
-        <button
-          aria-label="Enter fullscreen"
-          onClick={toggleFullscreen}
-        >
+        <button aria-label="Enter fullscreen" onClick={toggleFullscreen}>
           <FullscreenIcon />
         </button>
       </div>
@@ -2017,7 +2215,7 @@ const CaptionManager = ({
   captions,
   currentTime,
   enabled,
-  style
+  style,
 }: CaptionManagerProps) => {
   const [activeCaption, setActiveCaption] = useState<Caption | null>(null);
 
@@ -2028,7 +2226,7 @@ const CaptionManager = ({
     }
 
     const caption = captions.find(
-      c => currentTime >= c.startTime && currentTime <= c.endTime
+      (c) => currentTime >= c.startTime && currentTime <= c.endTime
     );
 
     setActiveCaption(caption || null);
@@ -2068,7 +2266,7 @@ const CaptionSettings = ({ onStyleChange }: CaptionSettingsProps) => {
         <label id="font-size-label">Font Size</label>
         <select
           aria-describedby="font-size-label"
-          onChange={(e) => onStyleChange('fontSize', e.target.value)}
+          onChange={(e) => onStyleChange("fontSize", e.target.value)}
         >
           <option value="75%">75%</option>
           <option value="100%">100% (Default)</option>
@@ -2079,9 +2277,7 @@ const CaptionSettings = ({ onStyleChange }: CaptionSettingsProps) => {
 
       <div role="group" aria-labelledby="font-family-label">
         <label id="font-family-label">Font Family</label>
-        <select
-          onChange={(e) => onStyleChange('fontFamily', e.target.value)}
-        >
+        <select onChange={(e) => onStyleChange("fontFamily", e.target.value)}>
           <option value="sans-serif">Sans-serif</option>
           <option value="serif">Serif</option>
           <option value="monospace">Monospace</option>
@@ -2091,7 +2287,7 @@ const CaptionSettings = ({ onStyleChange }: CaptionSettingsProps) => {
       <div role="group" aria-labelledby="bg-color-label">
         <label id="bg-color-label">Background</label>
         <select
-          onChange={(e) => onStyleChange('backgroundColor', e.target.value)}
+          onChange={(e) => onStyleChange("backgroundColor", e.target.value)}
         >
           <option value="rgba(0,0,0,0.75)">Black (Default)</option>
           <option value="rgba(255,255,255,0.75)">White</option>
@@ -2107,7 +2303,10 @@ const CaptionSettings = ({ onStyleChange }: CaptionSettingsProps) => {
 
 ```typescript
 // useFocusTrap.ts - Trap focus within video player settings
-const useFocusTrap = (isActive: boolean, containerRef: RefObject<HTMLElement>) => {
+const useFocusTrap = (
+  isActive: boolean,
+  containerRef: RefObject<HTMLElement>
+) => {
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
@@ -2117,10 +2316,12 @@ const useFocusTrap = (isActive: boolean, containerRef: RefObject<HTMLElement>) =
     );
 
     const firstElement = focusableElements[0] as HTMLElement;
-    const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+    const lastElement = focusableElements[
+      focusableElements.length - 1
+    ] as HTMLElement;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
+      if (e.key !== "Tab") return;
 
       if (e.shiftKey) {
         if (document.activeElement === firstElement) {
@@ -2135,11 +2336,11 @@ const useFocusTrap = (isActive: boolean, containerRef: RefObject<HTMLElement>) =
       }
     };
 
-    container.addEventListener('keydown', handleKeyDown);
+    container.addEventListener("keydown", handleKeyDown);
     firstElement?.focus();
 
     return () => {
-      container.removeEventListener('keydown', handleKeyDown);
+      container.removeEventListener("keydown", handleKeyDown);
     };
   }, [isActive, containerRef]);
 };
@@ -2175,10 +2376,7 @@ const VideoSettingsDialog = ({ isOpen, onClose }: SettingsDialogProps) => {
 
       {/* Settings content */}
 
-      <button
-        onClick={onClose}
-        aria-label="Close settings"
-      >
+      <button onClick={onClose} aria-label="Close settings">
         Close
       </button>
     </div>
@@ -2273,9 +2471,7 @@ const AccessibleVideoGrid = ({ videos }: VideoGridProps) => {
 
               <div className="video-info">
                 <h3 id={`video-title-${video.id}`}>
-                  <a href={`/watch?v=${video.id}`}>
-                    {video.title}
-                  </a>
+                  <a href={`/watch?v=${video.id}`}>{video.title}</a>
                 </h3>
 
                 <p id={`video-meta-${video.id}`} className="video-meta">
@@ -2306,11 +2502,11 @@ const formatDurationAccessible = (seconds: number): string => {
   const secs = seconds % 60;
 
   const parts = [];
-  if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
-  if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`);
-  if (secs > 0) parts.push(`${secs} second${secs > 1 ? 's' : ''}`);
+  if (hours > 0) parts.push(`${hours} hour${hours > 1 ? "s" : ""}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? "s" : ""}`);
+  if (secs > 0) parts.push(`${secs} second${secs > 1 ? "s" : ""}`);
 
-  return parts.join(' ');
+  return parts.join(" ");
 };
 ```
 
@@ -2383,13 +2579,13 @@ const DRMPlayer = ({ videoId, manifestUrl }: DRMPlayerProps) => {
       const drmConfig = await detectDRMSupport();
 
       if (!drmConfig) {
-        setError('DRM not supported on this browser');
+        setError("DRM not supported on this browser");
         return;
       }
 
       try {
         // Initialize Shaka Player with DRM
-        const shaka = await import('shaka-player');
+        const shaka = await import("shaka-player");
         shaka.polyfill.installAll();
 
         const player = new shaka.Player(video);
@@ -2397,24 +2593,26 @@ const DRMPlayer = ({ videoId, manifestUrl }: DRMPlayerProps) => {
         player.configure({
           drm: {
             servers: {
-              'com.widevine.alpha': `${API_URL}/drm/widevine/license?videoId=${videoId}`,
-              'com.apple.fps.1_0': `${API_URL}/drm/fairplay/license?videoId=${videoId}`,
-              'com.microsoft.playready': `${API_URL}/drm/playready/license?videoId=${videoId}`,
+              "com.widevine.alpha": `${API_URL}/drm/widevine/license?videoId=${videoId}`,
+              "com.apple.fps.1_0": `${API_URL}/drm/fairplay/license?videoId=${videoId}`,
+              "com.microsoft.playready": `${API_URL}/drm/playready/license?videoId=${videoId}`,
             },
           },
         });
 
         // FairPlay requires certificate
-        if (drmConfig.keySystem === 'com.apple.fps.1_0') {
+        if (drmConfig.keySystem === "com.apple.fps.1_0") {
           const cert = await fetchFairPlayCertificate();
-          player.configure('drm.advanced.com\\.apple\\.fps\\.1_0.serverCertificate', cert);
+          player.configure(
+            "drm.advanced.com\\.apple\\.fps\\.1_0.serverCertificate",
+            cert
+          );
         }
 
         await player.load(manifestUrl);
-
       } catch (err) {
-        console.error('DRM initialization failed:', err);
-        setError('Failed to load protected content');
+        console.error("DRM initialization failed:", err);
+        setError("Failed to load protected content");
       }
     };
 
@@ -2437,21 +2635,25 @@ const DRMPlayer = ({ videoId, manifestUrl }: DRMPlayerProps) => {
 // Detect which DRM system is supported
 const detectDRMSupport = async (): Promise<DRMConfig | null> => {
   const keySystems = [
-    { keySystem: 'com.widevine.alpha', name: 'Widevine' },
-    { keySystem: 'com.apple.fps.1_0', name: 'FairPlay' },
-    { keySystem: 'com.microsoft.playready', name: 'PlayReady' },
+    { keySystem: "com.widevine.alpha", name: "Widevine" },
+    { keySystem: "com.apple.fps.1_0", name: "FairPlay" },
+    { keySystem: "com.microsoft.playready", name: "PlayReady" },
   ];
 
   for (const config of keySystems) {
     try {
       const result = await navigator.requestMediaKeySystemAccess(
         config.keySystem,
-        [{
-          initDataTypes: ['cenc'],
-          videoCapabilities: [{
-            contentType: 'video/mp4; codecs="avc1.42E01E"',
-          }],
-        }]
+        [
+          {
+            initDataTypes: ["cenc"],
+            videoCapabilities: [
+              {
+                contentType: 'video/mp4; codecs="avc1.42E01E"',
+              },
+            ],
+          },
+        ]
       );
 
       if (result) {
@@ -2485,13 +2687,13 @@ const generateSignedUrl = (params: SignedUrlParams): string => {
     params.videoId,
     params.userId,
     expires.toString(),
-    params.ipAddress || '',
-  ].join(':');
+    params.ipAddress || "",
+  ].join(":");
 
   const signature = crypto
-    .createHmac('sha256', process.env.URL_SIGNING_SECRET!)
+    .createHmac("sha256", process.env.URL_SIGNING_SECRET!)
     .update(dataToSign)
-    .digest('hex');
+    .digest("hex");
 
   const queryParams = new URLSearchParams({
     videoId: params.videoId,
@@ -2530,7 +2732,7 @@ const useSignedUrl = (videoId: string) => {
       setSignedUrl(response.url);
 
       // Refresh 1 minute before expiration
-      const refreshIn = (response.expiresAt - Date.now() - 60000);
+      const refreshIn = response.expiresAt - Date.now() - 60000;
       refreshTimer.current = setTimeout(fetchAndRefresh, refreshIn);
     };
 
@@ -2596,20 +2798,22 @@ const useSignedUrl = (videoId: string) => {
 ```typescript
 // AgeVerification.tsx
 const AgeVerification = ({ videoId, onVerified }: AgeVerificationProps) => {
-  const [birthDate, setBirthDate] = useState<string>('');
+  const [birthDate, setBirthDate] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   const verifyAge = () => {
     const birth = new Date(birthDate);
     const today = new Date();
-    const age = Math.floor((today.getTime() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    const age = Math.floor(
+      (today.getTime() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+    );
 
     if (age >= 18) {
       // Store verification in session
-      sessionStorage.setItem('ageVerified', 'true');
+      sessionStorage.setItem("ageVerified", "true");
       onVerified();
     } else {
-      setError('You must be 18 or older to view this content.');
+      setError("You must be 18 or older to view this content.");
     }
   };
 
@@ -2620,8 +2824,8 @@ const AgeVerification = ({ videoId, onVerified }: AgeVerificationProps) => {
         <h2 id="age-title">Age-Restricted Content</h2>
 
         <p>
-          This video may be inappropriate for some users.
-          Please confirm your age to continue.
+          This video may be inappropriate for some users. Please confirm your
+          age to continue.
         </p>
 
         <div className="age-form">
@@ -2631,8 +2835,8 @@ const AgeVerification = ({ videoId, onVerified }: AgeVerificationProps) => {
             type="date"
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value)}
-            max={new Date().toISOString().split('T')[0]}
-            aria-describedby={error ? 'age-error' : undefined}
+            max={new Date().toISOString().split("T")[0]}
+            aria-describedby={error ? "age-error" : undefined}
           />
 
           {error && (
@@ -2656,12 +2860,15 @@ const AgeVerification = ({ videoId, onVerified }: AgeVerificationProps) => {
 };
 
 // AgeRestrictedWrapper.tsx
-const AgeRestrictedWrapper = ({ video, children }: AgeRestrictedWrapperProps) => {
+const AgeRestrictedWrapper = ({
+  video,
+  children,
+}: AgeRestrictedWrapperProps) => {
   const [isVerified, setIsVerified] = useState(false);
 
   useEffect(() => {
     // Check if already verified this session
-    const verified = sessionStorage.getItem('ageVerified') === 'true';
+    const verified = sessionStorage.getItem("ageVerified") === "true";
     setIsVerified(verified || !video.isAgeRestricted);
   }, [video]);
 
@@ -2683,31 +2890,31 @@ const AgeRestrictedWrapper = ({ video, children }: AgeRestrictedWrapperProps) =>
 ```typescript
 // ReportContent.tsx
 const ReportContent = ({ videoId, onClose }: ReportContentProps) => {
-  const [reason, setReason] = useState<string>('');
-  const [details, setDetails] = useState<string>('');
+  const [reason, setReason] = useState<string>("");
+  const [details, setDetails] = useState<string>("");
   const [timestamp, setTimestamp] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const reportReasons = [
-    { value: 'sexual', label: 'Sexual content' },
-    { value: 'violent', label: 'Violent or graphic content' },
-    { value: 'hateful', label: 'Hateful or abusive content' },
-    { value: 'harassment', label: 'Harassment or bullying' },
-    { value: 'spam', label: 'Spam or misleading' },
-    { value: 'copyright', label: 'Copyright infringement' },
-    { value: 'privacy', label: 'Privacy violation' },
-    { value: 'dangerous', label: 'Dangerous acts' },
-    { value: 'child_safety', label: 'Child safety concern' },
-    { value: 'other', label: 'Other' },
+    { value: "sexual", label: "Sexual content" },
+    { value: "violent", label: "Violent or graphic content" },
+    { value: "hateful", label: "Hateful or abusive content" },
+    { value: "harassment", label: "Harassment or bullying" },
+    { value: "spam", label: "Spam or misleading" },
+    { value: "copyright", label: "Copyright infringement" },
+    { value: "privacy", label: "Privacy violation" },
+    { value: "dangerous", label: "Dangerous acts" },
+    { value: "child_safety", label: "Child safety concern" },
+    { value: "other", label: "Other" },
   ];
 
   const submitReport = async () => {
     setIsSubmitting(true);
 
     try {
-      await fetch('/api/v1/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/v1/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           videoId,
           reason,
@@ -2718,26 +2925,23 @@ const ReportContent = ({ videoId, onClose }: ReportContentProps) => {
       });
 
       onClose();
-      showToast('Report submitted. Thank you for helping keep our platform safe.');
-
+      showToast(
+        "Report submitted. Thank you for helping keep our platform safe."
+      );
     } catch (error) {
-      showToast('Failed to submit report. Please try again.', 'error');
+      showToast("Failed to submit report. Please try again.", "error");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div
-      className="report-dialog"
-      role="dialog"
-      aria-labelledby="report-title"
-    >
+    <div className="report-dialog" role="dialog" aria-labelledby="report-title">
       <h2 id="report-title">Report Video</h2>
 
       <fieldset>
         <legend>What's the issue?</legend>
-        {reportReasons.map(r => (
+        {reportReasons.map((r) => (
           <label key={r.value} className="radio-option">
             <input
               type="radio"
@@ -2781,7 +2985,7 @@ const ReportContent = ({ videoId, onClose }: ReportContentProps) => {
           disabled={!reason || isSubmitting}
           className="primary"
         >
-          {isSubmitting ? 'Submitting...' : 'Submit Report'}
+          {isSubmitting ? "Submitting..." : "Submit Report"}
         </button>
       </div>
     </div>
@@ -2839,26 +3043,31 @@ const ReportContent = ({ videoId, onClose }: ReportContentProps) => {
 ```typescript
 // DoubleTapSeek.tsx
 const DoubleTapSeek = ({ videoRef, seekAmount = 10 }: DoubleTapSeekProps) => {
-  const [showIndicator, setShowIndicator] = useState<'left' | 'right' | null>(null);
+  const [showIndicator, setShowIndicator] = useState<"left" | "right" | null>(
+    null
+  );
   const [tapCount, setTapCount] = useState(0);
   const lastTapTime = useRef(0);
   const tapTimeout = useRef<NodeJS.Timeout>();
 
-  const handleTap = (e: React.TouchEvent, side: 'left' | 'right') => {
+  const handleTap = (e: React.TouchEvent, side: "left" | "right") => {
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTime.current;
 
     if (timeSinceLastTap < 300) {
       // Double tap detected
       clearTimeout(tapTimeout.current);
-      setTapCount(prev => prev + 1);
+      setTapCount((prev) => prev + 1);
 
       const video = videoRef.current;
       if (video) {
-        if (side === 'left') {
+        if (side === "left") {
           video.currentTime = Math.max(0, video.currentTime - seekAmount);
         } else {
-          video.currentTime = Math.min(video.duration, video.currentTime + seekAmount);
+          video.currentTime = Math.min(
+            video.duration,
+            video.currentTime + seekAmount
+          );
         }
       }
 
@@ -2869,7 +3078,6 @@ const DoubleTapSeek = ({ videoRef, seekAmount = 10 }: DoubleTapSeekProps) => {
         setShowIndicator(null);
         setTapCount(0);
       }, 500);
-
     } else {
       // Single tap - wait to see if it's a double tap
       tapTimeout.current = setTimeout(() => {
@@ -2885,9 +3093,9 @@ const DoubleTapSeek = ({ videoRef, seekAmount = 10 }: DoubleTapSeekProps) => {
     <div className="double-tap-container">
       <div
         className="tap-zone tap-zone-left"
-        onTouchEnd={(e) => handleTap(e, 'left')}
+        onTouchEnd={(e) => handleTap(e, "left")}
       >
-        {showIndicator === 'left' && (
+        {showIndicator === "left" && (
           <div className="seek-indicator">
             <SeekBackIcon />
             <span>{tapCount * seekAmount}s</span>
@@ -2897,9 +3105,9 @@ const DoubleTapSeek = ({ videoRef, seekAmount = 10 }: DoubleTapSeekProps) => {
 
       <div
         className="tap-zone tap-zone-right"
-        onTouchEnd={(e) => handleTap(e, 'right')}
+        onTouchEnd={(e) => handleTap(e, "right")}
       >
-        {showIndicator === 'right' && (
+        {showIndicator === "right" && (
           <div className="seek-indicator">
             <SeekForwardIcon />
             <span>{tapCount * seekAmount}s</span>
@@ -2915,8 +3123,8 @@ const DoubleTapSeek = ({ videoRef, seekAmount = 10 }: DoubleTapSeekProps) => {
 
 ```typescript
 // PinchToZoom.tsx
-import { useGesture } from '@use-gesture/react';
-import { useSpring, animated } from '@react-spring/web';
+import { useGesture } from "@use-gesture/react";
+import { useSpring, animated } from "@react-spring/web";
 
 const PinchToZoom = ({ children }: PinchToZoomProps) => {
   const [{ scale, x, y }, api] = useSpring(() => ({
@@ -2973,8 +3181,8 @@ const PinchToZoom = ({ children }: PinchToZoomProps) => {
     <div ref={containerRef} className="pinch-container">
       <animated.div
         style={{
-          transform: scale.to(s =>
-            `scale(${s}) translate(${x.get()}px, ${y.get()}px)`
+          transform: scale.to(
+            (s) => `scale(${s}) translate(${x.get()}px, ${y.get()}px)`
           ),
         }}
       >
@@ -3047,8 +3255,7 @@ const usePictureInPicture = (videoRef: RefObject<HTMLVideoElement>) => {
   useEffect(() => {
     // Check PiP support
     setIsPiPSupported(
-      'pictureInPictureEnabled' in document &&
-      document.pictureInPictureEnabled
+      "pictureInPictureEnabled" in document && document.pictureInPictureEnabled
     );
 
     const video = videoRef.current;
@@ -3057,12 +3264,12 @@ const usePictureInPicture = (videoRef: RefObject<HTMLVideoElement>) => {
     const handleEnterPiP = () => setIsPiPActive(true);
     const handleLeavePiP = () => setIsPiPActive(false);
 
-    video.addEventListener('enterpictureinpicture', handleEnterPiP);
-    video.addEventListener('leavepictureinpicture', handleLeavePiP);
+    video.addEventListener("enterpictureinpicture", handleEnterPiP);
+    video.addEventListener("leavepictureinpicture", handleLeavePiP);
 
     return () => {
-      video.removeEventListener('enterpictureinpicture', handleEnterPiP);
-      video.removeEventListener('leavepictureinpicture', handleLeavePiP);
+      video.removeEventListener("enterpictureinpicture", handleEnterPiP);
+      video.removeEventListener("leavepictureinpicture", handleLeavePiP);
     };
   }, [videoRef]);
 
@@ -3077,7 +3284,7 @@ const usePictureInPicture = (videoRef: RefObject<HTMLVideoElement>) => {
         await video.requestPictureInPicture();
       }
     } catch (error) {
-      console.error('PiP failed:', error);
+      console.error("PiP failed:", error);
     }
   };
 
@@ -3123,7 +3330,12 @@ const useAutoPiP = (
 
 ```typescript
 // MiniPlayer.tsx
-const MiniPlayer = ({ video, isActive, onClose, onExpand }: MiniPlayerProps) => {
+const MiniPlayer = ({
+  video,
+  isActive,
+  onClose,
+  onExpand,
+}: MiniPlayerProps) => {
   const [{ x, y }, api] = useSpring(() => ({ x: 0, y: 0 }));
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -3162,7 +3374,7 @@ const MiniPlayer = ({ video, isActive, onClose, onExpand }: MiniPlayerProps) => 
       style={{
         x,
         y,
-        touchAction: 'none',
+        touchAction: "none",
       }}
       role="complementary"
       aria-label="Mini video player"
@@ -3226,7 +3438,7 @@ const MobileVideoControls = ({
 
   return (
     <div
-      className={`mobile-controls ${showControls ? 'visible' : 'hidden'}`}
+      className={`mobile-controls ${showControls ? "visible" : "hidden"}`}
       onTouchStart={handleTouch}
     >
       {/* Top bar - title, settings */}
@@ -3251,7 +3463,7 @@ const MobileVideoControls = ({
 
         <button
           onClick={onPlayPause}
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? "Pause" : "Play"}
           className="play-button"
         >
           {isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -3358,149 +3570,151 @@ const MobileVideoControls = ({
 
 ```typescript
 // VideoPlayer.test.tsx
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { VideoPlayer } from './VideoPlayer';
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { VideoPlayer } from "./VideoPlayer";
 
 // Mock HTMLMediaElement
 beforeAll(() => {
   // Mock play/pause
-  window.HTMLMediaElement.prototype.play = jest.fn().mockResolvedValue(undefined);
+  window.HTMLMediaElement.prototype.play = jest
+    .fn()
+    .mockResolvedValue(undefined);
   window.HTMLMediaElement.prototype.pause = jest.fn();
   window.HTMLMediaElement.prototype.load = jest.fn();
 
   // Mock seeking
-  Object.defineProperty(window.HTMLMediaElement.prototype, 'currentTime', {
+  Object.defineProperty(window.HTMLMediaElement.prototype, "currentTime", {
     writable: true,
     value: 0,
   });
 
-  Object.defineProperty(window.HTMLMediaElement.prototype, 'duration', {
+  Object.defineProperty(window.HTMLMediaElement.prototype, "duration", {
     writable: true,
     value: 3600, // 1 hour
   });
 
-  Object.defineProperty(window.HTMLMediaElement.prototype, 'paused', {
+  Object.defineProperty(window.HTMLMediaElement.prototype, "paused", {
     writable: true,
     value: true,
   });
 });
 
-describe('VideoPlayer', () => {
+describe("VideoPlayer", () => {
   const mockVideo = {
-    id: 'test-video-1',
-    title: 'Test Video',
-    url: 'https://example.com/video.mp4',
+    id: "test-video-1",
+    title: "Test Video",
+    url: "https://example.com/video.mp4",
     duration: 3600,
   };
 
-  describe('Playback Controls', () => {
-    it('should play video when play button is clicked', async () => {
+  describe("Playback Controls", () => {
+    it("should play video when play button is clicked", async () => {
       render(<VideoPlayer video={mockVideo} />);
 
-      const playButton = screen.getByRole('button', { name: /play/i });
+      const playButton = screen.getByRole("button", { name: /play/i });
       await userEvent.click(playButton);
 
       expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
     });
 
-    it('should pause video when pause button is clicked', async () => {
+    it("should pause video when pause button is clicked", async () => {
       render(<VideoPlayer video={mockVideo} autoPlay />);
 
-      const pauseButton = await screen.findByRole('button', { name: /pause/i });
+      const pauseButton = await screen.findByRole("button", { name: /pause/i });
       await userEvent.click(pauseButton);
 
       expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled();
     });
 
-    it('should toggle play/pause with spacebar', async () => {
+    it("should toggle play/pause with spacebar", async () => {
       const { container } = render(<VideoPlayer video={mockVideo} />);
 
       container.focus();
-      await userEvent.keyboard(' ');
+      await userEvent.keyboard(" ");
 
       expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled();
     });
 
-    it('should seek forward 10 seconds with arrow right', async () => {
+    it("should seek forward 10 seconds with arrow right", async () => {
       const { container } = render(<VideoPlayer video={mockVideo} />);
-      const videoElement = container.querySelector('video');
+      const videoElement = container.querySelector("video");
       videoElement!.currentTime = 100;
 
       container.focus();
-      await userEvent.keyboard('{ArrowRight}');
+      await userEvent.keyboard("{ArrowRight}");
 
       expect(videoElement!.currentTime).toBe(110);
     });
   });
 
-  describe('Timeline/Progress Bar', () => {
-    it('should display current time and duration', () => {
+  describe("Timeline/Progress Bar", () => {
+    it("should display current time and duration", () => {
       render(<VideoPlayer video={mockVideo} />);
 
-      expect(screen.getByText('0:00')).toBeInTheDocument();
-      expect(screen.getByText('1:00:00')).toBeInTheDocument();
+      expect(screen.getByText("0:00")).toBeInTheDocument();
+      expect(screen.getByText("1:00:00")).toBeInTheDocument();
     });
 
-    it('should update progress bar on time update', async () => {
+    it("should update progress bar on time update", async () => {
       const { container } = render(<VideoPlayer video={mockVideo} />);
-      const videoElement = container.querySelector('video');
+      const videoElement = container.querySelector("video");
 
       // Simulate time update
-      Object.defineProperty(videoElement, 'currentTime', { value: 1800 });
+      Object.defineProperty(videoElement, "currentTime", { value: 1800 });
       fireEvent.timeUpdate(videoElement!);
 
       await waitFor(() => {
-        const progressBar = screen.getByRole('slider', { name: /progress/i });
-        expect(progressBar).toHaveValue('1800');
+        const progressBar = screen.getByRole("slider", { name: /progress/i });
+        expect(progressBar).toHaveValue("1800");
       });
     });
 
-    it('should seek when clicking on progress bar', async () => {
+    it("should seek when clicking on progress bar", async () => {
       const { container } = render(<VideoPlayer video={mockVideo} />);
-      const progressBar = screen.getByRole('slider', { name: /progress/i });
-      const videoElement = container.querySelector('video');
+      const progressBar = screen.getByRole("slider", { name: /progress/i });
+      const videoElement = container.querySelector("video");
 
-      fireEvent.change(progressBar, { target: { value: '1800' } });
+      fireEvent.change(progressBar, { target: { value: "1800" } });
 
       expect(videoElement!.currentTime).toBe(1800);
     });
   });
 
-  describe('Volume Controls', () => {
-    it('should mute/unmute with M key', async () => {
+  describe("Volume Controls", () => {
+    it("should mute/unmute with M key", async () => {
       const { container } = render(<VideoPlayer video={mockVideo} />);
-      const videoElement = container.querySelector('video');
+      const videoElement = container.querySelector("video");
 
       container.focus();
-      await userEvent.keyboard('m');
+      await userEvent.keyboard("m");
 
       expect(videoElement!.muted).toBe(true);
 
-      await userEvent.keyboard('m');
+      await userEvent.keyboard("m");
       expect(videoElement!.muted).toBe(false);
     });
 
-    it('should update volume slider', async () => {
+    it("should update volume slider", async () => {
       const { container } = render(<VideoPlayer video={mockVideo} />);
-      const volumeSlider = screen.getByRole('slider', { name: /volume/i });
-      const videoElement = container.querySelector('video');
+      const volumeSlider = screen.getByRole("slider", { name: /volume/i });
+      const videoElement = container.querySelector("video");
 
-      fireEvent.change(volumeSlider, { target: { value: '0.5' } });
+      fireEvent.change(volumeSlider, { target: { value: "0.5" } });
 
       expect(videoElement!.volume).toBe(0.5);
     });
   });
 
-  describe('Fullscreen', () => {
-    it('should toggle fullscreen with F key', async () => {
+  describe("Fullscreen", () => {
+    it("should toggle fullscreen with F key", async () => {
       const mockRequestFullscreen = jest.fn();
       document.documentElement.requestFullscreen = mockRequestFullscreen;
 
       const { container } = render(<VideoPlayer video={mockVideo} />);
 
       container.focus();
-      await userEvent.keyboard('f');
+      await userEvent.keyboard("f");
 
       expect(mockRequestFullscreen).toHaveBeenCalled();
     });
@@ -3512,12 +3726,12 @@ describe('VideoPlayer', () => {
 
 ```typescript
 // StreamingPlayer.test.tsx
-import Hls from 'hls.js';
-import { render, waitFor, screen } from '@testing-library/react';
-import { StreamingPlayer } from './StreamingPlayer';
+import Hls from "hls.js";
+import { render, waitFor, screen } from "@testing-library/react";
+import { StreamingPlayer } from "./StreamingPlayer";
 
 // Mock HLS.js
-jest.mock('hls.js', () => {
+jest.mock("hls.js", () => {
   const mockHls = {
     loadSource: jest.fn(),
     attachMedia: jest.fn(),
@@ -3534,28 +3748,28 @@ jest.mock('hls.js', () => {
   const HlsConstructor = jest.fn(() => mockHls);
   HlsConstructor.isSupported = jest.fn(() => true);
   HlsConstructor.Events = {
-    MANIFEST_PARSED: 'hlsManifestParsed',
-    LEVEL_SWITCHED: 'hlsLevelSwitched',
-    ERROR: 'hlsError',
-    BUFFER_APPENDED: 'hlsBufferAppended',
-    FRAG_LOADED: 'hlsFragLoaded',
+    MANIFEST_PARSED: "hlsManifestParsed",
+    LEVEL_SWITCHED: "hlsLevelSwitched",
+    ERROR: "hlsError",
+    BUFFER_APPENDED: "hlsBufferAppended",
+    FRAG_LOADED: "hlsFragLoaded",
   };
   HlsConstructor.ErrorTypes = {
-    NETWORK_ERROR: 'networkError',
-    MEDIA_ERROR: 'mediaError',
+    NETWORK_ERROR: "networkError",
+    MEDIA_ERROR: "mediaError",
   };
 
   return HlsConstructor;
 });
 
-describe('StreamingPlayer', () => {
-  const mockManifest = 'https://cdn.example.com/video/master.m3u8';
+describe("StreamingPlayer", () => {
+  const mockManifest = "https://cdn.example.com/video/master.m3u8";
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should initialize HLS.js when supported', async () => {
+  it("should initialize HLS.js when supported", async () => {
     render(<StreamingPlayer manifestUrl={mockManifest} />);
 
     await waitFor(() => {
@@ -3567,7 +3781,7 @@ describe('StreamingPlayer', () => {
     expect(hlsInstance.attachMedia).toHaveBeenCalled();
   });
 
-  it('should handle manifest parsed event', async () => {
+  it("should handle manifest parsed event", async () => {
     render(<StreamingPlayer manifestUrl={mockManifest} />);
 
     await waitFor(() => {
@@ -3579,7 +3793,7 @@ describe('StreamingPlayer', () => {
     });
   });
 
-  it('should display quality selector after manifest loads', async () => {
+  it("should display quality selector after manifest loads", async () => {
     render(<StreamingPlayer manifestUrl={mockManifest} showQualitySelector />);
 
     // Simulate manifest parsed event
@@ -3591,11 +3805,11 @@ describe('StreamingPlayer', () => {
       callback?.();
     });
 
-    expect(await screen.findByText('720p')).toBeInTheDocument();
-    expect(screen.getByText('1080p')).toBeInTheDocument();
+    expect(await screen.findByText("720p")).toBeInTheDocument();
+    expect(screen.getByText("1080p")).toBeInTheDocument();
   });
 
-  it('should clean up HLS instance on unmount', () => {
+  it("should clean up HLS instance on unmount", () => {
     const { unmount } = render(<StreamingPlayer manifestUrl={mockManifest} />);
 
     unmount();
@@ -3604,11 +3818,9 @@ describe('StreamingPlayer', () => {
     expect(hlsInstance.destroy).toHaveBeenCalled();
   });
 
-  it('should handle network errors with retry', async () => {
+  it("should handle network errors with retry", async () => {
     const onError = jest.fn();
-    render(
-      <StreamingPlayer manifestUrl={mockManifest} onError={onError} />
-    );
+    render(<StreamingPlayer manifestUrl={mockManifest} onError={onError} />);
 
     await waitFor(() => {
       const hlsInstance = (Hls as jest.Mock).mock.results[0].value;
@@ -3619,21 +3831,21 @@ describe('StreamingPlayer', () => {
       errorCallback?.(Hls.Events.ERROR, {
         type: Hls.ErrorTypes.NETWORK_ERROR,
         fatal: true,
-        details: 'manifestLoadError',
+        details: "manifestLoadError",
       });
     });
 
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'networkError',
+        type: "networkError",
       })
     );
   });
 });
 
 // ABR (Adaptive Bitrate) Tests
-describe('Adaptive Bitrate Switching', () => {
-  it('should auto-select quality based on bandwidth', async () => {
+describe("Adaptive Bitrate Switching", () => {
+  it("should auto-select quality based on bandwidth", async () => {
     const onQualityChange = jest.fn();
 
     render(
@@ -3657,7 +3869,7 @@ describe('Adaptive Bitrate Switching', () => {
     );
   });
 
-  it('should allow manual quality selection', async () => {
+  it("should allow manual quality selection", async () => {
     render(
       <StreamingPlayer
         manifestUrl="https://cdn.example.com/video.m3u8"
@@ -3666,7 +3878,7 @@ describe('Adaptive Bitrate Switching', () => {
     );
 
     // Select 720p
-    const qualityButton = await screen.findByRole('button', { name: /720p/i });
+    const qualityButton = await screen.findByRole("button", { name: /720p/i });
     await userEvent.click(qualityButton);
 
     const hlsInstance = (Hls as jest.Mock).mock.results[0].value;
@@ -3679,92 +3891,92 @@ describe('Adaptive Bitrate Switching', () => {
 
 ```typescript
 // useVideoState.test.ts
-import { renderHook, act } from '@testing-library/react';
-import { useVideoState } from './useVideoState';
+import { renderHook, act } from "@testing-library/react";
+import { useVideoState } from "./useVideoState";
 
-describe('useVideoState', () => {
-  it('should start in idle state', () => {
+describe("useVideoState", () => {
+  it("should start in idle state", () => {
     const { result } = renderHook(() => useVideoState());
 
-    expect(result.current.state).toBe('idle');
+    expect(result.current.state).toBe("idle");
   });
 
-  it('should transition to loading when load action dispatched', () => {
+  it("should transition to loading when load action dispatched", () => {
     const { result } = renderHook(() => useVideoState());
 
     act(() => {
-      result.current.dispatch({ type: 'LOAD', videoId: 'video-1' });
+      result.current.dispatch({ type: "LOAD", videoId: "video-1" });
     });
 
-    expect(result.current.state).toBe('loading');
+    expect(result.current.state).toBe("loading");
   });
 
-  it('should transition to playing when canPlay + play', () => {
+  it("should transition to playing when canPlay + play", () => {
     const { result } = renderHook(() => useVideoState());
 
     act(() => {
-      result.current.dispatch({ type: 'LOAD', videoId: 'video-1' });
-      result.current.dispatch({ type: 'CAN_PLAY' });
-      result.current.dispatch({ type: 'PLAY' });
+      result.current.dispatch({ type: "LOAD", videoId: "video-1" });
+      result.current.dispatch({ type: "CAN_PLAY" });
+      result.current.dispatch({ type: "PLAY" });
     });
 
-    expect(result.current.state).toBe('playing');
+    expect(result.current.state).toBe("playing");
   });
 
-  it('should handle buffering state', () => {
+  it("should handle buffering state", () => {
     const { result } = renderHook(() => useVideoState());
 
     act(() => {
-      result.current.dispatch({ type: 'LOAD', videoId: 'video-1' });
-      result.current.dispatch({ type: 'CAN_PLAY' });
-      result.current.dispatch({ type: 'PLAY' });
-      result.current.dispatch({ type: 'WAITING' });
+      result.current.dispatch({ type: "LOAD", videoId: "video-1" });
+      result.current.dispatch({ type: "CAN_PLAY" });
+      result.current.dispatch({ type: "PLAY" });
+      result.current.dispatch({ type: "WAITING" });
     });
 
-    expect(result.current.state).toBe('buffering');
+    expect(result.current.state).toBe("buffering");
     expect(result.current.wasPlaying).toBe(true);
   });
 
-  it('should resume playing after buffering', () => {
+  it("should resume playing after buffering", () => {
     const { result } = renderHook(() => useVideoState());
 
     act(() => {
-      result.current.dispatch({ type: 'LOAD', videoId: 'video-1' });
-      result.current.dispatch({ type: 'CAN_PLAY' });
-      result.current.dispatch({ type: 'PLAY' });
-      result.current.dispatch({ type: 'WAITING' });
-      result.current.dispatch({ type: 'CAN_PLAY' });
+      result.current.dispatch({ type: "LOAD", videoId: "video-1" });
+      result.current.dispatch({ type: "CAN_PLAY" });
+      result.current.dispatch({ type: "PLAY" });
+      result.current.dispatch({ type: "WAITING" });
+      result.current.dispatch({ type: "CAN_PLAY" });
     });
 
-    expect(result.current.state).toBe('playing');
+    expect(result.current.state).toBe("playing");
   });
 
-  it('should handle error state', () => {
+  it("should handle error state", () => {
     const { result } = renderHook(() => useVideoState());
 
     act(() => {
-      result.current.dispatch({ type: 'LOAD', videoId: 'video-1' });
+      result.current.dispatch({ type: "LOAD", videoId: "video-1" });
       result.current.dispatch({
-        type: 'ERROR',
-        error: { code: 4, message: 'Network error' },
+        type: "ERROR",
+        error: { code: 4, message: "Network error" },
       });
     });
 
-    expect(result.current.state).toBe('error');
-    expect(result.current.error).toEqual({ code: 4, message: 'Network error' });
+    expect(result.current.state).toBe("error");
+    expect(result.current.error).toEqual({ code: 4, message: "Network error" });
   });
 
-  it('should handle ended state', () => {
+  it("should handle ended state", () => {
     const { result } = renderHook(() => useVideoState());
 
     act(() => {
-      result.current.dispatch({ type: 'LOAD', videoId: 'video-1' });
-      result.current.dispatch({ type: 'CAN_PLAY' });
-      result.current.dispatch({ type: 'PLAY' });
-      result.current.dispatch({ type: 'ENDED' });
+      result.current.dispatch({ type: "LOAD", videoId: "video-1" });
+      result.current.dispatch({ type: "CAN_PLAY" });
+      result.current.dispatch({ type: "PLAY" });
+      result.current.dispatch({ type: "ENDED" });
     });
 
-    expect(result.current.state).toBe('ended');
+    expect(result.current.state).toBe("ended");
   });
 });
 
@@ -3830,59 +4042,61 @@ describe('useVideoState', () => {
 
 ```typescript
 // streaming.e2e.test.ts
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page } from "@playwright/test";
 
-test.describe('Video Streaming E2E', () => {
+test.describe("Video Streaming E2E", () => {
   let page: Page;
 
   test.beforeEach(async ({ browser }) => {
     page = await browser.newPage();
-    await page.goto('/watch/test-video-1');
+    await page.goto("/watch/test-video-1");
   });
 
-  test('should load video player', async () => {
+  test("should load video player", async () => {
     const player = page.locator('[data-testid="video-player"]');
     await expect(player).toBeVisible();
 
-    const video = page.locator('video');
-    await expect(video).toHaveAttribute('src');
+    const video = page.locator("video");
+    await expect(video).toHaveAttribute("src");
   });
 
-  test('should play video on click', async () => {
-    const playButton = page.getByRole('button', { name: /play/i });
+  test("should play video on click", async () => {
+    const playButton = page.getByRole("button", { name: /play/i });
     await playButton.click();
 
-    const video = page.locator('video');
-    await expect(video).toHaveJSProperty('paused', false);
+    const video = page.locator("video");
+    await expect(video).toHaveJSProperty("paused", false);
   });
 
-  test('should display buffered progress', async () => {
-    const video = page.locator('video');
+  test("should display buffered progress", async () => {
+    const video = page.locator("video");
 
     // Wait for some buffering
     await page.waitForFunction(() => {
-      const v = document.querySelector('video');
+      const v = document.querySelector("video");
       return v && v.buffered.length > 0 && v.buffered.end(0) > 0;
     });
 
     const bufferBar = page.locator('[data-testid="buffer-progress"]');
-    await expect(bufferBar).toHaveCSS('width', /.+/);
+    await expect(bufferBar).toHaveCSS("width", /.+/);
   });
 
-  test('should switch quality levels', async () => {
+  test("should switch quality levels", async () => {
     // Open quality menu
-    const qualityButton = page.getByRole('button', { name: /quality/i });
+    const qualityButton = page.getByRole("button", { name: /quality/i });
     await qualityButton.click();
 
     // Select 720p
-    const quality720 = page.getByRole('menuitem', { name: /720p/i });
+    const quality720 = page.getByRole("menuitem", { name: /720p/i });
     await quality720.click();
 
     // Verify quality changed
-    await expect(page.locator('[data-testid="current-quality"]')).toHaveText('720p');
+    await expect(page.locator('[data-testid="current-quality"]')).toHaveText(
+      "720p"
+    );
   });
 
-  test('should handle network interruption gracefully', async () => {
+  test("should handle network interruption gracefully", async () => {
     // Start playing
     await page.click('[data-testid="play-button"]');
 
@@ -3890,7 +4104,9 @@ test.describe('Video Streaming E2E', () => {
     await page.context().setOffline(true);
 
     // Wait for buffering indicator
-    const bufferingIndicator = page.locator('[data-testid="buffering-spinner"]');
+    const bufferingIndicator = page.locator(
+      '[data-testid="buffering-spinner"]'
+    );
     await expect(bufferingIndicator).toBeVisible({ timeout: 10000 });
 
     // Restore network
@@ -3898,15 +4114,15 @@ test.describe('Video Streaming E2E', () => {
 
     // Should resume playing
     await expect(bufferingIndicator).not.toBeVisible({ timeout: 30000 });
-    const video = page.locator('video');
-    await expect(video).toHaveJSProperty('paused', false);
+    const video = page.locator("video");
+    await expect(video).toHaveJSProperty("paused", false);
   });
 
-  test('should persist playback position on refresh', async () => {
+  test("should persist playback position on refresh", async () => {
     // Play and seek to 30 seconds
     await page.click('[data-testid="play-button"]');
 
-    const video = page.locator('video');
+    const video = page.locator("video");
     await video.evaluate((v: HTMLVideoElement) => {
       v.currentTime = 30;
     });
@@ -3919,12 +4135,12 @@ test.describe('Video Streaming E2E', () => {
 
     // Verify resumed position
     await page.waitForFunction(() => {
-      const v = document.querySelector('video');
+      const v = document.querySelector("video");
       return v && v.currentTime >= 28; // Allow 2 second tolerance
     });
   });
 
-  test('should track watch progress', async () => {
+  test("should track watch progress", async () => {
     // Play video
     await page.click('[data-testid="play-button"]');
 
@@ -3932,45 +4148,45 @@ test.describe('Video Streaming E2E', () => {
     await page.waitForTimeout(5000);
 
     // Navigate away
-    await page.goto('/');
+    await page.goto("/");
 
     // Check that progress is saved
     const continueWatching = page.locator('[data-testid="continue-watching"]');
-    await expect(continueWatching).toContainText('Test Video');
+    await expect(continueWatching).toContainText("Test Video");
   });
 });
 
 // Caption/Subtitle Tests
-test.describe('Captions', () => {
-  test('should toggle captions', async ({ page }) => {
-    await page.goto('/watch/video-with-captions');
+test.describe("Captions", () => {
+  test("should toggle captions", async ({ page }) => {
+    await page.goto("/watch/video-with-captions");
 
-    const captionButton = page.getByRole('button', { name: /captions/i });
+    const captionButton = page.getByRole("button", { name: /captions/i });
     await captionButton.click();
 
     // Select English
-    await page.getByRole('menuitem', { name: /english/i }).click();
+    await page.getByRole("menuitem", { name: /english/i }).click();
 
     // Verify captions visible
-    const captionDisplay = page.locator('.caption-container');
+    const captionDisplay = page.locator(".caption-container");
     await expect(captionDisplay).toBeVisible();
   });
 
-  test('should sync captions with video time', async ({ page }) => {
-    await page.goto('/watch/video-with-captions');
+  test("should sync captions with video time", async ({ page }) => {
+    await page.goto("/watch/video-with-captions");
 
     // Enable captions
-    await page.getByRole('button', { name: /captions/i }).click();
-    await page.getByRole('menuitem', { name: /english/i }).click();
+    await page.getByRole("button", { name: /captions/i }).click();
+    await page.getByRole("menuitem", { name: /english/i }).click();
 
     // Seek to known caption time
-    const video = page.locator('video');
+    const video = page.locator("video");
     await video.evaluate((v: HTMLVideoElement) => {
       v.currentTime = 10;
     });
 
     // Verify caption content
-    const caption = page.locator('.caption-text');
+    const caption = page.locator(".caption-text");
     await expect(caption).toHaveText(/Expected caption text/);
   });
 });
@@ -3980,18 +4196,23 @@ test.describe('Captions', () => {
 
 ```typescript
 // testUtils.ts
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from "@testing-library/react";
 
 // Wait for video to be ready
 export const waitForVideoReady = async () => {
-  await waitFor(() => {
-    const video = document.querySelector('video');
-    expect(video?.readyState).toBeGreaterThanOrEqual(3);
-  }, { timeout: 10000 });
+  await waitFor(
+    () => {
+      const video = document.querySelector("video");
+      expect(video?.readyState).toBeGreaterThanOrEqual(3);
+    },
+    { timeout: 10000 }
+  );
 };
 
 // Mock video element with full API
-export const createMockVideoElement = (overrides?: Partial<HTMLVideoElement>) => {
+export const createMockVideoElement = (
+  overrides?: Partial<HTMLVideoElement>
+) => {
   const eventListeners: Record<string, Set<EventListener>> = {};
 
   return {
@@ -4023,7 +4244,7 @@ export const createMockVideoElement = (overrides?: Partial<HTMLVideoElement>) =>
     }),
     dispatchEvent: jest.fn((event: Event) => {
       const listeners = eventListeners[event.type];
-      listeners?.forEach(listener => listener(event));
+      listeners?.forEach((listener) => listener(event));
       return true;
     }),
     requestPictureInPicture: jest.fn().mockResolvedValue({}),
@@ -4038,7 +4259,7 @@ export const simulateStreamingEvents = async (
 ) => {
   for (const { event, data, delay = 0 } of sequence) {
     if (delay > 0) {
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
     const callback = hls.on.mock.calls.find(
       ([e]: [string]) => e === event
@@ -4050,7 +4271,7 @@ export const simulateStreamingEvents = async (
 // Wait for quality switch
 export const waitForQualitySwitch = async (targetHeight: number) => {
   await waitFor(() => {
-    const qualityIndicator = screen.getByTestId('current-quality');
+    const qualityIndicator = screen.getByTestId("current-quality");
     expect(qualityIndicator).toHaveTextContent(`${targetHeight}p`);
   });
 };
@@ -4109,19 +4330,19 @@ export const waitForQualitySwitch = async (targetHeight: number) => {
 // sw.ts - Service Worker for video streaming PWA
 declare const self: ServiceWorkerGlobalScope;
 
-const CACHE_NAME = 'video-streaming-v1';
-const VIDEO_CACHE = 'video-cache-v1';
+const CACHE_NAME = "video-streaming-v1";
+const VIDEO_CACHE = "video-cache-v1";
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/offline.html',
-  '/static/js/main.js',
-  '/static/css/main.css',
+  "/",
+  "/index.html",
+  "/manifest.json",
+  "/offline.html",
+  "/static/js/main.js",
+  "/static/css/main.css",
 ];
 
 // Install event - cache static assets
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
@@ -4131,7 +4352,7 @@ self.addEventListener('install', (event) => {
 });
 
 // Activate event - clean old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -4145,24 +4366,24 @@ self.addEventListener('activate', (event) => {
 });
 
 // Fetch event - serve from cache or network
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
   // Handle video segment requests
-  if (url.pathname.includes('/segments/') || url.pathname.endsWith('.ts')) {
+  if (url.pathname.includes("/segments/") || url.pathname.endsWith(".ts")) {
     event.respondWith(handleVideoSegment(request));
     return;
   }
 
   // Handle HLS manifest requests
-  if (url.pathname.endsWith('.m3u8')) {
+  if (url.pathname.endsWith(".m3u8")) {
     event.respondWith(handleManifest(request));
     return;
   }
 
   // Handle API requests
-  if (url.pathname.startsWith('/api/')) {
+  if (url.pathname.startsWith("/api/")) {
     event.respondWith(handleApiRequest(request));
     return;
   }
@@ -4172,7 +4393,7 @@ self.addEventListener('fetch', (event) => {
     fetch(request)
       .then((response) => {
         // Cache successful GET requests
-        if (request.method === 'GET' && response.ok) {
+        if (request.method === "GET" && response.ok) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, responseClone);
@@ -4182,7 +4403,7 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => {
         return caches.match(request).then((cached) => {
-          return cached || caches.match('/offline.html');
+          return cached || caches.match("/offline.html");
         });
       })
   );
@@ -4202,7 +4423,7 @@ async function handleVideoSegment(request: Request): Promise<Response> {
 
     if (response.ok) {
       // Only cache if content-length is reasonable (< 10MB per segment)
-      const contentLength = response.headers.get('content-length');
+      const contentLength = response.headers.get("content-length");
       if (contentLength && parseInt(contentLength) < 10 * 1024 * 1024) {
         cache.put(request, response.clone());
       }
@@ -4211,9 +4432,9 @@ async function handleVideoSegment(request: Request): Promise<Response> {
     return response;
   } catch (error) {
     // Return offline placeholder for video
-    return new Response('Video segment unavailable offline', {
+    return new Response("Video segment unavailable offline", {
       status: 503,
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { "Content-Type": "text/plain" },
     });
   }
 }
@@ -4250,27 +4471,27 @@ async function handleApiRequest(request: Request): Promise<Response> {
 }
 
 // Background sync for watch history
-self.addEventListener('sync', (event: SyncEvent) => {
-  if (event.tag === 'sync-watch-history') {
+self.addEventListener("sync", (event: SyncEvent) => {
+  if (event.tag === "sync-watch-history") {
     event.waitUntil(syncWatchHistory());
   }
 });
 
 async function syncWatchHistory(): Promise<void> {
   const db = await openIndexedDB();
-  const pendingUpdates = await db.getAll('pending-history');
+  const pendingUpdates = await db.getAll("pending-history");
 
   for (const update of pendingUpdates) {
     try {
-      await fetch('/api/v1/watch-history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/v1/watch-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(update),
       });
-      await db.delete('pending-history', update.id);
+      await db.delete("pending-history", update.id);
     } catch (error) {
       // Will retry on next sync
-      console.error('Failed to sync watch history:', error);
+      console.error("Failed to sync watch history:", error);
     }
   }
 }
@@ -4294,14 +4515,16 @@ interface DownloadedVideo {
 
 const DownloadManager = () => {
   const [downloads, setDownloads] = useState<DownloadedVideo[]>([]);
-  const [activeDownloads, setActiveDownloads] = useState<Map<string, number>>(new Map());
+  const [activeDownloads, setActiveDownloads] = useState<Map<string, number>>(
+    new Map()
+  );
   const [storageUsed, setStorageUsed] = useState(0);
   const [storageQuota, setStorageQuota] = useState(0);
 
   // Check storage quota
   useEffect(() => {
     const checkStorage = async () => {
-      if ('storage' in navigator && 'estimate' in navigator.storage) {
+      if ("storage" in navigator && "estimate" in navigator.storage) {
         const estimate = await navigator.storage.estimate();
         setStorageUsed(estimate.usage || 0);
         setStorageQuota(estimate.quota || 0);
@@ -4313,14 +4536,14 @@ const DownloadManager = () => {
   // Load downloaded videos from IndexedDB
   useEffect(() => {
     const loadDownloads = async () => {
-      const db = await openDB('video-downloads', 1, {
+      const db = await openDB("video-downloads", 1, {
         upgrade(db) {
-          db.createObjectStore('videos', { keyPath: 'id' });
-          db.createObjectStore('segments');
+          db.createObjectStore("videos", { keyPath: "id" });
+          db.createObjectStore("segments");
         },
       });
 
-      const videos = await db.getAll('videos');
+      const videos = await db.getAll("videos");
       setDownloads(videos);
     };
     loadDownloads();
@@ -4328,10 +4551,12 @@ const DownloadManager = () => {
 
   const downloadVideo = async (videoId: string, quality: string) => {
     // Get video manifest and metadata
-    const response = await fetch(`/api/v1/videos/${videoId}/download?quality=${quality}`);
+    const response = await fetch(
+      `/api/v1/videos/${videoId}/download?quality=${quality}`
+    );
     const { manifest, metadata, segments } = await response.json();
 
-    const db = await openDB('video-downloads', 1);
+    const db = await openDB("video-downloads", 1);
 
     // Download segments with progress tracking
     let downloadedCount = 0;
@@ -4342,7 +4567,7 @@ const DownloadManager = () => {
       const blob = await segmentResponse.blob();
 
       // Store segment in IndexedDB
-      await db.put('segments', blob, `${videoId}:${segmentUrl}`);
+      await db.put("segments", blob, `${videoId}:${segmentUrl}`);
 
       downloadedCount++;
       setActiveDownloads((prev) => {
@@ -4365,7 +4590,7 @@ const DownloadManager = () => {
       segments,
     };
 
-    await db.put('videos', downloadedVideo);
+    await db.put("videos", downloadedVideo);
     setDownloads((prev) => [...prev, downloadedVideo]);
     setActiveDownloads((prev) => {
       const updated = new Map(prev);
@@ -4375,28 +4600,28 @@ const DownloadManager = () => {
   };
 
   const deleteDownload = async (videoId: string) => {
-    const db = await openDB('video-downloads', 1);
+    const db = await openDB("video-downloads", 1);
 
     // Get video to find segments
-    const video = await db.get('videos', videoId);
+    const video = await db.get("videos", videoId);
     if (video) {
       // Delete all segments
       for (const segmentUrl of video.segments) {
-        await db.delete('segments', `${videoId}:${segmentUrl}`);
+        await db.delete("segments", `${videoId}:${segmentUrl}`);
       }
     }
 
     // Delete video metadata
-    await db.delete('videos', videoId);
+    await db.delete("videos", videoId);
     setDownloads((prev) => prev.filter((v) => v.id !== videoId));
   };
 
   const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   return (
@@ -4445,7 +4670,9 @@ const DownloadManager = () => {
             </div>
             <div className="video-actions">
               <button
-                onClick={() => window.location.href = `/watch/${video.id}?offline=true`}
+                onClick={() =>
+                  (window.location.href = `/watch/${video.id}?offline=true`)
+                }
                 aria-label={`Play ${video.title}`}
               >
                 <PlayIcon />
@@ -4479,17 +4706,17 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
   useEffect(() => {
     const loadOfflineVideo = async () => {
       try {
-        const db = await openDB('video-downloads', 1);
-        const video = await db.get('videos', videoId);
+        const db = await openDB("video-downloads", 1);
+        const video = await db.get("videos", videoId);
 
         if (!video) {
-          setError('Video not found offline');
+          setError("Video not found offline");
           return;
         }
 
         // Check if video has expired
         if (Date.now() > video.expiresAt) {
-          setError('Download has expired. Please re-download.');
+          setError("Download has expired. Please re-download.");
           return;
         }
 
@@ -4499,13 +4726,18 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
 
         videoRef.current!.src = URL.createObjectURL(mediaSource);
 
-        mediaSource.addEventListener('sourceopen', async () => {
-          const sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.640028"');
+        mediaSource.addEventListener("sourceopen", async () => {
+          const sourceBuffer = mediaSource.addSourceBuffer(
+            'video/mp4; codecs="avc1.640028"'
+          );
           sourceBufferRef.current = sourceBuffer;
 
           // Load segments from IndexedDB
           for (const segmentUrl of video.segments) {
-            const segmentData = await db.get('segments', `${videoId}:${segmentUrl}`);
+            const segmentData = await db.get(
+              "segments",
+              `${videoId}:${segmentUrl}`
+            );
 
             if (segmentData) {
               await appendToBuffer(sourceBuffer, segmentData);
@@ -4516,7 +4748,7 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
           setIsLoading(false);
         });
       } catch (err) {
-        setError('Failed to load offline video');
+        setError("Failed to load offline video");
         console.error(err);
       }
     };
@@ -4525,7 +4757,7 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
 
     return () => {
       if (mediaSourceRef.current) {
-        URL.revokeObjectURL(videoRef.current?.src || '');
+        URL.revokeObjectURL(videoRef.current?.src || "");
       }
     };
   }, [videoId]);
@@ -4536,15 +4768,21 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
   ): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (sourceBuffer.updating) {
-        sourceBuffer.addEventListener('updateend', () => {
-          appendToBuffer(sourceBuffer, data).then(resolve).catch(reject);
-        }, { once: true });
+        sourceBuffer.addEventListener(
+          "updateend",
+          () => {
+            appendToBuffer(sourceBuffer, data).then(resolve).catch(reject);
+          },
+          { once: true }
+        );
         return;
       }
 
       try {
         sourceBuffer.appendBuffer(data);
-        sourceBuffer.addEventListener('updateend', () => resolve(), { once: true });
+        sourceBuffer.addEventListener("updateend", () => resolve(), {
+          once: true,
+        });
       } catch (err) {
         reject(err);
       }
@@ -4556,7 +4794,7 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
       <div className="offline-error" role="alert">
         <OfflineIcon />
         <p>{error}</p>
-        <button onClick={() => window.location.href = `/watch/${videoId}`}>
+        <button onClick={() => (window.location.href = `/watch/${videoId}`)}>
           Try Online
         </button>
       </div>
@@ -4571,12 +4809,7 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
           <p>Loading offline video...</p>
         </div>
       )}
-      <video
-        ref={videoRef}
-        controls
-        playsInline
-        className="video-element"
-      />
+      <video ref={videoRef} controls playsInline className="video-element" />
       <div className="offline-badge">
         <DownloadIcon /> Playing offline
       </div>
@@ -4590,12 +4823,13 @@ const OfflineVideoPlayer = ({ videoId }: { videoId: string }) => {
 ```typescript
 // useInstallPrompt.ts
 export const useInstallPrompt = () => {
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
     // Check if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    if (window.matchMedia("(display-mode: standalone)").matches) {
       setIsInstalled(true);
       return;
     }
@@ -4610,12 +4844,12 @@ export const useInstallPrompt = () => {
       setInstallPrompt(null);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
 
@@ -4625,7 +4859,7 @@ export const useInstallPrompt = () => {
     installPrompt.prompt();
     const result = await installPrompt.userChoice;
 
-    if (result.outcome === 'accepted') {
+    if (result.outcome === "accepted") {
       setInstallPrompt(null);
       return true;
     }
@@ -4653,10 +4887,7 @@ const InstallBanner = () => {
         </div>
       </div>
       <div className="banner-actions">
-        <button
-          onClick={promptInstall}
-          className="install-button"
-        >
+        <button onClick={promptInstall} className="install-button">
           Install
         </button>
         <button
@@ -4678,19 +4909,19 @@ const InstallBanner = () => {
 // useOnlineStatus.ts
 export const useOnlineStatus = () => {
   const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -4716,7 +4947,7 @@ const OfflineIndicator = () => {
 
   return (
     <div
-      className={`offline-indicator ${isOnline ? 'reconnected' : 'offline'}`}
+      className={`offline-indicator ${isOnline ? "reconnected" : "offline"}`}
       role="status"
       aria-live="polite"
     >
@@ -4850,7 +5081,7 @@ const VideoPlayer = ({
     buffered: 0,
     volume: 1,
     playbackRate: 1,
-    quality: 'auto',
+    quality: "auto",
     isLoading: true,
     isControlsVisible: true,
   });
@@ -4869,7 +5100,8 @@ const VideoPlayer = ({
       },
       canplay: () => setState((prev) => ({ ...prev, isLoading: false })),
       waiting: () => setState((prev) => ({ ...prev, isLoading: true })),
-      playing: () => setState((prev) => ({ ...prev, isPlaying: true, isLoading: false })),
+      playing: () =>
+        setState((prev) => ({ ...prev, isPlaying: true, isLoading: false })),
       pause: () => setState((prev) => ({ ...prev, isPlaying: false })),
       ended: () => {
         setState((prev) => ({ ...prev, isPlaying: false }));
@@ -4913,71 +5145,71 @@ const VideoPlayer = ({
   // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
+      if (document.activeElement?.tagName === "INPUT") return;
 
       const video = videoRef.current;
       if (!video) return;
 
       switch (e.key.toLowerCase()) {
-        case ' ':
-        case 'k':
+        case " ":
+        case "k":
           e.preventDefault();
           togglePlay();
           break;
-        case 'f':
+        case "f":
           e.preventDefault();
           toggleFullscreen();
           break;
-        case 'm':
+        case "m":
           e.preventDefault();
           toggleMute();
           break;
-        case 'arrowleft':
-        case 'j':
+        case "arrowleft":
+        case "j":
           e.preventDefault();
           seek(video.currentTime - (e.shiftKey ? 5 : 10));
           break;
-        case 'arrowright':
-        case 'l':
+        case "arrowright":
+        case "l":
           e.preventDefault();
           seek(video.currentTime + (e.shiftKey ? 5 : 10));
           break;
-        case 'arrowup':
+        case "arrowup":
           e.preventDefault();
           setVolume(Math.min(1, video.volume + 0.1));
           break;
-        case 'arrowdown':
+        case "arrowdown":
           e.preventDefault();
           setVolume(Math.max(0, video.volume - 0.1));
           break;
-        case 'home':
-        case '0':
+        case "home":
+        case "0":
           e.preventDefault();
           seek(0);
           break;
-        case 'end':
+        case "end":
           e.preventDefault();
           seek(video.duration);
           break;
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
-        case '9':
+        case "1":
+        case "2":
+        case "3":
+        case "4":
+        case "5":
+        case "6":
+        case "7":
+        case "8":
+        case "9":
           e.preventDefault();
           seek((parseInt(e.key) / 10) * video.duration);
           break;
-        case ',':
+        case ",":
           if (e.shiftKey) {
             e.preventDefault();
             setPlaybackRate(Math.max(0.25, state.playbackRate - 0.25));
           }
           break;
-        case '.':
+        case ".":
           if (e.shiftKey) {
             e.preventDefault();
             setPlaybackRate(Math.min(2, state.playbackRate + 0.25));
@@ -4986,8 +5218,8 @@ const VideoPlayer = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [state.playbackRate]);
 
   // Auto-hide controls
@@ -5005,15 +5237,15 @@ const VideoPlayer = ({
     };
 
     const container = containerRef.current;
-    container?.addEventListener('mousemove', showControls);
-    container?.addEventListener('mouseleave', () => {
+    container?.addEventListener("mousemove", showControls);
+    container?.addEventListener("mouseleave", () => {
       if (state.isPlaying) {
         setState((prev) => ({ ...prev, isControlsVisible: false }));
       }
     });
 
     return () => {
-      container?.removeEventListener('mousemove', showControls);
+      container?.removeEventListener("mousemove", showControls);
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
       }
@@ -5086,14 +5318,14 @@ const VideoPlayer = ({
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     return h > 0
-      ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-      : `${m}:${s.toString().padStart(2, '0')}`;
+      ? `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+      : `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   return (
     <div
       ref={containerRef}
-      className={`video-player ${state.isFullscreen ? 'fullscreen' : ''}`}
+      className={`video-player ${state.isFullscreen ? "fullscreen" : ""}`}
       role="application"
       aria-label="Video player"
     >
@@ -5115,7 +5347,9 @@ const VideoPlayer = ({
 
       {/* Controls overlay */}
       <div
-        className={`controls-overlay ${state.isControlsVisible ? 'visible' : ''}`}
+        className={`controls-overlay ${
+          state.isControlsVisible ? "visible" : ""
+        }`}
         aria-hidden={!state.isControlsVisible}
       >
         {/* Progress bar */}
@@ -5138,21 +5372,37 @@ const VideoPlayer = ({
         {/* Controls bar */}
         <div className="controls-bar">
           <div className="left-controls">
-            <button onClick={togglePlay} aria-label={state.isPlaying ? 'Pause' : 'Play'}>
+            <button
+              onClick={togglePlay}
+              aria-label={state.isPlaying ? "Pause" : "Play"}
+            >
               {state.isPlaying ? <PauseIcon /> : <PlayIcon />}
             </button>
 
-            <button onClick={() => seek(state.currentTime - 10)} aria-label="Rewind 10 seconds">
+            <button
+              onClick={() => seek(state.currentTime - 10)}
+              aria-label="Rewind 10 seconds"
+            >
               <RewindIcon />
             </button>
 
-            <button onClick={() => seek(state.currentTime + 10)} aria-label="Forward 10 seconds">
+            <button
+              onClick={() => seek(state.currentTime + 10)}
+              aria-label="Forward 10 seconds"
+            >
               <ForwardIcon />
             </button>
 
             <div className="volume-control">
-              <button onClick={toggleMute} aria-label={state.isMuted ? 'Unmute' : 'Mute'}>
-                {state.isMuted || state.volume === 0 ? <MutedIcon /> : <VolumeIcon />}
+              <button
+                onClick={toggleMute}
+                aria-label={state.isMuted ? "Unmute" : "Mute"}
+              >
+                {state.isMuted || state.volume === 0 ? (
+                  <MutedIcon />
+                ) : (
+                  <VolumeIcon />
+                )}
               </button>
               <input
                 type="range"
@@ -5181,7 +5431,10 @@ const VideoPlayer = ({
               <PiPIcon />
             </button>
 
-            <button onClick={toggleFullscreen} aria-label={state.isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+            <button
+              onClick={toggleFullscreen}
+              aria-label={state.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            >
               {state.isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
             </button>
           </div>
@@ -5190,7 +5443,7 @@ const VideoPlayer = ({
 
       {/* Screen reader announcements */}
       <div className="sr-only" role="status" aria-live="polite">
-        {state.isPlaying ? 'Playing' : 'Paused'}
+        {state.isPlaying ? "Playing" : "Paused"}
       </div>
     </div>
   );
@@ -5202,9 +5455,9 @@ const VideoPlayer = ({
 ```typescript
 // BufferManager.ts - Intelligent buffer management
 interface BufferConfig {
-  minBuffer: number;      // Minimum buffer before playback (seconds)
-  maxBuffer: number;      // Maximum buffer to maintain (seconds)
-  rebufferGoal: number;   // Buffer goal after rebuffer event
+  minBuffer: number; // Minimum buffer before playback (seconds)
+  maxBuffer: number; // Maximum buffer to maintain (seconds)
+  rebufferGoal: number; // Buffer goal after rebuffer event
   lowLatencyMode: boolean;
 }
 
@@ -5228,9 +5481,9 @@ class BufferManager {
   }
 
   private initNetworkMonitoring(): void {
-    if ('connection' in navigator) {
+    if ("connection" in navigator) {
       this.networkInfo = (navigator as any).connection;
-      this.networkInfo?.addEventListener('change', () => {
+      this.networkInfo?.addEventListener("change", () => {
         this.adjustBufferForNetwork();
       });
     }
@@ -5247,13 +5500,13 @@ class BufferManager {
     if (saveData) {
       // Data saver mode - minimize buffering
       bufferConfig = { minBuffer: 5, maxBuffer: 15 };
-    } else if (effectiveType === '4g' && downlink > 10) {
+    } else if (effectiveType === "4g" && downlink > 10) {
       // Fast connection - larger buffer
       bufferConfig = { minBuffer: 15, maxBuffer: 60 };
-    } else if (effectiveType === '3g') {
+    } else if (effectiveType === "3g") {
       // Moderate connection
       bufferConfig = { minBuffer: 10, maxBuffer: 30 };
-    } else if (effectiveType === '2g' || effectiveType === 'slow-2g') {
+    } else if (effectiveType === "2g" || effectiveType === "slow-2g") {
       // Slow connection - aggressive buffering
       bufferConfig = { minBuffer: 20, maxBuffer: 45 };
     }
@@ -5286,22 +5539,22 @@ class BufferManager {
 
     // Listen for buffer events
     hls.on(Hls.Events.BUFFER_APPENDING, (_, data) => {
-      this.logBufferState('appending', data);
+      this.logBufferState("appending", data);
     });
 
     hls.on(Hls.Events.BUFFER_EOS, () => {
-      this.logBufferState('end-of-stream');
+      this.logBufferState("end-of-stream");
     });
 
     hls.on(Hls.Events.ERROR, (_, data) => {
-      if (data.details === 'bufferStalledError') {
+      if (data.details === "bufferStalledError") {
         this.handleBufferStall();
       }
     });
   }
 
   private handleBufferStall(): void {
-    console.warn('Buffer stalled, adjusting strategy');
+    console.warn("Buffer stalled, adjusting strategy");
 
     // Temporarily lower quality to refill buffer
     if (this.hls) {
@@ -5329,7 +5582,10 @@ class BufferManager {
     let bufferedAhead = 0;
 
     for (let i = 0; i < video.buffered.length; i++) {
-      if (video.buffered.start(i) <= currentTime && video.buffered.end(i) > currentTime) {
+      if (
+        video.buffered.start(i) <= currentTime &&
+        video.buffered.end(i) > currentTime
+      ) {
         bufferedAhead = video.buffered.end(i) - currentTime;
         break;
       }
@@ -5343,7 +5599,7 @@ class BufferManager {
   }
 
   private logBufferState(event: string, data?: any): void {
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === "development") {
       const health = this.getBufferHealth();
       console.log(`[Buffer] ${event}`, {
         health,
@@ -5374,27 +5630,39 @@ const TrickPlay = ({
   const thumbnailCache = useRef<Map<number, string>>(new Map());
 
   // Generate thumbnail sprite sheet URL
-  const getThumbnailUrl = useCallback((time: number): string => {
-    // Thumbnails are typically generated every 10 seconds
-    const interval = 10;
-    const index = Math.floor(time / interval);
-    const row = Math.floor(index / 10);
-    const col = index % 10;
+  const getThumbnailUrl = useCallback(
+    (time: number): string => {
+      // Thumbnails are typically generated every 10 seconds
+      const interval = 10;
+      const index = Math.floor(time / interval);
+      const row = Math.floor(index / 10);
+      const col = index % 10;
 
-    return `/api/thumbnails/${video.dataset.videoId}?t=${index * interval}&row=${row}&col=${col}`;
-  }, [video.dataset.videoId]);
+      return `/api/thumbnails/${video.dataset.videoId}?t=${
+        index * interval
+      }&row=${row}&col=${col}`;
+    },
+    [video.dataset.videoId]
+  );
 
   // Preload nearby thumbnails
-  const preloadThumbnails = useCallback((centerTime: number) => {
-    const preloadRange = 30; // seconds
-    for (let t = centerTime - preloadRange; t <= centerTime + preloadRange; t += 10) {
-      if (t >= 0 && t <= video.duration && !thumbnailCache.current.has(t)) {
-        const img = new Image();
-        img.src = getThumbnailUrl(t);
-        thumbnailCache.current.set(t, img.src);
+  const preloadThumbnails = useCallback(
+    (centerTime: number) => {
+      const preloadRange = 30; // seconds
+      for (
+        let t = centerTime - preloadRange;
+        t <= centerTime + preloadRange;
+        t += 10
+      ) {
+        if (t >= 0 && t <= video.duration && !thumbnailCache.current.has(t)) {
+          const img = new Image();
+          img.src = getThumbnailUrl(t);
+          thumbnailCache.current.set(t, img.src);
+        }
       }
-    }
-  }, [video.duration, getThumbnailUrl]);
+    },
+    [video.duration, getThumbnailUrl]
+  );
 
   const handleScrubStart = useCallback(() => {
     setIsScrubbing(true);
@@ -5402,18 +5670,24 @@ const TrickPlay = ({
     video.pause();
   }, [video, onSeekStart]);
 
-  const handleScrub = useCallback((time: number) => {
-    setThumbnailTime(time);
-    setThumbnailUrl(getThumbnailUrl(time));
-    preloadThumbnails(time);
-  }, [getThumbnailUrl, preloadThumbnails]);
+  const handleScrub = useCallback(
+    (time: number) => {
+      setThumbnailTime(time);
+      setThumbnailUrl(getThumbnailUrl(time));
+      preloadThumbnails(time);
+    },
+    [getThumbnailUrl, preloadThumbnails]
+  );
 
-  const handleScrubEnd = useCallback((time: number) => {
-    setIsScrubbing(false);
-    video.currentTime = time;
-    video.play();
-    onSeekEnd?.();
-  }, [video, onSeekEnd]);
+  const handleScrubEnd = useCallback(
+    (time: number) => {
+      setIsScrubbing(false);
+      video.currentTime = time;
+      video.play();
+      onSeekEnd?.();
+    },
+    [video, onSeekEnd]
+  );
 
   return (
     <div className="trick-play">
@@ -5424,7 +5698,10 @@ const TrickPlay = ({
             left: `${(thumbnailTime / video.duration) * 100}%`,
           }}
         >
-          <img src={thumbnailUrl} alt={`Preview at ${formatTime(thumbnailTime)}`} />
+          <img
+            src={thumbnailUrl}
+            alt={`Preview at ${formatTime(thumbnailTime)}`}
+          />
           <span className="preview-time">{formatTime(thumbnailTime)}</span>
         </div>
       )}
@@ -5473,7 +5750,7 @@ const PlaybackRateMenu = ({
                 }}
                 aria-current={rate === currentRate}
               >
-                {rate === 1 ? 'Normal' : `${rate}x`}
+                {rate === 1 ? "Normal" : `${rate}x`}
               </button>
             </li>
           ))}
@@ -5488,10 +5765,18 @@ const PlaybackRateMenu = ({
 
 ```typescript
 // useVideoPlayer.ts - Comprehensive video player hook
-import { useReducer, useCallback, useRef, useEffect } from 'react';
+import { useReducer, useCallback, useRef, useEffect } from "react";
 
 type VideoState = {
-  status: 'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'buffering' | 'ended' | 'error';
+  status:
+    | "idle"
+    | "loading"
+    | "ready"
+    | "playing"
+    | "paused"
+    | "buffering"
+    | "ended"
+    | "error";
   currentTime: number;
   duration: number;
   buffered: TimeRanges | null;
@@ -5508,26 +5793,26 @@ type VideoState = {
 };
 
 type VideoAction =
-  | { type: 'LOAD' }
-  | { type: 'LOADED'; duration: number }
-  | { type: 'PLAY' }
-  | { type: 'PAUSE' }
-  | { type: 'BUFFERING' }
-  | { type: 'TIME_UPDATE'; currentTime: number }
-  | { type: 'BUFFER_UPDATE'; buffered: TimeRanges }
-  | { type: 'VOLUME_CHANGE'; volume: number; muted: boolean }
-  | { type: 'RATE_CHANGE'; playbackRate: number }
-  | { type: 'QUALITY_CHANGE'; quality: number }
-  | { type: 'QUALITIES_AVAILABLE'; qualities: QualityLevel[] }
-  | { type: 'CAPTION_CHANGE'; captions: TextTrack | null }
-  | { type: 'CAPTIONS_AVAILABLE'; captions: TextTrack[] }
-  | { type: 'FULLSCREEN_CHANGE'; isFullscreen: boolean }
-  | { type: 'PIP_CHANGE'; isPictureInPicture: boolean }
-  | { type: 'ENDED' }
-  | { type: 'ERROR'; error: MediaError };
+  | { type: "LOAD" }
+  | { type: "LOADED"; duration: number }
+  | { type: "PLAY" }
+  | { type: "PAUSE" }
+  | { type: "BUFFERING" }
+  | { type: "TIME_UPDATE"; currentTime: number }
+  | { type: "BUFFER_UPDATE"; buffered: TimeRanges }
+  | { type: "VOLUME_CHANGE"; volume: number; muted: boolean }
+  | { type: "RATE_CHANGE"; playbackRate: number }
+  | { type: "QUALITY_CHANGE"; quality: number }
+  | { type: "QUALITIES_AVAILABLE"; qualities: QualityLevel[] }
+  | { type: "CAPTION_CHANGE"; captions: TextTrack | null }
+  | { type: "CAPTIONS_AVAILABLE"; captions: TextTrack[] }
+  | { type: "FULLSCREEN_CHANGE"; isFullscreen: boolean }
+  | { type: "PIP_CHANGE"; isPictureInPicture: boolean }
+  | { type: "ENDED" }
+  | { type: "ERROR"; error: MediaError };
 
 const initialState: VideoState = {
-  status: 'idle',
+  status: "idle",
   currentTime: 0,
   duration: 0,
   buffered: null,
@@ -5545,40 +5830,40 @@ const initialState: VideoState = {
 
 function videoReducer(state: VideoState, action: VideoAction): VideoState {
   switch (action.type) {
-    case 'LOAD':
-      return { ...state, status: 'loading', error: null };
-    case 'LOADED':
-      return { ...state, status: 'ready', duration: action.duration };
-    case 'PLAY':
-      return { ...state, status: 'playing' };
-    case 'PAUSE':
-      return { ...state, status: 'paused' };
-    case 'BUFFERING':
-      return { ...state, status: 'buffering' };
-    case 'TIME_UPDATE':
+    case "LOAD":
+      return { ...state, status: "loading", error: null };
+    case "LOADED":
+      return { ...state, status: "ready", duration: action.duration };
+    case "PLAY":
+      return { ...state, status: "playing" };
+    case "PAUSE":
+      return { ...state, status: "paused" };
+    case "BUFFERING":
+      return { ...state, status: "buffering" };
+    case "TIME_UPDATE":
       return { ...state, currentTime: action.currentTime };
-    case 'BUFFER_UPDATE':
+    case "BUFFER_UPDATE":
       return { ...state, buffered: action.buffered };
-    case 'VOLUME_CHANGE':
+    case "VOLUME_CHANGE":
       return { ...state, volume: action.volume, muted: action.muted };
-    case 'RATE_CHANGE':
+    case "RATE_CHANGE":
       return { ...state, playbackRate: action.playbackRate };
-    case 'QUALITY_CHANGE':
+    case "QUALITY_CHANGE":
       return { ...state, quality: action.quality };
-    case 'QUALITIES_AVAILABLE':
+    case "QUALITIES_AVAILABLE":
       return { ...state, availableQualities: action.qualities };
-    case 'CAPTION_CHANGE':
+    case "CAPTION_CHANGE":
       return { ...state, captions: action.captions };
-    case 'CAPTIONS_AVAILABLE':
+    case "CAPTIONS_AVAILABLE":
       return { ...state, availableCaptions: action.captions };
-    case 'FULLSCREEN_CHANGE':
+    case "FULLSCREEN_CHANGE":
       return { ...state, isFullscreen: action.isFullscreen };
-    case 'PIP_CHANGE':
+    case "PIP_CHANGE":
       return { ...state, isPictureInPicture: action.isPictureInPicture };
-    case 'ENDED':
-      return { ...state, status: 'ended' };
-    case 'ERROR':
-      return { ...state, status: 'error', error: action.error };
+    case "ENDED":
+      return { ...state, status: "ended" };
+    case "ERROR":
+      return { ...state, status: "error", error: action.error };
     default:
       return state;
   }
@@ -5593,18 +5878,28 @@ export function useVideoPlayer(videoRef: RefObject<HTMLVideoElement>) {
     if (!video) return;
 
     const events: Record<string, () => void> = {
-      loadstart: () => dispatch({ type: 'LOAD' }),
-      loadedmetadata: () => dispatch({ type: 'LOADED', duration: video.duration }),
-      play: () => dispatch({ type: 'PLAY' }),
-      pause: () => dispatch({ type: 'PAUSE' }),
-      waiting: () => dispatch({ type: 'BUFFERING' }),
-      playing: () => dispatch({ type: 'PLAY' }),
-      timeupdate: () => dispatch({ type: 'TIME_UPDATE', currentTime: video.currentTime }),
-      progress: () => dispatch({ type: 'BUFFER_UPDATE', buffered: video.buffered }),
-      volumechange: () => dispatch({ type: 'VOLUME_CHANGE', volume: video.volume, muted: video.muted }),
-      ratechange: () => dispatch({ type: 'RATE_CHANGE', playbackRate: video.playbackRate }),
-      ended: () => dispatch({ type: 'ENDED' }),
-      error: () => video.error && dispatch({ type: 'ERROR', error: video.error }),
+      loadstart: () => dispatch({ type: "LOAD" }),
+      loadedmetadata: () =>
+        dispatch({ type: "LOADED", duration: video.duration }),
+      play: () => dispatch({ type: "PLAY" }),
+      pause: () => dispatch({ type: "PAUSE" }),
+      waiting: () => dispatch({ type: "BUFFERING" }),
+      playing: () => dispatch({ type: "PLAY" }),
+      timeupdate: () =>
+        dispatch({ type: "TIME_UPDATE", currentTime: video.currentTime }),
+      progress: () =>
+        dispatch({ type: "BUFFER_UPDATE", buffered: video.buffered }),
+      volumechange: () =>
+        dispatch({
+          type: "VOLUME_CHANGE",
+          volume: video.volume,
+          muted: video.muted,
+        }),
+      ratechange: () =>
+        dispatch({ type: "RATE_CHANGE", playbackRate: video.playbackRate }),
+      ended: () => dispatch({ type: "ENDED" }),
+      error: () =>
+        video.error && dispatch({ type: "ERROR", error: video.error }),
     };
 
     Object.entries(events).forEach(([event, handler]) => {
@@ -5622,18 +5917,30 @@ export function useVideoPlayer(videoRef: RefObject<HTMLVideoElement>) {
   const actions = {
     play: useCallback(() => videoRef.current?.play(), [videoRef]),
     pause: useCallback(() => videoRef.current?.pause(), [videoRef]),
-    seek: useCallback((time: number) => {
-      if (videoRef.current) videoRef.current.currentTime = time;
-    }, [videoRef]),
-    setVolume: useCallback((volume: number) => {
-      if (videoRef.current) videoRef.current.volume = volume;
-    }, [videoRef]),
-    setMuted: useCallback((muted: boolean) => {
-      if (videoRef.current) videoRef.current.muted = muted;
-    }, [videoRef]),
-    setPlaybackRate: useCallback((rate: number) => {
-      if (videoRef.current) videoRef.current.playbackRate = rate;
-    }, [videoRef]),
+    seek: useCallback(
+      (time: number) => {
+        if (videoRef.current) videoRef.current.currentTime = time;
+      },
+      [videoRef]
+    ),
+    setVolume: useCallback(
+      (volume: number) => {
+        if (videoRef.current) videoRef.current.volume = volume;
+      },
+      [videoRef]
+    ),
+    setMuted: useCallback(
+      (muted: boolean) => {
+        if (videoRef.current) videoRef.current.muted = muted;
+      },
+      [videoRef]
+    ),
+    setPlaybackRate: useCallback(
+      (rate: number) => {
+        if (videoRef.current) videoRef.current.playbackRate = rate;
+      },
+      [videoRef]
+    ),
   };
 
   return { state, actions, dispatch };
@@ -5708,29 +6015,29 @@ export function useVideoPlayer(videoRef: RefObject<HTMLVideoElement>) {
 
 ```typescript
 // i18n/config.ts - i18n configuration
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
-import Backend from 'i18next-http-backend';
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import LanguageDetector from "i18next-browser-languagedetector";
+import Backend from "i18next-http-backend";
 
 // Supported locales with metadata
 export const SUPPORTED_LOCALES = {
-  'en-US': { name: 'English (US)', dir: 'ltr', dateFormat: 'MM/DD/YYYY' },
-  'en-GB': { name: 'English (UK)', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'es': { name: 'Español', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'pt-BR': { name: 'Português (Brasil)', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'fr': { name: 'Français', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'de': { name: 'Deutsch', dir: 'ltr', dateFormat: 'DD.MM.YYYY' },
-  'ja': { name: '日本語', dir: 'ltr', dateFormat: 'YYYY/MM/DD' },
-  'ko': { name: '한국어', dir: 'ltr', dateFormat: 'YYYY.MM.DD' },
-  'zh-CN': { name: '简体中文', dir: 'ltr', dateFormat: 'YYYY-MM-DD' },
-  'zh-TW': { name: '繁體中文', dir: 'ltr', dateFormat: 'YYYY/MM/DD' },
-  'ar': { name: 'العربية', dir: 'rtl', dateFormat: 'DD/MM/YYYY' },
-  'he': { name: 'עברית', dir: 'rtl', dateFormat: 'DD/MM/YYYY' },
-  'hi': { name: 'हिन्दी', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'th': { name: 'ไทย', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'vi': { name: 'Tiếng Việt', dir: 'ltr', dateFormat: 'DD/MM/YYYY' },
-  'ru': { name: 'Русский', dir: 'ltr', dateFormat: 'DD.MM.YYYY' },
+  "en-US": { name: "English (US)", dir: "ltr", dateFormat: "MM/DD/YYYY" },
+  "en-GB": { name: "English (UK)", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  es: { name: "Español", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  "pt-BR": { name: "Português (Brasil)", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  fr: { name: "Français", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  de: { name: "Deutsch", dir: "ltr", dateFormat: "DD.MM.YYYY" },
+  ja: { name: "日本語", dir: "ltr", dateFormat: "YYYY/MM/DD" },
+  ko: { name: "한국어", dir: "ltr", dateFormat: "YYYY.MM.DD" },
+  "zh-CN": { name: "简体中文", dir: "ltr", dateFormat: "YYYY-MM-DD" },
+  "zh-TW": { name: "繁體中文", dir: "ltr", dateFormat: "YYYY/MM/DD" },
+  ar: { name: "العربية", dir: "rtl", dateFormat: "DD/MM/YYYY" },
+  he: { name: "עברית", dir: "rtl", dateFormat: "DD/MM/YYYY" },
+  hi: { name: "हिन्दी", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  th: { name: "ไทย", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  vi: { name: "Tiếng Việt", dir: "ltr", dateFormat: "DD/MM/YYYY" },
+  ru: { name: "Русский", dir: "ltr", dateFormat: "DD.MM.YYYY" },
 } as const;
 
 export type SupportedLocale = keyof typeof SUPPORTED_LOCALES;
@@ -5740,42 +6047,42 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    fallbackLng: 'en-US',
+    fallbackLng: "en-US",
     supportedLngs: Object.keys(SUPPORTED_LOCALES),
-    debug: process.env.NODE_ENV === 'development',
+    debug: process.env.NODE_ENV === "development",
 
     backend: {
-      loadPath: '/locales/{{lng}}/{{ns}}.json',
+      loadPath: "/locales/{{lng}}/{{ns}}.json",
     },
 
     detection: {
-      order: ['querystring', 'cookie', 'localStorage', 'navigator'],
-      caches: ['localStorage', 'cookie'],
+      order: ["querystring", "cookie", "localStorage", "navigator"],
+      caches: ["localStorage", "cookie"],
       cookieMinutes: 43200, // 30 days
     },
 
     interpolation: {
       escapeValue: false, // React already escapes
       format: (value, format, lng) => {
-        if (format === 'number') {
+        if (format === "number") {
           return new Intl.NumberFormat(lng).format(value);
         }
-        if (format === 'currency') {
+        if (format === "currency") {
           return new Intl.NumberFormat(lng, {
-            style: 'currency',
-            currency: 'USD',
+            style: "currency",
+            currency: "USD",
           }).format(value);
         }
         return value;
       },
     },
 
-    ns: ['common', 'player', 'search', 'upload', 'settings'],
-    defaultNS: 'common',
+    ns: ["common", "player", "search", "upload", "settings"],
+    defaultNS: "common",
 
     react: {
       useSuspense: true,
-      bindI18n: 'languageChanged loaded',
+      bindI18n: "languageChanged loaded",
     },
   });
 
@@ -5977,7 +6284,7 @@ export const DirectionProvider = ({ children }: { children: React.ReactNode }) =
 
 ```typescript
 // utils/formatters.ts
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from "react-i18next";
 
 // View count formatting (1.2M, 5.4K, etc.)
 export const useViewCountFormatter = () => {
@@ -5988,21 +6295,21 @@ export const useViewCountFormatter = () => {
 
     if (count >= 1_000_000_000) {
       return new Intl.NumberFormat(locale, {
-        notation: 'compact',
+        notation: "compact",
         maximumFractionDigits: 1,
       }).format(count);
     }
 
     if (count >= 1_000_000) {
       return new Intl.NumberFormat(locale, {
-        notation: 'compact',
+        notation: "compact",
         maximumFractionDigits: 1,
       }).format(count);
     }
 
     if (count >= 1_000) {
       return new Intl.NumberFormat(locale, {
-        notation: 'compact',
+        notation: "compact",
         maximumFractionDigits: 1,
       }).format(count);
     }
@@ -6022,39 +6329,39 @@ export const useRelativeTimeFormatter = () => {
     const diffMs = now.getTime() - targetDate.getTime();
     const diffSeconds = Math.floor(diffMs / 1000);
 
-    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
 
     if (diffSeconds < 60) {
-      return rtf.format(-diffSeconds, 'seconds');
+      return rtf.format(-diffSeconds, "seconds");
     }
 
     const diffMinutes = Math.floor(diffSeconds / 60);
     if (diffMinutes < 60) {
-      return rtf.format(-diffMinutes, 'minutes');
+      return rtf.format(-diffMinutes, "minutes");
     }
 
     const diffHours = Math.floor(diffMinutes / 60);
     if (diffHours < 24) {
-      return rtf.format(-diffHours, 'hours');
+      return rtf.format(-diffHours, "hours");
     }
 
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays < 7) {
-      return rtf.format(-diffDays, 'days');
+      return rtf.format(-diffDays, "days");
     }
 
     const diffWeeks = Math.floor(diffDays / 7);
     if (diffWeeks < 4) {
-      return rtf.format(-diffWeeks, 'weeks');
+      return rtf.format(-diffWeeks, "weeks");
     }
 
     const diffMonths = Math.floor(diffDays / 30);
     if (diffMonths < 12) {
-      return rtf.format(-diffMonths, 'months');
+      return rtf.format(-diffMonths, "months");
     }
 
     const diffYears = Math.floor(diffDays / 365);
-    return rtf.format(-diffYears, 'years');
+    return rtf.format(-diffYears, "years");
   };
 };
 
@@ -6069,7 +6376,7 @@ export const useDurationFormatter = () => {
 
     // Use locale-aware number formatting for parts
     const locale = i18n.language;
-    const pad = (n: number) => n.toString().padStart(2, '0');
+    const pad = (n: number) => n.toString().padStart(2, "0");
 
     if (hours > 0) {
       return `${hours}:${pad(minutes)}:${pad(secs)}`;
@@ -6084,7 +6391,7 @@ export const useFileSizeFormatter = () => {
 
   return (bytes: number): string => {
     const locale = i18n.language;
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const units = ["B", "KB", "MB", "GB", "TB"];
     let unitIndex = 0;
     let size = bytes;
 
@@ -6093,9 +6400,13 @@ export const useFileSizeFormatter = () => {
       unitIndex++;
     }
 
-    return new Intl.NumberFormat(locale, {
-      maximumFractionDigits: 1,
-    }).format(size) + ' ' + units[unitIndex];
+    return (
+      new Intl.NumberFormat(locale, {
+        maximumFractionDigits: 1,
+      }).format(size) +
+      " " +
+      units[unitIndex]
+    );
   };
 };
 ```
@@ -6104,8 +6415,8 @@ export const useFileSizeFormatter = () => {
 
 ```typescript
 // LanguageSelector.tsx
-import { useTranslation } from 'react-i18next';
-import { SUPPORTED_LOCALES, SupportedLocale } from '@/i18n/config';
+import { useTranslation } from "react-i18next";
+import { SUPPORTED_LOCALES, SupportedLocale } from "@/i18n/config";
 
 const LanguageSelector = () => {
   const { i18n, t } = useTranslation();
@@ -6119,7 +6430,7 @@ const LanguageSelector = () => {
     setIsOpen(false);
 
     // Persist preference
-    localStorage.setItem('preferred-language', locale);
+    localStorage.setItem("preferred-language", locale);
 
     // Update API calls to include language header
     document.cookie = `locale=${locale}; path=/; max-age=${60 * 60 * 24 * 365}`;
@@ -6131,17 +6442,17 @@ const LanguageSelector = () => {
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-label={t('settings.changeLanguage')}
+        aria-label={t("settings.changeLanguage")}
       >
         <GlobeIcon />
-        <span>{currentConfig?.name || 'English'}</span>
-        <ChevronIcon className={isOpen ? 'rotated' : ''} />
+        <span>{currentConfig?.name || "English"}</span>
+        <ChevronIcon className={isOpen ? "rotated" : ""} />
       </button>
 
       {isOpen && (
         <ul
           role="listbox"
-          aria-label={t('settings.selectLanguage')}
+          aria-label={t("settings.selectLanguage")}
           className="language-dropdown"
         >
           {Object.entries(SUPPORTED_LOCALES).map(([code, config]) => (
@@ -6150,7 +6461,7 @@ const LanguageSelector = () => {
                 role="option"
                 aria-selected={code === currentLocale}
                 onClick={() => handleLanguageChange(code as SupportedLocale)}
-                className={code === currentLocale ? 'selected' : ''}
+                className={code === currentLocale ? "selected" : ""}
               >
                 <span className="language-name">{config.name}</span>
                 {code === currentLocale && <CheckIcon />}
@@ -6313,7 +6624,14 @@ const VideoStats = ({ views, likes, comments }) => {
 ```typescript
 // analytics/VideoAnalytics.ts
 interface VideoEvent {
-  type: 'play' | 'pause' | 'seek' | 'ended' | 'quality_change' | 'buffer' | 'error';
+  type:
+    | "play"
+    | "pause"
+    | "seek"
+    | "ended"
+    | "quality_change"
+    | "buffer"
+    | "error";
   videoId: string;
   timestamp: number;
   data?: Record<string, any>;
@@ -6356,7 +6674,7 @@ class VideoAnalytics {
     this.lastUpdateTime = Date.now();
 
     this.queueEvent({
-      type: 'play',
+      type: "play",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: { currentTime },
@@ -6369,7 +6687,7 @@ class VideoAnalytics {
     this.isPlaying = false;
 
     this.queueEvent({
-      type: 'pause',
+      type: "pause",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: { currentTime },
@@ -6379,7 +6697,7 @@ class VideoAnalytics {
   // Track seek event
   trackSeek(fromTime: number, toTime: number): void {
     this.queueEvent({
-      type: 'seek',
+      type: "seek",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: { fromTime, toTime, seekDistance: toTime - fromTime },
@@ -6389,7 +6707,7 @@ class VideoAnalytics {
   // Track buffering event
   trackBuffering(currentTime: number, bufferDuration?: number): void {
     this.queueEvent({
-      type: 'buffer',
+      type: "buffer",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: { currentTime, bufferDuration },
@@ -6399,7 +6717,7 @@ class VideoAnalytics {
   // Track quality change
   trackQualityChange(fromQuality: string, toQuality: string): void {
     this.queueEvent({
-      type: 'quality_change',
+      type: "quality_change",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: { fromQuality, toQuality },
@@ -6411,7 +6729,7 @@ class VideoAnalytics {
     this.updateWatchTime();
 
     this.queueEvent({
-      type: 'ended',
+      type: "ended",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: {
@@ -6427,7 +6745,7 @@ class VideoAnalytics {
   // Track error
   trackError(errorCode: number, errorMessage: string): void {
     this.queueEvent({
-      type: 'error',
+      type: "error",
       videoId: this.videoId,
       timestamp: Date.now(),
       data: { errorCode, errorMessage },
@@ -6466,9 +6784,9 @@ class VideoAnalytics {
     this.eventQueue = [];
 
     try {
-      await fetch('/api/v1/analytics/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/v1/analytics/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: this.sessionId,
           events,
@@ -6530,20 +6848,20 @@ class PerformanceMonitor {
 
   private initWebVitals(): void {
     // Observe Core Web Vitals
-    if ('PerformanceObserver' in window) {
+    if ("PerformanceObserver" in window) {
       // LCP
       this.observer = new PerformanceObserver((list) => {
         const entries = list.getEntries();
         const lastEntry = entries[entries.length - 1];
         this.metrics.lcp = lastEntry.startTime;
       });
-      this.observer.observe({ entryTypes: ['largest-contentful-paint'] });
+      this.observer.observe({ entryTypes: ["largest-contentful-paint"] });
 
       // FID
       new PerformanceObserver((list) => {
         const entries = list.getEntries();
         this.metrics.fid = entries[0].processingStart - entries[0].startTime;
-      }).observe({ entryTypes: ['first-input'] });
+      }).observe({ entryTypes: ["first-input"] });
 
       // CLS
       let clsValue = 0;
@@ -6554,18 +6872,18 @@ class PerformanceMonitor {
           }
         }
         this.metrics.cls = clsValue;
-      }).observe({ entryTypes: ['layout-shift'] });
+      }).observe({ entryTypes: ["layout-shift"] });
     }
 
     // FCP
-    const paintEntries = performance.getEntriesByType('paint');
-    const fcp = paintEntries.find((e) => e.name === 'first-contentful-paint');
+    const paintEntries = performance.getEntriesByType("paint");
+    const fcp = paintEntries.find((e) => e.name === "first-contentful-paint");
     if (fcp) {
       this.metrics.fcp = fcp.startTime;
     }
 
     // TTFB
-    const navEntry = performance.getEntriesByType('navigation')[0] as any;
+    const navEntry = performance.getEntriesByType("navigation")[0] as any;
     if (navEntry) {
       this.metrics.ttfb = navEntry.responseStart - navEntry.requestStart;
     }
@@ -6606,9 +6924,9 @@ class PerformanceMonitor {
 
   // Report metrics to backend
   async reportMetrics(): Promise<void> {
-    await fetch('/api/v1/metrics/performance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    await fetch("/api/v1/metrics/performance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         metrics: this.metrics,
         url: window.location.href,
@@ -6630,10 +6948,10 @@ export const usePerformanceMonitor = () => {
       monitorRef.current?.reportMetrics();
     };
 
-    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener("beforeunload", handleUnload);
 
     return () => {
-      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener("beforeunload", handleUnload);
     };
   }, []);
 
@@ -6647,7 +6965,7 @@ export const usePerformanceMonitor = () => {
 // monitoring/ErrorTracker.ts
 interface ErrorReport {
   id: string;
-  type: 'js_error' | 'video_error' | 'network_error' | 'api_error';
+  type: "js_error" | "video_error" | "network_error" | "api_error";
   message: string;
   stack?: string;
   context: {
@@ -6679,7 +6997,7 @@ class ErrorTracker {
     // Catch unhandled errors
     window.onerror = (message, source, lineno, colno, error) => {
       this.captureError({
-        type: 'js_error',
+        type: "js_error",
         message: String(message),
         stack: error?.stack,
         metadata: { source, lineno, colno },
@@ -6689,8 +7007,8 @@ class ErrorTracker {
     // Catch unhandled promise rejections
     window.onunhandledrejection = (event) => {
       this.captureError({
-        type: 'js_error',
-        message: event.reason?.message || 'Unhandled Promise Rejection',
+        type: "js_error",
+        message: event.reason?.message || "Unhandled Promise Rejection",
         stack: event.reason?.stack,
       });
     };
@@ -6711,7 +7029,7 @@ class ErrorTracker {
 
         if (!response.ok && response.status >= 500) {
           this.captureError({
-            type: 'api_error',
+            type: "api_error",
             message: `API Error: ${response.status} ${response.statusText}`,
             metadata: {
               url,
@@ -6724,8 +7042,9 @@ class ErrorTracker {
         return response;
       } catch (error) {
         this.captureError({
-          type: 'network_error',
-          message: error instanceof Error ? error.message : 'Network request failed',
+          type: "network_error",
+          message:
+            error instanceof Error ? error.message : "Network request failed",
           metadata: { url, duration: performance.now() - startTime },
         });
         throw error;
@@ -6733,7 +7052,7 @@ class ErrorTracker {
     };
   }
 
-  captureError(error: Omit<ErrorReport, 'id' | 'context'>): void {
+  captureError(error: Omit<ErrorReport, "id" | "context">): void {
     const report: ErrorReport = {
       id: crypto.randomUUID(),
       ...error,
@@ -6747,7 +7066,7 @@ class ErrorTracker {
     this.errorQueue.push(report);
 
     // Immediate report for critical errors
-    if (error.type === 'video_error') {
+    if (error.type === "video_error") {
       this.flush();
     } else if (this.errorQueue.length >= 10) {
       this.flush();
@@ -6761,7 +7080,7 @@ class ErrorTracker {
     metadata?: Record<string, any>
   ): void {
     this.captureError({
-      type: 'video_error',
+      type: "video_error",
       message: `Video Error [${errorCode}]: ${errorMessage}`,
       metadata: { videoId, errorCode, ...metadata },
     });
@@ -6774,9 +7093,9 @@ class ErrorTracker {
     this.errorQueue = [];
 
     try {
-      await fetch('/api/v1/errors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/v1/errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ errors }),
         keepalive: true,
       });
@@ -6803,7 +7122,7 @@ export class TrackedErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     ErrorTracker.getInstance().captureError({
-      type: 'js_error',
+      type: "js_error",
       message: error.message,
       stack: error.stack,
       metadata: { componentStack: errorInfo.componentStack },
@@ -6825,7 +7144,7 @@ export class TrackedErrorBoundary extends React.Component<
 // components/AnalyticsDashboard.tsx
 const VideoAnalyticsDashboard = ({ videoId }: { videoId: string }) => {
   const { data: analytics, isLoading } = useQuery(
-    ['video-analytics', videoId],
+    ["video-analytics", videoId],
     () => fetchVideoAnalytics(videoId)
   );
 
@@ -6864,7 +7183,10 @@ const VideoAnalyticsDashboard = ({ videoId }: { videoId: string }) => {
       {/* Retention Graph */}
       <section className="retention-section">
         <h3>Audience Retention</h3>
-        <RetentionGraph data={analytics.retention} duration={analytics.duration} />
+        <RetentionGraph
+          data={analytics.retention}
+          duration={analytics.duration}
+        />
       </section>
 
       {/* Traffic Sources */}
@@ -7016,21 +7338,21 @@ class PushNotificationService {
   private subscription: PushSubscription | null = null;
 
   async initialize(): Promise<boolean> {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.warn('Push notifications not supported');
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      console.warn("Push notifications not supported");
       return false;
     }
 
     try {
       // Register service worker
-      this.registration = await navigator.serviceWorker.register('/sw.js');
+      this.registration = await navigator.serviceWorker.register("/sw.js");
 
       // Check existing subscription
       this.subscription = await this.registration.pushManager.getSubscription();
 
       return true;
     } catch (error) {
-      console.error('Failed to initialize push notifications:', error);
+      console.error("Failed to initialize push notifications:", error);
       return false;
     }
   }
@@ -7047,7 +7369,7 @@ class PushNotificationService {
 
     try {
       // Get VAPID public key from server
-      const response = await fetch('/api/v1/notifications/vapid-public-key');
+      const response = await fetch("/api/v1/notifications/vapid-public-key");
       const { publicKey } = await response.json();
 
       const subscription = await this.registration!.pushManager.subscribe({
@@ -7056,16 +7378,16 @@ class PushNotificationService {
       });
 
       // Send subscription to server
-      await fetch('/api/v1/notifications/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/v1/notifications/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(subscription),
       });
 
       this.subscription = subscription;
       return subscription;
     } catch (error) {
-      console.error('Failed to subscribe:', error);
+      console.error("Failed to subscribe:", error);
       return null;
     }
   }
@@ -7076,25 +7398,25 @@ class PushNotificationService {
     try {
       await this.subscription.unsubscribe();
 
-      await fetch('/api/v1/notifications/unsubscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/v1/notifications/unsubscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint: this.subscription.endpoint }),
       });
 
       this.subscription = null;
       return true;
     } catch (error) {
-      console.error('Failed to unsubscribe:', error);
+      console.error("Failed to unsubscribe:", error);
       return false;
     }
   }
 
   private urlBase64ToUint8Array(base64String: string): Uint8Array {
-    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
 
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
@@ -7112,15 +7434,15 @@ class PushNotificationService {
 
 // Service Worker Push Handler
 // sw.ts
-self.addEventListener('push', (event: PushEvent) => {
+self.addEventListener("push", (event: PushEvent) => {
   const data = event.data?.json() ?? {};
 
   const options: NotificationOptions = {
     body: data.body,
-    icon: data.icon || '/icons/notification-icon.png',
-    badge: '/icons/badge.png',
+    icon: data.icon || "/icons/notification-icon.png",
+    badge: "/icons/badge.png",
     image: data.image,
-    tag: data.tag || 'default',
+    tag: data.tag || "default",
     data: {
       url: data.url,
       videoId: data.videoId,
@@ -7129,21 +7451,19 @@ self.addEventListener('push', (event: PushEvent) => {
     requireInteraction: data.requireInteraction || false,
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
+  event.waitUntil(self.registration.showNotification(data.title, options));
 });
 
-self.addEventListener('notificationclick', (event: NotificationEvent) => {
+self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
 
   const { url, videoId } = event.notification.data;
 
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
+    clients.matchAll({ type: "window" }).then((clientList) => {
       // Focus existing window if open
       for (const client of clientList) {
-        if (client.url === url && 'focus' in client) {
+        if (client.url === url && "focus" in client) {
           return client.focus();
         }
       }
@@ -7163,7 +7483,7 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
 // components/NotificationCenter.tsx
 interface Notification {
   id: string;
-  type: 'upload' | 'live' | 'comment' | 'mention' | 'subscription' | 'system';
+  type: "upload" | "live" | "comment" | "mention" | "subscription" | "system";
   title: string;
   message: string;
   thumbnail?: string;
@@ -7180,7 +7500,7 @@ const NotificationCenter = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Fetch notifications
-  const { data, refetch } = useQuery('notifications', fetchNotifications, {
+  const { data, refetch } = useQuery("notifications", fetchNotifications, {
     refetchInterval: 60000, // Refetch every minute
   });
 
@@ -7194,7 +7514,7 @@ const NotificationCenter = () => {
       setUnreadCount((prev) => prev + 1);
 
       // Show browser notification if permitted
-      if (Notification.permission === 'granted' && document.hidden) {
+      if (Notification.permission === "granted" && document.hidden) {
         new Notification(notification.title, {
           body: notification.message,
           icon: notification.thumbnail,
@@ -7207,7 +7527,7 @@ const NotificationCenter = () => {
 
   // Mark as read
   const markAsRead = async (id: string) => {
-    await fetch(`/api/v1/notifications/${id}/read`, { method: 'POST' });
+    await fetch(`/api/v1/notifications/${id}/read`, { method: "POST" });
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
@@ -7216,7 +7536,7 @@ const NotificationCenter = () => {
 
   // Mark all as read
   const markAllAsRead = async () => {
-    await fetch('/api/v1/notifications/read-all', { method: 'POST' });
+    await fetch("/api/v1/notifications/read-all", { method: "POST" });
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
   };
@@ -7226,13 +7546,15 @@ const NotificationCenter = () => {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="notification-bell"
-        aria-label={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
+        aria-label={`Notifications ${
+          unreadCount > 0 ? `(${unreadCount} unread)` : ""
+        }`}
         aria-expanded={isOpen}
       >
         <BellIcon />
         {unreadCount > 0 && (
           <span className="notification-badge" aria-hidden="true">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
@@ -7293,15 +7615,15 @@ const NotificationItem = ({
 
   const getIcon = () => {
     switch (notification.type) {
-      case 'upload':
+      case "upload":
         return <UploadIcon />;
-      case 'live':
+      case "live":
         return <LiveIcon className="live-pulse" />;
-      case 'comment':
+      case "comment":
         return <CommentIcon />;
-      case 'mention':
+      case "mention":
         return <AtIcon />;
-      case 'subscription':
+      case "subscription":
         return <UserPlusIcon />;
       default:
         return <BellIcon />;
@@ -7310,8 +7632,8 @@ const NotificationItem = ({
 
   return (
     <a
-      href={notification.videoId ? `/watch/${notification.videoId}` : '#'}
-      className={`notification-item ${notification.read ? '' : 'unread'}`}
+      href={notification.videoId ? `/watch/${notification.videoId}` : "#"}
+      className={`notification-item ${notification.read ? "" : "unread"}`}
       onClick={handleClick}
       role="listitem"
     >
@@ -7363,27 +7685,27 @@ interface NotificationPreferences {
   recommendations: boolean;
   email: {
     enabled: boolean;
-    frequency: 'instant' | 'daily' | 'weekly';
+    frequency: "instant" | "daily" | "weekly";
   };
   push: {
     enabled: boolean;
     quiet: {
       enabled: boolean;
       start: string; // "22:00"
-      end: string;   // "08:00"
+      end: string; // "08:00"
     };
   };
 }
 
 const NotificationSettings = () => {
   const { data: preferences, isLoading } = useQuery(
-    'notification-preferences',
+    "notification-preferences",
     fetchNotificationPreferences
   );
 
   const mutation = useMutation(updateNotificationPreferences, {
     onSuccess: () => {
-      queryClient.invalidateQueries('notification-preferences');
+      queryClient.invalidateQueries("notification-preferences");
     },
   });
 
@@ -7404,21 +7726,21 @@ const NotificationSettings = () => {
           label="New uploads"
           description="Get notified when channels you subscribe to upload new videos"
           checked={preferences.uploads}
-          onChange={(v) => handleToggle('uploads', v)}
+          onChange={(v) => handleToggle("uploads", v)}
         />
 
         <ToggleRow
           label="Live streams"
           description="Get notified when channels go live"
           checked={preferences.liveStreams}
-          onChange={(v) => handleToggle('liveStreams', v)}
+          onChange={(v) => handleToggle("liveStreams", v)}
         />
 
         <ToggleRow
           label="Premieres"
           description="Get notified about scheduled premieres"
           checked={preferences.premieres}
-          onChange={(v) => handleToggle('premieres', v)}
+          onChange={(v) => handleToggle("premieres", v)}
         />
       </section>
 
@@ -7429,21 +7751,21 @@ const NotificationSettings = () => {
           label="Comments"
           description="Get notified about new comments on your videos"
           checked={preferences.comments}
-          onChange={(v) => handleToggle('comments', v)}
+          onChange={(v) => handleToggle("comments", v)}
         />
 
         <ToggleRow
           label="Mentions"
           description="Get notified when someone mentions you"
           checked={preferences.mentions}
-          onChange={(v) => handleToggle('mentions', v)}
+          onChange={(v) => handleToggle("mentions", v)}
         />
 
         <ToggleRow
           label="Replies"
           description="Get notified about replies to your comments"
           checked={preferences.replies}
-          onChange={(v) => handleToggle('replies', v)}
+          onChange={(v) => handleToggle("replies", v)}
         />
       </section>
 
@@ -7457,11 +7779,11 @@ const NotificationSettings = () => {
           onChange={async (v) => {
             if (v) {
               const permission = await Notification.requestPermission();
-              if (permission === 'granted') {
-                handleToggle('push', { ...preferences.push, enabled: true });
+              if (permission === "granted") {
+                handleToggle("push", { ...preferences.push, enabled: true });
               }
             } else {
-              handleToggle('push', { ...preferences.push, enabled: false });
+              handleToggle("push", { ...preferences.push, enabled: false });
             }
           }}
         />
@@ -7473,7 +7795,7 @@ const NotificationSettings = () => {
               description="Pause notifications during specific hours"
               checked={preferences.push.quiet.enabled}
               onChange={(v) =>
-                handleToggle('push', {
+                handleToggle("push", {
                   ...preferences.push,
                   quiet: { ...preferences.push.quiet, enabled: v },
                 })
@@ -7486,7 +7808,7 @@ const NotificationSettings = () => {
                   label="From"
                   value={preferences.push.quiet.start}
                   onChange={(v) =>
-                    handleToggle('push', {
+                    handleToggle("push", {
                       ...preferences.push,
                       quiet: { ...preferences.push.quiet, start: v },
                     })
@@ -7496,7 +7818,7 @@ const NotificationSettings = () => {
                   label="To"
                   value={preferences.push.quiet.end}
                   onChange={(v) =>
-                    handleToggle('push', {
+                    handleToggle("push", {
                       ...preferences.push,
                       quiet: { ...preferences.push.quiet, end: v },
                     })
@@ -7515,7 +7837,7 @@ const NotificationSettings = () => {
           label="Enable email notifications"
           checked={preferences.email.enabled}
           onChange={(v) =>
-            handleToggle('email', { ...preferences.email, enabled: v })
+            handleToggle("email", { ...preferences.email, enabled: v })
           }
         />
 
@@ -7524,12 +7846,12 @@ const NotificationSettings = () => {
             label="Frequency"
             value={preferences.email.frequency}
             options={[
-              { value: 'instant', label: 'Instant' },
-              { value: 'daily', label: 'Daily digest' },
-              { value: 'weekly', label: 'Weekly digest' },
+              { value: "instant", label: "Instant" },
+              { value: "daily", label: "Daily digest" },
+              { value: "weekly", label: "Weekly digest" },
             ]}
             onChange={(v) =>
-              handleToggle('email', { ...preferences.email, frequency: v })
+              handleToggle("email", { ...preferences.email, frequency: v })
             }
           />
         )}
@@ -7641,35 +7963,35 @@ const LivePlayer = ({ streamId, channel, onChatMessage }: LivePlayerProps) => {
   const [isLive, setIsLive] = useState(true);
   const [latency, setLatency] = useState(0);
   const [viewerCount, setViewerCount] = useState(0);
-  const [quality, setQuality] = useState<'auto' | number>('auto');
+  const [quality, setQuality] = useState<"auto" | number>("auto");
 
   // Initialize low-latency HLS
   useEffect(() => {
     if (!Hls.isSupported()) {
-      console.error('HLS not supported');
+      console.error("HLS not supported");
       return;
     }
 
     const hls = new Hls({
       // Low-latency configuration
       lowLatencyMode: true,
-      liveSyncDuration: 3,          // Target 3 seconds behind live edge
-      liveMaxLatencyDuration: 10,   // Max 10 seconds behind
-      liveDurationInfinity: true,   // Treat as infinite duration
-      highBufferWatchdogPeriod: 1,  // Check buffer every second
+      liveSyncDuration: 3, // Target 3 seconds behind live edge
+      liveMaxLatencyDuration: 10, // Max 10 seconds behind
+      liveDurationInfinity: true, // Treat as infinite duration
+      highBufferWatchdogPeriod: 1, // Check buffer every second
 
       // ABR settings for live
       abrEwmaFastLive: 3,
       abrEwmaSlowLive: 9,
-      abrBandWidthFactor: 0.7,      // More conservative for live
-      abrBandWidthUpFactor: 0.5,    // Slower to switch up in live
+      abrBandWidthFactor: 0.7, // More conservative for live
+      abrBandWidthUpFactor: 0.5, // Slower to switch up in live
 
       // Start with lower quality, ramp up
-      startLevel: -1,               // Auto-select starting level
-      capLevelToPlayerSize: true,   // Don't load higher than viewport
+      startLevel: -1, // Auto-select starting level
+      capLevelToPlayerSize: true, // Don't load higher than viewport
 
       // Backbuffer for rewind
-      backBufferLength: 30,         // Keep 30 seconds for instant replay
+      backBufferLength: 30, // Keep 30 seconds for instant replay
     });
 
     hlsRef.current = hls;
@@ -7690,7 +8012,7 @@ const LivePlayer = ({ streamId, channel, onChatMessage }: LivePlayerProps) => {
     // Handle manifest errors
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-        if (data.details === 'manifestLoadError') {
+        if (data.details === "manifestLoadError") {
           // Stream might have ended
           setIsLive(false);
         } else {
@@ -7713,7 +8035,7 @@ const LivePlayer = ({ streamId, channel, onChatMessage }: LivePlayerProps) => {
       const data = JSON.parse(event.data);
       setViewerCount(data.viewerCount);
 
-      if (data.status === 'ended') {
+      if (data.status === "ended") {
         setIsLive(false);
       }
     };
@@ -7732,13 +8054,16 @@ const LivePlayer = ({ streamId, channel, onChatMessage }: LivePlayerProps) => {
   }, []);
 
   // Toggle low latency mode
-  const toggleLowLatency = useCallback((enabled: boolean) => {
-    if (hlsRef.current) {
-      hlsRef.current.config.lowLatencyMode = enabled;
-      hlsRef.current.config.liveSyncDuration = enabled ? 3 : 10;
-      catchUpToLive();
-    }
-  }, [catchUpToLive]);
+  const toggleLowLatency = useCallback(
+    (enabled: boolean) => {
+      if (hlsRef.current) {
+        hlsRef.current.config.lowLatencyMode = enabled;
+        hlsRef.current.config.liveSyncDuration = enabled ? 3 : 10;
+        catchUpToLive();
+      }
+    },
+    [catchUpToLive]
+  );
 
   return (
     <div className="live-player">
@@ -7770,10 +8095,14 @@ const LivePlayer = ({ streamId, channel, onChatMessage }: LivePlayerProps) => {
         <button
           onClick={catchUpToLive}
           disabled={latency < 5}
-          aria-label={`${latency.toFixed(1)} seconds behind live. Click to catch up.`}
+          aria-label={`${latency.toFixed(
+            1
+          )} seconds behind live. Click to catch up.`}
         >
           {latency.toFixed(1)}s behind
-          {latency > 10 && <span className="catch-up-hint">Click to catch up</span>}
+          {latency > 10 && (
+            <span className="catch-up-hint">Click to catch up</span>
+          )}
         </button>
       </div>
 
@@ -7782,7 +8111,9 @@ const LivePlayer = ({ streamId, channel, onChatMessage }: LivePlayerProps) => {
         <div className="stream-ended-overlay">
           <h2>Stream has ended</h2>
           <p>Check back later for the replay</p>
-          <button onClick={() => window.location.href = `/channel/${channel.id}`}>
+          <button
+            onClick={() => (window.location.href = `/channel/${channel.id}`)}
+          >
             Visit Channel
           </button>
         </div>
@@ -7813,7 +8144,7 @@ interface ChatMessage {
   avatar: string;
   message: string;
   timestamp: number;
-  type: 'message' | 'superchat' | 'membership' | 'sticker';
+  type: "message" | "superchat" | "membership" | "sticker";
   badges: string[];
   amount?: number;
   currency?: string;
@@ -7821,7 +8152,7 @@ interface ChatMessage {
 
 const LiveChat = ({ streamId }: { streamId: string }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState("");
   const [isConnected, setIsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -7857,7 +8188,8 @@ const LiveChat = ({ streamId }: { streamId: string }) => {
   // Auto-scroll to bottom
   useEffect(() => {
     if (!isPaused && chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
     }
   }, [messages, isPaused]);
 
@@ -7872,20 +8204,22 @@ const LiveChat = ({ streamId }: { streamId: string }) => {
   const sendMessage = useCallback(() => {
     if (!inputValue.trim() || !wsRef.current) return;
 
-    wsRef.current.send(JSON.stringify({
-      type: 'message',
-      message: inputValue.trim(),
-    }));
+    wsRef.current.send(
+      JSON.stringify({
+        type: "message",
+        message: inputValue.trim(),
+      })
+    );
 
-    setInputValue('');
+    setInputValue("");
   }, [inputValue]);
 
   return (
     <div className="live-chat">
       <header className="chat-header">
         <h3>Live Chat</h3>
-        <span className={`connection-status ${isConnected ? 'connected' : ''}`}>
-          {isConnected ? 'Connected' : 'Reconnecting...'}
+        <span className={`connection-status ${isConnected ? "connected" : ""}`}>
+          {isConnected ? "Connected" : "Reconnecting..."}
         </span>
       </header>
 
@@ -7921,7 +8255,7 @@ const LiveChat = ({ streamId }: { streamId: string }) => {
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           placeholder="Say something..."
           maxLength={200}
           disabled={!isConnected}
@@ -7939,7 +8273,7 @@ const LiveChat = ({ streamId }: { streamId: string }) => {
 };
 
 const ChatMessageItem = ({ message }: { message: ChatMessage }) => {
-  if (message.type === 'superchat') {
+  if (message.type === "superchat") {
     return (
       <div
         className="superchat-message"
@@ -7979,7 +8313,9 @@ const ChatMessageItem = ({ message }: { message: ChatMessage }) => {
 ```typescript
 // LiveDashboard.tsx - Creator's live streaming control panel
 const LiveDashboard = ({ streamId }: { streamId: string }) => {
-  const [streamStatus, setStreamStatus] = useState<'offline' | 'live' | 'ending'>('offline');
+  const [streamStatus, setStreamStatus] = useState<
+    "offline" | "live" | "ending"
+  >("offline");
   const [stats, setStats] = useState({
     viewers: 0,
     peakViewers: 0,
@@ -8013,7 +8349,7 @@ const LiveDashboard = ({ streamId }: { streamId: string }) => {
             className="preview-video"
           />
           <div className="preview-overlay">
-            {streamStatus === 'live' && (
+            {streamStatus === "live" && (
               <span className="live-indicator">LIVE</span>
             )}
           </div>
@@ -8021,7 +8357,7 @@ const LiveDashboard = ({ streamId }: { streamId: string }) => {
 
         {/* Stream actions */}
         <div className="stream-actions">
-          {streamStatus === 'offline' && (
+          {streamStatus === "offline" && (
             <button
               onClick={() => startStream(streamId)}
               className="go-live-button"
@@ -8029,7 +8365,7 @@ const LiveDashboard = ({ streamId }: { streamId: string }) => {
               Go Live
             </button>
           )}
-          {streamStatus === 'live' && (
+          {streamStatus === "live" && (
             <button
               onClick={() => endStream(streamId)}
               className="end-stream-button"
@@ -8047,7 +8383,7 @@ const LiveDashboard = ({ streamId }: { streamId: string }) => {
             label="Current Viewers"
             value={formatNumber(stats.viewers)}
             icon={<UsersIcon />}
-            trend={stats.viewers > stats.peakViewers * 0.9 ? 'up' : 'stable'}
+            trend={stats.viewers > stats.peakViewers * 0.9 ? "up" : "stable"}
           />
           <StatCard
             label="Peak Viewers"
@@ -8094,7 +8430,7 @@ const StreamHealthMonitor = ({ streamId }: { streamId: string }) => {
     fps: 0,
     keyframeInterval: 0,
     droppedFrames: 0,
-    connectionQuality: 'good' as 'good' | 'fair' | 'poor',
+    connectionQuality: "good" as "good" | "fair" | "poor",
   });
 
   useEffect(() => {
@@ -8113,7 +8449,13 @@ const StreamHealthMonitor = ({ streamId }: { streamId: string }) => {
         <span className="label">Bitrate</span>
         <span className="value">{(health.bitrate / 1000).toFixed(1)} Kbps</span>
         <HealthIndicator
-          status={health.bitrate > 4000 ? 'good' : health.bitrate > 2000 ? 'fair' : 'poor'}
+          status={
+            health.bitrate > 4000
+              ? "good"
+              : health.bitrate > 2000
+              ? "fair"
+              : "poor"
+          }
         />
       </div>
 
@@ -8121,7 +8463,9 @@ const StreamHealthMonitor = ({ streamId }: { streamId: string }) => {
         <span className="label">Frame Rate</span>
         <span className="value">{health.fps} fps</span>
         <HealthIndicator
-          status={health.fps >= 28 ? 'good' : health.fps >= 20 ? 'fair' : 'poor'}
+          status={
+            health.fps >= 28 ? "good" : health.fps >= 20 ? "fair" : "poor"
+          }
         />
       </div>
 
@@ -8129,7 +8473,13 @@ const StreamHealthMonitor = ({ streamId }: { streamId: string }) => {
         <span className="label">Dropped Frames</span>
         <span className="value">{health.droppedFrames}</span>
         <HealthIndicator
-          status={health.droppedFrames < 10 ? 'good' : health.droppedFrames < 50 ? 'fair' : 'poor'}
+          status={
+            health.droppedFrames < 10
+              ? "good"
+              : health.droppedFrames < 50
+              ? "fair"
+              : "poor"
+          }
         />
       </div>
 

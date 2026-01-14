@@ -30,6 +30,10 @@ import Modal from "../lld/lld-016-modal/Solution"
 import GridSelection from "../lld/lld-017-grid-selection/Solution"
 import CheckboxHierarchy from "../lld/lld-018-checkbox-hierarchy/Solution"
 import SearchHighlighter from "../lld/lld-019-search-highlighter/Solution"
+import Connect4 from "../lld/lld-020-connect-4/Solution"
+import DataTable from "../lld/lld-021-data-table/Solution"
+
+
 
 
 
@@ -63,7 +67,9 @@ const SOLUTION_COMPONENTS = {
   'lld-016-modal': Modal,
   'lld-017-grid-selection': GridSelection,
   'lld-018-checkbox-hierarchy': CheckboxHierarchy,
-  'lld-019-search-highlighter': SearchHighlighter
+  'lld-019-search-highlighter': SearchHighlighter,
+  'lld-020-connect-4': Connect4,
+  'lld-021-data-table': DataTable
 
 
 
