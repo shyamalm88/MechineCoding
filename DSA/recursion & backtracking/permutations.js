@@ -32,29 +32,35 @@
  * Time Complexity: O(N * N!) - There are N! permutations, and copying takes O(N).
  * Space Complexity: O(N) - Recursion stack.
  */
-const permute = (nums) => {
+var permute = function (nums) {
   const result = [];
+  const curr = [];
+  const used = new Array(nums.length).fill(false);
 
-  const backtrack = (index) => {
-    // Base Case: If we have reached the end of the array, we have a complete permutation
-    if (index === nums.length) {
-      result.push([...nums]); // Make a copy
+  const backtrack = () => {
+    // base case: permutation complete
+    if (curr.length === nums.length) {
+      result.push([...curr]);
       return;
     }
 
-    for (let i = index; i < nums.length; i++) {
-      // Swap current element with the element at 'index'
-      [nums[index], nums[i]] = [nums[i], nums[index]];
+    for (let i = 0; i < nums.length; i++) {
+      if (used[i]) continue;
 
-      // Recurse for the next position
-      backtrack(index + 1);
+      // choose
+      used[i] = true;
+      curr.push(nums[i]);
 
-      // Backtrack: Swap back to restore original array for next iteration
-      [nums[index], nums[i]] = [nums[i], nums[index]];
+      // explore
+      backtrack();
+
+      // un-choose
+      curr.pop();
+      used[i] = false;
     }
   };
 
-  backtrack(0);
+  backtrack();
   return result;
 };
 

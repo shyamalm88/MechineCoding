@@ -42,6 +42,12 @@
 const exist = (board, word) => {
   const rows = board.length;
   const cols = board[0].length;
+  const dirs = [
+    [1, 0],
+    [0, 1],
+    [0, -1],
+    [-1, 0],
+  ];
 
   const dfs = (r, c, index) => {
     // Base Case: Found all characters
@@ -62,12 +68,17 @@ const exist = (board, word) => {
     const temp = board[r][c];
     board[r][c] = "#";
 
+    let found = false;
+
     // Explore neighbors
-    const found =
-      dfs(r + 1, c, index + 1) ||
-      dfs(r - 1, c, index + 1) ||
-      dfs(r, c + 1, index + 1) ||
-      dfs(r, c - 1, index + 1);
+    for (let [dr, dc] of dirs) {
+      let nr = r + dr;
+      let nc = c + dc;
+      if (dfs(nr, nc, index + 1)) {
+        found = true;
+        break;
+      }
+    }
 
     // Backtrack (Restore)
     board[r][c] = temp;
