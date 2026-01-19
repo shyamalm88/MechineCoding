@@ -1,6 +1,7 @@
 # Chat Application - WhatsApp/LinkedIn/Facebook Web (HLD)
 
 ## Table of Contents
+
 1. [Problem Statement & Requirements](#1-problem-statement--requirements)
 2. [High-Level Architecture](#2-high-level-architecture)
 3. [Component Architecture](#3-component-architecture)
@@ -28,6 +29,7 @@
 ## 1. Problem Statement & Requirements
 
 ### Functional Requirements
+
 - Real-time 1:1 messaging
 - Group chats (up to 256 members)
 - Message status (sent, delivered, read)
@@ -40,6 +42,7 @@
 - End-to-end encryption (WhatsApp style)
 
 ### Non-Functional Requirements
+
 - **Latency**: Message delivery < 100ms (same region)
 - **Reliability**: 99.99% message delivery guarantee
 - **Scalability**: Handle 1B+ users, 100B+ messages/day
@@ -48,6 +51,7 @@
 - **Offline**: Queue messages when recipient offline
 
 ### Capacity Estimation
+
 ```
 Daily Active Users (DAU): 500 million
 Messages per user per day: 50
@@ -218,14 +222,14 @@ WebSocket connections: 100 million concurrent
 
 ### Key Component Responsibilities
 
-| Component | Responsibility |
-|-----------|---------------|
-| `ConversationList` | List of chats, unread badges, last message preview, virtualized |
-| `MessageList` | Display messages, infinite scroll (older messages), auto-scroll new |
-| `MessageBubble` | Render message content, status indicators, reply preview |
-| `MessageInput` | Text input, emoji picker, file upload, voice recording |
-| `TypingIndicator` | Show when other user is typing (debounced) |
-| `WebSocketProvider` | Manage WS connection, reconnection, message dispatch |
+| Component           | Responsibility                                                      |
+| ------------------- | ------------------------------------------------------------------- |
+| `ConversationList`  | List of chats, unread badges, last message preview, virtualized     |
+| `MessageList`       | Display messages, infinite scroll (older messages), auto-scroll new |
+| `MessageBubble`     | Render message content, status indicators, reply preview            |
+| `MessageInput`      | Text input, emoji picker, file upload, voice recording              |
+| `TypingIndicator`   | Show when other user is typing (debounced)                          |
+| `WebSocketProvider` | Manage WS connection, reconnection, message dispatch                |
 
 ---
 
@@ -1382,34 +1386,32 @@ WebSocket connections: 100 million concurrent
 // AccessibleMessage.jsx
 const AccessibleMessage = ({ message, isOwn, status }) => {
   const statusLabels = {
-    pending: 'Sending',
-    sent: 'Sent',
-    delivered: 'Delivered',
-    read: 'Read',
-    failed: 'Failed to send'
+    pending: "Sending",
+    sent: "Sent",
+    delivered: "Delivered",
+    read: "Read",
+    failed: "Failed to send",
   };
 
   return (
     <article
       role="article"
       aria-label={`Message from ${message.senderName}`}
-      className={`message ${isOwn ? 'message--own' : 'message--other'}`}
+      className={`message ${isOwn ? "message--own" : "message--other"}`}
     >
       <div className="message__content">
-        {message.type === 'text' && (
-          <p>{message.text}</p>
-        )}
+        {message.type === "text" && <p>{message.text}</p>}
 
-        {message.type === 'image' && (
+        {message.type === "image" && (
           <img
             src={message.imageUrl}
-            alt={message.altText || 'Shared image'}
+            alt={message.altText || "Shared image"}
             // Allow zoom for low vision users
-            style={{ maxWidth: '100%', cursor: 'zoom-in' }}
+            style={{ maxWidth: "100%", cursor: "zoom-in" }}
           />
         )}
 
-        {message.type === 'voice' && (
+        {message.type === "voice" && (
           <VoiceMessage
             src={message.audioUrl}
             duration={message.duration}
@@ -1428,10 +1430,7 @@ const AccessibleMessage = ({ message, isOwn, status }) => {
         </time>
 
         {isOwn && (
-          <span
-            className="message__status"
-            aria-label={statusLabels[status]}
-          >
+          <span className="message__status" aria-label={statusLabels[status]}>
             <StatusIcon status={status} aria-hidden="true" />
           </span>
         )}
@@ -1448,7 +1447,7 @@ const VoiceMessage = ({ src, duration, transcript }) => {
   return (
     <div className="voice-message">
       <button
-        aria-label={isPlaying ? 'Pause voice message' : 'Play voice message'}
+        aria-label={isPlaying ? "Pause voice message" : "Play voice message"}
         aria-pressed={isPlaying}
         onClick={() => {
           if (isPlaying) {
@@ -1462,11 +1461,7 @@ const VoiceMessage = ({ src, duration, transcript }) => {
         {isPlaying ? <PauseIcon /> : <PlayIcon />}
       </button>
 
-      <audio
-        ref={audioRef}
-        src={src}
-        onEnded={() => setIsPlaying(false)}
-      />
+      <audio ref={audioRef} src={src} onEnded={() => setIsPlaying(false)} />
 
       <span aria-label={`Duration: ${duration} seconds`}>
         {formatDuration(duration)}
@@ -1551,13 +1546,13 @@ const useChatFocus = () => {
   // Trap focus in modals
   const trapFocus = useCallback((modalRef) => {
     const focusableElements = modalRef.current.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     );
     const firstElement = focusableElements[0];
     const lastElement = focusableElements[focusableElements.length - 1];
 
     const handleKeyDown = (e) => {
-      if (e.key === 'Tab') {
+      if (e.key === "Tab") {
         if (e.shiftKey && document.activeElement === firstElement) {
           e.preventDefault();
           lastElement.focus();
@@ -1568,11 +1563,11 @@ const useChatFocus = () => {
       }
     };
 
-    modalRef.current.addEventListener('keydown', handleKeyDown);
+    modalRef.current.addEventListener("keydown", handleKeyDown);
     firstElement?.focus();
 
     return () => {
-      modalRef.current?.removeEventListener('keydown', handleKeyDown);
+      modalRef.current?.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -1584,7 +1579,7 @@ const useChatFocus = () => {
   // Scroll new messages into view without losing focus
   const announceNewMessage = useCallback((message) => {
     // Don't steal focus, just announce
-    const announcement = document.getElementById('message-announcer');
+    const announcement = document.getElementById("message-announcer");
     if (announcement) {
       announcement.textContent = `${message.senderName}: ${message.text}`;
     }
@@ -1595,7 +1590,7 @@ const useChatFocus = () => {
     messageListRef,
     trapFocus,
     restoreFocus,
-    announceNewMessage
+    announceNewMessage,
   };
 };
 ```
@@ -1722,7 +1717,11 @@ const useChatFocus = () => {
 
 ```jsx
 // encryption/SignalProtocol.js
-import { KeyHelper, SignalProtocolAddress, SessionBuilder } from '@aspect/signal';
+import {
+  KeyHelper,
+  SignalProtocolAddress,
+  SessionBuilder,
+} from "@aspect/signal";
 
 class E2EEncryption {
   constructor(userId) {
@@ -1734,7 +1733,10 @@ class E2EEncryption {
   async generateIdentity() {
     const identityKeyPair = await KeyHelper.generateIdentityKeyPair();
     const registrationId = KeyHelper.generateRegistrationId();
-    const signedPreKey = await KeyHelper.generateSignedPreKey(identityKeyPair, 1);
+    const signedPreKey = await KeyHelper.generateSignedPreKey(
+      identityKeyPair,
+      1,
+    );
     const preKeys = await KeyHelper.generatePreKeys(1, 100);
 
     // Store locally (encrypted with device key)
@@ -1753,12 +1755,12 @@ class E2EEncryption {
       signedPreKey: {
         keyId: signedPreKey.keyId,
         publicKey: signedPreKey.keyPair.pubKey,
-        signature: signedPreKey.signature
+        signature: signedPreKey.signature,
       },
-      preKeys: preKeys.map(pk => ({
+      preKeys: preKeys.map((pk) => ({
         keyId: pk.keyId,
-        publicKey: pk.keyPair.pubKey
-      }))
+        publicKey: pk.keyPair.pubKey,
+      })),
     };
   }
 
@@ -1768,12 +1770,12 @@ class E2EEncryption {
     const sessionCipher = new SessionCipher(this.store, address);
 
     const ciphertext = await sessionCipher.encrypt(
-      new TextEncoder().encode(plaintext)
+      new TextEncoder().encode(plaintext),
     );
 
     return {
       type: ciphertext.type, // 1 = PreKey, 3 = Normal
-      body: arrayBufferToBase64(ciphertext.body)
+      body: arrayBufferToBase64(ciphertext.body),
     };
   }
 
@@ -1786,12 +1788,12 @@ class E2EEncryption {
     if (ciphertext.type === 3) {
       // PreKeyWhisperMessage (first message)
       plaintext = await sessionCipher.decryptPreKeyWhisperMessage(
-        base64ToArrayBuffer(ciphertext.body)
+        base64ToArrayBuffer(ciphertext.body),
       );
     } else {
       // WhisperMessage (subsequent messages)
       plaintext = await sessionCipher.decryptWhisperMessage(
-        base64ToArrayBuffer(ciphertext.body)
+        base64ToArrayBuffer(ciphertext.body),
       );
     }
 
@@ -1868,9 +1870,9 @@ class SecureSessionManager {
     // Use httpOnly cookie for token (set by server)
     // Store non-sensitive data in encrypted IndexedDB
     const encryptedData = await this.encrypt(JSON.stringify(userData));
-    await this.db.put('session', {
+    await this.db.put("session", {
       data: encryptedData,
-      expiresAt: Date.now() + this.SESSION_TIMEOUT
+      expiresAt: Date.now() + this.SESSION_TIMEOUT,
     });
   }
 
@@ -1879,7 +1881,7 @@ class SecureSessionManager {
     const fingerprint = this.getDeviceFingerprint();
     if (session.fingerprint !== fingerprint) {
       this.logout();
-      throw new Error('Session invalidated: device mismatch');
+      throw new Error("Session invalidated: device mismatch");
     }
   }
 
@@ -1894,7 +1896,7 @@ class SecureSessionManager {
       }, this.IDLE_TIMEOUT);
     };
 
-    ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(event => {
+    ["mousedown", "keydown", "scroll", "touchstart"].forEach((event) => {
       document.addEventListener(event, resetTimer, { passive: true });
     });
 
@@ -1904,18 +1906,18 @@ class SecureSessionManager {
   // Secure logout
   async logout() {
     // Clear all sensitive data
-    await this.db.clear('session');
-    await this.db.clear('messages'); // Clear cached messages
-    await this.db.clear('keys'); // Clear encryption keys
+    await this.db.clear("session");
+    await this.db.clear("messages"); // Clear cached messages
+    await this.db.clear("keys"); // Clear encryption keys
 
     // Revoke token server-side
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetch("/api/auth/logout", { method: "POST" });
 
     // Clear memory
     this.encryptionKeys = null;
 
     // Redirect
-    window.location.href = '/login';
+    window.location.href = "/login";
   }
 }
 ```
@@ -1974,8 +1976,8 @@ class SecureSessionManager {
 
 ```jsx
 // components/SwipeableMessage.jsx
-import { useSpring, animated } from '@react-spring/web';
-import { useDrag } from '@use-gesture/react';
+import { useSpring, animated } from "@react-spring/web";
+import { useDrag } from "@use-gesture/react";
 
 const SwipeableMessage = ({ message, onReply }) => {
   const SWIPE_THRESHOLD = 80;
@@ -1984,43 +1986,40 @@ const SwipeableMessage = ({ message, onReply }) => {
   const [{ x }, api] = useSpring(() => ({ x: 0 }));
   const [showReplyIcon, setShowReplyIcon] = useState(false);
 
-  const bind = useDrag(({
-    down,
-    movement: [mx],
-    velocity: [vx],
-    direction: [dx],
-    cancel
-  }) => {
-    // Only allow right swipe
-    if (dx < 0) {
-      cancel();
-      return;
-    }
-
-    if (down) {
-      // Clamp movement
-      const clampedX = Math.min(mx, MAX_SWIPE);
-      api.start({ x: clampedX, immediate: true });
-      setShowReplyIcon(clampedX > SWIPE_THRESHOLD * 0.5);
-    } else {
-      // Release
-      if (mx > SWIPE_THRESHOLD || vx > 0.5) {
-        // Trigger reply
-        onReply(message);
-        // Haptic feedback
-        if (navigator.vibrate) {
-          navigator.vibrate(50);
-        }
+  const bind = useDrag(
+    ({ down, movement: [mx], velocity: [vx], direction: [dx], cancel }) => {
+      // Only allow right swipe
+      if (dx < 0) {
+        cancel();
+        return;
       }
-      // Spring back
-      api.start({ x: 0 });
-      setShowReplyIcon(false);
-    }
-  }, {
-    axis: 'x',
-    bounds: { left: 0, right: MAX_SWIPE },
-    rubberband: true
-  });
+
+      if (down) {
+        // Clamp movement
+        const clampedX = Math.min(mx, MAX_SWIPE);
+        api.start({ x: clampedX, immediate: true });
+        setShowReplyIcon(clampedX > SWIPE_THRESHOLD * 0.5);
+      } else {
+        // Release
+        if (mx > SWIPE_THRESHOLD || vx > 0.5) {
+          // Trigger reply
+          onReply(message);
+          // Haptic feedback
+          if (navigator.vibrate) {
+            navigator.vibrate(50);
+          }
+        }
+        // Spring back
+        api.start({ x: 0 });
+        setShowReplyIcon(false);
+      }
+    },
+    {
+      axis: "x",
+      bounds: { left: 0, right: MAX_SWIPE },
+      rubberband: true,
+    },
+  );
 
   return (
     <div className="swipeable-message-container">
@@ -2029,7 +2028,7 @@ const SwipeableMessage = ({ message, onReply }) => {
         className="reply-icon"
         style={{
           opacity: x.to([0, SWIPE_THRESHOLD], [0, 1]),
-          transform: x.to(v => `scale(${Math.min(v / SWIPE_THRESHOLD, 1)})`)
+          transform: x.to((v) => `scale(${Math.min(v / SWIPE_THRESHOLD, 1)})`),
         }}
       >
         <ReplyIcon />
@@ -2038,7 +2037,7 @@ const SwipeableMessage = ({ message, onReply }) => {
       {/* Swipeable message */}
       <animated.div
         {...bind()}
-        style={{ x, touchAction: 'pan-y' }}
+        style={{ x, touchAction: "pan-y" }}
         className="message-bubble"
       >
         <MessageContent message={message} />
@@ -2058,10 +2057,10 @@ const useVirtualKeyboard = () => {
 
   useEffect(() => {
     // Modern API (Chrome 94+)
-    if ('virtualKeyboard' in navigator) {
+    if ("virtualKeyboard" in navigator) {
       navigator.virtualKeyboard.overlaysContent = true;
 
-      navigator.virtualKeyboard.addEventListener('geometrychange', (e) => {
+      navigator.virtualKeyboard.addEventListener("geometrychange", (e) => {
         const { height } = e.target.boundingRect;
         setKeyboardHeight(height);
         setIsKeyboardVisible(height > 0);
@@ -2077,12 +2076,12 @@ const useVirtualKeyboard = () => {
         setIsKeyboardVisible(heightDiff > 100);
       };
 
-      window.visualViewport.addEventListener('resize', handleResize);
-      window.visualViewport.addEventListener('scroll', handleResize);
+      window.visualViewport.addEventListener("resize", handleResize);
+      window.visualViewport.addEventListener("scroll", handleResize);
 
       return () => {
-        window.visualViewport.removeEventListener('resize', handleResize);
-        window.visualViewport.removeEventListener('scroll', handleResize);
+        window.visualViewport.removeEventListener("resize", handleResize);
+        window.visualViewport.removeEventListener("scroll", handleResize);
       };
     }
   }, []);
@@ -2107,7 +2106,7 @@ const ChatWindow = () => {
       className="chat-window"
       style={{
         paddingBottom: keyboardHeight,
-        transition: 'padding-bottom 0.2s ease'
+        transition: "padding-bottom 0.2s ease",
       }}
     >
       <MessageList ref={messageListRef} />
@@ -2208,107 +2207,118 @@ const ChatWindow = () => {
 
 ```jsx
 // __tests__/components/MessageBubble.test.jsx
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { MessageBubble } from '../MessageBubble';
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MessageBubble } from "../MessageBubble";
 
-describe('MessageBubble', () => {
+describe("MessageBubble", () => {
   const mockMessage = {
-    id: 'msg-1',
-    text: 'Hello, world!',
-    senderId: 'user-1',
-    timestamp: '2024-12-22T10:30:00Z',
-    status: 'sent'
+    id: "msg-1",
+    text: "Hello, world!",
+    senderId: "user-1",
+    timestamp: "2024-12-22T10:30:00Z",
+    status: "sent",
   };
 
-  it('renders text message correctly', () => {
+  it("renders text message correctly", () => {
     render(<MessageBubble message={mockMessage} isOwn={true} />);
 
-    expect(screen.getByText('Hello, world!')).toBeInTheDocument();
-    expect(screen.getByRole('article')).toHaveClass('message--own');
+    expect(screen.getByText("Hello, world!")).toBeInTheDocument();
+    expect(screen.getByRole("article")).toHaveClass("message--own");
   });
 
-  it('displays correct status icon', () => {
+  it("displays correct status icon", () => {
     const { rerender } = render(
-      <MessageBubble message={{ ...mockMessage, status: 'pending' }} isOwn={true} />
+      <MessageBubble
+        message={{ ...mockMessage, status: "pending" }}
+        isOwn={true}
+      />,
     );
-    expect(screen.getByLabelText('Sending')).toBeInTheDocument();
+    expect(screen.getByLabelText("Sending")).toBeInTheDocument();
 
     rerender(
-      <MessageBubble message={{ ...mockMessage, status: 'delivered' }} isOwn={true} />
+      <MessageBubble
+        message={{ ...mockMessage, status: "delivered" }}
+        isOwn={true}
+      />,
     );
-    expect(screen.getByLabelText('Delivered')).toBeInTheDocument();
+    expect(screen.getByLabelText("Delivered")).toBeInTheDocument();
 
     rerender(
-      <MessageBubble message={{ ...mockMessage, status: 'read' }} isOwn={true} />
+      <MessageBubble
+        message={{ ...mockMessage, status: "read" }}
+        isOwn={true}
+      />,
     );
-    expect(screen.getByLabelText('Read')).toBeInTheDocument();
+    expect(screen.getByLabelText("Read")).toBeInTheDocument();
   });
 
-  it('shows retry button for failed messages', async () => {
+  it("shows retry button for failed messages", async () => {
     const onRetry = jest.fn();
     render(
       <MessageBubble
-        message={{ ...mockMessage, status: 'failed' }}
+        message={{ ...mockMessage, status: "failed" }}
         isOwn={true}
         onRetry={onRetry}
-      />
+      />,
     );
 
-    const retryButton = screen.getByRole('button', { name: /retry/i });
+    const retryButton = screen.getByRole("button", { name: /retry/i });
     await userEvent.click(retryButton);
 
-    expect(onRetry).toHaveBeenCalledWith('msg-1');
+    expect(onRetry).toHaveBeenCalledWith("msg-1");
   });
 
-  it('handles long messages with word wrap', () => {
+  it("handles long messages with word wrap", () => {
     const longMessage = {
       ...mockMessage,
-      text: 'A'.repeat(1000)
+      text: "A".repeat(1000),
     };
 
     render(<MessageBubble message={longMessage} isOwn={true} />);
 
     const messageElement = screen.getByText(/A+/);
-    expect(messageElement).toHaveStyle({ wordWrap: 'break-word' });
+    expect(messageElement).toHaveStyle({ wordWrap: "break-word" });
   });
 
-  it('escapes HTML in message text (XSS prevention)', () => {
+  it("escapes HTML in message text (XSS prevention)", () => {
     const xssMessage = {
       ...mockMessage,
-      text: '<script>alert("xss")</script>'
+      text: '<script>alert("xss")</script>',
     };
 
     render(<MessageBubble message={xssMessage} isOwn={false} />);
 
     // Should display as text, not execute
-    expect(screen.getByText('<script>alert("xss")</script>')).toBeInTheDocument();
-    expect(document.querySelector('script')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('<script>alert("xss")</script>'),
+    ).toBeInTheDocument();
+    expect(document.querySelector("script")).not.toBeInTheDocument();
   });
 });
 
 // __tests__/utils/encryption.test.js
-describe('E2E Encryption', () => {
-  it('encrypts and decrypts message correctly', async () => {
-    const alice = new E2EEncryption('alice');
-    const bob = new E2EEncryption('bob');
+describe("E2E Encryption", () => {
+  it("encrypts and decrypts message correctly", async () => {
+    const alice = new E2EEncryption("alice");
+    const bob = new E2EEncryption("bob");
 
     // Exchange keys
     const aliceKeys = await alice.generateIdentity();
     const bobKeys = await bob.generateIdentity();
 
-    await alice.establishSession('bob', bobKeys);
-    await bob.establishSession('alice', aliceKeys);
+    await alice.establishSession("bob", bobKeys);
+    await bob.establishSession("alice", aliceKeys);
 
     // Alice sends to Bob
-    const plaintext = 'Hello, Bob!';
-    const ciphertext = await alice.encryptMessage('bob', plaintext);
-    const decrypted = await bob.decryptMessage('alice', ciphertext);
+    const plaintext = "Hello, Bob!";
+    const ciphertext = await alice.encryptMessage("bob", plaintext);
+    const decrypted = await bob.decryptMessage("alice", ciphertext);
 
     expect(decrypted).toBe(plaintext);
   });
 
-  it('provides forward secrecy (old keys cannot decrypt new messages)', async () => {
+  it("provides forward secrecy (old keys cannot decrypt new messages)", async () => {
     // After key ratchet, old session keys should not work
     // ... test implementation
   });
@@ -2319,69 +2329,69 @@ describe('E2E Encryption', () => {
 
 ```jsx
 // __tests__/integration/websocket.test.js
-import { renderHook, act, waitFor } from '@testing-library/react';
-import WS from 'jest-websocket-mock';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { WebSocketProvider } from '../providers/WebSocketProvider';
+import { renderHook, act, waitFor } from "@testing-library/react";
+import WS from "jest-websocket-mock";
+import { useWebSocket } from "../hooks/useWebSocket";
+import { WebSocketProvider } from "../providers/WebSocketProvider";
 
-describe('WebSocket Integration', () => {
+describe("WebSocket Integration", () => {
   let server;
 
   beforeEach(() => {
-    server = new WS('wss://chat.example.com/ws');
+    server = new WS("wss://chat.example.com/ws");
   });
 
   afterEach(() => {
     WS.clean();
   });
 
-  it('connects and authenticates successfully', async () => {
+  it("connects and authenticates successfully", async () => {
     const { result } = renderHook(() => useWebSocket(), {
       wrapper: ({ children }) => (
-        <WebSocketProvider token="valid-token">
-          {children}
-        </WebSocketProvider>
-      )
+        <WebSocketProvider token="valid-token">{children}</WebSocketProvider>
+      ),
     });
 
     await server.connected;
 
-    expect(result.current.status).toBe('connected');
+    expect(result.current.status).toBe("connected");
   });
 
-  it('receives and processes incoming messages', async () => {
+  it("receives and processes incoming messages", async () => {
     const onMessage = jest.fn();
 
     renderHook(() => useWebSocket({ onMessage }), {
-      wrapper: WebSocketProvider
+      wrapper: WebSocketProvider,
     });
 
     await server.connected;
 
     act(() => {
-      server.send(JSON.stringify({
-        type: 'message',
-        messageId: 'msg-123',
-        chatId: 'chat-456',
-        senderId: 'user-789',
-        content: { type: 'text', text: 'Hello!' },
-        timestamp: '2024-12-22T10:30:00Z'
-      }));
+      server.send(
+        JSON.stringify({
+          type: "message",
+          messageId: "msg-123",
+          chatId: "chat-456",
+          senderId: "user-789",
+          content: { type: "text", text: "Hello!" },
+          timestamp: "2024-12-22T10:30:00Z",
+        }),
+      );
     });
 
     await waitFor(() => {
       expect(onMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'message',
-          messageId: 'msg-123'
-        })
+          type: "message",
+          messageId: "msg-123",
+        }),
       );
     });
   });
 
-  it('sends message and receives acknowledgment', async () => {
+  it("sends message and receives acknowledgment", async () => {
     const { result } = renderHook(() => useWebSocket(), {
-      wrapper: WebSocketProvider
+      wrapper: WebSocketProvider,
     });
 
     await server.connected;
@@ -2390,35 +2400,37 @@ describe('WebSocket Integration', () => {
     let sendPromise;
     act(() => {
       sendPromise = result.current.sendMessage({
-        chatId: 'chat-456',
-        content: { type: 'text', text: 'Hello!' }
+        chatId: "chat-456",
+        content: { type: "text", text: "Hello!" },
       });
     });
 
     // Verify message sent
     await expect(server).toReceiveMessage(
-      expect.stringContaining('"type":"message"')
+      expect.stringContaining('"type":"message"'),
     );
 
     // Send ack
     act(() => {
-      server.send(JSON.stringify({
-        type: 'message_ack',
-        tempId: 'temp-123',
-        messageId: 'server-msg-id',
-        status: 'sent'
-      }));
+      server.send(
+        JSON.stringify({
+          type: "message_ack",
+          tempId: "temp-123",
+          messageId: "server-msg-id",
+          status: "sent",
+        }),
+      );
     });
 
     await expect(sendPromise).resolves.toEqual({
-      messageId: 'server-msg-id',
-      status: 'sent'
+      messageId: "server-msg-id",
+      status: "sent",
     });
   });
 
-  it('reconnects with exponential backoff', async () => {
+  it("reconnects with exponential backoff", async () => {
     const { result } = renderHook(() => useWebSocket(), {
-      wrapper: WebSocketProvider
+      wrapper: WebSocketProvider,
     });
 
     await server.connected;
@@ -2428,19 +2440,22 @@ describe('WebSocket Integration', () => {
       server.close();
     });
 
-    expect(result.current.status).toBe('reconnecting');
+    expect(result.current.status).toBe("reconnecting");
 
     // Create new server for reconnection
-    server = new WS('wss://chat.example.com/ws');
+    server = new WS("wss://chat.example.com/ws");
 
-    await waitFor(() => {
-      expect(result.current.status).toBe('connected');
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(result.current.status).toBe("connected");
+      },
+      { timeout: 5000 },
+    );
   });
 
-  it('queues messages during disconnect', async () => {
+  it("queues messages during disconnect", async () => {
     const { result } = renderHook(() => useWebSocket(), {
-      wrapper: WebSocketProvider
+      wrapper: WebSocketProvider,
     });
 
     await server.connected;
@@ -2449,20 +2464,20 @@ describe('WebSocket Integration', () => {
     // Send while disconnected
     act(() => {
       result.current.sendMessage({
-        chatId: 'chat-456',
-        content: { type: 'text', text: 'Queued message' }
+        chatId: "chat-456",
+        content: { type: "text", text: "Queued message" },
       });
     });
 
     expect(result.current.queuedMessages).toHaveLength(1);
 
     // Reconnect
-    server = new WS('wss://chat.example.com/ws');
+    server = new WS("wss://chat.example.com/ws");
     await server.connected;
 
     // Should send queued message
     await expect(server).toReceiveMessage(
-      expect.stringContaining('Queued message')
+      expect.stringContaining("Queued message"),
     );
   });
 });
@@ -2472,94 +2487,110 @@ describe('WebSocket Integration', () => {
 
 ```jsx
 // e2e/chat.spec.ts (Playwright)
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-test.describe('Chat Flow', () => {
+test.describe("Chat Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Login
-    await page.goto('/login');
-    await page.fill('[name="phone"]', '+1234567890');
+    await page.goto("/login");
+    await page.fill('[name="phone"]', "+1234567890");
     await page.click('button[type="submit"]');
-    await page.fill('[name="otp"]', '123456');
+    await page.fill('[name="otp"]', "123456");
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL('/chats');
+    await expect(page).toHaveURL("/chats");
   });
 
-  test('sends and receives text message', async ({ page, context }) => {
+  test("sends and receives text message", async ({ page, context }) => {
     // Open second browser for recipient
     const recipientPage = await context.newPage();
-    await recipientPage.goto('/login');
+    await recipientPage.goto("/login");
     // ... login as recipient
 
     // Sender: Select chat and send message
     await page.click('[data-testid="chat-item-user-456"]');
-    await page.fill('[data-testid="message-input"]', 'Hello from E2E test!');
+    await page.fill('[data-testid="message-input"]', "Hello from E2E test!");
     await page.click('[data-testid="send-button"]');
 
     // Verify message appears for sender with pending status
     const senderMessage = page.locator('[data-testid="message"]:last-child');
-    await expect(senderMessage).toContainText('Hello from E2E test!');
-    await expect(senderMessage.locator('[data-testid="status-pending"]')).toBeVisible();
+    await expect(senderMessage).toContainText("Hello from E2E test!");
+    await expect(
+      senderMessage.locator('[data-testid="status-pending"]'),
+    ).toBeVisible();
 
     // Wait for sent status
-    await expect(senderMessage.locator('[data-testid="status-sent"]')).toBeVisible();
+    await expect(
+      senderMessage.locator('[data-testid="status-sent"]'),
+    ).toBeVisible();
 
     // Verify message appears for recipient
     await recipientPage.click('[data-testid="chat-item-user-123"]');
-    const recipientMessage = recipientPage.locator('[data-testid="message"]:last-child');
-    await expect(recipientMessage).toContainText('Hello from E2E test!');
+    const recipientMessage = recipientPage.locator(
+      '[data-testid="message"]:last-child',
+    );
+    await expect(recipientMessage).toContainText("Hello from E2E test!");
 
     // Verify delivered status for sender
-    await expect(senderMessage.locator('[data-testid="status-delivered"]')).toBeVisible();
+    await expect(
+      senderMessage.locator('[data-testid="status-delivered"]'),
+    ).toBeVisible();
   });
 
-  test('uploads and displays image', async ({ page }) => {
+  test("uploads and displays image", async ({ page }) => {
     await page.click('[data-testid="chat-item-user-456"]');
 
     // Upload image
     const fileInput = page.locator('input[type="file"]');
-    await fileInput.setInputFiles('./fixtures/test-image.jpg');
+    await fileInput.setInputFiles("./fixtures/test-image.jpg");
 
     // Wait for upload
-    const imageMessage = page.locator('[data-testid="message-image"]:last-child');
+    const imageMessage = page.locator(
+      '[data-testid="message-image"]:last-child',
+    );
     await expect(imageMessage).toBeVisible();
-    await expect(imageMessage.locator('img')).toHaveAttribute('src', /media\.chat\.app/);
+    await expect(imageMessage.locator("img")).toHaveAttribute(
+      "src",
+      /media\.chat\.app/,
+    );
   });
 
-  test('shows typing indicator', async ({ page, context }) => {
+  test("shows typing indicator", async ({ page, context }) => {
     const recipientPage = await context.newPage();
     // ... setup recipient
 
     // Sender starts typing
     await page.click('[data-testid="chat-item-user-456"]');
-    await page.type('[data-testid="message-input"]', 'Typing...');
+    await page.type('[data-testid="message-input"]', "Typing...");
 
     // Recipient should see typing indicator
     await recipientPage.click('[data-testid="chat-item-user-123"]');
-    await expect(recipientPage.locator('[data-testid="typing-indicator"]'))
-      .toContainText('typing');
+    await expect(
+      recipientPage.locator('[data-testid="typing-indicator"]'),
+    ).toContainText("typing");
   });
 
-  test('works offline and syncs on reconnect', async ({ page, context }) => {
+  test("works offline and syncs on reconnect", async ({ page, context }) => {
     await page.click('[data-testid="chat-item-user-456"]');
 
     // Go offline
     await context.setOffline(true);
 
     // Send message while offline
-    await page.fill('[data-testid="message-input"]', 'Offline message');
+    await page.fill('[data-testid="message-input"]', "Offline message");
     await page.click('[data-testid="send-button"]');
 
     // Should show pending status
     const message = page.locator('[data-testid="message"]:last-child');
-    await expect(message.locator('[data-testid="status-pending"]')).toBeVisible();
+    await expect(
+      message.locator('[data-testid="status-pending"]'),
+    ).toBeVisible();
 
     // Go back online
     await context.setOffline(false);
 
     // Should sync and show sent status
     await expect(message.locator('[data-testid="status-sent"]')).toBeVisible({
-      timeout: 10000
+      timeout: 10000,
     });
   });
 });
@@ -2609,104 +2640,102 @@ test.describe('Chat Flow', () => {
 
 ```javascript
 // service-worker.js
-import { precacheAndRoute } from 'workbox-precaching';
-import { registerRoute } from 'workbox-routing';
+import { precacheAndRoute } from "workbox-precaching";
+import { registerRoute } from "workbox-routing";
 import {
   CacheFirst,
   NetworkFirst,
-  StaleWhileRevalidate
-} from 'workbox-strategies';
-import { ExpirationPlugin } from 'workbox-expiration';
-import { BackgroundSyncPlugin } from 'workbox-background-sync';
+  StaleWhileRevalidate,
+} from "workbox-strategies";
+import { ExpirationPlugin } from "workbox-expiration";
+import { BackgroundSyncPlugin } from "workbox-background-sync";
 
 // Precache app shell
 precacheAndRoute(self.__WB_MANIFEST);
 
 // API calls: Network first, fall back to cache
 registerRoute(
-  ({ url }) => url.pathname.startsWith('/api/'),
+  ({ url }) => url.pathname.startsWith("/api/"),
   new NetworkFirst({
-    cacheName: 'api-cache-v1',
+    cacheName: "api-cache-v1",
     plugins: [
       new ExpirationPlugin({
         maxEntries: 100,
-        maxAgeSeconds: 24 * 60 * 60 // 1 day
-      })
+        maxAgeSeconds: 24 * 60 * 60, // 1 day
+      }),
     ],
-    networkTimeoutSeconds: 5
-  })
+    networkTimeoutSeconds: 5,
+  }),
 );
 
 // Media: Cache first with stale-while-revalidate
 registerRoute(
-  ({ url }) => url.hostname === 'media.chat.app',
+  ({ url }) => url.hostname === "media.chat.app",
   new CacheFirst({
-    cacheName: 'media-cache-v1',
+    cacheName: "media-cache-v1",
     plugins: [
       new ExpirationPlugin({
         maxEntries: 500,
-        maxAgeSeconds: 30 * 24 * 60 * 60 // 30 days
-      })
-    ]
-  })
+        maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+      }),
+    ],
+  }),
 );
 
 // Background sync for failed message sends
-const messageQueue = new BackgroundSyncPlugin('message-queue', {
-  maxRetentionTime: 24 * 60 // 24 hours
+const messageQueue = new BackgroundSyncPlugin("message-queue", {
+  maxRetentionTime: 24 * 60, // 24 hours
 });
 
 registerRoute(
-  ({ url }) => url.pathname === '/api/messages',
+  ({ url }) => url.pathname === "/api/messages",
   new NetworkOnly({
-    plugins: [messageQueue]
+    plugins: [messageQueue],
   }),
-  'POST'
+  "POST",
 );
 
 // Handle push notifications
-self.addEventListener('push', (event) => {
+self.addEventListener("push", (event) => {
   const data = event.data?.json() || {};
 
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/badge-72.png',
+      icon: "/icons/icon-192.png",
+      badge: "/icons/badge-72.png",
       tag: data.chatId, // Replace previous notification from same chat
       data: { chatId: data.chatId, messageId: data.messageId },
       actions: [
-        { action: 'reply', title: 'Reply' },
-        { action: 'mark-read', title: 'Mark as Read' }
-      ]
-    })
+        { action: "reply", title: "Reply" },
+        { action: "mark-read", title: "Mark as Read" },
+      ],
+    }),
   );
 });
 
 // Handle notification click
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   const { chatId } = event.notification.data;
 
-  if (event.action === 'reply') {
+  if (event.action === "reply") {
     // Open chat with reply focus
-    event.waitUntil(
-      clients.openWindow(`/chat/${chatId}?focus=reply`)
-    );
+    event.waitUntil(clients.openWindow(`/chat/${chatId}?focus=reply`));
   } else {
     // Open chat
     event.waitUntil(
-      clients.matchAll({ type: 'window' }).then(windowClients => {
+      clients.matchAll({ type: "window" }).then((windowClients) => {
         // Focus existing window or open new
         for (const client of windowClients) {
-          if (client.url.includes('/chat') && 'focus' in client) {
-            client.postMessage({ type: 'NAVIGATE_CHAT', chatId });
+          if (client.url.includes("/chat") && "focus" in client) {
+            client.postMessage({ type: "NAVIGATE_CHAT", chatId });
             return client.focus();
           }
         }
         return clients.openWindow(`/chat/${chatId}`);
-      })
+      }),
     );
   }
 });
@@ -2716,11 +2745,11 @@ self.addEventListener('notificationclick', (event) => {
 
 ```javascript
 // db/ChatDatabase.js
-import Dexie from 'dexie';
+import Dexie from "dexie";
 
 class ChatDatabase extends Dexie {
   constructor() {
-    super('ChatApp');
+    super("ChatApp");
 
     this.version(1).stores({
       // Messages table
@@ -2758,7 +2787,7 @@ class ChatDatabase extends Dexie {
       // Sync metadata
       syncState: `
         key
-      `
+      `,
     });
   }
 
@@ -2771,20 +2800,17 @@ class ChatDatabase extends Dexie {
       senderId: message.senderId,
       timestamp: message.timestamp,
       status: message.status,
-      encryptedContent: encrypted
+      encryptedContent: encrypted,
     });
   }
 
   // Get messages for chat
   async getMessages(chatId, limit = 50, before = null) {
     let query = this.messages
-      .where('[chatId+timestamp]')
+      .where("[chatId+timestamp]")
       .between([chatId, Dexie.minKey], [chatId, before || Dexie.maxKey]);
 
-    const messages = await query
-      .reverse()
-      .limit(limit)
-      .toArray();
+    const messages = await query.reverse().limit(limit).toArray();
 
     return messages.reverse();
   }
@@ -2795,26 +2821,28 @@ class ChatDatabase extends Dexie {
       tempId: message.tempId,
       chatId: message.chatId,
       content: message.content,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     });
   }
 
   // Sync with server
   async sync(lastSyncTimestamp) {
-    const response = await fetch(
-      `/api/sync?since=${lastSyncTimestamp}`
-    );
+    const response = await fetch(`/api/sync?since=${lastSyncTimestamp}`);
     const { messages, chats, syncTimestamp } = await response.json();
 
-    await this.transaction('rw', [this.messages, this.chats, this.syncState], async () => {
-      for (const message of messages) {
-        await this.messages.put(message);
-      }
-      for (const chat of chats) {
-        await this.chats.put(chat);
-      }
-      await this.syncState.put({ key: 'lastSync', value: syncTimestamp });
-    });
+    await this.transaction(
+      "rw",
+      [this.messages, this.chats, this.syncState],
+      async () => {
+        for (const message of messages) {
+          await this.messages.put(message);
+        }
+        for (const chat of chats) {
+          await this.chats.put(chat);
+        }
+        await this.syncState.put({ key: "lastSync", value: syncTimestamp });
+      },
+    );
   }
 }
 
@@ -2829,7 +2857,7 @@ export const db = new ChatDatabase();
 
 ```jsx
 // components/VoiceRecorder.jsx
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from "react";
 
 const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -2847,8 +2875,8 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          sampleRate: 48000
-        }
+          sampleRate: 48000,
+        },
       });
 
       // Setup audio analysis for waveform
@@ -2859,9 +2887,9 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
       source.connect(analyser.current);
 
       // Use Opus codec for small file size
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
 
       mediaRecorder.current = new MediaRecorder(stream, { mimeType });
       chunks.current = [];
@@ -2873,16 +2901,17 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
       mediaRecorder.current.onstop = async () => {
         const blob = new Blob(chunks.current, { type: mimeType });
         const arrayBuffer = await blob.arrayBuffer();
-        const audioBuffer = await audioContext.current.decodeAudioData(arrayBuffer);
+        const audioBuffer =
+          await audioContext.current.decodeAudioData(arrayBuffer);
 
         onRecordComplete({
           blob,
           duration: audioBuffer.duration,
-          waveform: generateWaveformData(audioBuffer)
+          waveform: generateWaveformData(audioBuffer),
         });
 
         // Cleanup
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       mediaRecorder.current.start(100); // Collect data every 100ms
@@ -2890,9 +2919,8 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
 
       // Update waveform visualization
       updateWaveform();
-
     } catch (error) {
-      console.error('Failed to start recording:', error);
+      console.error("Failed to start recording:", error);
     }
   };
 
@@ -2904,20 +2932,20 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
 
     // Get average amplitude
     const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-    setWaveform(prev => [...prev.slice(-50), average / 255]);
+    setWaveform((prev) => [...prev.slice(-50), average / 255]);
 
     requestAnimationFrame(updateWaveform);
   };
 
   const stopRecording = () => {
-    if (mediaRecorder.current?.state === 'recording') {
+    if (mediaRecorder.current?.state === "recording") {
       mediaRecorder.current.stop();
       setIsRecording(false);
     }
   };
 
   const cancelRecording = () => {
-    if (mediaRecorder.current?.state === 'recording') {
+    if (mediaRecorder.current?.state === "recording") {
       mediaRecorder.current.stop();
       chunks.current = [];
       setIsRecording(false);
@@ -2930,7 +2958,7 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
     let interval;
     if (isRecording) {
       interval = setInterval(() => {
-        setDuration(d => d + 1);
+        setDuration((d) => d + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
@@ -2958,9 +2986,7 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
             ))}
           </div>
 
-          <span className="duration">
-            {formatDuration(duration)}
-          </span>
+          <span className="duration">{formatDuration(duration)}</span>
 
           <button
             onClick={stopRecording}
@@ -3024,7 +3050,7 @@ const VoiceRecorder = ({ onRecordComplete, onCancel }) => {
 ```jsx
 // hooks/useVideoCall.js
 const useVideoCall = (userId, onCallEnd) => {
-  const [callState, setCallState] = useState('idle'); // idle, ringing, connected
+  const [callState, setCallState] = useState("idle"); // idle, ringing, connected
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
 
@@ -3033,28 +3059,30 @@ const useVideoCall = (userId, onCallEnd) => {
 
   const configuration = {
     iceServers: [
-      { urls: 'stun:stun.chat.app:3478' },
+      { urls: "stun:stun.chat.app:3478" },
       {
-        urls: 'turn:turn.chat.app:3478',
-        username: 'user',
-        credential: 'pass'
-      }
-    ]
+        urls: "turn:turn.chat.app:3478",
+        username: "user",
+        credential: "pass",
+      },
+    ],
   };
 
   const startCall = async (isVideo = true) => {
     try {
       // Get local media
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: isVideo ? {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
-        } : false,
+        video: isVideo
+          ? {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: "user",
+            }
+          : false,
         audio: {
           echoCancellation: true,
-          noiseSuppression: true
-        }
+          noiseSuppression: true,
+        },
       });
 
       setLocalStream(stream);
@@ -3063,7 +3091,7 @@ const useVideoCall = (userId, onCallEnd) => {
       peerConnection.current = new RTCPeerConnection(configuration);
 
       // Add local tracks
-      stream.getTracks().forEach(track => {
+      stream.getTracks().forEach((track) => {
         peerConnection.current.addTrack(track, stream);
       });
 
@@ -3076,9 +3104,9 @@ const useVideoCall = (userId, onCallEnd) => {
       peerConnection.current.onicecandidate = (event) => {
         if (event.candidate) {
           sendSignal({
-            type: 'ice-candidate',
+            type: "ice-candidate",
             candidate: event.candidate,
-            to: userId
+            to: userId,
           });
         }
       };
@@ -3088,16 +3116,15 @@ const useVideoCall = (userId, onCallEnd) => {
       await peerConnection.current.setLocalDescription(offer);
 
       sendSignal({
-        type: 'call-offer',
+        type: "call-offer",
         sdp: offer,
         to: userId,
-        isVideo
+        isVideo,
       });
 
-      setCallState('ringing');
-
+      setCallState("ringing");
     } catch (error) {
-      console.error('Failed to start call:', error);
+      console.error("Failed to start call:", error);
     }
   };
 
@@ -3105,14 +3132,14 @@ const useVideoCall = (userId, onCallEnd) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: isVideo,
-        audio: true
+        audio: true,
       });
 
       setLocalStream(stream);
 
       peerConnection.current = new RTCPeerConnection(configuration);
 
-      stream.getTracks().forEach(track => {
+      stream.getTracks().forEach((track) => {
         peerConnection.current.addTrack(track, stream);
       });
 
@@ -3123,9 +3150,9 @@ const useVideoCall = (userId, onCallEnd) => {
       peerConnection.current.onicecandidate = (event) => {
         if (event.candidate) {
           sendSignal({
-            type: 'ice-candidate',
+            type: "ice-candidate",
             candidate: event.candidate,
-            to: userId
+            to: userId,
           });
         }
       };
@@ -3135,24 +3162,23 @@ const useVideoCall = (userId, onCallEnd) => {
       await peerConnection.current.setLocalDescription(answer);
 
       sendSignal({
-        type: 'call-answer',
+        type: "call-answer",
         sdp: answer,
-        to: userId
+        to: userId,
       });
 
-      setCallState('connected');
-
+      setCallState("connected");
     } catch (error) {
-      console.error('Failed to answer call:', error);
+      console.error("Failed to answer call:", error);
     }
   };
 
   const endCall = () => {
-    localStream?.getTracks().forEach(track => track.stop());
+    localStream?.getTracks().forEach((track) => track.stop());
     peerConnection.current?.close();
     setLocalStream(null);
     setRemoteStream(null);
-    setCallState('idle');
+    setCallState("idle");
     onCallEnd();
   };
 
@@ -3174,16 +3200,16 @@ const useVideoCall = (userId, onCallEnd) => {
   useEffect(() => {
     const handleSignal = async (signal) => {
       switch (signal.type) {
-        case 'call-answer':
+        case "call-answer":
           await peerConnection.current.setRemoteDescription(signal.sdp);
-          setCallState('connected');
+          setCallState("connected");
           break;
 
-        case 'ice-candidate':
+        case "ice-candidate":
           await peerConnection.current.addIceCandidate(signal.candidate);
           break;
 
-        case 'call-end':
+        case "call-end":
           endCall();
           break;
       }
@@ -3200,7 +3226,7 @@ const useVideoCall = (userId, onCallEnd) => {
     answerCall,
     endCall,
     toggleMute,
-    toggleVideo
+    toggleVideo,
   };
 };
 ```
@@ -3269,60 +3295,60 @@ const useVideoCall = (userId, onCallEnd) => {
 
 ```jsx
 // i18n/setup.js
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import LanguageDetector from "i18next-browser-languagedetector";
 
 const resources = {
   en: {
     translation: {
       chat: {
-        typing: '{{name}} is typing...',
-        typingMultiple: '{{count}} people are typing...',
-        online: 'Online',
-        offline: 'Offline',
-        lastSeen: 'Last seen {{time}}',
+        typing: "{{name}} is typing...",
+        typingMultiple: "{{count}} people are typing...",
+        online: "Online",
+        offline: "Offline",
+        lastSeen: "Last seen {{time}}",
         messageStatus: {
-          pending: 'Sending',
-          sent: 'Sent',
-          delivered: 'Delivered',
-          read: 'Read'
+          pending: "Sending",
+          sent: "Sent",
+          delivered: "Delivered",
+          read: "Read",
         },
         input: {
-          placeholder: 'Type a message',
-          send: 'Send'
-        }
+          placeholder: "Type a message",
+          send: "Send",
+        },
       },
       time: {
-        justNow: 'Just now',
-        minutesAgo: '{{count}} minute ago',
-        minutesAgo_plural: '{{count}} minutes ago',
-        today: 'Today',
-        yesterday: 'Yesterday'
-      }
-    }
+        justNow: "Just now",
+        minutesAgo: "{{count}} minute ago",
+        minutesAgo_plural: "{{count}} minutes ago",
+        today: "Today",
+        yesterday: "Yesterday",
+      },
+    },
   },
   ar: {
     translation: {
       chat: {
-        typing: '{{name}} يكتب...',
-        typingMultiple: '{{count}} أشخاص يكتبون...',
-        online: 'متصل',
-        offline: 'غير متصل',
-        lastSeen: 'آخر ظهور {{time}}',
+        typing: "{{name}} يكتب...",
+        typingMultiple: "{{count}} أشخاص يكتبون...",
+        online: "متصل",
+        offline: "غير متصل",
+        lastSeen: "آخر ظهور {{time}}",
         messageStatus: {
-          pending: 'جارٍ الإرسال',
-          sent: 'تم الإرسال',
-          delivered: 'تم التسليم',
-          read: 'تمت القراءة'
+          pending: "جارٍ الإرسال",
+          sent: "تم الإرسال",
+          delivered: "تم التسليم",
+          read: "تمت القراءة",
         },
         input: {
-          placeholder: 'اكتب رسالة',
-          send: 'إرسال'
-        }
-      }
-    }
-  }
+          placeholder: "اكتب رسالة",
+          send: "إرسال",
+        },
+      },
+    },
+  },
 };
 
 i18n
@@ -3330,16 +3356,16 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'en',
+    fallbackLng: "en",
     interpolation: {
-      escapeValue: false
-    }
+      escapeValue: false,
+    },
   });
 
 // Set document direction based on language
-i18n.on('languageChanged', (lng) => {
-  const rtlLanguages = ['ar', 'he', 'fa', 'ur'];
-  document.documentElement.dir = rtlLanguages.includes(lng) ? 'rtl' : 'ltr';
+i18n.on("languageChanged", (lng) => {
+  const rtlLanguages = ["ar", "he", "fa", "ur"];
+  document.documentElement.dir = rtlLanguages.includes(lng) ? "rtl" : "ltr";
   document.documentElement.lang = lng;
 });
 
@@ -3359,33 +3385,33 @@ const formatMessageTime = (timestamp, locale) => {
   const diffDays = Math.floor(diffMs / 86400000);
 
   // Relative time for recent messages
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
 
   if (diffMins < 1) {
-    return i18n.t('time.justNow');
+    return i18n.t("time.justNow");
   }
   if (diffMins < 60) {
-    return rtf.format(-diffMins, 'minute');
+    return rtf.format(-diffMins, "minute");
   }
   if (diffHours < 24 && date.getDate() === now.getDate()) {
     return new Intl.DateTimeFormat(locale, {
-      hour: 'numeric',
-      minute: 'numeric'
+      hour: "numeric",
+      minute: "numeric",
     }).format(date);
   }
   if (diffDays === 1) {
-    return i18n.t('time.yesterday');
+    return i18n.t("time.yesterday");
   }
   if (diffDays < 7) {
     return new Intl.DateTimeFormat(locale, {
-      weekday: 'long'
+      weekday: "long",
     }).format(date);
   }
 
   return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
   }).format(date);
 };
 
@@ -3395,17 +3421,17 @@ const formatDateSeparator = (timestamp, locale) => {
   const now = new Date();
 
   if (isSameDay(date, now)) {
-    return i18n.t('time.today');
+    return i18n.t("time.today");
   }
   if (isSameDay(date, new Date(now - 86400000))) {
-    return i18n.t('time.yesterday');
+    return i18n.t("time.yesterday");
   }
 
   return new Intl.DateTimeFormat(locale, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
   }).format(date);
 };
 ```
@@ -3467,7 +3493,7 @@ class ChatAnalytics {
   startMessageSend(tempId) {
     this.messageTimings.set(tempId, {
       startTime: performance.now(),
-      status: 'pending'
+      status: "pending",
     });
   }
 
@@ -3475,9 +3501,9 @@ class ChatAnalytics {
     const timing = this.messageTimings.get(tempId);
     if (timing) {
       const latency = performance.now() - timing.startTime;
-      this.track('message_sent', {
+      this.track("message_sent", {
         latency,
-        messageId: serverId
+        messageId: serverId,
       });
       this.messageTimings.delete(tempId);
     }
@@ -3486,9 +3512,9 @@ class ChatAnalytics {
   messageFailed(tempId, error) {
     const timing = this.messageTimings.get(tempId);
     if (timing) {
-      this.track('message_failed', {
+      this.track("message_failed", {
         latency: performance.now() - timing.startTime,
-        error: error.message
+        error: error.message,
       });
     }
   }
@@ -3497,21 +3523,21 @@ class ChatAnalytics {
   trackWebSocketEvent(event, data = {}) {
     this.track(`ws_${event}`, {
       ...data,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
   // Track user interactions
   trackChatOpened(chatId) {
-    this.track('chat_opened', { chatId });
+    this.track("chat_opened", { chatId });
   }
 
   trackMediaShared(type, size) {
-    this.track('media_shared', { type, size });
+    this.track("media_shared", { type, size });
   }
 
   trackVoiceMessageRecorded(duration) {
-    this.track('voice_message_recorded', { duration });
+    this.track("voice_message_recorded", { duration });
   }
 
   // Core tracking method
@@ -3522,19 +3548,19 @@ class ChatAnalytics {
         ...properties,
         sessionId: this.sessionId,
         timestamp: Date.now(),
-        platform: 'web',
-        userAgent: navigator.userAgent
-      }
+        platform: "web",
+        userAgent: navigator.userAgent,
+      },
     };
 
     // Send to analytics service
     if (navigator.sendBeacon) {
-      navigator.sendBeacon('/api/analytics', JSON.stringify(payload));
+      navigator.sendBeacon("/api/analytics", JSON.stringify(payload));
     } else {
-      fetch('/api/analytics', {
-        method: 'POST',
+      fetch("/api/analytics", {
+        method: "POST",
         body: JSON.stringify(payload),
-        keepalive: true
+        keepalive: true,
       });
     }
   }
@@ -3547,7 +3573,7 @@ export const analytics = new ChatAnalytics();
 
 ```jsx
 // monitoring/ErrorBoundary.jsx
-import * as Sentry from '@sentry/react';
+import * as Sentry from "@sentry/react";
 
 class ChatErrorBoundary extends React.Component {
   constructor(props) {
@@ -3563,8 +3589,8 @@ class ChatErrorBoundary extends React.Component {
     Sentry.captureException(error, {
       extra: {
         componentStack: errorInfo.componentStack,
-        chatId: this.props.chatId
-      }
+        chatId: this.props.chatId,
+      },
     });
   }
 
@@ -3574,9 +3600,7 @@ class ChatErrorBoundary extends React.Component {
         <div className="error-fallback">
           <h2>Something went wrong</h2>
           <p>We're having trouble loading this chat.</p>
-          <button onClick={() => window.location.reload()}>
-            Refresh
-          </button>
+          <button onClick={() => window.location.reload()}>Refresh</button>
         </div>
       );
     }
@@ -3586,20 +3610,20 @@ class ChatErrorBoundary extends React.Component {
 }
 
 // Global error handler
-window.addEventListener('error', (event) => {
+window.addEventListener("error", (event) => {
   Sentry.captureException(event.error, {
     extra: {
       filename: event.filename,
       lineno: event.lineno,
-      colno: event.colno
-    }
+      colno: event.colno,
+    },
   });
 });
 
 // Unhandled promise rejections
-window.addEventListener('unhandledrejection', (event) => {
+window.addEventListener("unhandledrejection", (event) => {
   Sentry.captureException(event.reason, {
-    tags: { type: 'unhandled_promise' }
+    tags: { type: "unhandled_promise" },
   });
 });
 ```
@@ -3662,13 +3686,13 @@ window.addEventListener('unhandledrejection', (event) => {
 // notifications/PushManager.js
 class PushNotificationManager {
   constructor() {
-    this.vapidPublicKey = 'YOUR_VAPID_PUBLIC_KEY';
+    this.vapidPublicKey = "YOUR_VAPID_PUBLIC_KEY";
   }
 
   async requestPermission() {
     const permission = await Notification.requestPermission();
 
-    if (permission === 'granted') {
+    if (permission === "granted") {
       await this.subscribe();
     }
 
@@ -3685,30 +3709,34 @@ class PushNotificationManager {
       if (!subscription) {
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true, // Required by Chrome
-          applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey)
+          applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey),
         });
       }
 
       // Send subscription to server
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           endpoint: subscription.endpoint,
           keys: {
-            p256dh: btoa(String.fromCharCode(...new Uint8Array(
-              subscription.getKey('p256dh')
-            ))),
-            auth: btoa(String.fromCharCode(...new Uint8Array(
-              subscription.getKey('auth')
-            )))
-          }
-        })
+            p256dh: btoa(
+              String.fromCharCode(
+                ...new Uint8Array(subscription.getKey("p256dh")),
+              ),
+            ),
+            auth: btoa(
+              String.fromCharCode(
+                ...new Uint8Array(subscription.getKey("auth")),
+              ),
+            ),
+          },
+        }),
       });
 
       return subscription;
     } catch (error) {
-      console.error('Push subscription failed:', error);
+      console.error("Push subscription failed:", error);
       throw error;
     }
   }
@@ -3719,19 +3747,19 @@ class PushNotificationManager {
 
     if (subscription) {
       await subscription.unsubscribe();
-      await fetch('/api/push/unsubscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint: subscription.endpoint })
+      await fetch("/api/push/unsubscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
       });
     }
   }
 
   urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
     const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
 
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
@@ -3753,7 +3781,7 @@ export const pushManager = new PushNotificationManager();
 // notifications/DesktopNotification.js
 class DesktopNotificationManager {
   constructor() {
-    this.notificationSound = new Audio('/sounds/message.mp3');
+    this.notificationSound = new Audio("/sounds/message.mp3");
     this.enabled = true;
   }
 
@@ -3763,7 +3791,7 @@ class DesktopNotificationManager {
     }
 
     // Check permission
-    if (Notification.permission !== 'granted') {
+    if (Notification.permission !== "granted") {
       return;
     }
 
@@ -3775,12 +3803,12 @@ class DesktopNotificationManager {
     // Create notification
     const notification = new Notification(message.senderName, {
       body: this.getNotificationBody(message),
-      icon: message.senderAvatar || '/icons/default-avatar.png',
-      badge: '/icons/badge.png',
+      icon: message.senderAvatar || "/icons/default-avatar.png",
+      badge: "/icons/badge.png",
       tag: message.chatId, // Replace previous from same chat
       timestamp: new Date(message.timestamp).getTime(),
       requireInteraction: false,
-      silent: true // We handle sound ourselves
+      silent: true, // We handle sound ourselves
     });
 
     notification.onclick = () => {
@@ -3795,18 +3823,18 @@ class DesktopNotificationManager {
 
   getNotificationBody(message) {
     switch (message.content.type) {
-      case 'text':
+      case "text":
         return message.content.text.substring(0, 100);
-      case 'image':
-        return '📷 Photo';
-      case 'video':
-        return '🎥 Video';
-      case 'voice':
-        return '🎤 Voice message';
-      case 'document':
+      case "image":
+        return "📷 Photo";
+      case "video":
+        return "🎥 Video";
+      case "voice":
+        return "🎤 Voice message";
+      case "document":
         return `📄 ${message.content.fileName}`;
       default:
-        return 'New message';
+        return "New message";
     }
   }
 
@@ -3842,7 +3870,7 @@ export const notificationManager = new DesktopNotificationManager();
 
 ```jsx
 // components/MessageReactions.jsx
-const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 const MessageReactions = ({ messageId, reactions, onReact }) => {
   const [showPicker, setShowPicker] = useState(false);
@@ -3851,7 +3879,7 @@ const MessageReactions = ({ messageId, reactions, onReact }) => {
   // Group reactions by emoji
   const groupedReactions = useMemo(() => {
     const groups = {};
-    reactions.forEach(reaction => {
+    reactions.forEach((reaction) => {
       if (!groups[reaction.emoji]) {
         groups[reaction.emoji] = [];
       }
@@ -3862,15 +3890,15 @@ const MessageReactions = ({ messageId, reactions, onReact }) => {
 
   const handleReact = async (emoji) => {
     const existingReaction = reactions.find(
-      r => r.userId === currentUserId && r.emoji === emoji
+      (r) => r.userId === currentUserId && r.emoji === emoji,
     );
 
     if (existingReaction) {
       // Remove reaction
-      await onReact(messageId, emoji, 'remove');
+      await onReact(messageId, emoji, "remove");
     } else {
       // Add reaction
-      await onReact(messageId, emoji, 'add');
+      await onReact(messageId, emoji, "add");
     }
 
     setShowPicker(false);
@@ -3884,7 +3912,7 @@ const MessageReactions = ({ messageId, reactions, onReact }) => {
           <button
             key={emoji}
             className={`reaction-bubble ${
-              userIds.includes(currentUserId) ? 'reaction-bubble--own' : ''
+              userIds.includes(currentUserId) ? "reaction-bubble--own" : ""
             }`}
             onClick={() => handleReact(emoji)}
             aria-label={`${emoji} reaction by ${userIds.length} people`}
@@ -3912,7 +3940,7 @@ const MessageReactions = ({ messageId, reactions, onReact }) => {
             role="menu"
             aria-label="Choose reaction"
           >
-            {REACTION_EMOJIS.map(emoji => (
+            {REACTION_EMOJIS.map((emoji) => (
               <button
                 key={emoji}
                 className="reaction-option"
@@ -3982,24 +4010,27 @@ const QuotedMessage = ({ quotedMessage, onClick }) => {
 
 // Scroll to quoted message
 const useScrollToMessage = (messageListRef) => {
-  const scrollToMessage = useCallback((messageId) => {
-    const messageElement = messageListRef.current?.querySelector(
-      `[data-message-id="${messageId}"]`
-    );
+  const scrollToMessage = useCallback(
+    (messageId) => {
+      const messageElement = messageListRef.current?.querySelector(
+        `[data-message-id="${messageId}"]`,
+      );
 
-    if (messageElement) {
-      messageElement.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
+      if (messageElement) {
+        messageElement.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
 
-      // Highlight briefly
-      messageElement.classList.add('message--highlighted');
-      setTimeout(() => {
-        messageElement.classList.remove('message--highlighted');
-      }, 2000);
-    }
-  }, [messageListRef]);
+        // Highlight briefly
+        messageElement.classList.add("message--highlighted");
+        setTimeout(() => {
+          messageElement.classList.remove("message--highlighted");
+        }, 2000);
+      }
+    },
+    [messageListRef],
+  );
 
   return scrollToMessage;
 };
@@ -4013,46 +4044,52 @@ const useStarredMessages = () => {
   const queryClient = useQueryClient();
 
   const { data: starredMessages } = useQuery({
-    queryKey: ['starredMessages'],
-    queryFn: () => fetch('/api/messages/starred').then(r => r.json())
+    queryKey: ["starredMessages"],
+    queryFn: () => fetch("/api/messages/starred").then((r) => r.json()),
   });
 
   const starMutation = useMutation({
     mutationFn: ({ messageId, starred }) =>
       fetch(`/api/messages/${messageId}/star`, {
-        method: starred ? 'POST' : 'DELETE'
+        method: starred ? "POST" : "DELETE",
       }),
     onMutate: async ({ messageId, starred }) => {
       // Optimistic update
-      await queryClient.cancelQueries(['starredMessages']);
+      await queryClient.cancelQueries(["starredMessages"]);
 
-      const previous = queryClient.getQueryData(['starredMessages']);
+      const previous = queryClient.getQueryData(["starredMessages"]);
 
-      queryClient.setQueryData(['starredMessages'], old => {
+      queryClient.setQueryData(["starredMessages"], (old) => {
         if (starred) {
           return [...(old || []), { messageId, starredAt: Date.now() }];
         } else {
-          return (old || []).filter(m => m.messageId !== messageId);
+          return (old || []).filter((m) => m.messageId !== messageId);
         }
       });
 
       return { previous };
     },
     onError: (err, variables, context) => {
-      queryClient.setQueryData(['starredMessages'], context.previous);
-    }
+      queryClient.setQueryData(["starredMessages"], context.previous);
+    },
   });
 
-  const isStarred = useCallback((messageId) => {
-    return starredMessages?.some(m => m.messageId === messageId);
-  }, [starredMessages]);
+  const isStarred = useCallback(
+    (messageId) => {
+      return starredMessages?.some((m) => m.messageId === messageId);
+    },
+    [starredMessages],
+  );
 
-  const toggleStar = useCallback((messageId) => {
-    starMutation.mutate({
-      messageId,
-      starred: !isStarred(messageId)
-    });
-  }, [isStarred, starMutation]);
+  const toggleStar = useCallback(
+    (messageId) => {
+      starMutation.mutate({
+        messageId,
+        starred: !isStarred(messageId),
+      });
+    },
+    [isStarred, starMutation],
+  );
 
   return { starredMessages, isStarred, toggleStar };
 };
@@ -4064,18 +4101,18 @@ const useStarredMessages = () => {
 // components/ForwardModal.jsx
 const ForwardModal = ({ message, isOpen, onClose }) => {
   const [selectedChats, setSelectedChats] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const { sendMessage } = useWebSocket();
 
   const { data: chats } = useQuery({
-    queryKey: ['chats'],
-    enabled: isOpen
+    queryKey: ["chats"],
+    enabled: isOpen,
   });
 
   const filteredChats = useMemo(() => {
     if (!searchQuery) return chats;
-    return chats?.filter(chat =>
-      chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+    return chats?.filter((chat) =>
+      chat.name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
   }, [chats, searchQuery]);
 
@@ -4087,8 +4124,8 @@ const ForwardModal = ({ message, isOpen, onClose }) => {
         forwardedFrom: {
           messageId: message.id,
           chatId: message.chatId,
-          senderName: message.senderName
-        }
+          senderName: message.senderName,
+        },
       });
     }
 
@@ -4117,20 +4154,24 @@ const ForwardModal = ({ message, isOpen, onClose }) => {
         aria-label="Search chats to forward to"
       />
 
-      <ul className="chat-select-list" role="listbox" aria-multiselectable="true">
-        {filteredChats?.map(chat => (
+      <ul
+        className="chat-select-list"
+        role="listbox"
+        aria-multiselectable="true"
+      >
+        {filteredChats?.map((chat) => (
           <li
             key={chat.id}
             role="option"
             aria-selected={selectedChats.includes(chat.id)}
             onClick={() => {
-              setSelectedChats(prev =>
+              setSelectedChats((prev) =>
                 prev.includes(chat.id)
-                  ? prev.filter(id => id !== chat.id)
-                  : [...prev, chat.id]
+                  ? prev.filter((id) => id !== chat.id)
+                  : [...prev, chat.id],
               );
             }}
-            className={selectedChats.includes(chat.id) ? 'selected' : ''}
+            className={selectedChats.includes(chat.id) ? "selected" : ""}
           >
             <Avatar src={chat.avatar} name={chat.name} />
             <span>{chat.name}</span>
@@ -4141,11 +4182,9 @@ const ForwardModal = ({ message, isOpen, onClose }) => {
 
       <div className="modal-actions">
         <button onClick={onClose}>Cancel</button>
-        <button
-          onClick={handleForward}
-          disabled={selectedChats.length === 0}
-        >
-          Forward to {selectedChats.length} chat{selectedChats.length !== 1 ? 's' : ''}
+        <button onClick={handleForward} disabled={selectedChats.length === 0}>
+          Forward to {selectedChats.length} chat
+          {selectedChats.length !== 1 ? "s" : ""}
         </button>
       </div>
     </Modal>

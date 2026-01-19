@@ -92,69 +92,80 @@
  * @param {number[][]} heights
  * @return {number[][]}
  */
-const pacificAtlantic = (heights) => {
+/**
+ * @param {number[][]} heights
+ * @return {number[][]}
+ */
+var pacificAtlantic = function (heights) {
   if (!heights || heights.length === 0) return [];
 
   const rows = heights.length;
   const cols = heights[0].length;
 
-  // Track cells reachable from each ocean
-  // Using string keys "r-c" because JS Sets compare objects by reference
-  const pacificReachable = new Set();
-  const atlanticReachable = new Set();
+  // These sets will store [row, col] as a string key "r,c"
+  // to track which cells can reach which ocean.
+  const canReachPacific = new Set();
+  const canReachAtlantic = new Set();
 
-  /**
-   * DFS: Go "uphill" from ocean to find all cells that can drain to it
-   * @param {number} r - Current row
-   * @param {number} c - Current column
-   * @param {Set} reachable - Set tracking reachable cells for this ocean
-   * @param {number} prevHeight - Height of cell we came from
-   */
-  const dfs = (r, c, reachable, prevHeight) => {
-    const key = `${r}-${c}`;
+  const bfs = (queue, reachableSet) => {
+    const dirs = [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+    ];
 
-    // Stop conditions:
-    if (
-      r < 0 ||
-      r >= rows || // Out of bounds
-      c < 0 ||
-      c >= cols ||
-      reachable.has(key) || // Already visited for this ocean
-      heights[r][c] < prevHeight // Can't go "downhill" in reverse (would be uphill for water)
-    ) {
-      return;
+    while (queue.length) {
+      const [r, c] = queue.shift();
+      const key = `${r},${c}`;
+
+      if (reachableSet.has(key)) continue;
+      reachableSet.add(key);
+
+      for (const [dr, dc] of dirs) {
+        let nr = r + dr;
+        let nc = c + dc;
+
+        // 1. Check bounds
+        // 2. IMPORTANT: Water flows "up" in reverse,
+        //    so neighbor must be >= current height
+        if (
+          nr >= 0 &&
+          nr < rows &&
+          nc >= 0 &&
+          nc < cols &&
+          heights[nr][nc] >= heights[r][c]
+        ) {
+          queue.push([nr, nc]);
+        }
+      }
     }
-
-    // Mark as reachable from this ocean
-    reachable.add(key);
-
-    // Explore all 4 directions (looking for higher or equal cells)
-    const currentHeight = heights[r][c];
-    dfs(r + 1, c, reachable, currentHeight); // Down
-    dfs(r - 1, c, reachable, currentHeight); // Up
-    dfs(r, c + 1, reachable, currentHeight); // Right
-    dfs(r, c - 1, reachable, currentHeight); // Left
   };
 
-  // Start DFS from Pacific edges (top row & left column)
-  // Start DFS from Atlantic edges (right column & bottom row)
-  for (let r = 0; r < rows; r++) {
-    dfs(r, 0, pacificReachable, heights[r][0]); // Left edge -> Pacific
-    dfs(r, cols - 1, atlanticReachable, heights[r][cols - 1]); // Right edge -> Atlantic
+  const pacificQueue = [];
+  const atlanticQueue = [];
+
+  // Initialize queues with the edges
+  for (let i = 0; i < rows; i++) {
+    pacificQueue.push([i, 0]); // Left edge (Pacific)
+    atlanticQueue.push([i, cols - 1]); // Right edge (Atlantic)
+  }
+  for (let j = 0; j < cols; j++) {
+    pacificQueue.push([0, j]); // Top edge (Pacific)
+    atlanticQueue.push([rows - 1, j]); // Bottom edge (Atlantic)
   }
 
-  for (let c = 0; c < cols; c++) {
-    dfs(0, c, pacificReachable, heights[0][c]); // Top edge -> Pacific
-    dfs(rows - 1, c, atlanticReachable, heights[rows - 1][c]); // Bottom edge -> Atlantic
-  }
+  // Run BFS for both oceans
+  bfs(pacificQueue, canReachPacific);
+  bfs(atlanticQueue, canReachAtlantic);
 
-  // Find intersection: cells reachable from BOTH oceans
+  // Find the intersection
   const result = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const key = `${r}-${c}`;
-      if (pacificReachable.has(key) && atlanticReachable.has(key)) {
-        result.push([r, c]);
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      const key = `${i},${j}`;
+      if (canReachPacific.has(key) && canReachAtlantic.has(key)) {
+        result.push([i, j]);
       }
     }
   }
@@ -250,7 +261,7 @@ console.log(
     [2, 4, 5, 3, 1],
     [6, 7, 1, 4, 5],
     [5, 1, 1, 2, 4],
-  ])
+  ]),
 );
 // Expected: [[0,4],[1,3],[1,4],[2,2],[3,0],[3,1],[4,0]]
 
@@ -265,7 +276,7 @@ console.log(
   pacificAtlantic([
     [1, 1],
     [1, 1],
-  ])
+  ]),
 );
 // Expected: [[0,0],[0,1],[1,0],[1,1]] (all cells can reach both)
 
@@ -276,7 +287,7 @@ console.log(
     [3, 2, 1],
     [2, 1, 0],
     [1, 0, 0],
-  ])
+  ]),
 );
 // Expected: [[0,0]] (only top-left corner flows to both)
 
@@ -304,6 +315,6 @@ console.log(
     [2, 4, 5, 3, 1],
     [6, 7, 1, 4, 5],
     [5, 1, 1, 2, 4],
-  ])
+  ]),
 );
 // Expected: Same as Test 1
