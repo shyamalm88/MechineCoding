@@ -164,58 +164,6 @@ const findCircleNumBFS = (isConnected) => {
 };
 
 // ============================================================================
-// ALTERNATIVE: Union-Find (Disjoint Set Union)
-// ============================================================================
-const findCircleNumUnionFind = (isConnected) => {
-  const n = isConnected.length;
-
-  // Initially, each city is its own parent (separate component)
-  const parent = Array.from({ length: n }, (_, i) => i);
-  const rank = new Array(n).fill(0);
-
-  // Find with path compression
-  const find = (x) => {
-    if (parent[x] !== x) {
-      parent[x] = find(parent[x]);
-    }
-    return parent[x];
-  };
-
-  // Union by rank
-  const union = (x, y) => {
-    const px = find(x);
-    const py = find(y);
-    if (px === py) return;
-
-    if (rank[px] < rank[py]) {
-      parent[px] = py;
-    } else if (rank[px] > rank[py]) {
-      parent[py] = px;
-    } else {
-      parent[py] = px;
-      rank[px]++;
-    }
-  };
-
-  // Union connected cities
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      if (isConnected[i][j] === 1) {
-        union(i, j);
-      }
-    }
-  }
-
-  // Count unique parents (provinces)
-  let count = 0;
-  for (let i = 0; i < n; i++) {
-    if (find(i) === i) count++;
-  }
-
-  return count;
-};
-
-// ============================================================================
 // TEST CASES
 // ============================================================================
 
@@ -226,7 +174,7 @@ console.log(
     [1, 1, 0],
     [1, 1, 0],
     [0, 0, 1],
-  ])
+  ]),
 );
 // Expected: 2
 
@@ -237,7 +185,7 @@ console.log(
     [1, 0, 0],
     [0, 1, 0],
     [0, 0, 1],
-  ])
+  ]),
 );
 // Expected: 3
 
@@ -248,7 +196,7 @@ console.log(
     [1, 1, 1],
     [1, 1, 1],
     [1, 1, 1],
-  ])
+  ]),
 );
 // Expected: 1
 
@@ -259,7 +207,7 @@ console.log(
     [1, 1, 0],
     [1, 1, 1],
     [0, 1, 1],
-  ])
+  ]),
 );
 // Expected: 1 (0-1-2 chain = all connected)
 
@@ -273,7 +221,7 @@ console.log(
   findCircleNum([
     [1, 1],
     [1, 1],
-  ])
+  ]),
 );
 // Expected: 1
 
@@ -283,7 +231,7 @@ console.log(
   findCircleNum([
     [1, 0],
     [0, 1],
-  ])
+  ]),
 );
 // Expected: 2
 
@@ -295,7 +243,7 @@ console.log(
     [1, 1, 0],
     [1, 1, 0],
     [0, 0, 1],
-  ])
+  ]),
 );
 // Expected: 2
 
@@ -307,7 +255,7 @@ console.log(
     [1, 1, 0],
     [1, 1, 0],
     [0, 0, 1],
-  ])
+  ]),
 );
 // Expected: 2
 
@@ -319,6 +267,6 @@ console.log(
     [0, 1, 1, 0],
     [0, 1, 1, 1],
     [1, 0, 1, 1],
-  ])
+  ]),
 );
 // Expected: 1 (all connected through various paths)

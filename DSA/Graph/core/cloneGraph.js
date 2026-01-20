@@ -117,35 +117,6 @@ const cloneGraph = (node) => {
 };
 
 // ============================================================================
-// ALTERNATIVE: BFS Approach
-// ============================================================================
-const cloneGraphBFS = (node) => {
-  if (!node) return null;
-
-  const map = new Map();
-  const queue = [node];
-
-  // Create clone of starting node
-  map.set(node, new Node(node.val));
-
-  while (queue.length > 0) {
-    const curr = queue.shift();
-
-    for (let neighbor of curr.neighbors) {
-      // If neighbor not cloned yet, clone it
-      if (!map.has(neighbor)) {
-        map.set(neighbor, new Node(neighbor.val));
-        queue.push(neighbor);
-      }
-      // Connect clone's neighbor to cloned neighbor
-      map.get(curr).neighbors.push(map.get(neighbor));
-    }
-  }
-
-  return map.get(node);
-};
-
-// ============================================================================
 // HELPER: Build graph from adjacency list
 // ============================================================================
 const buildGraph = (adjList) => {

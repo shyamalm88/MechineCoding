@@ -79,31 +79,38 @@ const orangesRotting = (grid) => {
   if (freshCount === 0) return 0;
 
   let minutes = 0;
-  const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]]; // Right, Down, Left, Up
+  const dirs = [
+    [0, 1],
+    [1, 0],
+    [0, -1],
+    [-1, 0],
+  ]; // Right, Down, Left, Up
 
   // Step 2: BFS - Process wave by wave
   while (freshCount > 0 && queue.length > 0) {
-    // CRITICAL: Snapshot current level size
-    // Only process oranges that were rotten at START of this minute
+    // process one BFS level = one minute
     const size = queue.length;
 
     for (let i = 0; i < size; i++) {
       const [r, c] = queue.shift();
 
-      for (let [dr, dc] of dirs) {
+      for (const [dr, dc] of dirs) {
         const nr = r + dr;
         const nc = c + dc;
 
-        // Check bounds AND if neighbor is fresh
-        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] === 1) {
-          grid[nr][nc] = 2;     // Infect!
-          freshCount--;         // One less fresh orange
-          queue.push([nr, nc]); // Add to next wave
+        // 1️⃣ Boundary check (FIXED, UNIVERSAL)
+        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+
+        // 2️⃣ Problem-specific condition (Rotting Oranges logic)
+        if (grid[nr][nc] === 1) {
+          grid[nr][nc] = 2; // rot it
+          freshCount--; // reduce fresh count
+          queue.push([nr, nc]); // enqueue for next minute
         }
       }
     }
 
-    minutes++; // One minute passed for this wave
+    minutes++; // one BFS layer completed
   }
 
   // Step 3: Check if any fresh oranges remain (isolated)
@@ -115,43 +122,51 @@ const orangesRotting = (grid) => {
 // ============================================================================
 
 // Test 1: Standard case
-console.log("Test 1:", orangesRotting([
-  [2, 1, 1],
-  [1, 1, 0],
-  [0, 1, 1]
-]));
+console.log(
+  "Test 1:",
+  orangesRotting([
+    [2, 1, 1],
+    [1, 1, 0],
+    [0, 1, 1],
+  ]),
+);
 // Expected: 4
 
 // Test 2: Isolated orange (impossible)
-console.log("Test 2:", orangesRotting([
-  [2, 1, 1],
-  [0, 1, 1],
-  [1, 0, 1]
-]));
+console.log(
+  "Test 2:",
+  orangesRotting([
+    [2, 1, 1],
+    [0, 1, 1],
+    [1, 0, 1],
+  ]),
+);
 // Expected: -1
 
 // Test 3: No fresh oranges
-console.log("Test 3:", orangesRotting([
-  [0, 2]
-]));
+console.log("Test 3:", orangesRotting([[0, 2]]));
 // Expected: 0
 
 // Test 4: All fresh, no rotten (impossible)
-console.log("Test 4:", orangesRotting([
-  [1, 1, 1],
-  [1, 1, 1]
-]));
+console.log(
+  "Test 4:",
+  orangesRotting([
+    [1, 1, 1],
+    [1, 1, 1],
+  ]),
+);
 // Expected: -1
 
 // Test 5: Already all rotten
-console.log("Test 5:", orangesRotting([
-  [2, 2, 2],
-  [2, 2, 2]
-]));
+console.log(
+  "Test 5:",
+  orangesRotting([
+    [2, 2, 2],
+    [2, 2, 2],
+  ]),
+);
 // Expected: 0
 
 // Test 6: Single fresh next to rotten
-console.log("Test 6:", orangesRotting([
-  [2, 1]
-]));
+console.log("Test 6:", orangesRotting([[2, 1]]));
 // Expected: 1

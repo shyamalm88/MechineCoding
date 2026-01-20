@@ -123,20 +123,19 @@ var pacificAtlantic = function (heights) {
       reachableSet.add(key);
 
       for (const [dr, dc] of dirs) {
-        let nr = r + dr;
-        let nc = c + dc;
+        const nr = r + dr;
+        const nc = c + dc;
 
-        // 1. Check bounds
-        // 2. IMPORTANT: Water flows "up" in reverse,
-        //    so neighbor must be >= current height
-        if (
-          nr >= 0 &&
-          nr < rows &&
-          nc >= 0 &&
-          nc < cols &&
-          heights[nr][nc] >= heights[r][c]
-        ) {
-          queue.push([nr, nc]);
+        // 1️⃣ Boundary check (ALWAYS FIXED)
+        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+
+        // 2️⃣ Problem-specific condition (Pacific Atlantic logic)
+        // Reverse flow: can go to equal or higher height
+        if (heights[nr][nc] >= heights[r][c]) {
+          const nextKey = `${nr},${nc}`;
+          if (!reachableSet.has(nextKey)) {
+            queue.push([nr, nc]);
+          }
         }
       }
     }
