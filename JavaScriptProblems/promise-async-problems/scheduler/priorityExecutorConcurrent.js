@@ -9,7 +9,7 @@
  * ============================================================================
  * INTUITION: Priority Queue + Concurrency Control
  * ============================================================================
- * Combines the logic of AsyncScheduler and PriorityExecutor.
+ * Combines the logic of AsyncScheduler and PriorityExecutorConcurrent.
  *
  * 1. `add(task, priority)`: Push to queue, Sort queue, Try to run.
  * 2. `run()`:
@@ -19,7 +19,7 @@
  *      - Execute.
  *      - On completion (`finally`), decrement `running` and call `run()` recursively.
  */
-class PriorityExecutor {
+class PriorityExecutorConcurrent {
   constructor(limit = 2) {
     this.queue = [];
     this.running = 0;
@@ -49,7 +49,7 @@ class PriorityExecutor {
 // ============================================================================
 // TEST CASES
 // ============================================================================
-const concurrentExecutor = new PriorityExecutor(2); // Limit 2 concurrent tasks
+const concurrentExecutor = new PriorityExecutorConcurrent(2); // Limit 2 concurrent tasks
 
 const createAsyncTask = (id, priority, delay) => async () => {
   console.log(`[${id}] Start (Priority: ${priority})`);
