@@ -5,6 +5,36 @@
  * - Dependencies: Tasks wait for their dependencies to complete.
  * - Concurrency: Only a limited number of tasks run simultaneously.
  * - Priority: Ready tasks are started based on priority (higher value = higher priority).
+ *
+ * INTUITION:
+ * This problem combines three constraints:
+ * 1. Dependencies: A task cannot start until its dependencies are in `completed` set.
+ * 2. Concurrency: We cannot have more than `limit` tasks running at once.
+ * 3. Priority: Among ready tasks, pick the one with highest priority.
+ *
+ * Approach:
+ * - Maintain a `running` counter and `completed` set.
+ * - In a loop (or triggered by events), filter tasks that are:
+ *   a) Not completed
+ *   b) Not currently running
+ *   c) Have all dependencies met
+ * - Sort these "ready" tasks by priority.
+ * - Launch as many as possible up to `limit`.
+ * - When a task finishes, add to `completed`, decrement `running`, and trigger the check again.
+ *
+ * DRY RUN:
+ * Tasks: A (pri 1), B (dep A, pri 10), C (dep A, pri 1). Limit: 2.
+ *
+ * 1. Start run(). Pending: [A, B, C].
+ * 2. Filter Ready: A (OK), B (Wait A), C (Wait A). Ready: [A].
+ * 3. Loop: running(0) < limit(2). Shift A. Execute A.
+ * 4. A finishes. completed.add(A). Call run().
+ * 5. Filter Ready: B (OK), C (OK). Ready: [B, C].
+ * 6. Sort Ready: B(10) > C(1) -> [B, C].
+ * 7. Loop: running(0) < limit(2).
+ *    - Shift B. Execute B.
+ *    - Shift C. Execute C.
+ * 8. running(2) == limit(2). Stop launching.
  */
 class Scheduler {
   constructor(tasks, limit) {

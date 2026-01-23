@@ -81,6 +81,32 @@
  * 3. Add node to result AFTER processing all neighbors (post-order)
  * 4. Reverse result at the end (or use unshift/prepend)
  *
+ * DRY RUN:
+ * Input: numCourses = 4, prerequisites = [[1,0], [2,0], [3,1], [3,2]]
+ * Graph (0->1, 0->2, 1->3, 2->3):
+ *   0: [1, 2]
+ *   1: [3]
+ *   2: [3]
+ *   3: []
+ *
+ * Execution:
+ * - Loop i=0 (Node 0): State 0 (Unvisited) -> Call dfs(0)
+ *   - dfs(0): Mark Visiting (1). Neighbors: [1, 2]
+ *     - Process Neighbor 1: State 0 -> Call dfs(1)
+ *       - dfs(1): Mark Visiting (1). Neighbors: [3]
+ *         - Process Neighbor 3: State 0 -> Call dfs(3)
+ *           - dfs(3): Mark Visiting (1). Neighbors: []
+ *           - dfs(3): Mark Visited (2). Push 3 to result. Result: [3]
+ *       - dfs(1): Mark Visited (2). Push 1 to result. Result: [3, 1]
+ *     - Process Neighbor 2: State 0 -> Call dfs(2)
+ *       - dfs(2): Mark Visiting (1). Neighbors: [3]
+ *         - Process Neighbor 3: State 2 (Visited) -> Skip
+ *       - dfs(2): Mark Visited (2). Push 2 to result. Result: [3, 1, 2]
+ *   - dfs(0): Mark Visited (2). Push 0 to result. Result: [3, 1, 2, 0]
+ * - Loop i=1,2,3: All State 2 (Visited) -> Skip
+ *
+ * Final Step: Reverse Result -> [0, 2, 1, 3] (Valid Topological Sort)
+ *
  * Time Complexity: O(V + E) - visit each node and edge once
  * Space Complexity: O(V + E) - adjacency list + result array
  * ============================================================================
@@ -201,7 +227,7 @@ console.log(
     [2, 0],
     [3, 1],
     [3, 2],
-  ])
+  ]),
 );
 // Expected: [0, 1, 2, 3] or [0, 2, 1, 3]
 
@@ -219,7 +245,7 @@ console.log(
   findOrder(2, [
     [1, 0],
     [0, 1],
-  ])
+  ]),
 );
 // Expected: []
 
@@ -233,7 +259,7 @@ console.log(
     [4, 2],
     [5, 3],
     [5, 4],
-  ])
+  ]),
 );
 // Expected: [0, 1, 2, 3, 4, 5] or similar valid order
 
@@ -243,7 +269,7 @@ console.log(
   findOrder(4, [
     [1, 0],
     [3, 2],
-  ])
+  ]),
 );
 // Expected: [0, 1, 2, 3] or [2, 3, 0, 1] or similar
 
@@ -254,7 +280,7 @@ console.log(
     [1, 0],
     [2, 1],
     [3, 2],
-  ])
+  ]),
 );
 // Expected: [0, 1, 2, 3]
 
@@ -270,7 +296,7 @@ console.log(
     [2, 0],
     [3, 1],
     [3, 2],
-  ])
+  ]),
 );
 // Expected: [0, 1, 2, 3] or [0, 2, 1, 3]
 
@@ -279,6 +305,6 @@ console.log(
   findOrderBFS(2, [
     [1, 0],
     [0, 1],
-  ])
+  ]),
 );
 // Expected: [] (cycle)

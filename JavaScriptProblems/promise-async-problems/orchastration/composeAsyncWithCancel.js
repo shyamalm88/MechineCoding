@@ -3,6 +3,25 @@
  *
  * @param {...Function} fns - Async functions to compose. Each receives (input, signal).
  * @returns {Function} A function that takes (input, signal) and returns a Promise.
+ *
+ * INTUITION:
+ * Standard composition is f(g(x)). Async composition is await f(await g(x)).
+ * With cancellation, we must check the `AbortSignal` at every step.
+ * If `signal.aborted` is true, we stop the pipeline immediately and throw.
+ *
+ * DRY RUN:
+ * Pipeline: [step1, step2]. Input: 5.
+ *
+ * 1. Start. result = 5.
+ * 2. Loop fn = step1.
+ *    - Check signal: not aborted.
+ *    - result = await step1(5, signal). Returns 6.
+ * 3. Loop fn = step2.
+ *    - Check signal: not aborted.
+ *    - result = await step2(6, signal). Returns 12.
+ * 4. Loop ends. Resolve 12.
+ *
+ * If signal was aborted before step2, it would throw immediately.
  */
 function composeAsyncWithCancel(...fns) {
   return function (input, signal) {

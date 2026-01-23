@@ -55,6 +55,30 @@ class TreeNode {
 // ============================================================================
 
 /**
+ * INTUITION:
+ * A path can start at any node. So we must treat every node as a potential
+ * starting point.
+ *
+ * 1. Traverse the entire tree (Outer DFS).
+ * 2. For every node visited, start a new search (Inner DFS) to see if any
+ *    downward path starting from *this* node sums to targetSum.
+ *
+ * DRY RUN:
+ * Tree: 10 -> 5 -> 3. Target: 8.
+ *
+ * 1. traverse(10):
+ *    - countPaths(10, 8):
+ *      - Node 10. Rem: -2. (10 != 8)
+ *      - countPaths(5, -2) -> Node 5. Rem: -7. (5 != -2)
+ *      - countPaths(3, -7) -> Node 3. Rem: -10. (3 != -7)
+ *    - traverse(5) (Left child):
+ *      - countPaths(5, 8):
+ *        - Node 5. Rem: 3. (5 != 8)
+ *        - countPaths(3, 3) -> Node 3. Rem: 0. (3 == 3) -> MATCH!
+ *    - traverse(3) (Left child of 5):
+ *      - countPaths(3, 8):
+ *        - Node 3. Rem: 5. (3 != 8)
+ *
  * @param {TreeNode} root
  * @param {number} targetSum
  * @return {number}
@@ -95,6 +119,49 @@ const pathSumIII = (root, targetSum) => {
 // ============================================================================
 
 /**
+ * ============================================================================
+ * INTUITION (Optimized Approach):
+ * ============================================================================
+ * The problem asks for paths summing to targetSum that go downwards.
+ * This is similar to the "Subarray Sum Equals K" problem (LeetCode 560),
+ * but on a tree.
+ *
+ * We can use the Prefix Sum technique:
+ * 1. Maintain a running sum (`currentSum`) from the root to the current node.
+ * 2. At any node, if `currentSum - targetSum` exists in our history of
+ *    prefix sums, it means there is a sub-path ending at the current node
+ *    with sum equal to `targetSum`.
+ * 3. We use a HashMap to store the frequency of all prefix sums encountered
+ *    in the current path (from root to current node).
+ *
+ * DRY RUN:
+ * Tree:      10
+ *           /  \
+ *          5   -3
+ *         / \    \
+ *        3   2    11
+ * Target: 8
+ *
+ * 1. dfs(10, 0):
+ *    - currentSum = 10
+ *    - needed = 10 - 8 = 2. Map {0:1}. No 2 found.
+ *    - Map update: {0:1, 10:1}
+ *
+ *    2. dfs(5, 10) (Left child of 10):
+ *       - currentSum = 15
+ *       - needed = 15 - 8 = 7. Map {0:1, 10:1}. No 7 found.
+ *       - Map update: {0:1, 10:1, 15:1}
+ *
+ *       3. dfs(3, 15) (Left child of 5):
+ *          - currentSum = 18
+ *          - needed = 18 - 8 = 10. Map has 10? Yes! (freq: 1)
+ *          - count += 1 (Found path: 5 -> 3)
+ *          - Map update: {..., 18:1}
+ *          - ... (children return)
+ *          - Backtrack: Remove 18 from Map.
+ *
+ *       - Backtrack: Remove 15 from Map.
+ *
  * Key insight: If prefixSum at node X minus prefixSum at ancestor Y equals
  * targetSum, then the path from Y to X sums to targetSum.
  *
