@@ -34,31 +34,44 @@
  *    - ... Execute C.
  */
 async function executeAsyncWithDependencies(tasks) {
-  // Use a Map to store promises of running tasks to handle diamond dependencies
-  // (e.g., B and C both depend on A; A should only run once).
-  const taskPromises = new Map();
-  const visiting = new Set();
+  // Stores the promise representing the execution of each task
+  // Key idea: each task runs ONCE, others wait on the same promise
+  const executed = new Map();
 
-  async function runTask(name) {
-    if (taskPromises.has(name)) return taskPromises.get(name);
+  // Ensures a task is executed after its dependencies
+  async function executeTask(taskName) {
+    // STEP 1: If task already started, just wait for it
+    if (executed.has(taskName)) {
+      return executed.get(taskName);
+    }
 
+    // STEP 2: Validate task exists
+    const task = tasks[taskName];
+    if (!task) {
+      throw new Error(`Task "${taskName}" not found`);
+    }
+
+    // STEP 3: Create the execution promise (but don’t await yet)
     const promise = (async () => {
-      const task = tasks[name];
-      if (!task) throw new Error(`Task ${name} not found`);
-
-      for (const dep of task.deps) {
-        await runTask(dep);
+      // STEP 4: Execute all dependencies first
+      for (const dependency of task.deps) {
+        await executeTask(dependency);
       }
 
+      // STEP 5: Now execute the actual task
       await task.run();
     })();
 
-    taskPromises.set(name, promise);
+    // STEP 6: Cache the promise immediately (handles diamond deps)
+    executed.set(taskName, promise);
+
+    // STEP 7: Return the promise so callers can await it
     return promise;
   }
 
-  for (const name in tasks) {
-    await runTask(name);
+  // STEP 8: Ensure every task eventually runs
+  for (const taskName of Object.keys(tasks)) {
+    await executeTask(taskName);
   }
 }
 

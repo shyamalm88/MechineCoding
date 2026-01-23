@@ -13,10 +13,13 @@
  * We await the accumulator, then run the current task with that result.
  */
 async function asyncWaterfall(tasks, initialValue) {
-  return tasks.reduce(async (accumulatorPromise, currentTask) => {
-    const previousResult = await accumulatorPromise;
-    return currentTask(previousResult);
-  }, Promise.resolve(initialValue));
+  let result = initialValue;
+
+  for (const task of tasks) {
+    result = await task(result);
+  }
+
+  return result;
 }
 
 // ============================================================================
