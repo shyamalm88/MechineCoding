@@ -1,82 +1,91 @@
-class AsyncEngine {
-  constructor(limit = 2) {
+/**
+ * Scheduler that executes tasks with dependencies, concurrency limits, and priority.
+ *
+ * Features:
+ * - Dependencies: Tasks wait for their dependencies to complete.
+ * - Concurrency: Only a limited number of tasks run simultaneously.
+ * - Priority: Ready tasks are started based on priority (higher value = higher priority).
+ */
+class Scheduler {
+  constructor(tasks, limit) {
+    this.tasks = tasks;
     this.limit = limit;
     this.running = 0;
-    this.graph = new Map();
-    this.indegree = new Map();
-    this.taskMap = new Map();
-    this.readyQueue = [];
+    this.completed = new Set();
+    this.processing = new Set(); // Track tasks currently being executed to prevent duplicates
   }
 
-  addTasks(tasks) {
-    // Initialize
-    for (const task of tasks) {
-      this.taskMap.set(task.id, task);
-      this.graph.set(task.id, []);
-      this.indegree.set(task.id, task.deps.length);
-    }
-
-    // Build dependency graph
-    for (const task of tasks) {
-      for (const dep of task.deps) {
-        this.graph.get(dep).push(task.id);
-      }
-    }
-
-    // Seed ready queue
-    for (const [id, count] of this.indegree.entries()) {
-      if (count === 0) {
-        this.readyQueue.push(this.taskMap.get(id));
-      }
-    }
-
-    this.sortReady();
-    this.run();
+  /**
+   * Checks if a task's dependencies are all met.
+   */
+  canRun(name) {
+    return this.tasks[name].deps.every((d) => this.completed.has(d));
   }
 
-  sortReady() {
-    this.readyQueue.sort((a, b) => b.priority - a.priority);
-  }
+  /**
+   * Main execution loop.
+   * Polls for ready tasks and executes them within concurrency limits.
+   */
+  async run() {
+    const pending = Object.keys(this.tasks);
 
-  run() {
-    while (this.running < this.limit && this.readyQueue.length > 0) {
-      const task = this.readyQueue.shift();
-      this.running++;
+    while (this.completed.size < pending.length) {
+      const ready = pending
+        .filter((n) => !this.completed.has(n) && !this.processing.has(n))
+        .filter((n) => this.canRun(n))
+        .sort((a, b) => this.tasks[b].priority - this.tasks[a].priority);
 
-      task
-        .run()
-        .catch(() => {}) // error policy can vary
-        .finally(() => {
+      while (this.running < this.limit && ready.length) {
+        const name = ready.shift();
+        this.running++;
+        this.processing.add(name);
+
+        (async () => {
+          console.log(
+            `Starting ${name} (Priority: ${this.tasks[name].priority})`,
+          );
+          await this.tasks[name].run();
+          console.log(`Finished ${name}`);
+
+          this.completed.add(name);
+          this.processing.delete(name);
           this.running--;
-
-          // Unlock dependents
-          for (const nextId of this.graph.get(task.id)) {
-            this.indegree.set(nextId, this.indegree.get(nextId) - 1);
-
-            if (this.indegree.get(nextId) === 0) {
-              this.readyQueue.push(this.taskMap.get(nextId));
-            }
-          }
-
-          this.sortReady();
+          // Trigger a check immediately after a task finishes to minimize idle time
           this.run();
-        });
+        })();
+      }
+
+      // Yield to event loop to prevent blocking; simple polling mechanism
+      await new Promise((r) => setTimeout(r, 0));
     }
   }
 }
 
-const engine = new AsyncEngine(2);
+// --- Test Data ---
 
-const makeTask = (id, delay) => async () => {
-  console.log(`START ${id}`);
-  await new Promise((res) => setTimeout(res, delay));
-  console.log(`END ${id}`);
+const tasks = {
+  A: {
+    deps: [],
+    priority: 1,
+    run: async () => new Promise((r) => setTimeout(r, 300)),
+  },
+  B: {
+    deps: ["A"],
+    priority: 10, // High priority, should run before C once A is done
+    run: async () => new Promise((r) => setTimeout(r, 100)),
+  },
+  C: {
+    deps: ["A"],
+    priority: 1,
+    run: async () => new Promise((r) => setTimeout(r, 100)),
+  },
+  D: {
+    deps: ["B", "C"],
+    priority: 5,
+    run: async () => new Promise((r) => setTimeout(r, 100)),
+  },
 };
 
-engine.addTasks([
-  { id: "A", deps: [], priority: 1, run: makeTask("A", 200) },
-  { id: "B", deps: ["A"], priority: 10, run: makeTask("B", 100) },
-  { id: "C", deps: ["A"], priority: 5, run: makeTask("C", 150) },
-  { id: "D", deps: ["B", "C"], priority: 20, run: makeTask("D", 50) },
-  { id: "E", deps: [], priority: 2, run: makeTask("E", 300) },
-]);
+const scheduler = new Scheduler(tasks, 2); // Concurrency limit of 2
+console.log("Starting Scheduler...");
+scheduler.run().then(() => console.log("All tasks completed."));

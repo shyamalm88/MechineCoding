@@ -1,40 +1,61 @@
-const mergePromise = (p1, p2) => {
-  let unresolved = 2;
-  let p1result, p2result;
+function mergePromises(promises) {
+  if (!Array.isArray(promises)) {
+    return Promise.reject(new Error("Expected an array"));
+  }
+
+  // Define behavior for empty input
+  if (promises.length === 0) {
+    return Promise.resolve(undefined);
+  }
+
+  let unresolved = promises.length;
+  const results = new Array(promises.length);
+  let settled = false;
+
   return new Promise((resolve, reject) => {
-    const then = () => {
-      unresolved--;
-      if (unresolved === 0) {
-        resolve(mergeResults(p1result, p2result));
-      }
-    };
+    promises.forEach((p, index) => {
+      Promise.resolve(p)
+        .then((data) => {
+          results[index] = data;
+          unresolved--;
 
-    p1.then((data) => {
-      p1result = data;
-      then();
-    }).catch((err) => reject(err));
-
-    p2.then((data) => {
-      p2result = data;
-      then();
-    }).catch((err) => reject(err));
+          if (unresolved === 0) {
+            resolve(mergeResultsInternal(results));
+          }
+        })
+        .catch((err) => {
+          reject(err);
+        });
+    });
   });
-};
+}
 
-function mergeResults(p1, p2) {
-  if (
-    (typeof p1 === "number" && typeof p2 === "number") ||
-    (typeof p1 === "string" && typeof p2 === "string")
-  ) {
-    return p1 + p2;
-  }
-  if (Array.isArray(p) && Array.isArray(p2)) {
-    return [...p, ...p2];
-  }
+function mergeResultsInternal(values) {
+  if (values.length === 0) return undefined;
 
-  if (typeof p1 == "object" && typeof p2 === "object") {
-    return { ...p1, ...p2 };
+  return values.reduce((acc, current) => mergeTwo(acc, current));
+}
+
+function mergeTwo(a, b) {
+  if (typeof a === "number" && typeof b === "number") {
+    return a + b;
   }
 
-  throw "error: not possible to merge";
+  if (typeof a === "string" && typeof b === "string") {
+    return a + b;
+  }
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return [...a, ...b];
+  }
+
+  if (isPlainObject(a) && isPlainObject(b)) {
+    return { ...a, ...b };
+  }
+
+  throw new Error(`Cannot merge ${typeof a} with ${typeof b}`);
+}
+
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }

@@ -34,30 +34,22 @@
  */
 const promiseRetry = function (fn, retries = 3, delay = 100) {
   return new Promise((resolve, reject) => {
-    // Helper function to handle the recursion
     const attempt = (currentAttempt) => {
-      // Wrap fn() in Promise.resolve to handle both async and sync return values safely
       Promise.resolve(fn())
         .then((data) => {
-          // Success! Resolve the outer promise immediately.
           resolve(data);
         })
         .catch((err) => {
-          // Failure! Check if we should retry.
-          // If we've hit the limit (currentAttempt >= retries), reject with the last error
           if (currentAttempt >= retries) {
             reject(err);
             return;
           }
-
-          // Retries remaining. Schedule the next attempt.
           setTimeout(() => {
             attempt(currentAttempt + 1);
           }, delay);
         });
     };
 
-    // Start the first attempt
     attempt(1);
   });
 };

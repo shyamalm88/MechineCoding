@@ -1,47 +1,42 @@
-async function executeWithDependencies(tasks) {
-  const graph = new Map();
-  const indegree = new Map();
+/**
+ * Executes tasks respecting their dependencies.
+ * Ensures each task runs exactly once, even with diamond dependencies.
+ *
+ * @param {Object} tasks - Object where keys are task IDs and values are task objects.
+ */
+async function executeAsyncWithDependencies(tasks) {
+  // Use a Map to store promises of running tasks to handle diamond dependencies
+  // (e.g., B and C both depend on A; A should only run once).
+  const taskPromises = new Map();
 
-  // Initialize
-  for (const { id, deps } of tasks) {
-    graph.set(id, []);
-    indegree.set(id, deps.length);
-  }
+  async function runTask(name) {
+    if (taskPromises.has(name)) return taskPromises.get(name);
 
-  // Build graph
-  for (const { id, deps } of tasks) {
-    for (const dep of deps) {
-      graph.get(dep).push(id);
-    }
-  }
+    const promise = (async () => {
+      const task = tasks[name];
+      if (!task) throw new Error(`Task ${name} not found`);
 
-  // Queue of tasks ready to run
-  const queue = [];
-  const taskMap = new Map(tasks.map((t) => [t.id, t]));
-
-  for (const [id, count] of indegree.entries()) {
-    if (count === 0) queue.push(id);
-  }
-
-  // Process tasks
-  while (queue.length > 0) {
-    const id = queue.shift();
-    const task = taskMap.get(id);
-
-    await task.run(); // important: await execution
-
-    for (const next of graph.get(id)) {
-      indegree.set(next, indegree.get(next) - 1);
-      if (indegree.get(next) === 0) {
-        queue.push(next);
+      for (const dep of task.deps) {
+        await runTask(dep);
       }
-    }
+
+      await task.run();
+    })();
+
+    taskPromises.set(name, promise);
+    return promise;
+  }
+
+  for (const name in tasks) {
+    await runTask(name);
   }
 }
 
-const tasks = [
-  {
-    id: "A",
+// --- Test Data ---
+
+// Changed from Array to Object to match the function's access pattern (tasks[name])
+const tasks = {
+  A: {
     deps: [],
     run: async () => {
       console.log("A start");
@@ -49,8 +44,7 @@ const tasks = [
       console.log("A end");
     },
   },
-  {
-    id: "B",
+  B: {
     deps: ["A"],
     run: async () => {
       console.log("B start");
@@ -58,8 +52,7 @@ const tasks = [
       console.log("B end");
     },
   },
-  {
-    id: "C",
+  C: {
     deps: ["A"],
     run: async () => {
       console.log("C start");
@@ -67,8 +60,7 @@ const tasks = [
       console.log("C end");
     },
   },
-  {
-    id: "D",
+  D: {
     deps: ["B", "C"],
     run: async () => {
       console.log("D start");
@@ -76,6 +68,7 @@ const tasks = [
       console.log("D end");
     },
   },
-];
+};
 
-executeWithDependencies(tasks);
+// Fixed function name typo (executeWithDependencies -> executeAsyncWithDependencies)
+executeAsyncWithDependencies(tasks);

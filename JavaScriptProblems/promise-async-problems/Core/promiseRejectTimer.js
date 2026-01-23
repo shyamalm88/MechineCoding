@@ -1,14 +1,15 @@
-const promiseTimeout = (promise, duration) => {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      reject("Promise timeout");
-    }, duration);
+async function promiseTimeout(promise, duration) {
+  let timeoutId;
 
-    promise
-      .then(resolve)
-      .catch(reject)
-      .finally(() => {
-        clearTimeout(timeoutId);
-      });
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error("Promise timed out"));
+    }, duration);
   });
-};
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
