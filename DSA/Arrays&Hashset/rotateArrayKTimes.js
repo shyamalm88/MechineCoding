@@ -36,6 +36,23 @@
  * front (but in reverse order) and the first n-k elements at the back (in reverse order).
  * Reversing the individual parts fixes their internal order.
  *
+ * DRY RUN:
+ * Input: nums = [1, 2, 3, 4, 5, 6, 7], k = 3
+ *
+ * 1. Normalize k:
+ *    - n = 7. k = 3 % 7 = 3.
+ *
+ * 2. Reverse Entire Array (0 to 6):
+ *    - [1, 2, 3, 4, 5, 6, 7] becomes [7, 6, 5, 4, 3, 2, 1].
+ *
+ * 3. Reverse First k Elements (0 to 2):
+ *    - Subarray [7, 6, 5] becomes [5, 6, 7].
+ *    - Array state: [5, 6, 7, 4, 3, 2, 1].
+ *
+ * 4. Reverse Remaining Elements (3 to 6):
+ *    - Subarray [4, 3, 2, 1] becomes [1, 2, 3, 4].
+ *    - Final Array: [5, 6, 7, 1, 2, 3, 4].
+ *
  * Time Complexity: O(N)
  * Space Complexity: O(1) - In-place.
  */

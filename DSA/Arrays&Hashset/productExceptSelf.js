@@ -38,6 +38,25 @@
  * We can do this in O(1) space (excluding output array) by using the output
  * array to store left products first, then multiplying by right products on the fly.
  *
+ * DRY RUN:
+ * Input: nums = [1, 2, 3, 4]
+ *
+ * 1. Pass 1 (Left Products):
+ *    - Initialize result array. leftProduct = 1.
+ *    - i=0: result[0] = 1. New leftProduct = 1 * 1 = 1.
+ *    - i=1: result[1] = 1. New leftProduct = 1 * 2 = 2.
+ *    - i=2: result[2] = 2. New leftProduct = 2 * 3 = 6.
+ *    - i=3: result[3] = 6. New leftProduct = 6 * 4 = 24.
+ *    - Array state: [1, 1, 2, 6] (Each index holds product of elements to its left)
+ *
+ * 2. Pass 2 (Right Products):
+ *    - Initialize rightProduct = 1.
+ *    - i=3: result[3] *= 1 -> 6.  New rightProduct = 1 * 4 = 4.
+ *    - i=2: result[2] *= 4 -> 8.  New rightProduct = 4 * 3 = 12.
+ *    - i=1: result[1] *= 12 -> 12. New rightProduct = 12 * 2 = 24.
+ *    - i=0: result[0] *= 24 -> 24. New rightProduct = 24 * 1 = 24.
+ *    - Final Array: [24, 12, 8, 6]
+ *
  * Time Complexity: O(N)
  * Space Complexity: O(1) (Output array doesn't count towards space complexity)
  */
