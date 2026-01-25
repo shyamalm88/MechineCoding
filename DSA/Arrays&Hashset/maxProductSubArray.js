@@ -37,6 +37,25 @@
  * 2. The current number * previous max product.
  * 3. The current number * previous min product (if current number is negative).
  *
+ * DRY RUN:
+ * Input: nums = [-2, 3, -4]
+ *
+ * 1. Initialize:
+ *    - maxProd = -2, minProd = -2, result = -2
+ *
+ * 2. i=1, x=3:
+ *    - prevMax = -2, prevMin = -2
+ *    - maxProd = Math.max(3, 3*-2, 3*-2) = 3
+ *    - minProd = Math.min(3, 3*-2, 3*-2) = -6
+ *    - result = Math.max(-2, 3) = 3
+ *
+ * 3. i=2, x=-4:
+ *    - prevMax = 3, prevMin = -6
+ *    - maxProd = Math.max(-4, -4*3, -4*-6) = Math.max(-4, -12, 24) = 24
+ *      (Notice how minProd (-6) * negative (-4) became the new max!)
+ *    - minProd = Math.min(-4, -4*3, -4*-6) = -12
+ *    - result = Math.max(3, 24) = 24
+ *
  * Time Complexity: O(N)
  * Space Complexity: O(1)
  */

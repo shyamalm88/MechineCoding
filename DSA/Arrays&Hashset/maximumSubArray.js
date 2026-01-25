@@ -36,6 +36,37 @@
  * We choose option 2 if the previous running sum was negative (or effectively,
  * if `currentSum + num < num`).
  *
+ * DRY RUN:
+ * Input: nums = [-2, 1, -3, 4, -1, 2, 1, -5, 4]
+ *
+ * 1. Initialize: currentSum = -2, maxSum = -2
+ *
+ * 2. i=1, num=1:
+ *    - currentSum = Math.max(1, -2 + 1) = 1. (Start new subarray)
+ *    - maxSum = Math.max(-2, 1) = 1.
+ *
+ * 3. i=2, num=-3:
+ *    - currentSum = Math.max(-3, 1 - 3) = -2. (Extend)
+ *    - maxSum = 1.
+ *
+ * 4. i=3, num=4:
+ *    - currentSum = Math.max(4, -2 + 4) = 4. (Start new)
+ *    - maxSum = 4.
+ *
+ * 5. i=4, num=-1:
+ *    - currentSum = Math.max(-1, 4 - 1) = 3. (Extend)
+ *    - maxSum = 4.
+ *
+ * 6. i=5, num=2:
+ *    - currentSum = Math.max(2, 3 + 2) = 5. (Extend)
+ *    - maxSum = 5.
+ *
+ * 7. i=6, num=1:
+ *    - currentSum = Math.max(1, 5 + 1) = 6. (Extend)
+ *    - maxSum = 6.
+ *
+ * Result: 6 (Subarray [4, -1, 2, 1])
+ *
  * Time Complexity: O(N)
  * Space Complexity: O(1)
  */
