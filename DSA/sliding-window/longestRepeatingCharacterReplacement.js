@@ -37,31 +37,52 @@
  * If (Length - MaxFreq) <= k, the window is valid.
  * If (Length - MaxFreq) > k, the window is invalid, so we shrink from left.
  *
+ * DRY RUN:
+ * Input: s = "AABABBA", k = 1
+ *
+ * 1. r=0 ('A'): freq={A:1}, maxFreq=1. Len=1. 1-1 <= 1. OK. maxLen=1.
+ * 2. r=1 ('A'): freq={A:2}, maxFreq=2. Len=2. 2-2 <= 1. OK. maxLen=2.
+ * 3. r=2 ('B'): freq={A:2, B:1}, maxFreq=2. Len=3. 3-2 <= 1. OK. maxLen=3.
+ * 4. r=3 ('A'): freq={A:3, B:1}, maxFreq=3. Len=4. 4-3 <= 1. OK. maxLen=4.
+ *
+ * 5. r=4 ('B'): freq={A:3, B:2}, maxFreq=3. Len=5. 5-3 = 2 > 1. INVALID.
+ *    - Shrink: Remove s[0] ('A'). freq={A:2, B:2}. left=1.
+ *    - Now Len=4. 4-3 <= 1. OK.
+ *
+ * 6. r=5 ('B'): freq={A:2, B:3}, maxFreq=3. Len=5 (indices 1-5). 5-3 = 2 > 1. INVALID.
+ *    - Shrink: Remove s[1] ('A'). freq={A:1, B:3}. left=2.
+ *    - Now Len=4. 4-3 <= 1. OK.
+ *
+ * Result: 4
+ *
  * Time Complexity: O(N)
  * Space Complexity: O(26) -> O(1)
  */
 const characterReplacement = (s, k) => {
-  const count = new Map();
+  const freq = new Map();
   let left = 0;
   let maxFreq = 0;
-  let maxLength = 0;
+  let maxLen = 0;
 
   for (let right = 0; right < s.length; right++) {
-    const char = s[right];
-    count.set(char, (count.get(char) || 0) + 1);
-    maxFreq = Math.max(maxFreq, count.get(char));
+    const ch = s[right];
+    freq.set(ch, (freq.get(ch) || 0) + 1);
 
-    // Window Length = right - left + 1
-    // If replacements needed > k, shrink window
-    if (right - left + 1 - maxFreq > k) {
-      count.set(s[left], count.get(s[left]) - 1);
+    // track most frequent char in current window
+    maxFreq = Math.max(maxFreq, freq.get(ch));
+
+    // if window invalid, shrink
+    while (right - left + 1 - maxFreq > k) {
+      const leftChar = s[left];
+      freq.set(leftChar, freq.get(leftChar) - 1);
       left++;
     }
 
-    maxLength = Math.max(maxLength, right - left + 1);
+    // window is valid here
+    maxLen = Math.max(maxLen, right - left + 1);
   }
 
-  return maxLength;
+  return maxLen;
 };
 
 console.log("=== Longest Repeating Character Replacement Tests ===\n");
