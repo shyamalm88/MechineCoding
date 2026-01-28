@@ -45,6 +45,24 @@
  *   3. Add `i` to the BACK.
  *   4. If window size reached (i >= k - 1), add `nums[deque[0]]` to result.
  *
+ * DRY RUN:
+ * Input: nums = [1, 3, -1, -3, 5, 3, 6, 7], k = 3
+ *
+ * 1. i=0 (val=1): Deque=[0] (val:1)
+ * 2. i=1 (val=3): 3 > 1, pop 0. Deque=[1] (val:3)
+ * 3. i=2 (val=-1): -1 < 3. Deque=[1, 2] (vals:3, -1).
+ *    - Window full. Max=nums[1]=3. Res=[3]
+ * 4. i=3 (val=-3): -3 < -1. Deque=[1, 2, 3] (vals:3, -1, -3).
+ *    - Check window: deque[0]=1 is valid (1 > 3-3).
+ *    - Max=nums[1]=3. Res=[3, 3]
+ * 5. i=4 (val=5): 5 > -3 (pop 3), 5 > -1 (pop 2), 5 > 3 (pop 1). Deque=[4] (val:5).
+ *    - Max=nums[4]=5. Res=[3, 3, 5]
+ * 6. i=5 (val=3): 3 < 5. Deque=[4, 5] (vals:5, 3).
+ *    - Max=nums[4]=5. Res=[3, 3, 5, 5]
+ * 7. i=6 (val=6): 6 > 3 (pop 5), 6 > 5 (pop 4). Deque=[6] (val:6).
+ *    - Max=nums[6]=6. Res=[..., 6]
+ * 8. i=7 (val=7): 7 > 6 (pop 6). Deque=[7] (val:7). Max=7. Res=[..., 7]
+ *
  * Time Complexity: O(N) - Each element is added and removed at most once.
  * Space Complexity: O(K) - Deque size.
  */
@@ -54,9 +72,10 @@ var maxSlidingWindow = function (nums, k) {
 
   for (let i = 0; i < nums.length; i++) {
     // 1️⃣ Remove smaller elements from the back
-    while (deque.length > 0 && nums[i] >= nums[deque[deque.length - 1]]) {
-      // nums[i] is better than the old one
-      // so the old one can never be a max again
+    const lastItem = deque.length - 1;
+    while (deque.length > 0 && nums[i] >= nums[deque[lastItem]]) {
+      // nums[i] is larger than the element at the back,
+      // so the smaller element can never be a max again
       deque.pop();
     }
 
