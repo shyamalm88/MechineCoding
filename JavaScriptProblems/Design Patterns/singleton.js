@@ -1,19 +1,23 @@
-const Singleton = (function () {
-  let instance;
 
-  function createInstance() {
-    return { name: "I am the active instance" };
+class Singleton {
+  static instance;
+
+  constructor() {
+    if (Singleton.instance) {
+      throw new Error("Use Singleton.getInstance()");
+    }
+    this.name = "I am the active instance";
+    Singleton.instance = this;
   }
 
-  return {
-    getInstance: function () {
-      if (!instance) {
-        instance = createInstance();
-      }
-      return instance;
-    },
-  };
-})();
+  static getInstance() {
+    if (!Singleton.instance) {
+      Singleton.instance = new Singleton();
+    }
+    return Singleton.instance;
+  }
+}
+
 
 // Usage
 const instance1 = Singleton.getInstance();
