@@ -1,10 +1,10 @@
-const pipe = function (...funcs) {
-  if (funcs.length === 0) return (args) => args;
+const pipe = (...funcs) => {
+  if (funcs.length === 0) return x => x;
   if (funcs.length === 1) return funcs[0];
 
-  return funcs.reduceRight(
-    (a, b) =>
+  return funcs.reduce(
+    (prevFn, nextFn) =>
       (...args) =>
-        a(b(...args))
+        nextFn(prevFn(...args))
   );
 };
