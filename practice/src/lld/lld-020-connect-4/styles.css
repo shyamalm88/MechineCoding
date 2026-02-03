@@ -1,16 +1,43 @@
 .App {
     font-family: sans-serif;
     text-align: center;
-    display: flex;
-    flex-direction: column;
+    margin-top: 20px;
 }
 
+/* Column buttons */
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.controls button {
+    width: 60px;
+    height: 40px;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+/* Grid wrapper */
 .gridWrapper {
-    display: flex;
-    flex-direction: row;
-    margin: auto;
+    display: inline-block;
+    padding: 10px;
 }
 
-.cols {
-    border: 1px solid #ccc;
+/* Each row */
+.row {
+    display: flex;
+}
+
+/* Each cell */
+.cell {
+    width: 60px;
+    height: 60px;
+    margin: 4px;
+    background: #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
 }

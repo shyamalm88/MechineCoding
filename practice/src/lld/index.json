@@ -124,5 +124,11 @@
     "title": "Data Table",
     "summary": "Data table",
     "path": "src/lld/lld-021-data-table"
+  },
+  {
+    "id": "lld-022-tic-tac-toe-dynamic",
+    "title": "Tic Tac Toe Dynamic",
+    "summary": "Tic Tac Toe Dynamic",
+    "path": "src/lld/lld-022-tic-tac-toe-dynamic"
   }
 ]
