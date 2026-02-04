@@ -1,0 +1,55 @@
+.container {
+    padding: 20px;
+    font-family: sans-serif;
+}
+
+button {
+    padding: 8px 14px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(8, 50px);
+    gap: 6px;
+    margin-top: 20px;
+}
+
+.cell {
+    height: 50px;
+    width: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border-radius: 6px;
+}
+
+/* Chessboard base colors */
+.cell.light {
+    background: #f0f0f0;
+}
+
+.cell.dark {
+    background: #bdbdbd;
+}
+
+/* Path overrides */
+.cell.path {
+    background: #a7f3d0;
+}
+
+/* Start / End overrides */
+.cell.start {
+    background: #22c55e;
+    color: white;
+}
+
+.cell.end {
+    background: #ef4444;
+    color: white;
+}

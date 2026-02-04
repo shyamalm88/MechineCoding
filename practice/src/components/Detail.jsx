@@ -33,6 +33,10 @@ import SearchHighlighter from "../lld/lld-019-search-highlighter/Solution"
 import Connect4 from "../lld/lld-020-connect-4/Solution"
 import DataTable from "../lld/lld-021-data-table/Solution"
 import TicTacToe from '../lld/lld-022-tic-tac-toe-dynamic/Solution'
+import SnakeAndLadder from '../lld/lld-023-snake-ladder/Solution'
+import KnightShortestPath from '../lld/lld-024-chess-board-knight-shortest-path/Solution'
+import RookShortestPath from '../lld/lld-025-chess-board-rook-shortest-path/Solution'
+
 
 
 
@@ -71,7 +75,12 @@ const SOLUTION_COMPONENTS = {
   'lld-019-search-highlighter': SearchHighlighter,
   'lld-020-connect-4': Connect4,
   'lld-021-data-table': DataTable,
-  'lld-022-tic-tac-toe-dynamic': TicTacToe
+  'lld-022-tic-tac-toe-dynamic': TicTacToe,
+  'lld-023-snake-ladder': SnakeAndLadder,
+  'lld-024-chess-board-knight-shortest-path': KnightShortestPath,
+  'lld-025-chess-board-rook-shortest-path': RookShortestPath
+
+
 
 
 

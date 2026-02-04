@@ -130,5 +130,23 @@
     "title": "Tic Tac Toe Dynamic",
     "summary": "Tic Tac Toe Dynamic",
     "path": "src/lld/lld-022-tic-tac-toe-dynamic"
+  },
+  {
+    "id": "lld-023-snake-ladder",
+    "title": "Snake Ladder Game",
+    "summary": "Snake Ladder Game",
+    "path": "src/lld/lld-023-snake-ladder"
+  },
+  {
+    "id": "lld-024-chess-board-knight-shortest-path",
+    "title": "Chess Board Knight Movement Shortest Path",
+    "summary": "Chess Board Knight Movement Shortest Path",
+    "path": "src/lld/lld-024-chess-board-knight-shortest-path"
+  },
+  {
+    "id": "lld-025-chess-board-rook-shortest-path",
+    "title": "Chess Board Rook Movement Shortest Path",
+    "summary": "Chess Board Rook Movement Shortest Path",
+    "path": "src/lld/lld-025-chess-board-rook-shortest-path"
   }
 ]
