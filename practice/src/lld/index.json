@@ -154,5 +154,23 @@
     "title": "Token Bucket",
     "summary": "Token Bucket",
     "path": "src/lld/lld-026-token-bucket"
+  },
+  {
+    "id": "lld-027-calendar-day-view",
+    "title": "Calendar Day View",
+    "summary": "Calendar Day View",
+    "path": "src/lld/lld-027-calendar-day-view"
+  },
+  {
+    "id": "lld-028-kanban-board",
+    "title": "Kanban Board",
+    "summary": "Kanban Board",
+    "path": "src/lld/lld-028-kanban-board"
+  },
+  {
+    "id": "lld-029-notification-system",
+    "title": "Notification System",
+    "summary": "Notification System",
+    "path": "src/lld/lld-029-notification-system"
   }
 ]

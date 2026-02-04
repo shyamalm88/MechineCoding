@@ -37,6 +37,9 @@ import SnakeAndLadder from '../lld/lld-023-snake-ladder/Solution'
 import KnightShortestPath from '../lld/lld-024-chess-board-knight-shortest-path/Solution'
 import RookShortestPath from '../lld/lld-025-chess-board-rook-shortest-path/Solution'
 import TokenBucket from '../lld/lld-026-token-bucket/Solution'
+import CalendarDayView from '../lld/lld-027-calendar-day-view/Solution'
+import KanbanBoard from '../lld/lld-028-kanban-board/Solution'
+import NotificationSystem from '../lld/lld-029-notification-system/Solution'
 
 
 
@@ -80,7 +83,11 @@ const SOLUTION_COMPONENTS = {
   'lld-023-snake-ladder': SnakeAndLadder,
   'lld-024-chess-board-knight-shortest-path': KnightShortestPath,
   'lld-025-chess-board-rook-shortest-path': RookShortestPath,
-  'lld-026-token-bucket': TokenBucket
+  'lld-026-token-bucket': TokenBucket,
+  'lld-027-calendar-day-view': CalendarDayView,
+  'lld-028-kanban-board': KanbanBoard,
+  'lld-029-notification-system': NotificationSystem
+
 
 
 
