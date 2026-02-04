@@ -1,5 +1,50 @@
 import { useState } from "react";
 
+/**
+ * ============================================================================
+ * PROBLEM: Snake and Ladder - Shortest Path (BFS)
+ * ============================================================================
+ *
+ * INTUITION:
+ * The Snake and Ladder game can be modeled as a Directed Graph.
+ * - Nodes: Squares 1 to 100.
+ * - Edges: From square X, you can go to X+1, X+2, ..., X+6 (dice roll).
+ * - Jumps: If a square has a snake or ladder, there is a directed edge
+ *   from the start to the end of the snake/ladder (0 cost for the jump itself,
+ *   but the dice roll counts as 1 move).
+ *
+ * We want the minimum dice throws to reach 100.
+ * Since edges (dice throws) have equal weight (1 move), BFS is optimal.
+ *
+ * ALGORITHM:
+ * 1. Start BFS from Node 1.
+ * 2. For current node `curr`, try all dice rolls (1 to 6).
+ * 3. Calculate `next` position.
+ * 4. Check for Snake or Ladder at `next`. If present, move `next` to destination.
+ * 5. If `next` hasn't been visited, add to queue and mark visited.
+ * 6. Track the path taken to reconstruct it later.
+ *
+ * ============================================================================
+ * DRY RUN EXAMPLE
+ * ============================================================================
+ * Start: 1. Target: 100.
+ * Ladder: 2 -> 38.
+ *
+ * 1. Queue: [[1]]
+ * 2. Pop [1]. Neighbors:
+ *    - Roll 1 -> Land on 2 -> Ladder to 38. Path: [1, 38]. Push to Queue.
+ *    - Roll 2 -> Land on 3. Path: [1, 3]. Push.
+ *    ...
+ *    - Roll 6 -> Land on 7. Path: [1, 7]. Push.
+ *
+ * 3. Pop [1, 38]. Neighbors of 38:
+ *    - Roll 1 -> 39. Path: [1, 38, 39].
+ *    ...
+ *
+ * 4. Eventually reach 100. The first time we see 100, that path is shortest.
+ * ============================================================================
+ */
+
 const SIZE = 10;
 const TOTAL = 100;
 
@@ -24,6 +69,7 @@ function getPosition(num) {
   const row = SIZE - 1 - rowFromBottom;
 
   let col = (num - 1) % SIZE;
+  // Zigzag: odd rows from bottom go right-to-left
   if (rowFromBottom % 2 === 1) col = SIZE - 1 - col;
 
   return { row, col };
@@ -44,22 +90,26 @@ function buildGrid() {
 
 // BFS shortest path
 function shortestPath() {
-  const queue = [[1]];
-  const visited = new Set([1]);
+  const queue = [[1]]; // Store full paths: [[1], [1, 38], ...]
+  const visited = new Set([1]); // Avoid cycles and redundant processing
 
   while (queue.length) {
     const path = queue.shift();
     const curr = path[path.length - 1];
 
+    // Reached the end?
     if (curr === TOTAL) return path;
 
+    // Try all 6 dice outcomes
     for (let d = 1; d <= 6; d++) {
       let next = curr + d;
       if (next > TOTAL) continue;
 
+      // Apply jumps immediately
       if (ladders[next]) next = ladders[next];
       if (snakes[next]) next = snakes[next];
 
+      // If not visited, add new path to queue
       if (!visited.has(next)) {
         visited.add(next);
         queue.push([...path, next]);
@@ -69,7 +119,7 @@ function shortestPath() {
   return [];
 }
 
-export default function App() {
+export default function SnakeAndLadder() {
   const grid = buildGrid();
   const [path, setPath] = useState([]);
 
@@ -109,11 +159,16 @@ export default function App() {
           marginTop: 10,
         }}
       >
-        {grid.flat().map((cell) => {
-          let bg = "#eee";
-          if (cell === 1) bg = "#22c55e";
-          else if (cell === 100) bg = "#ef4444";
-          else if (pathSet.has(cell)) bg = "#a7f3d0";
+        {grid.map((row, r) =>
+          row.map((cell, c) => {
+            // Determine cell color
+            const isDark = (r + c) % 2 === 1;
+            let bg = isDark ? "#779556" : "#ebecd0"; // Chessboard style
+
+            if (cell === 1) bg = "#22c55e"; // Start Green
+            else if (cell === 100) bg = "#ef4444"; // End Red
+            else if (pathSet.has(cell)) bg = "#facc15"; // Path Yellow
+            else if (ladders[cell] || snakes[cell]) bg = isDark ? "#557536" : "#dbdcc0"; // Slightly different for special cells
 
           return (
             <div
@@ -122,12 +177,14 @@ export default function App() {
                 width: 60,
                 height: 60,
                 background: bg,
-                borderRadius: 6,
+                border: "1px solid rgba(0,0,0,0.1)",
                 fontSize: 11,
                 textAlign: "center",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "center",
+                color: (cell === 1 || cell === 100) ? "white" : "inherit",
+                fontWeight: "bold"
               }}
             >
               <strong>{cell}</strong>
@@ -145,11 +202,12 @@ export default function App() {
               )}
             </div>
           );
-        })}
+        })
+      )}
       </div>
 
       <div style={{ marginTop: 12, fontSize: 14 }}>
-        <div>🟩 Shortest path (BFS)</div>
+        <div>🟨 Shortest path (BFS)</div>
         <div>🪜 Ladder</div>
         <div>🐍 Snake</div>
       </div>
