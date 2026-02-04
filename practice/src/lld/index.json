@@ -148,5 +148,11 @@
     "title": "Chess Board Rook Movement Shortest Path",
     "summary": "Chess Board Rook Movement Shortest Path",
     "path": "src/lld/lld-025-chess-board-rook-shortest-path"
+  },
+  {
+    "id": "lld-026-token-bucket",
+    "title": "Token Bucket",
+    "summary": "Token Bucket",
+    "path": "src/lld/lld-026-token-bucket"
   }
 ]

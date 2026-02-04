@@ -36,6 +36,7 @@ import TicTacToe from '../lld/lld-022-tic-tac-toe-dynamic/Solution'
 import SnakeAndLadder from '../lld/lld-023-snake-ladder/Solution'
 import KnightShortestPath from '../lld/lld-024-chess-board-knight-shortest-path/Solution'
 import RookShortestPath from '../lld/lld-025-chess-board-rook-shortest-path/Solution'
+import TokenBucket from '../lld/lld-026-token-bucket/Solution'
 
 
 
@@ -78,7 +79,8 @@ const SOLUTION_COMPONENTS = {
   'lld-022-tic-tac-toe-dynamic': TicTacToe,
   'lld-023-snake-ladder': SnakeAndLadder,
   'lld-024-chess-board-knight-shortest-path': KnightShortestPath,
-  'lld-025-chess-board-rook-shortest-path': RookShortestPath
+  'lld-025-chess-board-rook-shortest-path': RookShortestPath,
+  'lld-026-token-bucket': TokenBucket
 
 
 
