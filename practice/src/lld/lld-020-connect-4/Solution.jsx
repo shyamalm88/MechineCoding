@@ -14,8 +14,8 @@ export default function CountFour({ rows = 6, cols = 7 }) {
   const directions = [
     [0, 1],   // horizontal
     [1, 0],   // vertical
-    [1, 1],   // diagonal \
-    [1, -1],  // diagonal /
+    [-1, 0],
+    [0, -1]
   ];
 
   // SAME count logic as your TicTacToe
@@ -43,8 +43,7 @@ export default function CountFour({ rows = 6, cols = 7 }) {
     for (let [dr, dc] of directions) {
       const total =
         1 +
-        count(board, r, c, dr, dc, player) +
-        count(board, r, c, -dr, -dc, player);
+        count(board, r, c, dr, dc, player) 
 
       if (total >= WIN) return true;
     }

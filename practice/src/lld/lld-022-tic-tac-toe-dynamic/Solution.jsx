@@ -2,6 +2,7 @@ import { useState } from "react";
 
 export default function TicTacToe({ size = 5 }) {
   const n = size;
+  const WIN = n;
 
   const createBoard = () =>
     Array.from({ length: n }, () => Array(n).fill(null));
@@ -11,37 +12,43 @@ export default function TicTacToe({ size = 5 }) {
   const [winner, setWinner] = useState(null);
   const [moves, setMoves] = useState(0);
 
+  // Horizontal + Vertical only
+  const directions = [
+    [0, 1], // horizontal
+    [1, 0], // vertical
+    [-1, 0],
+    [0, -1]
+  ];
 
   const count = (board, r, c, dr, dc, player) => {
-  let nr = r + dr;
-  let nc = c + dc;
-  let cnt = 0;
+    let nr = r + dr;
+    let nc = c + dc;
+    let cnt = 0;
 
-  while (
-    nr >= 0 &&
-    nc >= 0 &&
-    nr < board.length &&
-    nc < board.length &&
-    board[nr][nc] === player
-  ) {
-    cnt++;
-    nr += dr;
-    nc += dc;
-  }
+    while (
+      nr >= 0 &&
+      nc >= 0 &&
+      nr < board.length &&
+      nc < board[0].length &&
+      board[nr][nc] === player
+    ) {
+      cnt++;
+      nr += dr;
+      nc += dc;
+    }
 
-  return cnt;
-};
+    return cnt;
+  };
 
   const checkWin = (board, row, col, player) => {
     for (let [dr, dc] of directions) {
-    const total =
-      1 +
-      count(board, r, c, dr, dc, player) +
-      count(board, r, c, -dr, -dc, player);
+      const total =
+        1 +
+        count(board, row, col, dr, dc, player) 
 
-    if (total >= board.length) return true;
-  }
-  return false;
+      if (total >= WIN) return true;
+    }
+    return false;
   };
 
   const handleClick = (r, c) => {
