@@ -13,20 +13,20 @@ export default function TicTacToe({ size = 5 }) {
 
 
   const count = (board, r, c, dr, dc, player) => {
-  let i = r + dr;
-  let j = c + dc;
+  let nr = r + dr;
+  let nc = c + dc;
   let cnt = 0;
 
   while (
-    i >= 0 &&
-    j >= 0 &&
-    i < board.length &&
-    j < board.length &&
-    board[i][j] === player
+    nr >= 0 &&
+    nc >= 0 &&
+    nr < board.length &&
+    nc < board.length &&
+    board[nr][nc] === player
   ) {
     cnt++;
-    i += dr;
-    j += dc;
+    nr += dr;
+    nc += dc;
   }
 
   return cnt;
