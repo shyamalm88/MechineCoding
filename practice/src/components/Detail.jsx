@@ -40,6 +40,7 @@ import TokenBucket from '../lld/lld-026-token-bucket/Solution'
 import CalendarDayView from '../lld/lld-027-calendar-day-view/Solution'
 import KanbanBoard from '../lld/lld-028-kanban-board/Solution'
 import NotificationSystem from '../lld/lld-029-notification-system/Solution'
+import PollWidget from '../lld/lld-030-poll-widget/Solution'
 
 
 
@@ -86,7 +87,8 @@ const SOLUTION_COMPONENTS = {
   'lld-026-token-bucket': TokenBucket,
   'lld-027-calendar-day-view': CalendarDayView,
   'lld-028-kanban-board': KanbanBoard,
-  'lld-029-notification-system': NotificationSystem
+  'lld-029-notification-system': NotificationSystem,
+  'lld-030-poll-widget': PollWidget
 
 
 

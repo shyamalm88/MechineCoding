@@ -8,7 +8,7 @@ useEffect(()=>{
     const timer = setTimeout(()=>{
         setProgress((prev) =>{
             if(prev >= 100){
-                clearInterval(timer);
+                clearTimeout(timer);
                 return;
             }
             return prev+1

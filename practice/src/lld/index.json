@@ -172,5 +172,11 @@
     "title": "Notification System",
     "summary": "Notification System",
     "path": "src/lld/lld-029-notification-system"
+  },
+  {
+    "id": "lld-030-poll-widget",
+    "title": "Poll Widget",
+    "summary": "Poll Widget",
+    "path": "src/lld/lld-030-poll-widget"
   }
 ]

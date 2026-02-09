@@ -73,8 +73,7 @@ export default function RookShortestPath() {
       Array(N).fill(null)
     );
 
-    const queue = [];
-    queue.push(start);
+    const queue = [start];
     visited[start[0]][start[1]] = true;
 
     while (queue.length) {
