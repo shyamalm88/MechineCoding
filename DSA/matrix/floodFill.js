@@ -63,6 +63,12 @@ const floodFillDFS = (image, sr, sc, color) => {
 
   const row = image.length;
   const col = image[0].length;
+  const directions = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
 
   // Store the original color we need to replace
   const originalColor = image[sr][sc];
@@ -89,10 +95,11 @@ const floodFillDFS = (image, sr, sc, color) => {
     image[r][c] = color;
 
     // Explore all 4 directions (up, down, right, left)
-    dfs(r + 1, c); // down
-    dfs(r - 1, c); // up
-    dfs(r, c + 1); // right
-    dfs(r, c - 1); // left
+    for (let [dr, dc] of directions) {
+      let nr = dr + r;
+      let nc = dc + c;
+      dfs(nr, nc);
+    }
   };
 
   // Start DFS from the given pixel

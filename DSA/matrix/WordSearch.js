@@ -41,6 +41,12 @@
 var exist = function (board, word) {
   const rows = board.length;
   const cols = board[0].length;
+  const directions = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
 
   // The Recursive "Search Party"
   const dfs = (r, c, i) => {
@@ -59,13 +65,15 @@ var exist = function (board, word) {
     const temp = board[r][c];
     board[r][c] = "#"; // Mark as visited so we don't go back in circles
 
-    // 4. Explore Neighbors (OR logic)
-    // If ANY path returns true, bubble it up
-    const found =
-      dfs(r + 1, c, i + 1) || // Down
-      dfs(r - 1, c, i + 1) || // Up
-      dfs(r, c + 1, i + 1) || // Right
-      dfs(r, c - 1, i + 1); // Left
+    let found = false;
+    for (let [dr, dc] of directions) {
+      let nr = dr + r;
+      let nc = dc + c;
+      if (dfs(nr, nc, i + 1)) {
+        found = true;
+        break;
+      }
+    }
 
     // 5. Backtrack (The "Undo" Button)
     // CRITICAL: Restore the letter before returning!

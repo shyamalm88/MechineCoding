@@ -41,6 +41,12 @@ const surroundedRegions = (board) => {
 
   const rows = board.length;
   const cols = board[0].length;
+  const directions = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
 
   const dfs = (r, c) => {
     // Boundary check or if not an 'O'
@@ -50,11 +56,11 @@ const surroundedRegions = (board) => {
     // Mark as 'Escaped' (safe from being flipped)
     board[r][c] = "E";
 
-    // Explore neighbors
-    dfs(r + 1, c);
-    dfs(r - 1, c);
-    dfs(r, c + 1);
-    dfs(r, c - 1);
+    for (let [dr, dc] of directions) {
+      let nr = dr + r;
+      let nc = dc + c;
+      dfs(nr, nc);
+    }
   };
 
   // 1. Mark 'O's connected to the top and bottom borders

@@ -8,6 +8,7 @@ export default function App() {
 
   const [result, setResult] = useState([]);
   const cache = useRef(new Map());
+  const abortRef = useRef(null);
 
   const debouncedTerm = useDebounce(inputValue, 1000);
 
@@ -27,8 +28,10 @@ export default function App() {
       return;
     }
 
+    abortRef.current?.abort();
     const controller = new AbortController();
-    const signal = controller.signal;
+    abortRef.current = controller;
+    const signal = abortRef.current.signal;
 
     const fetchData = async () => {
       const url = "https://dummyjson.com/products/search?q=";

@@ -1,68 +1,93 @@
-import {useState, useEffect} from "react"
+import { useState } from "react";
 
-export function Folder({explorerData, handleInsertNode}){
+export function Folder({ explorerData, handleInsertNode }) {
   const [expanded, setExpanded] = useState(false);
-  const [folderState, setFolderState] = useState({
-    isVisible: false,
-    isFolder: null 
-  })
+  const [createMode, setCreateMode] = useState(null); 
+  // null | "folder" | "file"
 
-  const handleAddNode = (ev, isFolder) =>{
-    
-  }
+  const isFolder = explorerData.isFolder;
 
-  const handleAdd = (ev, isFolder) =>{
-    ev.stopPropagation();
+  const icon = isFolder
+    ? expanded ? "📂" : "📁"
+    : "📄";
+
+  const handleToggle = () => {
+    setExpanded(prev => !prev);
+  };
+
+  const handleAdd = (e, type) => {
+    e.stopPropagation();
     setExpanded(true);
-    setFolderState({
-      isVisible: true,
-      isFolder
-    })
-  }
+    setCreateMode(type);
+  };
 
-  const handleFileName = (ev) =>{
-    if(ev.keyCode===13){
-      handleInsertNode(explorerData.id, ev.target.value, folderState.isFolder);
-      setFolderState({...folderState, 
-      isVisible: false,
-      isFolder: null
-    })
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && e.target.value.trim()) {
+      handleInsertNode(
+        explorerData.id,
+        e.target.value,
+        createMode === "folder"
+      );
+      setCreateMode(null);
     }
-  }
+  };
 
-  return(
+  const handleBlur = () => {
+    setCreateMode(null);
+  };
+
+  return (
     <>
-    <div style={{display: "flex", justifyContent: "space-between", maxWidth: "350px"}} onClick={()=>setExpanded(!expanded)}>
-      <div style={{display: "flex", gap: 10}}>
-        {explorerData?.isFolder ? expanded ? <span>📂</span> : <span>📁</span> : <span>📄</span>}
-        <span>{explorerData.name}</span>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          maxWidth: "350px",
+          cursor: "pointer"
+        }}
+        onClick={handleToggle}
+      >
+        <div style={{ display: "flex", gap: 10 }}>
+          <span>{icon}</span>
+          <span>{explorerData.name}</span>
+        </div>
+
+        {isFolder && (
+          <div style={{ display: "flex", gap: 5 }}>
+            <button onClick={(e) => handleAdd(e, "folder")}>
+              Folder +
+            </button>
+            <button onClick={(e) => handleAdd(e, "file")}>
+              File +
+            </button>
+          </div>
+        )}
       </div>
-      {explorerData?.isFolder && <div style={{display: "flex", gap: 5}}>
-        <button onClick={(e)=>handleAdd(e, true)}>Folder +</button>
-        <button onClick={(e)=>handleAdd(e, false)}>File +</button>
-      </div>
-      }
-      
-    </div>
-    {expanded && 
-    <div>
-       {folderState?.isVisible && 
-       <>
-        <span>{folderState.isFolder ? "📁" : "📄"}</span>
-        <input type="text" onKeyDown={handleFileName} onBlur={()=>setFolderState({...folderState,
-            isVisible: false,
-            isFolder: null
-          })} autoFocus="true"/>
-        </>
-        }
-        {explorerData?.items.map((item, index)=>{
-          return <div style={{padding: "5px 10px"}}>
-              <Folder key={index} explorerData={item} handleInsertNode={handleInsertNode}/>
+
+      {expanded && (
+        <div>
+          {createMode && (
+            <div style={{ display: "flex", gap: 5, paddingLeft: 20 }}>
+              <span>{createMode === "folder" ? "📁" : "📄"}</span>
+              <input
+                type="text"
+                autoFocus
+                onKeyDown={handleKeyDown}
+                onBlur={handleBlur}
+              />
             </div>
-        })}
-    </div>
-    }
-      
+          )}
+
+          {explorerData.items.map((item) => (
+            <div key={item.id} style={{ padding: "5px 10px" }}>
+              <Folder
+                explorerData={item}
+                handleInsertNode={handleInsertNode}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </>
-  )
+  );
 }
