@@ -68,7 +68,9 @@ const shortestBridge = (grid) => {
     queue.push([r, c]); // Add to the BFS queue
 
     for (let [dr, dc] of dirs) {
-      dfs(dr + r, dc + c);
+      let nr = dr + r;
+      let nc = dc + c;
+      dfs(nr, nc);
     }
   };
 
@@ -121,8 +123,8 @@ console.log(
     clone2D([
       [0, 1],
       [1, 0],
-    ])
-  )
+    ]),
+  ),
 ); // Expected: 1
 
 console.log(
@@ -132,8 +134,8 @@ console.log(
       [0, 1, 0],
       [0, 0, 0],
       [0, 0, 1],
-    ])
-  )
+    ]),
+  ),
 ); // Expected: 2
 
 console.log(
@@ -145,6 +147,6 @@ console.log(
       [1, 0, 1, 0, 1],
       [1, 0, 0, 0, 1],
       [1, 1, 1, 1, 1],
-    ])
-  )
+    ]),
+  ),
 ); // Expected: 1

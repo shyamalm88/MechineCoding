@@ -64,27 +64,27 @@ const surroundedRegions = (board) => {
   };
 
   // 1. Mark 'O's connected to the top and bottom borders
-  for (let i = 0; i < rows; i++) {
-    dfs(i, 0);
-    dfs(i, cols - 1);
+  for (let r = 0; r < rows; r++) {
+    if (board[r][0] == 0) dfs(r, 0);
+    if (board[r][cols - 1] == 0) dfs(r, cols - 1);
   }
 
   // 2. Mark 'O's connected to the left and right borders
-  for (let j = 0; j < cols; j++) {
-    dfs(0, j);
-    dfs(rows - 1, j);
+  for (let c = 0; c < cols; c++) {
+    if (board[0][c] == 0) dfs(0, c);
+    if (board[rows - 1][c] == 0) dfs(rows - 1, c);
   }
 
   // 3. Iterate through the board to finalize states
-  for (let i = 0; i < rows; i++) {
-    for (let j = 0; j < cols; j++) {
-      if (board[i][j] === "O") {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (board[r][c] === "O") {
         // This 'O' was NOT reachable from the border, so it is surrounded. Flip to 'X'.
-        board[i][j] = "X";
+        board[r][c] = "X";
       }
-      if (board[i][j] === "E") {
+      if (board[r][c] === "E") {
         // This was a safe 'O' (connected to border). Restore it to 'O'.
-        board[i][j] = "O";
+        board[r][c] = "O";
       }
     }
   }
