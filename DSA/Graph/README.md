@@ -1,338 +1,201 @@
-# Graph Mastery Roadmap (Google-Oriented)
+# Graph Problems — Pattern-Based Progression (Google-Oriented)
 
-This document defines the **exact order** to study graph problems so that
-you build **deep intuition**, not memorized solutions.
+This checklist is organized by **PATTERNS**, not just difficulty.
 
-Follow this order strictly.
-Do NOT jump ahead.
+👉 **Rule to follow**
 
-Each section builds a mental model that later problems depend on.
+- Finish the **CORE** of a pattern first
+- Then move to **IMPORTANT** of the SAME pattern
+- Then attempt **VVIMP** (same idea, deeper constraints)
+- Do NOT jump across patterns randomly
 
----
-
-## LEVEL 0 — Graph Warm-Up (Traversal & Components)
-
-🎯 Goal:
-
-- Stop thinking of graphs as “questions”
-- Start thinking in **connected components & reachability**
-
-### Study Order
-
-1. numberOfIslands.js
-2. maxAreaOfIsland.js
-3. connectedComponent.js
-4. numberOfProvinces.js
-
-### What to Learn
-
-- DFS vs BFS equivalence
-- When recursion is safe
-- Counting components
-- Grid ↔ graph equivalence
-
-🧠 Mental Model:
-
-> “A graph is just nodes + reachability. Everything else is a constraint.”
+This builds **intuition**, not memorization.
 
 ---
 
-## LEVEL 1 — BFS as Shortest Path (Unweighted)
+## 🧩 PATTERN 1 — Connected Components (DFS / BFS)
 
-🎯 Goal:
+**Core idea:**  
+“Start a traversal, mark everything reachable.”  
+_Root choice does NOT matter._
 
-- BFS = shortest path when all edges cost the same
+### 🔵 CORE
 
-### Study Order
+- numberOfIslands
+- maxAreaOfIsland
+- connectedComponents
+- numberOfProvinces
 
-5. rottenOranges.js
-6. wallsAndGates.js
-7. O1Matrix.js
-8. openLock.js
+### 🟢 IMPORTANT (same idea, different graphs)
 
-### What to Learn
+- isBipartite
 
-- Multi-source BFS
-- Layered BFS
-- Distance propagation
-- Why BFS guarantees optimality
+### 🔴 VVIMP (components + bridge logic)
 
-🧠 Mental Model:
-
-> “Each BFS layer represents +1 cost.”
+- smallestBridge
 
 ---
 
-## LEVEL 2 — Graph Validation & Cycles (Union-Find + DFS)
+## 🧩 PATTERN 2 — BFS as Shortest Path (Unweighted)
 
-🎯 Goal:
+**Core idea:**  
+“Each BFS layer represents +1 distance.”
 
-- Understand **what makes a graph valid**
-- Learn Union-Find as a graph invariant tool
+### 🔵 CORE
 
-### Study Order
+- rottenOranges
+- wallsAndGates
+- O1Matrix
+- openLock
 
-9. graphValidTree.js
-10. redundantConnections.js
+### 🟢 IMPORTANT (harder state / generation)
 
-### What to Learn
+- wordLadder
+- minimumGeneticMutation
+- slidingPuzzle
 
-- Cycle detection
-- Connectivity vs acyclic
-- Why `edges = n - 1` matters
-- Union-Find intuition (components shrinking)
+### 🔴 VVIMP (goal is a STATE, not a node)
 
-🧠 Mental Model:
-
-> “Union-Find tracks components as they collapse.”
-
----
-
-## LEVEL 3 — Directed Graphs & Dependencies
-
-🎯 Goal:
-
-- Reason about **ordering**, not just reachability
-
-### Study Order
-
-11. courseSchedule.js
-12. courseScheduleII.js
-13. alienDictionary.js
-
-### What to Learn
-
-- Directed cycles
-- Topological sorting
-- DFS vs Kahn’s algorithm
-- Why order matters more than path
-
-🧠 Mental Model:
-
-> “Directed graphs encode constraints, not distances.”
+- shortestPathVisitingAllNodes
 
 ---
 
-## LEVEL 4 — Shortest Path Foundations (Dijkstra Core)
+## 🧩 PATTERN 3 — Graph Validity & Cycles
 
-🎯 Goal:
+**Core idea:**  
+“Is the graph structure even valid?”
 
-- Truly understand Dijkstra (not memorize it)
+### 🔵 CORE
 
-### Study Order
+- graphValidTree
+- redundantConnections
 
-14. networkDelayTime.js
-15. maxProbability.js
+### 🟢 IMPORTANT (directed cycles / ordering)
 
-### What to Learn
+- courseSchedule
+- courseScheduleII
 
-- Why greedy works
-- Min-heap invariants
-- When Dijkstra applies / doesn’t apply
-- Cost monotonicity
+### 🔴 VVIMP (ordering with constraints)
 
-🧠 Mental Model:
-
-> “Dijkstra expands the _best guaranteed state_.”
+- alienDictionary
 
 ---
 
-## LEVEL 5 — BFS with State (Constraint Expansion)
+## 🧩 PATTERN 4 — Dijkstra / Priority-Based Expansion
 
-🎯 Goal:
+**Core idea:**  
+“Always expand the best guaranteed state.”
 
-- Learn when `visited[node]` is WRONG
+### 🔵 CORE
 
-### Study Order
+- networkDelayTime
+- pathWithMaximumProbability
 
-16. shortestPathWithAlternateColors.js
-17. shortestPathWithObstacleElimination.js
-18. cheapestFlightsWithinKStops.js
+### 🟢 IMPORTANT (constraints added)
 
-### What to Learn
+- cheapestFlightsWithinKStops
+- minimumCostToReachDestinationInTime
 
-- State = (node + constraint)
-- Why different states matter
-- BFS vs Dijkstra with state
-- State explosion control
+### 🔴 VVIMP (non-standard cost functions)
 
-🧠 Mental Model:
-
-> “Same node ≠ same future.”
+- pathWithMinimumEffort
+- SwimInRisingWater
+- minimumCostToMakeAValidPath
 
 ---
 
-## LEVEL 6 — Implicit Graphs (State Generation)
+## 🧩 PATTERN 5 — BFS with STATE (Visited ≠ Just Node)
 
-🎯 Goal:
+**Core idea:**  
+“Same node with different state ≠ same future.”
 
-- Solve problems where edges are NOT given
+### 🔵 CORE
 
-### Study Order
+- shortestPathWithAlternateColors
 
-19. wordLadder.js
-20. minimumGeneticMutation.js
-21. slidingPuzzle.js
+### 🟢 IMPORTANT
 
-### What to Learn
+- shortestPathWithObstacleElimination
 
-- On-the-fly neighbor generation
-- State serialization
-- BFS on abstract spaces
+### 🔴 VVIMP
 
-🧠 Mental Model:
-
-> “If I can generate neighbors, I have a graph.”
+- shortestPathWithTeleport
 
 ---
 
-## LEVEL 7 — Multi-Source & Reverse Thinking
+## 🧩 PATTERN 6 — Multi-Source & Reverse Thinking
 
-🎯 Goal:
+**Core idea:**  
+“Sometimes it’s easier to start from all ends.”
 
-- Solve problems from the _end backwards_
+### 🔵 CORE (concept reuse)
 
-### Study Order
+- wallsAndGates
+- rottenOranges
 
-22. pacificAtlantic.js
-23. smallest-bridge.js
+### 🟢 IMPORTANT
 
-### What to Learn
-
-- Reverse BFS / DFS
-- Boundary-driven traversal
-- Why reversing simplifies logic
-
-🧠 Mental Model:
-
-> “Sometimes it’s easier to ask: who can reach me?”
+- pacificAtlantic
 
 ---
 
-## LEVEL 8 — Non-Standard Shortest Path (VVIMP)
+## 🧩 PATTERN 7 — Eulerian Path / Ordered Traversal
 
-🎯 Goal:
+**Core idea:**  
+“Use every edge exactly once.”
 
-- Handle problems where cost ≠ sum of edges
+### 🔴 VVIMP ONLY
 
-### Study Order
-
-24. pathWithMinimumEffort.js
-25. SwimInRisingWater.js
-26. minimumCostToMakeAValidPath.js
-
-### What to Learn
-
-- Max-cost Dijkstra
-- 0–1 BFS
-- Monotonic cost functions
-
-🧠 Mental Model:
-
-> “Shortest path ≠ smallest sum.”
+- reconstructItinerary
 
 ---
 
-## LEVEL 9 — One-Time Powers & Teleports (VVIMP)
+## 🧩 PATTERN 8 — Rooted Tree Validation with Constraints
 
-🎯 Goal:
+**Core idea:**  
+“Choosing a root induces structure; validate constraints.”
 
-- Master state dominance & future potential
+> Root choice **matters**  
+> Parent/child direction is **created by rooting**
 
-### Study Order
+### 🔴 VVIMP
 
-27. shortestPathWithTeleport.js
-
-### What to Learn
-
-- Used vs unused power states
-- Why future options matter
-- Dominance pruning
-
-🧠 Mental Model:
-
-> “State value includes remaining abilities.”
+- findValidRoot <!-- moved here -->
 
 ---
 
-## LEVEL 10 — Exponential State Graphs (Staff-Level)
+## 🧩 PATTERN 9 — Graphs as Real Systems (Modeling)
 
-🎯 Goal:
+**Core idea:**  
+“Translate real-world constraints into graph rules.”
 
-- Comfort with exponential but bounded state spaces
+### 🟢 IMPORTANT
 
-### Study Order
+- busRoutes
 
-28. shortestPathVisitingAllNodes.js
+### 🟡 OPTIONAL
 
-### What to Learn
-
-- Bitmask BFS
-- Multi-source initialization
-- Why BFS still works
-
-🧠 Mental Model:
-
-> “When the goal is a state, not a node.”
+- workerShiftSplitter
 
 ---
 
-## LEVEL 11 — Eulerian Paths & Ordering (Staff-Level)
+## 🎯 HIGH-ROI LEARNING ORDER (If You’re Busy)
 
-🎯 Goal:
+Complete patterns in this order:
 
-- Use every edge exactly once, in order
+1. Pattern 1 — Connected Components
+2. Pattern 2 — BFS Shortest Path
+3. Pattern 4 — Dijkstra
+4. Pattern 5 — BFS with State
 
-### Study Order
-
-29. Reconstruct Itinerary (wordLadderII.js / itinerary variant)
-
-### What to Learn
-
-- Eulerian path
-- Hierholzer’s algorithm
-- Post-order DFS
-- Why greedy fails
-
-🧠 Mental Model:
-
-> “Commit only after exhausting choices.”
+This alone makes you **Google-ready for graphs**.
 
 ---
 
-## LEVEL 12 — Graphs in Real Systems (Optional Depth)
+## ✅ Key Reminder
 
-🎯 Goal:
-
-- Model real-world problems
-
-### Study Order
-
-30. busRoute.js
-31. minimumCostToReachDestinationInTime.js
-32. workerShiftSplitter.js
-33. findValidRoot.js
-34. isBipartite.js
-
-### What to Learn
-
-- Graph modeling
-- Constraints vs optimization
-- Coloring & partitioning
-
-🧠 Mental Model:
-
-> “Graphs describe relationships — algorithms enforce rules.”
-
----
-
-## Final Note
-
-If you complete this roadmap **in order**, you will:
-
-- Think like a Big Tech engineer
-- Explain graph problems calmly
-- Recognize patterns instantly
-- Handle Medium → Hard without panic
+- Problem names change
+- Graph patterns do NOT
+- **If root choice matters, it is NOT a connected-components problem**
 
 This is **depth-first mastery**, not LeetCode grinding.
