@@ -28,7 +28,8 @@ function createLatestFetcher(fn) {
   let latestId = 0;
 
   return async function (...args) {
-    const currentId = ++latestId;
+    latestId += 1;
+    const currentId = latestId;
 
     try {
       const value = await fn(...args);

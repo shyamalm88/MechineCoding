@@ -23,55 +23,56 @@
  * 5. `_next()` checks if there's space and pulls the next task from the queue.
  */
 
-function Executor(concurrency) {
-  this.concurrency = concurrency;
-  this.running = 0;
-  this.queue = [];
-}
-
-/**
- * Adds a task to the executor.
- * @param {Function} task - A function that returns a Promise.
- * @returns {Promise} - Resolves with the task's result or rejects with its error.
- */
-Executor.prototype.push = function (task) {
-  return new Promise((resolve, reject) => {
-    // Define the execution logic for this specific task
-    const runTask = async () => {
-      this.running++;
-
-      try {
-        const result = await task();
-        resolve(result);
-      } catch (err) {
-        reject(err);
-      } finally {
-        this.running--;
-        this._next(); // Trigger the next task in the queue
-      }
-    };
-
-    // Schedule execution
-    if (this.running < this.concurrency) {
-      runTask();
-    } else {
-      this.queue.push(runTask);
-    }
-  });
-};
-
-/**
- * Internal method to process the next task in the queue.
- */
-Executor.prototype._next = function () {
-  // Stop if queue is empty or we reached concurrency limit
-  if (this.queue.length === 0 || this.running >= this.concurrency) {
-    return;
+class Executor {
+  constructor(concurrency) {
+    this.concurrency = concurrency;
+    this.running = 0;
+    this.queue = [];
   }
+  /**
+   * Adds a task to the executor.
+   * @param {Function} task - A function that returns a Promise.
+   * @returns {Promise} - Resolves with the task's result or rejects with its error.
+   */
+  push(task) {
+    return new Promise((resolve, reject) => {
+      // Define the execution logic for this specific task
+      const runTask = async () => {
+        this.running++;
 
-  const nextTask = this.queue.shift();
-  nextTask();
-};
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.running--;
+          this._next(); // Trigger the next task in the queue
+        }
+      };
+
+      // Schedule execution
+
+      if (this.running < this.concurrency) {
+        runTask();
+      } else {
+        this.queue.push(runTask);
+      }
+    });
+  }
+  /**
+   * Internal method to process the next task in the queue.
+   */
+  _next() {
+    // Stop if queue is empty or we reached concurrency limit
+    if (this.queue.length === 0 || this.running >= this.concurrency) {
+      return;
+    }
+
+    const nextTask = this.queue.shift();
+    nextTask();
+  }
+}
 
 // ============================================================================
 // TEST CASES

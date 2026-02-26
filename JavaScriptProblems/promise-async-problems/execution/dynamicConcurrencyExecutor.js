@@ -1,36 +1,42 @@
-function DynamicExecutor(concurrency) {
-  this.concurrency = concurrency;
-  this.running = 0;
-  this.queue = [];
-}
-
-DynamicExecutor.prototype.push = function (task) {
-  return new Promise((resolve, reject) => {
-    this.queue.push({ task, resolve, reject });
-    this._schedule();
-  });
-};
-
-DynamicExecutor.prototype.setConcurrency = function (newLimit) {
-  this.concurrency = newLimit;
-  this._schedule(); // try scheduling immediately
-};
-
-DynamicExecutor.prototype._schedule = function () {
-  while (this.running < this.concurrency && this.queue.length > 0) {
-    const { task, resolve, reject } = this.queue.shift();
-    this.running++;
-
-    Promise.resolve()
-      .then(task)
-      .then(resolve)
-      .catch(reject)
-      .finally(() => {
-        this.running--;
-        this._schedule(); // reschedule after completion
-      });
+class DynamicExecutor {
+  constructor(concurrency) {
+    this.concurrency = concurrency;
+    this.running = 0;
+    this.queue = [];
   }
-};
+
+  push(task) {
+    return new Promise((resolve, reject) => {
+      const runTask = async () => {
+        this.running++;
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.running--;
+          this._drain(); // 🔥 refill capacity
+        }
+      };
+
+      this.queue.push(runTask);
+      this._drain(); // 🔥 try scheduling immediately
+    });
+  }
+
+  setConcurrency(newLimit) {
+    this.concurrency = newLimit;
+    this._drain(); // 🔥 dynamic update works here
+  }
+
+  _drain() {
+    while (this.running < this.concurrency && this.queue.length > 0) {
+      const nextTask = this.queue.shift();
+      nextTask();
+    }
+  }
+}
 
 const delayTask = (id, ms) => async () => {
   console.log("start", id);
