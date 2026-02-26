@@ -116,47 +116,32 @@
  */
 
 function findRedundantConnection(edges) {
-  const n = edges.length;
+  const graph = new Map();
 
-  // -------------------------------
-  // Union-Find setup (1-based nodes)
-  // -------------------------------
-  const parent = Array.from({ length: n + 1 }, (_, i) => i);
-  const rank = Array(n + 1).fill(0);
+  function dfs(curr, target, visited) {
+    if (curr === target) return true;
+    visited.add(curr);
 
-  function find(x) {
-    if (parent[x] !== x) {
-      parent[x] = find(parent[x]); // path compression
+    for (const nei of graph.get(curr) || []) {
+      if (!visited.has(nei)) {
+        if (dfs(nei, target, visited)) return true;
+      }
     }
-    return parent[x];
+    return false;
   }
 
-  function union(x, y) {
-    const px = find(x);
-    const py = find(y);
-
-    if (px === py) return false; // cycle detected
-
-    if (rank[px] < rank[py]) {
-      parent[px] = py;
-    } else if (rank[px] > rank[py]) {
-      parent[py] = px;
-    } else {
-      parent[py] = px;
-      rank[px]++;
-    }
-    return true;
-  }
-
-  // -------------------------------
-  // Process edges
-  // -------------------------------
   for (const [u, v] of edges) {
-    if (!union(u, v)) {
-      return [u, v];
+    if (graph.has(u) && graph.has(v)) {
+      if (dfs(u, v, new Set())) {
+        return [u, v];
+      }
     }
+
+    if (!graph.has(u)) graph.set(u, []);
+    if (!graph.has(v)) graph.set(v, []);
+    graph.get(u).push(v);
+    graph.get(v).push(u);
   }
 
-  // Problem guarantees one answer
   return [];
 }

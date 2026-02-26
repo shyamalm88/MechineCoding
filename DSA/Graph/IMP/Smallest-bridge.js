@@ -109,7 +109,7 @@ console.log(
   shortestBridge([
     [0, 1],
     [1, 0],
-  ])
+  ]),
 ); // Expected: 1
 
 console.log(
@@ -118,7 +118,7 @@ console.log(
     [0, 1, 0],
     [0, 0, 0],
     [0, 0, 1],
-  ])
+  ]),
 ); // Expected: 2
 
 console.log(
@@ -129,7 +129,7 @@ console.log(
     [1, 0, 1, 0, 1],
     [1, 0, 0, 0, 1],
     [1, 1, 1, 1, 1],
-  ])
+  ]),
 ); // Expected: 1 (Inner island to outer ring)
 
 module.exports = { shortestBridge };

@@ -68,7 +68,7 @@ const wallsAndGates = (rooms) => {
 
   const rows = rooms.length;
   const cols = rooms[0].length;
-  const INF = 2147483647;
+  const INF = Math.pow(2, 31) - 1;
 
   const q = [];
   const dirs = [

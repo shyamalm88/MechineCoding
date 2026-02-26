@@ -14,155 +14,110 @@
  * 1) It is CONNECTED (all nodes reachable)
  * 2) It has NO CYCLES
  *
- * ---------------------------------------------------------------------------
- * Example 1:
- *
- *   n = 5
- *   edges = [[0,1],[0,2],[0,3],[1,4]]
- *
- *   This is a valid tree.
- *
- * Example 2:
- *
- *   n = 5
- *   edges = [[0,1],[1,2],[2,3],[1,3],[1,4]]
- *
- *   This graph has a cycle → NOT a tree.
- *
- * ---------------------------------------------------------------------------
- * Constraints:
- * - 1 <= n <= 2000
- * - 0 <= edges.length <= 5000
- * - Undirected graph
- *
  * ============================================================================
- * INTUITION: What Makes a Graph a Tree?
+ * CORE GRAPH INSIGHT
  * ============================================================================
  *
- * A tree has TWO fundamental properties:
+ * For an UNDIRECTED graph with n nodes:
  *
- *   (A) NO CYCLES
- *   (B) CONNECTED
- *
- * Either one failing → NOT a tree.
- *
- * Key Observation (VERY IMPORTANT):
- *
- *   For an undirected graph with n nodes:
- *     A tree MUST have exactly (n - 1) edges.
+ *   A valid tree MUST have exactly (n - 1) edges.
  *
  * Why?
- * - Fewer edges → disconnected
- * - More edges → cycle guaranteed
+ * - Fewer edges  → graph must be disconnected
+ * - More edges  → at least one cycle must exist
  *
- * BUT:
- * - edges == n - 1 is NECESSARY
- * - edges == n - 1 is NOT SUFFICIENT by itself
+ * IMPORTANT:
+ * - edges.length === n - 1 is NECESSARY
+ * - edges.length === n - 1 is NOT sufficient alone
  *
- * We still need to verify connectivity / no cycles.
- *
- * ============================================================================
- * TWO CORRECT WAYS TO SOLVE
- * ============================================================================
- *
- * Option 1: DFS / BFS
- *   - Build adjacency list
- *   - DFS from node 0
- *   - Detect cycles using parent tracking
- *   - Ensure all nodes are visited
- *
- * Option 2: UNION-FIND (DSU)  ← interview favorite
- *   - Each edge connects two components
- *   - If an edge connects already-connected nodes → cycle
- *   - At the end, exactly one connected component must exist
- *
- * We’ll implement UNION-FIND (cleanest + most reusable).
+ * We still must verify:
+ * - No cycles
+ * - Full connectivity
  *
  * ============================================================================
- * ALGORITHM (UNION-FIND)
+ * APPROACH: DFS (Graph Traversal)
+ * ============================================================================
+ *
+ * Key idea:
+ * - Use DFS to traverse the graph
+ * - Detect cycles using PARENT tracking
+ * - Ensure all nodes are visited (connectivity)
+ *
+ * Why parent tracking?
+ * - In an undirected graph, every edge appears twice
+ * - Revisiting the parent node is NOT a cycle
+ * - Visiting any OTHER already-visited node IS a cycle
+ *
+ * ============================================================================
+ * ALGORITHM (DFS)
  * ============================================================================
  *
  * 1. If edges.length !== n - 1 → return false immediately
  *
- * 2. Initialize Union-Find with n nodes
+ * 2. Build adjacency list from edges
  *
- * 3. For each edge [u, v]:
- *      - If find(u) === find(v):
- *           → cycle detected → return false
- *      - Else:
- *           → union(u, v)
+ * 3. Run DFS starting from node 0:
+ *      - Mark nodes as visited
+ *      - If we encounter a visited node that is NOT the parent → cycle
  *
- * 4. If all unions succeed → graph is connected and acyclic
- *    → return true
+ * 4. After DFS:
+ *      - If visited.size !== n → graph is disconnected
+ *
+ * 5. If no cycles AND all nodes visited → valid tree
  *
  * ============================================================================
  * TIME & SPACE COMPLEXITY
  * ============================================================================
  *
  * Time:
- *   O(n α(n)) ≈ O(n)   (α = inverse Ackermann, very small)
+ *   O(n + edges)
  *
  * Space:
- *   O(n)
+ *   O(n + edges)  (adjacency list + recursion stack)
  *
  * ============================================================================
  * WHY THIS PROBLEM IS 🔵 CORE
  * ============================================================================
  *
  * Interviewers are testing:
- * - Do you know the formal definition of a tree?
- * - Can you detect cycles in undirected graphs?
- * - Do you understand Union-Find?
+ * - Understanding of what defines a tree
+ * - Cycle detection in undirected graphs
+ * - Connectivity verification
+ * - Proper use of DFS with parent tracking
  *
- * This is a foundational graph sanity-check problem.
  * ============================================================================
  */
 
 function validTree(n, edges) {
-  // -------------------------------
-  // Necessary condition
-  // -------------------------------
+  // Necessary condition: a tree must have exactly n - 1 edges
   if (edges.length !== n - 1) return false;
 
-  // -------------------------------
-  // Union-Find setup
-  // -------------------------------
-  const parent = Array.from({ length: n }, (_, i) => i);
-  const rank = Array(n).fill(0);
-
-  function find(x) {
-    if (parent[x] !== x) {
-      parent[x] = find(parent[x]); // path compression
-    }
-    return parent[x];
+  // Build adjacency list
+  const graph = Array.from({ length: n }, () => []);
+  for (const [u, v] of edges) {
+    graph[u].push(v);
+    graph[v].push(u);
   }
 
-  function union(x, y) {
-    const px = find(x);
-    const py = find(y);
+  const visited = new Set();
 
-    if (px === py) return false; // cycle
+  // DFS returns false if a cycle is detected
+  function dfs(node, parent) {
+    if (visited.has(node)) return false;
 
-    // union by rank
-    if (rank[px] < rank[py]) {
-      parent[px] = py;
-    } else if (rank[px] > rank[py]) {
-      parent[py] = px;
-    } else {
-      parent[py] = px;
-      rank[px]++;
+    visited.add(node);
+
+    for (const neighbor of graph[node]) {
+      if (neighbor === parent) continue; // ignore edge back to parent
+      if (!dfs(neighbor, node)) return false;
     }
+
     return true;
   }
 
-  // -------------------------------
-  // Process edges
-  // -------------------------------
-  for (const [u, v] of edges) {
-    if (!union(u, v)) {
-      return false; // cycle detected
-    }
-  }
+  // Start DFS from node 0
+  if (!dfs(0, -1)) return false;
 
-  return true;
+  // Ensure all nodes are connected
+  return visited.size === n;
 }
