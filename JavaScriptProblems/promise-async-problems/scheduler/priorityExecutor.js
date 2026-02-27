@@ -22,31 +22,37 @@
  */
 class PriorityExecutor {
   constructor() {
+    this.limit = 1;
+    this.running = 0;
     this.queue = [];
-    this.running = false;
   }
 
   add(task, priority = 0) {
-    this.queue.push({ task, priority });
-    // Sort descending by priority
-    this.queue.sort((a, b) => b.priority - a.priority);
-    this.run();
+    return new Promise((resolve, reject) => {
+      const runTask = async () => {
+        this.running++;
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.running--;
+          this._drain();
+        }
+      };
+
+      this.queue.push({ runTask, priority });
+      this.queue.sort((a, b) => b.priority - a.priority);
+      this._drain();
+    });
   }
 
-  async run() {
-    if (this.running) return;
-    this.running = true;
-
-    while (this.queue.length > 0) {
-      const { task } = this.queue.shift();
-      try {
-        await task();
-      } catch (error) {
-        console.error("Task failed:", error);
-      }
+  _drain() {
+    while (this.running < this.limit && this.queue.length > 0) {
+      const { runTask } = this.queue.shift();
+      runTask();
     }
-
-    this.running = false;
   }
 }
 

@@ -1,47 +1,77 @@
 /**
  * ============================================================================
- * PROBLEM: Concurrent Priority Scheduler
+ * PROBLEM: Priority Executor with Concurrency Limit
  * ============================================================================
  * Implement a scheduler that:
- * 1. Limits concurrent tasks to `limit`.
- * 2. Executes waiting tasks based on priority (Highest first).
+ * 1. Allows adding async tasks with a priority.
+ * 2. Limits the number of tasks running concurrently.
+ * 3. When a slot becomes available, starts the highest priority task from the queue.
  *
  * ============================================================================
  * INTUITION: Priority Queue + Concurrency Control
  * ============================================================================
- * Combines the logic of AsyncScheduler and PriorityExecutorConcurrent.
+ * This combines two patterns:
+ * 1. Concurrency Limiter:
+ *    - Maintain `running` count.
+ *    - Only start new tasks if `running < limit`.
+ *    - When a task finishes, decrement `running` and try to start the next one.
  *
- * 1. `add(task, priority)`: Push to queue, Sort queue, Try to run.
- * 2. `run()`:
- *    - While `running < limit` and `queue` has items:
+ * 2. Priority Queue:
+ *    - Instead of a FIFO queue (array.push/shift), we need to ensure the
+ *      next task picked is the one with the highest priority.
+ *    - We can sort the queue every time we add a task (O(N log N)).
+ *    - Or use a Max Heap (O(log N)) for better performance in production.
+ *
+ * FLOW:
+ * - `add(task, priority)`:
+ *   1. Create a wrapper that manages the task lifecycle (start, resolve/reject, finally).
+ *   2. Push wrapper to queue.
+ *   3. Sort queue by priority (descending).
+ *   4. Try to run tasks (`_drain`).
+ *   5. Return a promise that settles when the task eventually runs and finishes.
+ *
+ * - `_drain()`:
+ *   1. While `running < limit` and `queue` has tasks:
  *      - Pop highest priority task.
  *      - Increment `running`.
- *      - Execute.
- *      - On completion (`finally`), decrement `running` and call `run()` recursively.
+ *      - Execute task.
  */
 class PriorityExecutorConcurrent {
   constructor(limit = 2) {
-    this.queue = [];
-    this.running = 0;
     this.limit = limit;
+    this.running = 0;
+    this.queue = [];
   }
 
   add(task, priority = 0) {
-    this.queue.push({ task, priority });
-    this.queue.sort((a, b) => b.priority - a.priority);
-    this.run();
+    return new Promise((resolve, reject) => {
+      const runTask = async () => {
+        this.running++;
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.running--;
+          this._drain();
+        }
+      };
+
+      // enqueue with priority
+      this.queue.push({ runTask, priority });
+
+      // higher priority first
+      this.queue.sort((a, b) => b.priority - a.priority);
+
+      this._drain();
+    });
   }
 
-  run() {
+  _drain() {
     while (this.running < this.limit && this.queue.length > 0) {
-      const { task } = this.queue.shift();
-      this.running++;
-
-      // Wrap in Promise.resolve to handle both sync and async tasks safely
-      Promise.resolve(task()).finally(() => {
-        this.running--;
-        this.run();
-      });
+      const { runTask } = this.queue.shift();
+      runTask();
     }
   }
 }
