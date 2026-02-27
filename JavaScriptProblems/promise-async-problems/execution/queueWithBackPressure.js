@@ -1,51 +1,51 @@
-function BackpressureQueue(concurrency, maxQueueSize) {
-  this.concurrency = concurrency;
-  this.maxQueueSize = maxQueueSize;
+class BackpressureQueue {
+  constructor(concurrency, maxQueueSize) {
+    this.concurrency = concurrency;
+    this.maxQueueSize = maxQueueSize;
 
-  this.running = 0;
-  this.queue = [];
-  this.waitingProducers = [];
-}
-
-BackpressureQueue.prototype.push = function (task) {
-  return new Promise((resolve, reject) => {
-    const enqueue = () => {
-      this.queue.push({ task, resolve, reject });
-      this._schedule();
-    };
-
-    // If queue has space, enqueue immediately
-    if (this.queue.length < this.maxQueueSize) {
-      enqueue();
-    } else {
-      // Apply backpressure: block producer
-      this.waitingProducers.push(enqueue);
-    }
-  });
-};
-
-BackpressureQueue.prototype._schedule = function () {
-  while (this.running < this.concurrency && this.queue.length > 0) {
-    const { task, resolve, reject } = this.queue.shift();
-    this.running++;
-
-    Promise.resolve()
-      .then(task)
-      .then(resolve)
-      .catch(reject)
-      .finally(() => {
-        this.running--;
-
-        // Release ONE waiting producer (backpressure relief)
-        if (this.waitingProducers.length > 0) {
-          const wakeProducer = this.waitingProducers.shift();
-          wakeProducer();
-        }
-
-        this._schedule();
-      });
+    this.running = 0;
+    this.queue = [];
+    this.waitingProducers = [];
   }
-};
+  push(task) {
+    return new Promise((resolve, reject) => {
+      const enqueue = () => {
+        this.queue.push({ task, resolve, reject });
+        this._schedule();
+      };
+
+      // If queue has space, enqueue immediately
+      if (this.queue.length < this.maxQueueSize) {
+        enqueue();
+      } else {
+        // Apply backpressure: block producer
+        this.waitingProducers.push(enqueue);
+      }
+    });
+  }
+  _schedule() {
+    while (this.running < this.concurrency && this.queue.length > 0) {
+      const { task, resolve, reject } = this.queue.shift();
+      this.running++;
+
+      Promise.resolve()
+        .then(task)
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          this.running--;
+
+          // Release ONE waiting producer (backpressure relief)
+          if (this.waitingProducers.length > 0) {
+            const wakeProducer = this.waitingProducers.shift();
+            wakeProducer();
+          }
+
+          this._schedule();
+        });
+    }
+  }
+}
 
 const q = new BackpressureQueue(2, 3);
 

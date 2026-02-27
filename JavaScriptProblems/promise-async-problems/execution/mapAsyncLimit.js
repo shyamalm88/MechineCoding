@@ -29,6 +29,16 @@ const mapAsyncLimit = async (inputs, limit, iterateFn) => {
 };
 
 // ============================================================================
+// by using DynamicExecutor
+// ============================================================================
+
+async function mapAsyncLimit(inputs, limit, fn) {
+  const executor = new DynamicExecutor(limit);
+  const promises = inputs.map((item) => executor.push(() => fn(item)));
+  return Promise.all(promises);
+}
+
+// ============================================================================
 // TEST DATA & USAGE EXAMPLE
 // ============================================================================
 
