@@ -2,223 +2,129 @@
  * ============================================================================
  * PROBLEM: Analytics SDK
  * ============================================================================
- * Design a production-ready Analytics SDK that:
+ * Design a lightweight, production-ready Analytics SDK that:
  * 1. Batches events to reduce network traffic.
  * 2. Flushes automatically based on time or batch size.
- * 3. Retries failed requests with exponential backoff.
+ * 3. Supports auto-tracking of interactions (clicks, hovers).
  * 4. Ensures data delivery on page unload (using Beacon API).
- * 5. Enriches events with metadata (timestamp, session ID).
+ * 5. Handles retries on failure.
  *
  * ============================================================================
  * INTUITION
  * ============================================================================
- * - Batching: Network calls are expensive. Grouping events (e.g., 10 at a time)
- *   is more efficient than sending 10 separate requests.
- * - Reliability: Users close tabs. `fetch` is often cancelled on unload.
- *   `navigator.sendBeacon` is designed specifically to outlive the page.
- * - Concurrency: We need to ensure we don't have multiple flush operations
- *   modifying the queue simultaneously, but we also shouldn't block tracking.
+ * - Batching: Grouping events is more efficient than sending 1-by-1.
+ * - Reliability: `fetch` can be cancelled on unload; `sendBeacon` is reliable.
+ * - Event Delegation: Listen on `document` instead of every element for performance.
+ * - Debounce: Prevent high-frequency events (like hover) from flooding the queue.
  */
+// 1. The Utility: Shows you understand closures and the event loop
+function debounce(fn, delay) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
 
-class AnalyticsSDK {
-  constructor({
-    url = "https://api.analytics.com/v1/events",
-    batchSize = 5,
-    flushInterval = 3000,
-    retryCount = 3,
-  } = {}) {
-    this.url = url;
-    this.batchSize = batchSize;
-    this.flushInterval = flushInterval;
-    this.retryCount = retryCount;
-
+// 2. The Core Engine
+class Analytics {
+  constructor(batchSize = 5, flushInterval = 3000) {
     this.queue = [];
-    this.timer = null;
-    this.isSending = false;
-    this.sessionId = this._generateSessionId();
+    this.batchSize = batchSize;
 
-    // Bind methods to ensure 'this' context
+    // Bind methods to preserve 'this' context in event listeners
     this.flush = this.flush.bind(this);
-    this.handleUnload = this.handleUnload.bind(this);
+    this.handleEvent = this.handleEvent.bind(this);
+    this.handleHover = debounce(this.handleHover.bind(this), 500);
 
-    this.setupLifecycleListeners();
-  }
-
-  /**
-   * Public API to track an event.
-   */
-  track(eventName, properties = {}) {
-    const event = {
-      event: eventName,
-      properties,
-      timestamp: Date.now(),
-      sessionId: this.sessionId,
-      url: typeof window !== "undefined" ? window.location.href : "unknown",
+    this.handleVisibility = () => {
+      if (document.visibilityState === "hidden") this.flush(true);
     };
 
-    this.queue.push(event);
-    console.log(`[Analytics] Tracked: ${eventName}`, event);
+    // Start background polling
+    this.intervalId = setInterval(this.flush, flushInterval);
+  }
 
-    // If queue is full, flush immediately.
+  // Explicit Tracking
+  track(eventName, data = {}) {
+    this.queue.push({
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+      url: window.location.pathname,
+      eventName,
+      data,
+      timestamp: Date.now(),
+    });
+
+    // Flush immediately if batch size is reached
     if (this.queue.length >= this.batchSize) {
       this.flush();
-    } else {
-      this.scheduleFlush();
     }
   }
 
-  /**
-   * Schedules a flush if one isn't already scheduled.
-   */
-  scheduleFlush() {
-    if (this.timer) return;
-
-    this.timer = setTimeout(() => {
-      this.flush();
-    }, this.flushInterval);
-  }
-
-  /**
-   * Flushes the queue.
-   * If a flush is already in progress, it returns early (concurrency control).
-   */
-  async flush() {
-    if (this.isSending || this.queue.length === 0) return;
-
-    // Clear timer since we are flushing now
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-
-    this.isSending = true;
-
-    // Take a batch from the queue
-    const batch = this.queue.splice(0, this.batchSize);
-
-    try {
-      await this.sendWithRetry(batch);
-    } catch (error) {
-      console.error("[Analytics] Failed to send batch after retries", error);
-      // Strategy: Re-queue events if critical, or persist to localStorage
-      // For this demo, we just log the loss.
-    } finally {
-      this.isSending = false;
-
-      // If there are more events (e.g., added while sending), flush again immediately
-      if (this.queue.length >= this.batchSize) {
-        this.flush();
-      } else if (this.queue.length > 0) {
-        this.scheduleFlush();
-      }
-    }
-  }
-
-  /**
-   * Sends data with exponential backoff retries.
-   */
-  async sendWithRetry(batch, attempt = 0) {
-    try {
-      await this.send(batch);
-      console.log(
-        `[Analytics] Successfully sent batch of ${batch.length} events`,
-      );
-    } catch (err) {
-      if (attempt < this.retryCount) {
-        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s...
-        console.warn(`[Analytics] Send failed, retrying in ${delay}ms...`);
-        await new Promise((r) => setTimeout(r, delay));
-        return this.sendWithRetry(batch, attempt + 1);
-      }
-      throw err; // Propagate error after max retries
-    }
-  }
-
-  /**
-   * Actual network request simulation.
-   */
-  async send(batch) {
-    // In production:
-    // await fetch(this.url, { method: 'POST', body: JSON.stringify(batch), keepalive: true });
-
-    // Simulation
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        // Simulate 10% failure rate
-        if (Math.random() > 0.9) reject(new Error("Simulated Network Error"));
-        else resolve();
-      }, 500);
-    });
-  }
-
-  /**
-   * Handles page unload/visibility change.
-   * Uses `navigator.sendBeacon` for reliability during page transitions.
-   */
-  handleUnload() {
+  // The Transport Layer
+  async flush(isUnloading = false) {
     if (this.queue.length === 0) return;
 
-    // sendBeacon is reliable during unload, unlike fetch
-    // It sends data asynchronously without blocking the unload
-    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-      const blob = new Blob([JSON.stringify(this.queue)], {
-        type: "application/json",
-      });
-      const success = navigator.sendBeacon(this.url, blob);
+    // Copy and clear the queue BEFORE async work to prevent duplicate sends
+    const payload = [...this.queue];
+    this.queue = [];
 
-      if (success) {
-        console.log(
-          `[Analytics] Flushed ${this.queue.length} events via Beacon`,
-        );
-        this.queue = [];
+    try {
+      if (isUnloading && navigator.sendBeacon) {
+        // Guaranteed delivery on page exit
+        navigator.sendBeacon("/analytics-endpoint", JSON.stringify(payload));
+      } else {
+        const res = await fetch("/analytics-endpoint", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }, // Explicitly set header
+          body: JSON.stringify(payload),
+          keepalive: true,
+        });
+
+        // fetch doesn't throw on 4xx/5xx errors, so we manually throw to trigger the retry logic
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
       }
-    } else {
-      console.warn("[Analytics] Beacon not supported, data might be lost");
+    } catch (error) {
+      // Put events back at the front of the queue if network fails
+      this.queue.unshift(...payload);
     }
   }
 
-  setupLifecycleListeners() {
-    if (typeof document === "undefined") return;
+  // --- Auto-Tracking (Event Delegation) ---
 
-    // Modern reliable unload detection
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") {
-        this.handleUnload();
-      }
-    });
+  initAutoTracking() {
+    // Single listeners on the document (Event Delegation)
+    document.addEventListener("click", this.handleEvent);
+    document.addEventListener("mouseover", this.handleHover);
+
+    // Handle tab close / navigation
+    window.addEventListener("visibilitychange", this.handleVisibility);
   }
 
-  _generateSessionId() {
-    return "sess_" + Math.random().toString(36).substr(2, 9);
+  destroy() {
+    clearInterval(this.intervalId);
+    document.removeEventListener("click", this.handleEvent);
+    document.removeEventListener("mouseover", this.handleHover);
+    window.removeEventListener("visibilitychange", this.handleVisibility);
+    this.flush(true);
+  }
+
+  handleEvent(e) {
+    // Look for elements with data-track attributes bubbling up
+    const target = e.target.closest("[data-track]");
+    if (target) {
+      this.track(target.dataset.track, { type: e.type });
+    }
+  }
+
+  handleHover(e) {
+    const target = e.target.closest("[data-track-hover]");
+    if (target) {
+      this.track(target.dataset.trackHover, { type: "hover" });
+    }
   }
 }
 
-// ============================================================================
-// DEMO / TEST
-// ============================================================================
-
-const analytics = new AnalyticsSDK({
-  batchSize: 3,
-  flushInterval: 2000,
-});
-
-console.log("--- 1. Tracking initial events ---");
-analytics.track("page_view", { url: "/home" });
-analytics.track("button_click", { id: "signup" });
-
-// Simulate rapid events to trigger batch flush
-setTimeout(() => {
-  console.log("\n--- 2. Rapid events (should trigger batch flush) ---");
-  for (let i = 0; i < 5; i++) {
-    analytics.track("scroll", { depth: i * 20 });
-  }
-}, 1000);
-
-// Simulate unload
-setTimeout(() => {
-  console.log("\n--- 3. Simulating Page Unload (Beacon) ---");
-  analytics.track("page_exit", { duration: 5000 });
-
-  // Manually calling for demo since we can't close the browser window via script
-  analytics.handleUnload();
-}, 4000);
+// Usage in interview:
+// const sdk = new Analytics(5, 3000);
+// sdk.initAutoTracking();
