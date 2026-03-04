@@ -10,16 +10,29 @@
  * ============================================================================
  * INTUITION
  * ============================================================================
- * Throttling creates a "cooldown" period after a function executes.
+ * Throttling guarantees a function is executed at most once per specified period.
  *
- * - LEADING: "Fire, then wait."
- *   Good for buttons (click once, ignore subsequent clicks).
+ * VISUALIZATION:
+ * Time: 0ms (Call) -> 100ms (Call) -> 200ms (Call) -> 300ms
+ * Delay: 250ms
  *
- * - TRAILING: "Wait, then fire."
- *   Good for resize events (wait until user stops resizing to calculate layout).
+ * 1. Leading: true, Trailing: false
+ *    - 0ms: Execute immediately. Cooldown until 250ms.
+ *    - 100ms: Ignored (in cooldown).
+ *    - 200ms: Ignored (in cooldown).
+ *    - 300ms: Execute immediately (cooldown over).
  *
- * - BOTH: "Fire, wait, then fire again if triggered."
- *   Good for search inputs (show immediate feedback, then update periodically).
+ * 2. Leading: false, Trailing: true
+ *    - 0ms: Schedule execution for 250ms.
+ *    - 100ms: Update arguments for scheduled call.
+ *    - 200ms: Update arguments.
+ *    - 250ms: Execute with args from 200ms. Cooldown over.
+ *
+ * 3. Leading: true, Trailing: true
+ *    - 0ms: Execute immediately. Cooldown until 250ms.
+ *    - 100ms: Schedule trailing execution for 250ms.
+ *    - 200ms: Update arguments.
+ *    - 250ms: Execute trailing (args from 200ms). Reset cooldown.
  *
  * FLOW:
  * 1. Calculate `remaining` time in the cooldown window.
@@ -38,31 +51,25 @@ function throttle(fn, delay, { leading = true, trailing = true } = {}) {
   let lastArgs = null;
   let lastThis = null;
 
-  function invoke() {
-    // If leading is disabled, we reset lastCallTime to 0.
-    // This ensures the NEXT call starts a new wait window instead of
-    // running immediately (which would happen if we set it to Date.now()).
-    lastCallTime = leading === false ? 0 : Date.now();
-    timer = null;
-    fn.apply(lastThis, lastArgs);
-  }
-
   function throttled(...args) {
     const now = Date.now();
 
     // If no last execution and leading is disabled,
-    // treat 'now' as the start of the window (so we wait).
+    // we shouldn't run now. We pretend the "last execution" happened right now
+    // so that the math (remaining = delay - elapsed) forces a wait.
     if (!lastCallTime && leading === false) {
       lastCallTime = now;
     }
 
-    const elapsed = now - lastCallTime;
-    const remaining = delay - elapsed;
+    const remaining = delay - (now - lastCallTime);
 
     lastArgs = args;
     lastThis = this;
 
-    // 1. EXECUTE IMMEDIATELY (Leading edge or window expired)
+    // 1. EXECUTE IMMEDIATELY
+    // Run if:
+    // - We are outside the cooldown window (remaining <= 0)
+    // - OR system time moved backwards (remaining > delay)
     if (remaining <= 0 || remaining > delay) {
       if (timer) {
         clearTimeout(timer);
@@ -72,9 +79,15 @@ function throttle(fn, delay, { leading = true, trailing = true } = {}) {
       lastCallTime = now;
       fn.apply(lastThis, lastArgs);
     }
-    // 2. SCHEDULE TRAILING (If inside window)
+    // 2. SCHEDULE TRAILING
+    // If we are inside the cooldown window and trailing is enabled:
     else if (!timer && trailing !== false) {
-      timer = setTimeout(invoke, remaining);
+      timer = setTimeout(() => {
+        // Execute with the latest arguments captured from the closure
+        lastCallTime = leading === false ? 0 : Date.now();
+        timer = null;
+        fn.apply(lastThis, lastArgs);
+      }, remaining);
     }
   }
 
