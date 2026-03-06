@@ -40,9 +40,7 @@ function customSetInterval(callback, delay) {
     // Initialize start time on the first frame
     if (!start) start = timestamp;
 
-    const elapsed = timestamp - start;
-
-    if (elapsed >= delay) {
+    if (timestamp - start >= delay) {
       callback();
       // Reset start time.
       // Note: To avoid drift, one might use `start += delay`, but `start = timestamp`
