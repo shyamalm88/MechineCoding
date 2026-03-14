@@ -16,8 +16,6 @@ export default function TicTacToe({ size = 5 }) {
   const directions = [
     [0, 1], // horizontal
     [1, 0], // vertical
-    [-1, 0],
-    [0, -1]
   ];
 
   const count = (board, r, c, dr, dc, player) => {
@@ -44,7 +42,8 @@ export default function TicTacToe({ size = 5 }) {
     for (let [dr, dc] of directions) {
       const total =
         1 +
-        count(board, row, col, dr, dc, player) 
+        count(board, row, col, dr, dc, player) +
+        count(board, row, col, -dr, -dc, player);
 
       if (total >= WIN) return true;
     }
@@ -54,7 +53,7 @@ export default function TicTacToe({ size = 5 }) {
   const handleClick = (r, c) => {
     if (board[r][c] || winner) return;
 
-    const newBoard = board.map(row => [...row]);
+    const newBoard = board.map((row) => [...row]);
     newBoard[r][c] = player;
 
     if (checkWin(newBoard, r, c, player)) {
@@ -108,7 +107,7 @@ export default function TicTacToe({ size = 5 }) {
             >
               {cell}
             </button>
-          ))
+          )),
         )}
       </div>
 

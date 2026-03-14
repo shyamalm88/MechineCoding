@@ -29,14 +29,12 @@ export default function VirtualList({items}){
   }
 
 
-  const totalItems = items.length;
-  const visibleCount = Math.ceil(CONTAINER_HEIGHT / itemHeight);
-  const startIndex = Math.max(0, Math.floor(scrollTop/itemHeight) - OVERSCAN);
-  const endIndex = Math.min(totalItems, startIndex+visibleCount+OVERSCAN)
+  const totalHeight = itemHeight * items.length;
+  const start = Math.floor(scrollTop / itemHeight);
+  const end = start + Math.ceil(CONTAINER_HEIGHT / itemHeight);
 
-  const visibleItems = items.slice(startIndex, endIndex);
-  const totalHeight = totalItems * itemHeight;
-  const offsetY =  startIndex * itemHeight
+  const visible = items.slice(start, end);
+  const offset = start * itemHeight;
 
 
   return(
@@ -49,10 +47,10 @@ export default function VirtualList({items}){
       }}
     >
       <div style={{ height: totalHeight, position: "relative" }}>
-        <div style={{ transform: `translateY(${offsetY}px)` }}>
-          {visibleItems.map((item, index) => (
+        <div style={{ transform: `translateY(${offset}px)` }}>
+          {visible.map((item, index) => (
             <div
-              key={startIndex + index}
+              key={start + index}
               style={{
                 height: itemHeight,
                 display: "flex",

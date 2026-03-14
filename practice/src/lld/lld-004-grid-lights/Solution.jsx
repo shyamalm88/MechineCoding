@@ -11,6 +11,9 @@ export default function App() {
     [1, 1, 1],
   ]);
 
+  // Dynamically calculate the total number of interactive cells (where value is 1)
+  const targetCount = config.flat().filter((val) => val === 1).length;
+
   const handleDeactivatingCells = () => {
     setIsDeactivating(true);
 
@@ -31,7 +34,7 @@ export default function App() {
     const newOrder = [...order, index];
     setOrder(newOrder);
 
-    if (newOrder.length === 8) {
+    if (newOrder.length === targetCount) {
       handleDeactivatingCells();
     }
   };
@@ -42,7 +45,12 @@ export default function App() {
 
   return (
     <div className="wrapper">
-      <div className="gridWrapper">
+      <div
+        className="gridWrapper"
+        style={{
+          gridTemplateColumns: `repeat(${config[0].length}, 1fr)`,
+        }}
+      >
         {config.flat().map((item, index) => {
           const isActive = order.includes(index);
           return item === 0 ? (

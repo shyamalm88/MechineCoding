@@ -1,24 +1,23 @@
 import { useState } from "react";
 
-export default function CountFour({ rows = 6, cols = 7 }) {
+export default function ConnectFour({ rows = 6, cols = 7 }) {
   const WIN = 4;
 
   const createBoard = () =>
     Array.from({ length: rows }, () => Array(cols).fill(null));
 
   const [board, setBoard] = useState(createBoard);
-  const [player, setPlayer] = useState("Y"); // Y = Yellow, R = Red
+  const [player, setPlayer] = useState("Y");
   const [winner, setWinner] = useState(null);
 
-  // Same 4 directions as TicTacToe
+  // 4 base directions (horizontal, vertical, diagonals)
   const directions = [
-    [0, 1],   // horizontal
-    [1, 0],   // vertical
-    [-1, 0],
-    [0, -1]
+    [0, 1], // horizontal
+    [1, 0], // vertical
+    [1, 1], // diagonal \
+    [1, -1], // diagonal /
   ];
 
-  // SAME count logic as your TicTacToe
   const count = (board, r, c, dr, dc, player) => {
     let nr = r + dr;
     let nc = c + dc;
@@ -43,20 +42,20 @@ export default function CountFour({ rows = 6, cols = 7 }) {
     for (let [dr, dc] of directions) {
       const total =
         1 +
-        count(board, r, c, dr, dc, player) 
+        count(board, r, c, dr, dc, player) +
+        count(board, r, c, -dr, -dc, player);
 
       if (total >= WIN) return true;
     }
     return false;
   };
 
-  // Drop coin with gravity
   const dropCoin = (col) => {
     if (winner) return;
 
-    const newBoard = board.map(row => [...row]);
+    const newBoard = board.map((row) => [...row]);
 
-    // bottom → top (gravity)
+    // gravity
     for (let r = rows - 1; r >= 0; r--) {
       if (!newBoard[r][col]) {
         newBoard[r][col] = player;
@@ -64,7 +63,7 @@ export default function CountFour({ rows = 6, cols = 7 }) {
         if (checkWin(newBoard, r, col, player)) {
           setWinner(player);
         } else {
-          setPlayer(player === "Y" ? "R" : "Y");
+          setPlayer((p) => (p === "Y" ? "R" : "Y"));
         }
 
         setBoard(newBoard);
@@ -81,14 +80,17 @@ export default function CountFour({ rows = 6, cols = 7 }) {
 
   return (
     <div style={{ textAlign: "center" }}>
-      <h2>
-        {winner
-          ? `Winner: ${winner}`
-          : `Turn: ${player}`}
-      </h2>
+      <h2>{winner ? `Winner: ${winner}` : `Turn: ${player}`}</h2>
 
-      {/* Column buttons */}
-      <div style={{ marginBottom: 10, gap: 30, display: "flex", justifyContent: "center" }}>
+      {/* column controls */}
+      <div
+        style={{
+          marginBottom: 10,
+          display: "flex",
+          justifyContent: "center",
+          gap: 10,
+        }}
+      >
         {Array.from({ length: cols }).map((_, c) => (
           <button key={c} onClick={() => dropCoin(c)}>
             ↓
@@ -96,12 +98,12 @@ export default function CountFour({ rows = 6, cols = 7 }) {
         ))}
       </div>
 
-      {/* Board */}
+      {/* board */}
       <div
         style={{
           display: "grid",
           gridTemplateColumns: `repeat(${cols}, 60px)`,
-          gap: "5px",
+          gap: 6,
           justifyContent: "center",
         }}
       >
@@ -114,14 +116,10 @@ export default function CountFour({ rows = 6, cols = 7 }) {
                 height: 60,
                 borderRadius: "50%",
                 background:
-                  cell === "Y"
-                    ? "yellow"
-                    : cell === "R"
-                    ? "red"
-                    : "#ddd",
+                  cell === "Y" ? "yellow" : cell === "R" ? "red" : "#ddd",
               }}
             />
-          ))
+          )),
         )}
       </div>
 
