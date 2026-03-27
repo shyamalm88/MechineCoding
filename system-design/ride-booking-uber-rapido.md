@@ -241,7 +241,11 @@ graph LR
 
 ### 6.2 Location System
 
-**Here is the problem:** 1.67M driver location writes/sec, each needing sub-millisecond geospatial lookup for matching.
+> **Location data is high-frequency and ephemeral. Storing it in a database creates write bottlenecks. We use Redis — not because it is fast, but because the data has no long-term value the moment the next update arrives.**
+
+> **Location systems trade accuracy for scalability. The frequency of updates is not a technical constraint — it is a deliberate cost/accuracy decision per driver state.**
+
+**The scale problem:** 1.67M driver location writes/sec, each needing sub-millisecond geospatial lookup for matching. No relational database survives this write rate.
 
 #### Write Path vs Read Path
 
@@ -325,7 +329,9 @@ Driver phone disconnects → WebSocket closes → Location Svc detects
 
 ### 6.3 Driver Matching
 
-**Here is the problem:** When a rider requests a trip, find the best available nearby driver, offer them the ride, and assign atomically — without double-booking — in under 300ms. This is the heart of Uber's system. Everything else is plumbing around this.
+> **Driver matching is the core of the system — everything else (payments, UI, notifications) is secondary.**
+
+**Here is the problem:** When a rider requests a trip, find the best available nearby driver, offer them the ride, and assign atomically — without double-booking — in under 300ms.
 
 The matching pipeline has 5 steps. They all run sequentially in < 300ms:
 
@@ -376,7 +382,9 @@ Remaining: ~10–20 eligible candidates → rank these
 
 #### Step 3: ETA-Based Ranking (Not Distance)
 
-**Why ETA, not distance?** A driver 0.5km away stuck in traffic has a worse ETA than one 1.2km away on an open road. Riders experience wait time — not map distance.
+> **Matching is not about finding the nearest driver. It is about finding the fastest pickup. ETA is the metric — not distance.**
+
+A driver 0.5km away in traffic has a worse ETA than one 1.2km away on an open road. Riders experience wait time, not map distance. Every system that ranks by distance is optimizing for the wrong thing.
 
 ```
 For each eligible driver:
@@ -616,6 +624,8 @@ I chose Redis SETNX over a DB row lock because the same DB is already absorbing 
 
 ### Trade-off 4: Sequential vs Parallel Driver Dispatch
 
+Here is the problem: once we have a ranked list of candidates, do we offer the trip to one driver at a time (best driver first) or to all top-K simultaneously (fastest acceptance)?
+
 | Dimension | Sequential | Parallel |
 |---|---|---|
 | Rider wait time | Higher (~45s avg) | Lower (~15s avg) |
@@ -625,14 +635,16 @@ I chose Redis SETNX over a DB row lock because the same DB is already absorbing 
 
 **Chosen: Dynamic — sequential in normal supply, parallel during surge.**
 
-I chose dynamic dispatch because supply/demand ratio changes continuously. In normal conditions, sequential preserves quality with zero notification waste. In surge, parallel minimizes rider wait time. The trade-off I accept is dispatch engine complexity (surge detection, mode switching), acceptable given measurable improvement in rider wait time at peak demand.
+We do not hard-code one strategy. In normal conditions, we prioritize quality: the best-ETA driver gets the first offer, other drivers are not disturbed. In surge, we prioritize speed: notify top-K simultaneously, first to accept wins. The supply/demand ratio determines the mode. The trade-off we accept is dispatch engine complexity, which is justified by measurable improvement in rider wait time at peak demand.
 
 > [!NOTE]
-> **Key Insight:** The optimal dispatch strategy is a function of supply/demand ratio, not a fixed architecture. Hard-coding either strategy means optimal in one condition and suboptimal in the other. Surge = parallel. Normal = sequential. The threshold is tunable per city.
+> **Key Insight:** The optimal dispatch strategy is a function of supply/demand ratio, not a fixed architecture. Hard-coding either strategy means optimal in one condition and suboptimal in the other. The threshold is tunable per city.
 
 ---
 
 ### Trade-off 5: Dynamic Radius Expansion vs Fixed Radius
+
+Here is the problem: a small search radius gives high-quality matches but misses drivers in sparse areas. A large radius always finds drivers but returns poor ETAs.
 
 | Dimension | Fixed 2km | Fixed 5km | Dynamic 2→3→5km |
 |---|---|---|---|
@@ -643,10 +655,10 @@ I chose dynamic dispatch because supply/demand ratio changes continuously. In no
 
 **Chosen: Dynamic expansion — 2km → 3km → 5km with 2-minute timeout per round.**
 
-I chose dynamic expansion over a fixed radius because city supply density varies by neighborhood, time of day, and surge. A fixed radius is a configuration that works in one city at one time. The trade-off I accept is higher matching latency on expansion rounds (up to 4 min worst case), acceptable compared to returning "no driver found."
+We prioritize match quality first — start at 2km and expand only when necessary. A large fixed radius wastes ETA calculation on distant drivers and degrades rider experience with long pickup times. Expanding only on timeout means the system self-adapts to local supply conditions without manual tuning per city. The trade-off we accept is up to 4-minute matching latency in extreme sparse-supply cases, which is preferable to returning "no driver found" and forcing a re-request.
 
 > [!NOTE]
-> **Key Insight:** Fixed radius is a false economy. Starting small preserves match quality. Expanding on timeout preserves match rate. The system adapts to local supply conditions without manual tuning per city.
+> **Key Insight:** Fixed radius is a false economy. Starting small preserves ETA quality. Expanding only on timeout preserves match rate. The system adapts — we do not configure a radius per city.
 
 ---
 
@@ -709,10 +721,10 @@ Trip record = reliable path (durable, drives billing and audit)
 > [!IMPORTANT]
 > These are the lines that make an interviewer lean forward. Know them cold.
 
-- **"Driver location is ephemeral — only the current position matters."** Redis overwrites it every 1–5 seconds. Storing location in a DB = write amplification for data with a natural expiry.
-- **"The state machine is the consistency mechanism, not just a label."** IDLE → RESERVED is a Redis atomic operation. A driver is either fully available or fully reserved — never both.
-- **"SETNX, not a DB row lock."** `SELECT FOR UPDATE` is correct but serializes through disk I/O on the same DB already absorbing trip writes. Redis SETNX is a single in-memory atomic command — < 1ms, zero DB contention, and Redis is already in the stack for geospatial queries.
-- **"Sequential vs parallel dispatch is a supply/demand decision."** Hard-coding either strategy is wrong — the system should switch dynamically at a configurable threshold.
+- **"Matching is not about finding the nearest driver — it is about finding the fastest pickup."** We rank by ETA, not distance. Distance is a proxy; ETA is the truth. Every system that ranks by distance is optimizing for the wrong metric.
+- **"Consistency in driver assignment is enforced through state transitions, not locks."** The atomic IDLE → RESERVED transition is the mutual exclusion. No separate lock service. No ZooKeeper. The state is the truth.
+- **"Location data is high-frequency and ephemeral — storing it in a DB creates write bottlenecks."** Redis holds only the current position. TTL self-evicts stale data. The previous coordinate has zero value the moment the next one arrives.
+- **"Sequential vs parallel dispatch is a supply/demand decision."** Hard-coding either strategy is wrong. Normal demand = sequential (quality). Surge = parallel (speed). The threshold is tunable per city.
 - **"The Kafka queue is a correctness requirement."** Decoupling fast matching (Redis, sub-100ms) from reliable billing (Kafka → DB) is what makes both guarantees achievable simultaneously.
 - **"CAP per component."** Rider-facing services are AP. Driver assignment is CP. The system is not uniformly one or the other — this is the right answer.
 
