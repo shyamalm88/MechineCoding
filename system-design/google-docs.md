@@ -4,9 +4,15 @@
 
 ## 🧠 Mental Model
 
-Google Docs is two systems running in parallel: a **fast path** that makes editing feel instant, and a **reliable path** that ensures nothing is ever lost. Every keystroke travels both paths simultaneously. The fast path applies your operation locally before it even reaches the server (optimistic apply), then fans it out to all collaborators after transformation. The reliable path appends every operation to an immutable log before any client sees the server's ACK — so even if the server crashes mid-broadcast, the operation survives.
+> **Google Docs is not syncing text. It is syncing operations across distributed clients.**
 
-The hardest problem in Google Docs is not storage or scale — it is **concurrent edit reconciliation**. Two users editing the same position at the same millisecond will produce divergent documents unless a conflict resolution algorithm (OT or CRDT) transforms one operation against the other before applying. The entire architecture is organized around making that transformation correct, fast, and durable.
+This is the insight that unlocks the entire design. When Alice types "R" at position 29, Google Docs does not send the document. It sends `{ type: "insert", pos: 29, char: "R", version: 42, client_id: "alice" }`. The document is a *materialized view* of a sequence of operations — not the source of truth. The operations log is.
+
+Two users editing the same position at the same millisecond will produce divergent documents unless a conflict resolution algorithm (OT or CRDT) transforms one operation against the other before applying. The entire architecture is organized around making that transformation **correct**, **fast**, and **durable**. Everything else — WebSocket, Cassandra, Redis, S3 — serves those three requirements.
+
+The system runs two paths concurrently:
+- **Fast path**: apply locally → send to OT Server → transform → broadcast to peers (optimizes latency)
+- **Reliable path**: append to Operations Log before ACK (optimizes durability)
 
 ```
                     ┌──────────────────────────────────────────────────────────┐
@@ -258,7 +264,203 @@ graph TD
 
 ---
 
-## 6. Deep Dives
+## 6. Operation Data Flow
+
+> [!IMPORTANT]
+> This is the flow interviewers want to hear you walk through. Every step has a purpose — know WHY each step exists.
+
+### 🔄 Complete Operation Lifecycle
+
+```
+Step 1: Local Apply (client)
+Step 2: Send to server (WebSocket)
+Step 3: Transform on server (OT Engine)
+Step 4: Append to Operations Log (Cassandra)
+Step 5: Broadcast transformed op to all peers (WebSocket)
+Step 6: Peers apply transformed op to their local doc
+```
+
+```mermaid
+sequenceDiagram
+    participant A as Client A (Alice)
+    participant OT as OT Server
+    participant Log as Operations Log (Cassandra)
+    participant B as Client B (Bob)
+    participant C as Client C (Carol)
+
+    Note over A: User types "R" at position 29
+    A->>A: 1. Apply op locally (optimistic)\ndoc now shows "R" immediately
+    A->>OT: 2. WS: send_op { insert, pos=29, char=R, ver=42, client=alice }
+
+    Note over OT: Checks: any ops committed since ver 42?
+    OT->>Log: 3. Fetch concurrent ops (ver 42 → current)
+    Log-->>OT: [op from Bob: delete at pos 15]
+    OT->>OT: 4. Transform Alice op against Bob op\npos 29 stays 29 (delete was before pos 29? no change)
+    OT->>Log: 5. Append transformed op (ver 43)
+    Log-->>OT: ACK
+
+    OT-->>A: 6. ACK { server_ver: 43 }\nAlice's pending op is now committed
+    OT->>B: 7. Push transformed op { insert, pos=29, char=R, ver=43 }
+    OT->>C: 7. Push transformed op { insert, pos=29, char=R, ver=43 }
+
+    Note over B: B transforms against own pending ops\nthen applies to local doc
+    Note over C: C applies directly (no pending ops)
+```
+
+### Step-by-Step WHY
+
+| Step | What happens | Why it must happen this way |
+|------|-------------|----------------------------|
+| 1. Local apply | Client applies op to local doc without waiting | Makes editing feel instant — zero perceived latency |
+| 2. Send to OT Server | Op sent with `client_version` (doc version when op was generated) | Server needs the version gap to know which concurrent ops to transform against |
+| 3. Fetch concurrent ops | Server retrieves all ops committed since `client_version` | These are the ops the client did NOT know about when it generated its op |
+| 4. Transform | OT function adjusts positions against each concurrent op | Without this, positions become wrong → documents diverge |
+| 5. Append to log | Store BEFORE broadcasting | If server crashes after write but before broadcast, the op is in the log — clients fetch on reconnect |
+| 6. ACK to sender | Confirm the op's committed version | Client replaces pending op with committed version — can now generate next op correctly |
+| 7. Broadcast to peers | Push transformed op to all connected clients | Peers apply the server-transformed version, not the raw client version |
+
+> [!NOTE]
+> **Key Insight:** The `client_version` is the crucial field. It tells the server "when I generated this op, I had seen operations up to version N." The server's job is to transform the op against everything that happened between version N and now. This is the entire OT algorithm in one sentence.
+
+---
+
+## 6b. Separation of Concerns
+
+The system has three distinct layers. Keeping them separate is what makes the design scalable and debuggable.
+
+```mermaid
+graph TD
+    subgraph ClientLayer["Client Layer (browser / app)"]
+        CE["Client Editor\n(contenteditable / ProseMirror)\nLocal document state\nOptimistic apply\nPending op queue"]
+        COT["Client OT Engine\nTransforms incoming remote ops\nagainst local pending ops"]
+    end
+
+    subgraph SyncLayer["Sync Service Layer"]
+        WS["WebSocket Gateway\nSticky routing per doc_id\nAuth + rate limiting"]
+        OTS["OT Server\nOne node owns each document session\nTransforms ops\nBroadcasts to peers"]
+    end
+
+    subgraph StorageLayer["Storage Layer"]
+        OpLog[("Operations Log\nCassandra\nAppend-only\nPartitioned by doc_id")]
+        Snap["Document Snapshots\nS3 / Blob Storage\nEvery N ops or M minutes"]
+        Redis(["Redis\nCursor positions\nPresence\nSession map: doc_id → OT node"])
+    end
+
+    CE -->|WS: send_op| WS
+    WS --> OTS
+    OTS --> OpLog
+    OTS -->|WS: push transformed op| CE
+    OTS --> Redis
+    Snap -->|Initial load| CE
+```
+
+| Layer | Component | Responsibility | Why separated |
+|---|---|---|---|
+| Client | Editor | Local document model, keystrokes, rendering | Must be fast — no server round-trip |
+| Client | Client OT Engine | Transform incoming remote ops against pending local ops | Client has unACKed ops the server hasn't seen yet |
+| Sync | WebSocket Gateway | Auth, sticky routing, connection lifecycle | Stateless routing layer — separate from OT logic |
+| Sync | OT Server | Canonical transformation and ordering point | Stateful per-document — must not be distributed |
+| Storage | Operations Log | Durable, replayable event source | Decoupled from serving layer — allows versioning/audit |
+| Storage | Snapshots | Fast initial load | Log replay from op 1 is too slow for large documents |
+| Storage | Redis | Ephemeral state (cursors, presence, session map) | High-frequency writes with natural expiry — wrong fit for DB |
+
+> [!NOTE]
+> **Key Insight:** The Client OT Engine and the Server OT Engine are both necessary. The server transforms incoming ops against other clients' concurrent ops. The client transforms incoming remote ops against its own locally-pending (unACKed) ops. Neither can be skipped. Remove the client engine and cursor positions break whenever you have network lag.
+
+---
+
+## 6c. Consistency Model
+
+### Eventual Consistency + Strong Convergence
+
+Google Docs is an **eventually consistent** system with a **strong convergence** guarantee.
+
+| Property | Definition | Google Docs guarantee |
+|---|---|---|
+| Eventual consistency | All replicas will agree on the same state... eventually | Yes — given no new ops, all clients converge |
+| Strong convergence | If two replicas have applied the same set of ops (in any order), they are in the same state | Yes — OT's transformation property ensures this |
+| Linearizability | Every op appears to execute atomically at a single point in time | No — not required for a text editor |
+| Causal consistency | If op A happened before op B (as seen by the client), all clients see A before B | Yes — client version numbers enforce causal ordering |
+
+```
+Eventual consistency in practice:
+  Alice:  "Hello"  →  "Hello World"  →  "Hello World!"
+  Bob:     "Hello"  →  "Hello !"      →  "Hello World!"
+                                               ↑
+                              Both converge here after transformation
+```
+
+**Strong convergence is what OT (and CRDT) provide.** It means:
+- Two clients applying the same set of operations will always reach the same final document state
+- The ORDER in which concurrent ops are applied does not matter — transformation corrects positions
+- This holds even with network delays, reordering, or reconnection
+
+> [!NOTE]
+> **Key Insight:** Google Docs does NOT guarantee that Alice and Bob see the same document at the same millisecond — that would require linearizability, which is prohibitively expensive at this scale. It guarantees that they converge to the same document. The gap is usually < 100ms and invisible to users.
+
+---
+
+## 6d. Edge Cases
+
+### Out-of-Order Operations
+
+**Problem:** Network reordering means op at version 44 arrives before op at version 43.
+
+**Solution:** The OT server enforces ordering at the log level. Every op gets a monotonically increasing server version on commit. Clients buffer ops received out of order and apply them in version order.
+
+```
+Client receives: [ver=44 op], [ver=43 op]
+                      ↓
+Buffer: { 43: pending, 44: pending }
+Wait for ver 43 → apply 43 → apply 44
+```
+
+> [!NOTE]
+> **Key Insight:** The server version number is the total ordering mechanism. It converts the partial order (concurrent client ops) into a total order (globally committed sequence). Without it, clients would need vector clocks to detect ordering, which is far more complex.
+
+---
+
+### Duplicate Operations (At-Least-Once Delivery)
+
+**Problem:** Client sends op, server commits and appends to log, but crashes before sending ACK. Client retries — duplicate op arrives.
+
+**Solution:** Each op carries `(client_id, client_seq)`. OT Server checks Redis before processing:
+
+```
+GET dedup:{client_id}:{client_seq}
+  → exists:  duplicate — return previously committed server_version, drop op
+  → missing: process normally, SET dedup:{client_id}:{client_seq} {server_ver} EX 3600
+```
+
+---
+
+### Network Delay and Reconnection
+
+**Problem:** Client loses connection for 30 seconds. Misses 150 ops from other users. On reconnect, their local document is stale.
+
+**Solution: Operation log catch-up**
+
+```mermaid
+sequenceDiagram
+    participant C as Client (reconnecting)
+    participant OT as OT Server
+    participant Log as Operations Log
+
+    C->>OT: reconnect { doc_id, last_known_version: 42 }
+    OT->>Log: fetch ops from version 42 to current (ver 192)
+    Log-->>OT: [op_43, op_44, ..., op_192]
+    OT->>C: bulk push: missed ops [43..192]
+    C->>C: transform missed ops against local pending ops
+    C->>C: apply all → document converges
+    C->>OT: flush pending ops (generated while offline)
+```
+
+> [!NOTE]
+> **Key Insight:** The Operations Log is not just for versioning — it is the reconnection mechanism. Every client disconnect/reconnect is handled identically: fetch ops since `last_known_version` from Cassandra, transform against local pending ops, apply. This also handles the offline editing case (F2 in the Frontend section).
+
+---
+
+## 7. Deep Dives
 
 ### 6.1 The Three Approaches to Collaborative Editing
 
@@ -573,6 +775,21 @@ stateDiagram-v2
 
 **Chosen: OT.**
 One-line reason: a central server is already required for access control, versioning, and billing — OT's single-ordering-point requirement is not an additional constraint.
+
+#### When to use OT vs When to use CRDT
+
+| Signal | Choose OT | Choose CRDT |
+|---|---|---|
+| Server topology | You already have a central server (auth, billing, audit) | Peer-to-peer or multi-master without a single owner |
+| Offline support | Short offline windows; reconnect to reconcile | Long offline or mesh networks (mobile, local-first apps) |
+| Team size building it | Small team, correctness over flexibility | Large infra team with bandwidth to maintain CRDT compaction |
+| Data model | Linear text (Google Docs, Notion, code editors) | Arbitrary data structures (Figma shapes, JSON trees) |
+| Real-world example | Google Docs, Notion, Quip | Figma, Liveblocks, Yjs, Automerge |
+
+> [!IMPORTANT]
+> **When to use which — the one-line rule:**
+> OT = simpler but centralized. CRDT = scalable but complex.
+> If you already have a central server, OT's centralization is not a cost — it is free. Add CRDT only when peer-to-peer or multi-master is a genuine requirement.
 
 > [!NOTE]
 > **Key Insight:** CRDT's "no central server" advantage is only valuable in a truly peer-to-peer system. Google Docs is not peer-to-peer — it has accounts, permissions, and audit logs. The central server exists regardless. OT is simpler to reason about and operationally maintain when a central ordering point already exists.
