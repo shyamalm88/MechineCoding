@@ -982,9 +982,11 @@ Google Docs is a two-path system. The **fast path** optimistically applies every
 
 ### Key Insights Checklist
 
-- **OT requires a single central server per document** — this is a correctness requirement (consistent operation ordering), not an architectural weakness. Without it, two nodes could transform the same pair of concurrent ops in different orders, producing permanently divergent documents.
+- **OT requires a single central server per document** — this is a correctness requirement, not an architectural weakness. Without a single ordering point, two nodes could transform the same concurrent ops in different orders, producing permanently divergent documents.
 - **The client applies keystrokes locally before the server ACK** — this optimistic apply is what makes Google Docs feel instant. The server transforms and confirms asynchronously; the client reconciles silently.
-- **CRDT's "no central server" advantage is irrelevant here** — Google Docs already has a central server for auth, versioning, and billing. OT is the correct choice when a central ordering point already exists.
+- **OT for the hot path, CRDT for the cold path** — OT is right for real-time editing where a central server already exists. CRDT is right for long offline windows, multi-region without a home region, or non-text structured data (JSON, shapes). Google's production system likely uses both. Neither algorithm alone handles all cases at scale.
+- **CRDT merge works by unique IDs, not integer positions** — each character gets a permanent unique identity. An op says "insert after id=X", not "insert at position N". Positions shift; IDs don't. This is why CRDT needs no server to resolve conflicts — the merge is self-describing.
+- **CRDT's hidden cost is tombstoning** — deleted characters cannot be physically removed until every peer confirms the deletion. Heavily-edited documents accumulate invisible tombstones that require periodic compaction. OT has no tombstoning because the server is always the authority — deletion is final immediately.
 - **Cursor data belongs in Redis, not a database** — it is ephemeral, high-frequency, and has a natural TTL. Storing it in PostgreSQL or Cassandra would add write amplification for data that expires in 30 seconds anyway.
 - **Versioning is event sourcing** — the operations log is the event store; snapshots are materialized views. Restore = nearest snapshot + operation replay. This pattern provides both durable history and efficient current-state access.
 
