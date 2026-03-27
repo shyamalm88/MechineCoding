@@ -1,3174 +1,814 @@
-# 🧩 Google Docs — Requirements & Scale Estimation
+# System Design: Google Docs (Real-time Collaborative Editor)
 
-> **System Scope**: Real-time collaborative document editor (Google Docs–like)  
-> **Architecture Type**: Global, real-time, collaborative, conflict-free, offline-first, low-latency system
-
----
-
-# Functional Requirements
-
-## Core Editing
-
-- Create / Read / Update / Delete documents
-- Rich-text editing (bold, italics, lists, tables)
-- Cursor tracking for collaborators
-- Real-time collaboration
-- Offline editing with later sync
-- Undo / Redo
-- Version history & restore
-- Commenting & suggestions
-- Document sharing & permissions
-
-## Collaboration
-
-- Multiple users can edit simultaneously
-- Each user sees others’ cursors in real time
-- Conflict-free merging
-- Presence tracking
-
-## Access Control
-
-- Owner, Editor, Commenter, Viewer
-- Public links
-- Workspace sharing
-
-## Reliability
-
-- No data loss
-- Full version recovery
-- Offline continuity
-
----
-
-# Non-Functional Requirements
-
-| Category     | Target                            |
-| ------------ | --------------------------------- |
-| Latency      | < 120 ms P95                      |
-| Availability | 99.99%                            |
-| Durability   | 11 nines                          |
-| Concurrency  | 100+ editors per doc              |
-| Scalability  | 1B+ documents                     |
-| Consistency  | Eventual (view), Strong (storage) |
-| Offline      | Mandatory                         |
-| Security     | TLS, RBAC, audit logs             |
-
----
-
-# Why This System Is Hard
-
-Google Docs is not CRUD. It is:
-
-- A **distributed real-time state machine**
-- Using **CRDTs**
-- Under **network partitions**
-- Supporting **offline clients**
-
-Trade-offs:
-
-| Requirement | Design                             |
-| ----------- | ---------------------------------- |
-| Multi-user  | CRDT instead of locks              |
-| Offline     | Client-side operation logs         |
-| History     | Append-only logs                   |
-| Consistency | Eventual views, strong persistence |
-
----
-
-# Scale Assumptions
-
-## Users
-
-| Metric             | Value |
-| ------------------ | ----- |
-| Total users        | 1B    |
-| Daily active       | 200M  |
-| Concurrent editors | 10M   |
-
-## Documents
-
-| Metric     | Value  |
-| ---------- | ------ |
-| Total docs | 1B     |
-| Avg size   | 200 KB |
-| Max size   | 10 MB  |
-
-## Editing Load
-
-| Metric                 | Value |
-| ---------------------- | ----- |
-| Avg edits per user/day | 500   |
-| Peak writes/sec        | 10M   |
-| Avg collaborators      | 3     |
-| Max collaborators      | 100+  |
-
----
-
-# Storage Estimation
-
-```text
-1B documents × 200 KB = 200 TB (raw)
-Version history × 10 = 2 PB
-Indexes, replicas, logs ≈ 6 PB total
-```
-
 ---
 
-# Write Throughput
+## 🧠 Mental Model
 
-Each keystroke is one operation.
+Google Docs is two systems running in parallel: a **fast path** that makes editing feel instant, and a **reliable path** that ensures nothing is ever lost. Every keystroke travels both paths simultaneously. The fast path applies your operation locally before it even reaches the server (optimistic apply), then fans it out to all collaborators after transformation. The reliable path appends every operation to an immutable log before any client sees the server's ACK — so even if the server crashes mid-broadcast, the operation survives.
 
-```text
-10M concurrent users × 1 keystroke/sec = 10M writes/sec
-```
+The hardest problem in Google Docs is not storage or scale — it is **concurrent edit reconciliation**. Two users editing the same position at the same millisecond will produce divergent documents unless a conflict resolution algorithm (OT or CRDT) transforms one operation against the other before applying. The entire architecture is organized around making that transformation correct, fast, and durable.
 
-These writes do NOT go directly to a database.  
-They flow through:
-
-```text
-- WebSocket servers
-- CRDT engine
-- Event streams
-- Durable append-only logs
 ```
-
----
-
-# Core Data Model
-
-Documents are stored as **operations**, not text.
-
-```text
-Document = Ordered list of operations
-Operation = { insert, delete, format, move }
+                    ┌──────────────────────────────────────────────────────────┐
+                    │                      FAST PATH                            │
+  ┌────────┐  op    │  ┌──────────┐  transform  ┌──────────┐  broadcast       │
+  │ UserA  │ ──────►│  │OT Server │ ───────────►│OT Server │ ──────► peers    │
+  └────────┘        │  └──────┬───┘             └──────────┘                  │
+   (optimistic      │         │ concurrent ops                                 │
+    local apply)    └─────────┼───────────────────────────────────────────────┘
+                              │ append (before broadcast, before client ACK)
+                    ┌─────────▼───────────────────────────────────────────────┐
+                    │                   RELIABLE PATH                           │
+                    │              ┌─────────────────┐                         │
+                    │              │ Operations Log   │  <- every op stored    │
+                    │              │   (Cassandra)    │     before ACK sent    │
+                    │              └─────────────────┘                         │
+                    └─────────────────────────────────────────────────────────┘
 ```
-
-This enables:
-
-- Conflict-free collaboration
-- Version history
-- Undo / redo
-- Offline merging
-
----
-
-# Primary Bottlenecks
-
-| Layer           | Why it is difficult           |
-| --------------- | ----------------------------- |
-| WebSocket layer | 10M+ open connections         |
-| CRDT engine     | CPU heavy conflict resolution |
-| Fan-out         | 1 keystroke → 100+ users      |
-| Storage         | Huge append-only write volume |
-| Cold starts     | Rebuilding doc from logs      |
 
----
-
-# Architectural Implications
-
-| Requirement  | Resulting Design           |
-| ------------ | -------------------------- |
-| Real-time    | WebSockets + PubSub        |
-| Offline      | Client logs + merge engine |
-| High fan-out | Topic-based event streams  |
-| No data loss | Write-ahead logs + quorum  |
-| Multi-region | Geo-replicated streams     |
-
----
+### ⚡ Core Design Principle
 
-# 📄 Google Docs — System Design from First Principles
+| Principle | Decision | Why |
+|---|---|---|
+| Conflict resolution | Operational Transformation (OT) | Central server already required; OT maps naturally |
+| Operation granularity | Delta (insert/delete + position) | Full file replacement causes last-writer-wins data loss |
+| Transport | WebSocket (persistent, bidirectional) | HTTP request-response cannot push server-initiated ops |
+| Durability | Append-only Operations Log in Cassandra | Event sourcing — replay any version from any point |
+| Latency | Optimistic local apply before server ACK | Visual responsiveness over consistency for text editing |
+| Ephemeral state | Redis with TTL for cursors and presence | Cursor data expires naturally; storing in DB adds write amplification |
 
 ---
-
-## Chapter 1 — What problem are we really solving?
 
-Google Docs looks like a simple text editor, but it is actually one of the most complex distributed systems ever built.
+## 1. Problem Statement & Scope
 
-What users expect:
+Google Docs allows multiple users to edit the same document simultaneously in real time. Changes made by one user appear in every other user's browser within milliseconds. The system must handle billions of documents, millions of concurrent editors, and guarantee zero data loss.
 
-- Many people can edit the same document at the same time
-- Everyone sees updates almost instantly
-- Nobody’s work is ever lost
-- People can go offline and continue editing
-- Old versions can be restored
-- The document always ends up in a consistent state
+**In scope:**
+- Create, read, update, delete documents
+- Single-user and multi-user real-time collaborative editing
+- Cursor positions and presence for all active collaborators
+- Document versioning — save snapshots, restore to any version
+- Offline editing with automatic sync on reconnect
 
-These expectations force us to solve problems in:
+**Out of scope:**
+- Comments and suggestions (separate service)
+- Permissions and sharing UI (separate IAM service)
+- Spreadsheets and Slides (different data models)
 
-- Distributed systems
-- Real-time networking
-- Concurrency control
-- Fault tolerance
-- Data replication
-
 ---
-
-## Why a normal “database + API” approach fails
 
-A naive design would be:
+## 2. Requirements
 
-```text
-User types → API → Database → Other users read from database
-```
-
-This breaks immediately.
-
-### Reason 1 — Too many writes
-
-If 10 million people are typing, and each types 1 character per second, the database must handle:
+### Functional Requirements
 
-```text
-10,000,000 writes per second
-```
-
-No traditional database can do this reliably.
+1. **CRUD Documents** — create, open, rename, and delete documents
+2. **Real-time collaborative editing** — all collaborators see changes within 100ms
+3. **Cursor and presence** — see where each collaborator's cursor is and who is online
+4. **Document versioning** — view history, restore to any prior version
+5. **Offline editing** — buffer local operations while offline, sync on reconnect
 
----
+### Non-Functional Requirements
 
-### Reason 2 — Conflicts
+| Requirement | Target |
+|---|---|
+| Concurrent active editors | 1 million |
+| Total documents | 1 billion |
+| Edit propagation latency | < 100ms end-to-end |
+| Data durability | Zero data loss (operations log is source of truth) |
+| Availability | 99.99% for solo editing; strong consistency for collaborative editing |
+| Throughput | 5 million operations/sec at peak |
 
-Two users edit the same sentence at the same time:
+### CAP Discussion
 
-```text
-User A writes: HelloX
-User B writes: HelloY
-```
+> [!NOTE]
+> **Key Insight:** Google Docs makes a deliberate CAP choice that varies by editing mode. Solo editing: AP (availability over consistency — your edits always go through even if a replica is stale). Collaborative editing: CP (consistency over availability — all collaborators must converge to the same document state; the OT server is the single ordering point).
 
-If both send full text, whoever writes last wins — the other loses data.
+For collaborative editing, the OT server acts as the serialization point. If it is unreachable, clients buffer locally and display a "reconnecting" state rather than allowing divergent edits that cannot be reconciled.
 
 ---
 
-### Reason 3 — Offline users
+## 3. Back-of-the-Envelope Estimations
 
-If someone edits while offline, they cannot write to the database.  
-But their changes must still be merged later.
+| Parameter | Value | Reasoning |
+|---|---|---|
+| Total documents | 1 billion | Given |
+| Concurrent active editors | 1 million | 1% of documents active at any time |
+| Operations per editor per second | 5 | 1 keystroke per 200ms |
+| Peak operations/sec | 5 million | 1M x 5 |
+| Operation payload size | ~200 bytes | Delta: type + position + char + version + client_id |
+| Operations write throughput | ~1 GB/sec | 5M x 200B |
+| Snapshot frequency | Every 100 ops | Background compaction |
+| Average document snapshot size | ~50 KB | Typical rich-text document |
+| Snapshot storage per day | ~500 GB | 1M active docs x 1 snapshot/day x 50KB |
+| WebSocket connections | 1 million | One persistent connection per active editor |
+| Redis cursor entries | 1 million keys | One HSET per active document, TTL = 30s |
 
----
-
-## The key idea that makes Google Docs possible
+**Cassandra sizing for operations log:**
+- 1 GB/sec write throughput -> 86 TB/day at peak (real average ~10x lower -> ~10 TB/day)
+- Retain raw operations for 30 days -> ~300 TB hot storage
+- Older operations compacted into snapshots -> S3 for cold storage
 
-Instead of storing **text**, we store **operations**.
+**WebSocket gateway sizing:**
+- Each WebSocket connection consumes ~64 KB memory at the server
+- 1 million connections -> ~64 GB RAM across gateway fleet
+- Horizontal scaling: shard by doc_id
+
+---
+
+## 4. API Design
+
+### REST API (Document Lifecycle)
+
+```
+POST   /api/v1/documents
+       Body:     { title, owner_id }
+       Response: { doc_id, created_at, blob_url }
+       Purpose:  Create a new empty document
+
+GET    /api/v1/documents/{doc_id}
+       Response: { metadata, content_url, current_version }
+       Purpose:  Fetch document metadata and URL of latest snapshot (served via CDN)
+
+DELETE /api/v1/documents/{doc_id}
+       Purpose:  Soft-delete; moves to trash, not immediately purged
+
+GET    /api/v1/documents/{doc_id}/versions
+       Response: [{ version_id, created_at, snapshot_url, op_count }]
+       Purpose:  List all named versions and auto-snapshots
+
+POST   /api/v1/documents/{doc_id}/versions
+       Body:     { label }
+       Purpose:  Create a manual named snapshot at current state
+```
+
+### WebSocket API (Real-time Editing Session)
+
+```
+WS     /ws/documents/{doc_id}/edit
+       Auth: Bearer token (validated on handshake upgrade)
+       Sticky routing: client must reconnect to same OT Server node for the document
+
+Client -> Server (operation):
+  {
+    type:      "operation",
+    op: {
+      type:      "insert" | "delete",
+      pos:       29,
+      char:      "R",
+      version:   142,
+      client_id: "uuid"
+    }
+  }
+
+Client -> Server (cursor):
+  {
+    type:      "cursor",
+    pos:       29,
+    selection: { start: 29, end: 35 }
+  }
 
-Users do not send:
-
-```text
-"Hello World"
-```
+Server -> Client (transformed operation broadcast):
+  {
+    type:              "operation",
+    op:                { ...original_op },
+    transformed_op:    { type: "insert", pos: 30, char: "R" },
+    committed_version: 143
+  }
 
-They send:
+Server -> Client (remote cursor):
+  {
+    type:    "cursor",
+    user_id: "alice",
+    pos:     15,
+    color:   "#FF6B6B"
+  }
 
-```text
-Insert "H" at position 0
-Insert "e" at position 1
-Insert "l" at position 2
-...
+Server -> Client (presence):
+  {
+    type:    "presence",
+    user_id: "bob",
+    status:  "online" | "idle" | "offline"
+  }
 ```
 
-Each keystroke becomes a small operation.
+> [!NOTE]
+> **Key Insight:** The `version` field in the operation is the client's local version when the op was generated, not the server's committed version. The OT server uses this gap (client version vs. server version) to determine which concurrent operations must be transformed against.
 
-This gives us:
-
-- No overwrites
-- Mergeable changes
-- Version history
-- Offline support
-
 ---
 
-## What is a document?
+## 5. System Architecture
 
-A Google Docs document is not a string.
+### High-Level Architecture
 
-It is:
+```mermaid
+graph TD
+    ClientA[Browser - User A]
+    ClientB[Browser - User B]
+    CDN[CDN - Snapshot Cache]
+    APIGW[HTTP API Gateway]
+    WSGW[WebSocket Gateway - Sticky Routing]
+    OT[OT Server - per document shard]
+    DocMeta[Document Metadata Service]
+    MetaDB[(PostgreSQL - Document Metadata)]
+    OpsLog[(Cassandra - Operations Log)]
+    SnapshotStore[(S3 - Document Snapshots)]
+    Redis[(Redis Cluster - Cursors and Presence)]
+    Kafka[Kafka - Operations Stream]
+    SnapshotWorker[Snapshot Worker - Background]
 
-```text
-Document = ordered list of operations
+    ClientA -- REST CRUD --> APIGW
+    ClientB -- REST CRUD --> APIGW
+    ClientA -- WebSocket --> WSGW
+    ClientB -- WebSocket --> WSGW
+    ClientA -- initial doc load --> CDN
+    CDN -- origin fetch --> SnapshotStore
+    APIGW --> DocMeta
+    DocMeta --> MetaDB
+    WSGW -- route by doc_id --> OT
+    OT -- store op --> OpsLog
+    OT -- publish op --> Kafka
+    OT -- cursor and presence --> Redis
+    Kafka --> SnapshotWorker
+    SnapshotWorker --> SnapshotStore
+    SnapshotWorker --> OpsLog
 ```
-
-To show the text:
-
-1. Start with empty content
-2. Apply each operation in order
-3. The final text appears
 
-This model is what enables collaboration.
+### Evolved Architecture: WebSocket Sticky Routing
 
----
+```mermaid
+graph TD
+    Client[Browser Client]
+    LB[Load Balancer - L4 TCP]
+    WSGW1[WebSocket Gateway Node 1]
+    WSGW2[WebSocket Gateway Node 2]
+    OT1[OT Server Shard A - doc_id hash 0 to 499]
+    OT2[OT Server Shard B - doc_id hash 500 to 999]
+    Redis[(Redis - Session Map doc_id to OT Node)]
 
-## What an operation looks like
-
-A single keystroke becomes a structured object:
-
-```json
-{
-  "opId": "u7-51",
-  "docId": "doc-123",
-  "userId": "u7",
-  "type": "insert",
-  "char": "A",
-  "position": 531,
-  "vectorClock": {
-    "u7": 51,
-    "u9": 103
-  },
-  "timestamp": 1712345678
-}
+    Client -- WS upgrade --> LB
+    LB -- consistent hash or lookup --> WSGW1
+    WSGW1 -- lookup OT node for doc_id --> Redis
+    WSGW1 -- forward op --> OT1
+    WSGW2 -- lookup OT node for doc_id --> Redis
+    WSGW2 -- forward op --> OT2
 ```
-
-This contains:
 
-- Who made the change
-- What changed
-- Where it happened
-- What other changes it depends on
+> [!NOTE]
+> **Key Insight:** OT requires all operations for a document to pass through a single server — this is a correctness requirement, not a scaling limitation. Without a single ordering point, two OT servers could transform the same pair of concurrent operations in different orders, producing divergent documents. The session map in Redis routes every client for a given doc_id to the same OT Server node.
 
 ---
-
-## Why operations scale
-
-Operations are:
 
-- Very small (tens of bytes)
-- Immutable
-- Append-only
-- Easy to transmit
+## 6. Deep Dives
 
-So instead of sending large text blobs, the system moves tiny events.
+### 6.1 The Three Approaches to Collaborative Editing
 
-That is why millions of people can collaborate at once.
+This is the most important section of the design. Three approaches exist, and two of them fail at scale or correctness.
 
 ---
 
-## What problem comes next?
+#### Approach 1: File Replacement (Brute Force)
 
-We now have millions of users producing operations.
+**Idea:** On every keystroke, serialize the entire document, send it to the server, server overwrites storage, broadcasts new document to all clients.
 
-We still need to answer:
+**Problems:**
 
-- How do they reach the server?
-- How do we keep connections open?
-- How do we deliver updates instantly?
+(a) **Payload is enormous.** A 100 KB document sends 100 KB per keystroke. At 5 ops/sec per user x 1M users = 500 GB/sec of document content transfer. Catastrophic.
 
-That leads us to **real-time networking**.
+(b) **Concurrent writes cause silent data loss.** Alice and Bob both read version N, both write version N+1 with their own changes. Bob's write overwrites Alice's. Last writer wins — Alice's work silently disappears.
 
----
+(c) **DOM re-render cost.** The client must diff the entire document on every update to determine what changed for DOM patching.
 
-## Chapter 2 - Real-Time Networking & Global Connection Fabric
+**Verdict: Rejected.**
 
 ---
-
-## Why networking is the hardest part of Google Docs
 
-Google Docs is not a web app.  
-It is a **globally distributed real-time system**.
+#### Approach 2: Locking Protocol
 
-Every keystroke must:
+**Idea:** Prevent concurrent edits by serializing access.
 
-- Reach other users in **<100ms**
-- Survive packet loss
-- Work across continents
-- Recover from disconnections
-- Support millions of concurrent sockets
+**Pessimistic locking:** A user acquires an exclusive lock on the document before editing. Others see a read-only view until the lock is released.
+- Problem: Completely incompatible with real-time collaboration. If Alice locks a document for 2 minutes of typing, Bob is frozen.
 
-This means:
+**Optimistic locking:** Users edit freely, but on commit the server checks if the base version is still current. If another write happened, the commit is rejected and the user must manually merge.
+- Problem: Acceptable for code (Git), but unacceptable for a text editor. Users cannot be asked to resolve merge conflicts for every paragraph.
 
-> The networking layer is more important than the database.
+**Verdict: Rejected for real-time collaborative editing.**
 
 ---
-
-## What Google Docs needs from the network
-
-A normal API system needs:
 
-- Request
-- Response
+#### Approach 3: Delta-Based with Conflict Resolution (OT or CRDT)
 
-Google Docs needs:
+**Idea:**
+1. Send only the operation delta: `{ type: "insert", pos: 29, char: "R" }` — not the whole file.
+2. Use a persistent WebSocket for low-latency bidirectional messaging.
+3. Use a conflict resolution algorithm (OT or CRDT) to reconcile concurrent operations before applying them.
 
-- Continuous bidirectional streams
-- Server push
-- Ordering
-- Low latency
-- Fault recovery
-- Geo-routing
+**The Alice/Bob Problem — Why Naive Delta Merge Fails:**
 
-So we must build a **global streaming fabric**.
-
----
-
-## Why HTTP is impossible
-
-HTTP is:
-
-```
-Connect → Request → Response → Disconnect
 ```
+Initial document: "BC"
 
-Google Docs requires:
+Alice: insert "A" at position 0  ->  her local state: "ABC"
+Bob:   insert "D" at position 2  ->  his local state:  "BCD"
 
-```
-Connect → Send → Receive → Send → Receive → … for hours
-```
+Naive server merge (apply both without transformation):
+  Server applies Alice's op first: "ABC"
+  Server applies Bob's op (D at pos 2): "ABDC"   <- Alice sees "ABDC"
+  Bob applied D to "BCD" then receives Alice's op  -> Bob sees "ABCD"
 
-Polling would mean:
+Alice sees "ABDC", Bob sees "ABCD" -- DIVERGED. Documents are inconsistent.
+```
 
-- Thousands of requests per minute
-- Huge latency
-- Battery drain
-- Server overload
+**With OT (Operational Transformation):**
+- Bob's op `insert("D", pos=2)` was generated against version "BC" (before Alice's insert)
+- The server knows Alice's op happened first (committed at version 1)
+- The OT server transforms Bob's op: Alice inserted at pos 0, which shifts all positions right by 1 — Bob's pos 2 becomes pos 3
+- Transformed op: `insert("D", pos=3)`
+- Both Alice and Bob converge to: "ABCD" ✓
 
-Therefore Google Docs is built on **WebSockets over TCP**.
+**Verdict: CHOSEN.** Delta-based operations with OT conflict resolution.
 
 ---
-
-## High-Level Networking Architecture
-
-```text
-                        ┌──────────────────────┐
-                        │        Geo DNS        │
-                        │  (Nearest Region)     │
-                        └───────────┬──────────┘
-                                    │
-                                    ▼
-┌──────────────┐         ┌──────────────────────┐
-│   Browser    │ ──────▶ │  Global Load Balancer │
-│  (User App)  │         │   (TLS, DDoS, Health) │
-└───────┬──────┘         └───────────┬──────────┘
-        │                             │
-        │                             ▼
-        │                  ┌──────────────────────┐
-        │                  │   WebSocket Gateway  │
-        │◀────────────────▶│ (Auth, Routing, Fan-out)│
-        │                  └───────────┬──────────┘
-        │                              │
-        │                              ▼
-        │                  ┌──────────────────────┐
-        │                  │  Realtime Doc Server │
-        │                  │  (CRDT, Doc State)   │
-        │                  └───────────┬──────────┘
-        │                              │
-        │                              ▼
-        │                  ┌──────────────────────┐
-        │                  │ Internal Message Bus │
-        │                  │ (Replication, Events)│
-        │                  └───────────┬──────────┘
-        │                              │
-        │                              ▲
-        │                  ┌──────────────────────┐
-        │                  │  Realtime Doc Server │
-        │                  │ (Other replicas / DC)│
-        │                  └──────────────────────┘
-```
-
-Let’s walk this from left to right.
 
----
+### 6.2 OT vs CRDT — The Core Algorithm Choice
 
-## Step 1 — Geo-aware DNS
+Both OT and CRDT solve the concurrent edit problem. They take fundamentally different approaches.
 
-When the user opens:
+#### OT (Operational Transformation)
 
-```
+- The server maintains a canonical operation history for the document
+- When a client op arrives, the server checks: which ops were committed since the client's last known version?
+- The transformation function adjusts the incoming op's position against each concurrent op
+- All operations for a document must pass through a single server (the ordering point)
 
-docs.google.com
+**Transformation rules (simplified):**
 
-```
+| Concurrent ops | Rule |
+|---|---|
+| Insert(A) vs Insert(B), A <= B | B becomes B + 1 |
+| Insert(A) vs Insert(B), A > B | B stays B |
+| Insert(A) vs Delete(B), A <= B | B becomes B + 1 |
+| Delete(A) vs Delete(B), A < B | B becomes B - 1 |
+| Delete(A) vs Delete(B), A >= B | B stays B |
 
-DNS chooses the closest region using:
+#### CRDT (Conflict-free Replicated Data Type)
 
-- GeoIP
-- Latency probes
-- Regional health
+- Position is encoded as a fractional index (e.g., 0.25, 0.75) rather than an integer
+- Insert between two positions by choosing a fractional value between them
+- Merge is deterministic: sort all elements by their fractional position
+- No central server required — any peer can merge independently
 
-Why this matters:
+**The Alice/Bob example with CRDT:**
 
-> 100ms saved in physics = 100ms saved in UX.
+```
+Initial state:
+  "B" at position 0.50
+  "C" at position 0.75
 
----
+Alice inserts "A" between 0 and "B": position = 0.25  ->  A(0.25) B(0.50) C(0.75)
+Bob inserts "D" between "C" and 1.0: position = 0.875 ->  B(0.50) C(0.75) D(0.875)
 
-## Step 2 — Global Load Balancer
+Merge: sort by position value
+  A(0.25)  B(0.50)  C(0.75)  D(0.875)  =  "ABCD"
 
-The load balancer:
+Both clients converge to "ABCD" without any central server. Correct.
+```
 
-- Terminates TLS
-- Blocks DDoS
-- Routes to healthy regions
+#### OT vs CRDT Comparison
 
-It does **not** know about documents.
+| Dimension | OT | CRDT |
+|---|---|---|
+| Server topology | Requires single central ordering server | Works peer-to-peer or distributed |
+| Conflict resolution | Transform function (complex to implement correctly) | Sort by fractional position (simpler merge) |
+| Offline editing | Difficult — must reconcile with server on reconnect | Native — any peer can merge independently |
+| Position explosion | Not a problem | Fractional indices grow unbounded (mitigated by compaction) |
+| Correctness surface | Large — all op-type combinations must be handled | Smaller — merge is a sort |
+| Used by | Google Docs, Notion | Figma (Logoot), Liveblocks, Yjs, Automerge |
 
-Its job is:
+**Chosen for this design: OT**
 
-> “Send this user to the best data center.”
+> [!NOTE]
+> **Key Insight:** OT vs CRDT is not about which is "better" — it is about topology. If your system already requires a central server (for access control, versioning, billing, and audit logs), then OT is the correct choice. CRDT's primary advantage — no central server — becomes irrelevant in a system that already has one. Adding CRDT's complexity (position explosion, compaction, fractional index management) for an advantage you do not need is wasteful.
 
 ---
 
-## Step 3 — WebSocket Gateway (Connection Concentrator)
+### 6.3 Fast Path vs Reliable Path
 
-Gateways exist to solve one problem:
+Every operation in Google Docs travels both paths simultaneously.
 
-> You cannot attach 10 million TCP sockets directly to your application servers.
+#### Fast Path (Latency-Optimized)
 
-Gateways:
+```mermaid
+sequenceDiagram
+    participant C as Client (User A)
+    participant OT as OT Server
+    participant P as Peer Clients
 
-- Terminate WebSockets
-- Authenticate tokens
-- Track docId
-- Forward traffic
-
-They are stateless routers.
+    C->>C: Apply op locally (optimistic)
+    C->>OT: Send op via WebSocket
+    Note over OT: Transform op against concurrent ops
+    OT->>C: ACK with committed_version
+    OT->>P: Broadcast transformed_op to all peers
+    P->>P: Apply transformed_op
+```
 
----
+The client applies the operation to its local document model **before** the operation reaches the server. The user sees their keystroke reflected in the UI with zero network latency. If the server later transforms the operation, the client reconciles silently.
 
-### Why Gateways Exist
+> [!NOTE]
+> **Key Insight:** The client applies the operation locally BEFORE the server ACK. This is what makes Google Docs feel instant. In a chat app, the message is stored server-side first. In a text editor, visual latency matters more than consistency — you must feel that your keystroke registered immediately.
 
-Without gateways:
+#### Reliable Path (Durability-Optimized)
 
-- 10M browsers → 10M TCP sockets → realtime servers die
+```mermaid
+sequenceDiagram
+    participant OT as OT Server
+    participant Cass as Cassandra Operations Log
+    participant Kafka as Kafka
+    participant SW as Snapshot Worker
+    participant S3 as S3 Snapshot Store
 
-Gateways provide:
+    OT->>Cass: Append op to log (before broadcasting)
+    OT->>Kafka: Publish op event
+    Kafka->>SW: Consume op stream
+    SW->>SW: Every 100 ops - build snapshot
+    SW->>S3: Write snapshot binary
+    SW->>Cass: Write snapshot metadata
+```
 
-- TCP termination
-- TLS offload
-- DDoS protection
-- Backpressure
-- Hot-document fan-out control
+The OT Server writes the operation to Cassandra **before** broadcasting to peers. If the server crashes mid-broadcast, operations are never lost — they are replayed from the log on reconnect. The Kafka stream drives background snapshot creation without blocking the critical path.
 
-Realtime servers only handle:
+**Reconnect flow:**
+1. Client reconnects with `last_applied_version = 142`
+2. Server queries Cassandra: all ops for doc_id X where version > 142
+3. Server sends missed operations to client
+4. Client applies them in order, transforming against any pending local ops
 
-- CRDT
-- Document state
-- Business logic
+**Key difference from chat systems:** In Google Docs, the CLIENT applies the operation before the server ACK. In a chat app, the server stores the message first. This reflects the priority difference — in docs, visual latency matters more than consistency; in chat, message durability matters more than render speed.
 
 ---
 
-## Step 4 — Deterministic Doc Routing
+### 6.4 Versioning (Operations Log + Snapshots = Event Sourcing)
 
-We must guarantee:
+> [!NOTE]
+> **Key Insight:** Google Docs versioning is identical to the Event Sourcing pattern. The Operations Log is the event store. Document snapshots are materialized views. To reconstruct any historical state: fetch the nearest snapshot before the target version, then replay operations forward.
 
-> All users editing the same doc reach the same realtime server.
+#### Operations Log Schema (Cassandra)
 
-So we do:
-
-```text
-docShard = hash(docId) % numberOfRealtimeServers
 ```
-
-The gateway reads `docId` from the handshake and forwards the connection to the correct realtime server.
+Table: document_operations
 
-This avoids:
+Partition key:  doc_id          UUID
+Clustering key: version         BIGINT  (ascending)
 
-- Distributed locks
-- State syncing between servers
-- Conflicts
-
----
-
-## Step 5 — Realtime Collaboration Server
-
-This server:
+Columns:
+  op_type     TEXT        -- "insert" | "delete"
+  position    INT
+  content     TEXT        -- character(s) inserted
+  user_id     UUID
+  client_id   UUID
+  timestamp   TIMESTAMP
+```
 
-- Owns thousands of documents
-- Holds CRDT state in memory
-- Manages all users on those docs
+**Why Cassandra?**
+- **Append-only write pattern** — operations are never updated, only inserted. Cassandra's LSM-tree is optimized for append-heavy workloads.
+- **Partition by doc_id** — all operations for a document are co-located on the same partition, enabling fast sequential reads for replay.
+- **High write throughput** — Cassandra handles millions of writes/sec natively with tunable consistency.
 
-This is the **single authority for each document’s live state**.
+#### Snapshot Lifecycle
 
----
+```mermaid
+flowchart TD
+    OpsLog[Operations Log - Cassandra]
+    Worker[Snapshot Worker]
+    S3[S3 Snapshot Store]
+    MetaDB[Snapshot Metadata - Cassandra]
+    Restore[Restore Request]
+    NearestSnap[Fetch nearest snapshot before target version]
+    ReplayOps[Replay ops from snapshot to target version]
+    Final[Return reconstructed document state]
 
-## Connection establishment flow
-
-```text
-Browser                    Gateway                    Realtime Server
-   |                          |                              |
-   |--- WebSocket + JWT ------>|                              |
-   |        + docId           |                              |
-   |                          |                              |
-   |                          |--- Validate JWT ------------>|
-   |                          |     (local check)            |
-   |                          |                              |
-   |                          |--- Forward connection ------>|
-   |                          |          (docId hash)        |
-   |                          |                              |
-   |<----------- Snapshot + Active Users --------------------|
-   |                          |                              |
+    OpsLog -- every 100 ops or 5 min --> Worker
+    Worker -- serialize doc state --> S3
+    Worker -- write version_id and snapshot_url --> MetaDB
+    Restore --> NearestSnap
+    NearestSnap --> ReplayOps
+    ReplayOps --> Final
 ```
 
-Now the user is “inside” the document.
-
----
+#### Version Restore Algorithm
 
-## Data flow for a keystroke
-
-```text
-Browser                   Realtime Server                Other Browsers
-   |                              |                              |
-   |---- CRDT Operation ---------->|                              |
-   |                              |                              |
-   |                              |---- Merge into CRDT State --->|
-   |                              |     (in-memory)              |
-   |                              |                              |
-   |                              |---- Broadcast Operation ---->|
-   |                              |                              |
-   |<----------- Updated State ----------------------------------|
 ```
+1. User requests restore to version V
+2. Query: SELECT MAX(snapshot_version) WHERE doc_id = X AND snapshot_version <= V
+3. Fetch snapshot binary from S3 (via CDN if recent)
+4. Query: SELECT op FROM document_operations
+          WHERE doc_id = X
+            AND version > snapshot_version
+            AND version <= V
+5. Apply each operation in order to the snapshot base state
+6. Return reconstructed document
+```
 
-This loop runs hundreds of times per second.
+**Storage optimization:** Raw operations are retained for 30 days. After 30 days, old operations are compacted — the snapshot becomes the source of truth and individual ops are deleted. Users can still view the version (via snapshot) but cannot replay individual keystrokes.
 
 ---
-
-## Why the document lives in memory
-
-Databases are too slow for:
-
-- Cursor updates
-- Typing
-- Selection changes
 
-Realtime servers keep:
+### 6.5 Cursor and Presence
 
-> The full CRDT state in RAM.
+Cursor state is ephemeral — it has a natural expiry when the user stops moving or disconnects. Storing cursor positions in a relational database would add unnecessary write amplification for data that expires within seconds.
 
-This allows:
-
-- Microsecond updates
-- Instant fan-out
-- Smooth typing
-
-Durability is handled by logs, not memory.
-
----
+#### Cursor Flow
 
-## Heartbeats & Failure Detection
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant WS as WebSocket Gateway
+    participant OT as OT Server
+    participant Redis as Redis Cluster
+    participant Peers as Peer Clients
 
-WebSockets silently die.
+    C->>WS: cursor_update { pos: 29, selection: {29, 35} }
+    WS->>OT: forward cursor update
+    OT->>Redis: HSET cursor:{doc_id} {user_id} {pos, color, ts} EX 30
+    OT->>Peers: broadcast cursor_update to all peers in session
+```
 
-So clients send:
+#### Redis Cursor Schema
 
 ```
-PING every 10s
+Key:   cursor:{doc_id}
+Type:  Hash
+Field: {user_id}
+Value: { pos: 29, selection: {start: 29, end: 35}, color: "#FF6B6B", ts: 1709123456 }
+TTL:   30 seconds (refreshed on each cursor update)
 ```
 
-If no PONG:
+> [!NOTE]
+> **Key Insight:** Presence is ephemeral — Redis with TTL handles cleanup automatically. When a user disconnects without sending an explicit "offline" event (e.g., browser tab killed), the TTL ensures the cursor entry expires within 30 seconds. Storing cursor/presence state in PostgreSQL would require a background cleanup job to purge stale rows. Redis TTL is the correct primitive for data with natural expiry.
 
-- Gateway drops connection
-- Client reconnects
-- Resync begins
+#### Presence State Machine
 
-Users see no data loss.
+```mermaid
+stateDiagram-v2
+    [*] --> Online: WebSocket connect
+    Online --> Idle: No cursor movement for 60s
+    Idle --> Online: Cursor moves or keystroke
+    Online --> Offline: WebSocket disconnect
+    Idle --> Offline: WebSocket disconnect
+    Offline --> [*]: TTL expires in Redis
+```
 
 ---
 
-## Reconnect & Catch-Up
+## 7. ⚖️ Key Trade-offs
 
-When reconnecting, the browser sends:
-
-```
-lastKnownOpId
-```
+### Trade-off 1: OT vs CRDT
 
-The realtime server:
+| Dimension | OT | CRDT |
+|---|---|---|
+| Central server required | Yes | No |
+| Implementation complexity | High — transform all op-type combinations | Medium — position explosion mitigation |
+| Offline support | Difficult — server reconciliation needed | Native — peers merge independently |
+| Integration with central auth/versioning | Natural fit | Requires retrofitting |
 
-- Replays missing operations
-- CRDT merges
-- UI catches up
+**Chosen: OT.**
+One-line reason: a central server is already required for access control, versioning, and billing — OT's single-ordering-point requirement is not an additional constraint.
 
-No full reload needed.
+> [!NOTE]
+> **Key Insight:** CRDT's "no central server" advantage is only valuable in a truly peer-to-peer system. Google Docs is not peer-to-peer — it has accounts, permissions, and audit logs. The central server exists regardless. OT is simpler to reason about and operationally maintain when a central ordering point already exists.
 
 ---
 
-## Backpressure & Abuse Control
+### Trade-off 2: WebSocket vs HTTP Long-Polling vs SSE
 
-If a user pastes 1MB of text:
+| Dimension | WebSocket | Long-Polling | SSE |
+|---|---|---|---|
+| Bidirectional | Yes | Simulated (2 connections) | No (server-to-client only) |
+| Latency | Lowest — persistent connection | High — new HTTP request per message | Low — persistent, but client cannot push |
+| Infrastructure complexity | Sticky routing required; stateful | Stateless — any node | Stateless |
+| Real-time op delivery | Native | Possible but wasteful | Cannot receive client ops |
 
-- Server batches operations
-- Rate limits the client
-- Protects other users
+**Chosen: WebSocket.**
+One-line reason: collaborative editing requires both the client pushing operations and the server pushing transforms — true bidirectional communication is mandatory.
 
-The realtime server is a traffic cop.
+> [!NOTE]
+> **Key Insight:** The WebSocket sticky routing requirement (each client for a doc_id must connect to the same OT Server node) is a direct consequence of OT's single-ordering-point requirement. It is not a weakness of WebSocket — it is the architecture expressing the correctness constraint of OT.
 
 ---
-
-## Why this networking model works
 
-| Problem             | Solution           |
-| ------------------- | ------------------ |
-| Global users        | Geo DNS + regions  |
-| Millions of sockets | Gateways           |
-| Conflicts           | Doc sharding       |
-| Low latency         | WebSockets         |
-| Failures            | Reconnect + replay |
+### Trade-off 3: Delta Operations vs Full Document Replacement
 
-This network layer is what makes Google Docs feel **alive**.
-
----
+| Dimension | Delta Operations | Full Document Replacement |
+|---|---|---|
+| Payload size | ~200 bytes per op | ~50 KB per keystroke |
+| Concurrent edit safety | OT/CRDT ensures convergence | Last-writer-wins — silent data loss |
+| Network throughput at 1M editors | ~1 GB/sec (manageable) | ~250 TB/sec (catastrophic) |
+| Reconnect catch-up | Replay missed ops from log | Fetch current document snapshot |
 
-## Chapter 3 — How Concurrency Is Solved (OT vs CRDT)
+**Chosen: Delta operations.**
+One-line reason: full document replacement causes both catastrophic bandwidth usage and silent data loss under concurrent edits.
 
 ---
 
-## The real problem: concurrent edits
+### Trade-off 4: At-Least-Once vs Exactly-Once Delivery
 
-Two people edit the same document at the same time.
+| Dimension | At-Least-Once | Exactly-Once |
+|---|---|---|
+| Complexity | Low | High — requires distributed transactions |
+| Risk | Duplicate operations (detectable) | None |
+| Mitigation | Idempotency via client_id + version dedup | Not needed |
+| Latency impact | Minimal | Adds 2PC overhead on critical path |
 
-Initial text:
+**Chosen: At-least-once with idempotency.**
+One-line reason: exactly-once delivery requires 2PC or Saga patterns that add latency on the critical edit path. Deduplicating by `(client_id, version)` on the OT server catches all duplicates at negligible cost.
 
-```text
-HELLO
-```
-
-User A inserts `X` after `H`  
-User B inserts `Y` after `H`
-
-Both are correct.  
-But they happen **at the same time**.
-
-If handled incorrectly:
+> [!NOTE]
+> **Key Insight:** At-least-once delivery is safe in OT because each operation carries a `version` and `client_id`. The OT server detects and drops duplicates in O(1) using a Redis SET with TTL. The operations log in Cassandra provides the durable deduplication record for longer windows.
 
-- One edit is lost
-- Or users see different results
+---
 
-A collaboration system must guarantee:
+## 8. Interview Summary
 
-> All users eventually see the **same document**, with **all edits preserved**.
+### Decision Table
 
----
+| Decision | Problem It Solves | Trade-off Accepted |
+|---|---|---|
+| Delta operations (not file replacement) | Catastrophic bandwidth; concurrent write data loss | Requires conflict resolution algorithm |
+| Operational Transformation (OT) | Concurrent edits produce divergent documents | Requires single central ordering server per document |
+| WebSocket (not HTTP) | Server must push transformed ops to all peers | Sticky routing required; stateful infrastructure |
+| Cassandra for operations log | 5M writes/sec; append-only; partition by doc_id | Eventual consistency on reads (acceptable for log replay) |
+| Redis for cursors/presence with TTL | Cursor data is ephemeral; DB writes would be wasteful | Not durable — cursor state lost on Redis failover (acceptable) |
+| S3 + CDN for document snapshots | Fast initial load for large documents; CDN caches globally | Eventual consistency between snapshot and live ops |
+| Optimistic local apply | Users must feel keystrokes are instant | Client must handle rollback if server rejects op (rare) |
+| Kafka for snapshot pipeline | Decouple snapshot creation from OT critical path | Small lag between committed ops and snapshot availability |
 
-# Part 1 — Operational Transformation (OT)
+### Mental Model Summary
 
-OT was the first large-scale solution used by Google Docs.
+Google Docs is a two-path system. The **fast path** optimistically applies every keystroke locally, ships it over a persistent WebSocket to an OT Server that transforms it against any concurrent operations, then fans it out to all collaborators. The **reliable path** appends every operation to an immutable Cassandra log before the ACK is sent, enabling replay, versioning, and reconnect recovery. The hardest problem is concurrent edit reconciliation: OT requires a single central server to serialize operations and apply transformation functions that adjust character positions across all concurrent operations. Cursor positions are ephemeral and stored in Redis with TTL. Document history is event-sourced: snapshot + operation replay reconstructs any historical state.
 
-The idea is simple:
+### Key Insights Checklist
 
-> Transform operations so they still make sense when applied in a different order.
+- **OT requires a single central server per document** — this is a correctness requirement (consistent operation ordering), not an architectural weakness. Without it, two nodes could transform the same pair of concurrent ops in different orders, producing permanently divergent documents.
+- **The client applies keystrokes locally before the server ACK** — this optimistic apply is what makes Google Docs feel instant. The server transforms and confirms asynchronously; the client reconciles silently.
+- **CRDT's "no central server" advantage is irrelevant here** — Google Docs already has a central server for auth, versioning, and billing. OT is the correct choice when a central ordering point already exists.
+- **Cursor data belongs in Redis, not a database** — it is ephemeral, high-frequency, and has a natural TTL. Storing it in PostgreSQL or Cassandra would add write amplification for data that expires in 30 seconds anyway.
+- **Versioning is event sourcing** — the operations log is the event store; snapshots are materialized views. Restore = nearest snapshot + operation replay. This pattern provides both durable history and efficient current-state access.
 
 ---
-
-## How OT works
-
-There is a **central server**.
 
-All clients send their operations to it.
+# Frontend Notes: Google Docs
 
-The server:
+**Complexity split: Backend 65%, Frontend 35%**
 
-1. Decides the global order
-2. Transforms operations
-3. Broadcasts them
+The backend carries the majority of the design weight: OT engine correctness, operations log durability, WebSocket fan-out, and snapshot management. However, the frontend in Google Docs is significantly more complex than a typical web application. The client runs a partial OT engine, manages an optimistic local document model, handles offline buffering, and renders collaborative cursors in real time. These are non-trivial engineering problems that warrant dedicated discussion in a system design interview.
 
 ---
 
-## OT concurrency example
+## F1: Client-Side OT (The Hardest Frontend Problem)
 
-Initial:
+The client is not a passive receiver of server operations. It runs its own OT transformation engine to reconcile incoming remote operations against locally pending (not-yet-ACKed) operations.
 
-```text
-HELLO
-```
-
-User A:
-
-```text
-Insert X at position 1
-```
+**Why this is necessary:**
 
-User B:
+Suppose the client sends op A to the server. While waiting for the ACK, the user types op B locally. Before the server ACKs A, a remote op C arrives from another collaborator. C was generated against the server's state before A was committed. But locally, the document already has A and B applied. The client must transform C against both A and B before applying it — otherwise C will be applied at the wrong position.
 
-```text
-Insert Y at position 1
-```
+**Client OT State Machine:**
 
-Both send to server.
-
-```text
-User A                 OT Server                   User B
-  |                        |                         |
-  |---- Insert X @ pos 1 -->|                         |
-  |                        |                         |
-  |                        |<-- Insert Y @ pos 1 ----|
-  |                        |                         |
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Sending: User types - generate local op
+    Sending --> Sending: User types - buffer additional ops
+    Sending --> Idle: Server ACK received - confirm committed_version
+    Idle --> Idle: Remote op received - no pending ops - apply directly
+    Sending --> Sending: Remote op received - transform against pending ops - apply
+    Sending --> RollingBack: Server rejects op
+    RollingBack --> Idle: Undo rejected op and all subsequent - re-apply after reconciliation
 ```
-
-Server receives A first.
 
-Applies A:
+**State variables maintained by the client:**
 
-```text
-H X ELLO
 ```
-
-Now B must be **transformed**.
-
-Original B:
-
-```text
-Insert Y at pos 1
+local_doc:       Current in-memory document model (all local ops applied)
+committed_doc:   Last server-confirmed document state
+pending_ops:     Queue of ops sent but not yet ACKed by server
+buffered_ops:    Ops typed while previous op is in-flight
+local_version:   Client's current version count
+server_version:  Last confirmed server version
 ```
 
-But X was inserted at pos 1, so B becomes:
+**Incoming remote op processing:**
 
-```text
-Insert Y at pos 2
 ```
-
-Final:
-
-```text
-H X Y ELLO
+function applyRemoteOp(remote_op):
+    // remote_op was generated against server_version V
+    // pending_ops contains all local ops with version > V
+    transformed = remote_op
+    for each pending_op in pending_ops:
+        transformed = transform(transformed, pending_op)
+    apply(transformed, local_doc)
+    // adjust all collaborator cursors for this operation
+    for each cursor in remote_cursors:
+        cursor.pos = transformPosition(cursor.pos, transformed)
 ```
-
----
-
-## Why OT needs a central server
-
-OT only works if:
-
-- One machine knows the correct order
-- All operations pass through it
-- Transform history is complete
-
-That server is the “truth”.
-
----
-
-## Why OT breaks in the real world
-
-### Offline users
-
-If someone edits offline:
-
-- The server cannot transform their ops
-- When they reconnect, history is missing
-- Merges become incorrect
-
----
-
-### Multi-region systems
-
-If users connect to different data centers:
-
-- Operations arrive in different orders
-- Transformations diverge
-- Documents fork
-
-OT assumes:
-
-> One brain, one timeline
-
-Google Docs has:
-
-> Millions of brains, global timelines
 
----
-
-# Part 2 — CRDT (Conflict-free Replicated Data Types)
-
-CRDT takes a different approach.
-
-Instead of fixing conflicts after they happen,  
-CRDT designs operations so **conflicts cannot happen**.
+> [!NOTE]
+> **Key Insight:** The client OT engine transforms incoming remote ops against the client's pending (unACKed) local ops — not against all local ops. Only unACKed ops are "invisible" to the server. ACKed ops are already reflected in the server's state and thus in the remote op's base version.
 
 ---
-
-## Core idea
-
-CRDT removes positions.
-
-Instead of:
-
-```text
-Insert X at position 5
-```
-
-We do:
-
-```text
-Insert X between ID 17 and ID 23
-```
 
-Every character has a unique ID.
+## F2: Offline Editing
 
----
+Google Docs supports continued editing when the network is unavailable. The client buffers operations locally and synchronizes on reconnect.
 
-## CRDT concurrency example
+**Offline flow:**
 
-Initial:
+```mermaid
+flowchart TD
+    A[User types while offline]
+    B[Operation buffered in IndexedDB]
+    C[Network restored]
+    D[Client reconnects WebSocket]
+    E[Client sends reconnect with last_known_server_version]
+    F[Server sends all ops committed since last_known_server_version]
+    G[Client transforms buffered offline ops against server ops]
+    H[Client sends transformed buffered ops to server]
+    I[Document converges]
 
-```text
-HELLO
-IDs: 10 20 30 40 50
+    A --> B --> C --> D --> E --> F --> G --> H --> I
 ```
-
-User A inserts `X` between 10 and 20 → ID 15  
-User B inserts `Y` between 10 and 20 → ID 16
 
-Now all replicas sort by ID:
+**IndexedDB schema for offline buffer:**
 
-```text
-H(10) X(15) Y(16) E(20) L(30) L(40) O(50)
 ```
-
-Everyone gets the same result.
-
-No transformations.
-No server ordering.
-No conflicts.
-
----
-
-## CRDT concurrency model
-
-```text
-        ┌───────────┐              ┌───────────┐
-        │  User A   │              │  User B   │
-        └─────┬─────┘              └─────┬─────┘
-              │                              │
-              ▼                              ▼
-        ┌───────────┐              ┌───────────┐
-        │  Server 1 │◀────────────▶│  Server 2 │
-        │  (CRDT)   │              │  (CRDT)   │
-        └───────────┘              └───────────┘
-              ▲                              ▲
-              │                              │
-              └────────────── Users send ops ┘
+Store: offline_ops
+  doc_id:     String
+  op:         Object (full operation delta)
+  local_seq:  Number (local ordering)
+  timestamp:  Number
 ```
 
-Each node:
+**Reconnect reconciliation:** On reconnect, the server may have received operations from other collaborators during the offline period. The client's buffered ops must be transformed against all server ops that committed during the offline window. This is the same transform logic as online — the only difference is that the gap between `last_known_server_version` and `current_server_version` may be large.
 
-- Applies operations locally
-- Exchanges them
-- Sorts by ID
-- Converges automatically
+> [!NOTE]
+> **Key Insight:** Offline editing is where CRDT has a natural advantage — CRDTs merge offline changes without a server round-trip. With OT, the server must be involved in reconciling offline ops. For Google Docs (which already has a central server), this is acceptable. The reconnect transform is the same algorithm as normal online operation, just with a larger operation gap.
 
 ---
 
-## Why CRDT handles concurrency better
+## F3: Cursor Rendering
 
-CRDT operations are:
+Rendering collaborative cursors involves three problems: position tracking, color assignment, and position adjustment when remote operations arrive.
 
-- Commutative
-- Associative
-- Idempotent
+**Color assignment:** On WebSocket session join, the server assigns a unique color per `(user_id, doc_id, session)`. The color is consistent across all clients in the session — all users see Alice's cursor as the same color.
 
-This means:
+**Cursor DOM rendering:**
 
 ```
-Apply A then B = Apply B then A
+- Each collaborator's cursor is an absolutely-positioned CSS pseudo-element
+- Cursor position = character offset in the ProseMirror / Quill document model
+- Name label floats above the cursor line (CSS tooltip, hidden after 3s of inactivity)
+- Selection ranges rendered as semi-transparent background color fills
 ```
-
-So:
-
-- Message order does not matter
-- Network delays do not matter
-- Offline does not matter
-
----
-
-## Why Google Docs still uses one writer per document
 
-CRDT allows multiple writers, but Google Docs chooses:
+**Cursor position adjustment on remote op:**
 
-> One write authority per document shard
-
-Why:
-
-- Kafka partitions require total order
-- Snapshots must be deterministic
-- Permission checks must be centralized
-- Backpressure must be enforced
-
-CRDT removes conflicts  
-It does NOT remove the need for ordering, security, or durability.
-
----
-
-## Why Google Docs moved from OT to CRDT
-
-| Requirement     | OT  | CRDT |
-| --------------- | --- | ---- |
-| Offline editing | ❌  | ✅   |
-| Mobile devices  | ❌  | ✅   |
-| Multi-region    | ❌  | ✅   |
-| Fault tolerance | ❌  | ✅   |
-| 100+ editors    | ❌  | ✅   |
-
-CRDT matches how the internet really works.
-
----
-
-## What comes next?
-
-We can now:
-
-- Send operations
-- Merge them safely
-
-Next we must ensure:
-
-> We never lose them
-
-That leads to **event logs, snapshots, and version history**.
-
----
-
-## Chapter 4 — Event Logs, Persistence, and Version History
-
----
-
-## Why persistence is hard in Google Docs
-
-In normal apps:
-
-- You save a file
-- It overwrites the old one
-
-In Google Docs:
-
-- Millions of users edit
-- Hundreds of versions per minute
-- People go offline
-- Servers crash
-
-We need:
-
-> A way to never lose a single keystroke.
-
-This requires a very different storage model.
-
----
-
-## The fundamental idea
-
-We do **not** store the document.
-
-We store the **history of changes**.
-
-This is called **event sourcing**.
-
-```text
-Document = Snapshot + Operation Log
 ```
-
----
-
-## What is an event log?
-
-Every edit becomes an **immutable event**.
-
-Example:
-
-```json
-{ "docId": "d1", "op": "insert", "char": "A", "id": "u7-51" }
+function adjustCursorsForOp(op, cursors):
+    for each (user_id, cursor) in cursors:
+        if op.type == "insert" and cursor.pos >= op.pos:
+            cursor.pos += 1
+        if op.type == "delete" and cursor.pos > op.pos:
+            cursor.pos -= 1
+        if op.type == "delete" and cursor.pos == op.pos:
+            cursor.pos = op.pos   // cursor collapses to deletion point
 ```
-
-These events are appended to a distributed log.
-
-Once written:
-
-- They are never changed
-- Never deleted
-- Never reordered
-
----
-
-## Why clients never read from Kafka
 
-Kafka is:
+**Debouncing:** Cursor position updates are debounced to 50ms before sending to the server. At 5 collaborators each moving cursors continuously, this keeps cursor broadcast traffic under 100 messages/sec — negligible compared to operation traffic.
 
-- Write-optimized
-- Not indexed
-- Not designed for random reads
-
-So users always read:
-
-- Snapshots from CDN / S3
-- Then tail Kafka from an offset
-
-They never query Kafka directly.
-
 ---
 
-## Why we need a log
+## F4: Optimistic UI and Rollback
 
-The event log gives us:
+**Optimistic apply** means the client mutates the local document model immediately on every keystroke, without waiting for the server to ACK the operation. The user sees their change reflected in under 1ms (local JS execution) rather than in 50-100ms (network round-trip).
 
-- Durability
-- Version history
-- Crash recovery
-- Offline replay
-- Auditing
+**Rollback (rare):**
 
-It is the **source of truth**.
+The server can reject an operation if:
+- The operation's base version is too old (client was offline too long and the transform gap is unresolvable)
+- The user lost editing permission mid-session
+- A server-side validation failure (e.g., document size limit exceeded)
 
----
+On rejection:
 
-## High-level persistence architecture
-
-```text
-          ┌──────────────────────┐
-          │   Realtime Server     │
-          │   (CRDT Engine)       │
-          └───────────┬──────────┘
-                      │
-                      ▼
-          ┌──────────────────────┐
-          │ Distributed Event Log│
-          │   (Kafka / PubSub)    │
-          └───────────┬──────────┘
-                      │
-              ┌───────┴────────┐
-              │                │
-              ▼                ▼
-    ┌──────────────────┐   ┌──────────────────┐
-    │  Snapshot Store  │   │    Query API     │
-    │   (S3 / GCS)     │   │ (Doc Read Layer) │
-    └──────────┬──────┘   └──────────────────┘
-               │
-               ▼
-      Fast document loads
 ```
-
----
-
-## What happens when a user types
-
-1. Realtime server merges operation via CRDT
-2. Operation is appended to Event Log
-3. Operation is broadcast to collaborators
-4. Later, snapshot is updated
-
-The log write happens **before** confirmation.
-
-This is a **write-ahead log**.
-
----
-
-## Why not write directly to a database?
-
-Databases are:
-
-- Slow for 10M writes/sec
-- Expensive to scale
-- Hard to replay
+1. Remove rejected op from pending_ops
+2. Undo all local ops applied after the rejected op (in reverse order)
+3. Apply the server's authoritative state
+4. Re-apply any subsequent buffered ops that are still valid
+5. Display subtle "sync error" indicator if reconciliation fails
+```
 
-Logs are:
+In practice, rollback is extremely rare (less than 0.01% of operations). The architecture optimizes for the 99.99% case where the op is accepted and the ACK arrives within 100ms.
 
-- Sequential
-- Append-only
-- Cheap
-- Streamable
-
-This is exactly what Kafka / PubSub is designed for.
-
----
-
-## Snapshots
-
-Replaying from the beginning would be slow.
-
-So periodically:
-
-- The CRDT state is saved
-- The log offset is recorded
-
-```text
-Snapshot = (CRDT State, Log Position)
-```
-
-To load a document:
-
-1. Load snapshot
-2. Replay newer events
-
----
-
-## Version history
-
-Every version is:
-
-> A point in the event log
-
-So “Restore to yesterday” means:
-
-- Load snapshot
-- Replay up to yesterday’s offset
-
-No special backups needed.
-
----
-
-## What happens if a server crashes?
-
-1. New server loads snapshot
-2. Reads event log
-3. Rebuilds CRDT state
-4. Continues
-
-No data loss.
-
----
-
-## What happens if a data center fails?
-
-Event logs are:
-
-- Replicated
-- Quorum written
-- Geo-distributed
-
-So another region can:
-
-- Read the same log
-- Rebuild documents
-- Continue service
-
----
-
-## Why this model is unbeatable
-
-| Requirement  | How it is achieved    |
-| ------------ | --------------------- |
-| No data loss | Write-ahead event log |
-| History      | Log replay            |
-| Undo         | Log replay            |
-| Audit        | Log inspection        |
-| Recovery     | Snapshot + log        |
-
----
-
-## What comes next?
-
-We can now:
-
-- Edit safely
-- Merge safely
-- Store safely
-
-Next we must answer:
-
-> How do we let billions of users find, load, and share documents?
-
-That is the **metadata and indexing layer**.
-
----
-
-## Chapter 5 — The Edit → Merge → Store Pipeline
-
----
-
-## What really happens when you press a key?
-
-When you type a single letter in Google Docs, it does **not** go straight into a file.
-
-It passes through **three major systems**:
-
-```text
-Edit → Merge → Store
-```
-
-Understanding this pipeline explains almost everything about Google Docs.
-
----
-
-## High-level pipeline
-
-```text
-User Browser
-     |
-     |  WebSocket
-     v
-+--------------------+
-|  Realtime Server   |
-| (Connection Layer) |
-+---------+----------+
-          |
-          v
-+--------------------+
-|    CRDT Engine     |
-| (Merge & Ordering) |
-+---------+----------+
-          |
-          v
-+--------------------+
-|  Realtime Server   |
-| (Merged State)     |
-+---------+----------+
-          |
-          v
-+--------------------+
-|    Event Log       |
-|  (Kafka / PubSub)  |
-+---------+----------+
-          |
-          v
-+--------------------+
-|   Snapshot Store   |
-|     (S3 / GCS)     |
-+--------------------+
-
-          ▲
-          |
-+--------------------+
-|   WebSocket        |
-+--------------------+
-          |
-     User Browser
-```
-
-Let’s walk through this slowly.
-
----
-
-## Step 1 — Edit (Client)
-
-When a user types:
-
-```text
-Hello → HelloA
-```
-
-The browser:
-
-- Computes the difference
-- Converts it into an operation
-
-Example:
-
-```json
-{
-  "type": "insert",
-  "char": "A",
-  "between": ["id_40", "id_41"]
-}
-```
-
-It does **not** send full text.
-
-It sends intent.
-
----
-
-## Step 2 — Send (Network)
-
-The operation is sent over WebSocket.
-
-Why WebSocket?
-
-- No handshake
-- Low latency
-- Server push enabled
-
-The server receives the operation in milliseconds.
-
----
-
-## Step 3 — Merge (CRDT Engine)
-
-The realtime server:
-
-- Passes the operation to the CRDT engine
-- The CRDT assigns IDs
-- Integrates it into the document state
-
-This ensures:
-
-- No conflicts
-- Correct ordering
-- Convergence
-
----
-
-## Step 4 — Broadcast
-
-The merged operation is:
-
-- Sent to all connected users
-- Applied locally in their CRDT
-
-Everyone sees the same update.
-
----
-
-## Step 5 — Store (Event Log)
-
-Before the server acknowledges success:
-
-- The operation is appended to the event log
-
-This guarantees:
-
-> If the server crashes after this, the change still exists.
-
-This is called **write-ahead logging**.
-
----
-
-## Step 6 — Snapshotting
-
-Periodically:
-
-- The CRDT state is saved
-- The log offset is recorded
-
-This makes loading fast.
-
----
-
-## Why this design is safe
-
-| Failure      | What happens     |
-| ------------ | ---------------- |
-| Server crash | Log replays      |
-| Client crash | Local ops resend |
-| Network cut  | CRDT merges      |
-| Region loss  | Geo log replay   |
-
-No single point can destroy data.
-
----
-
-## Why this design is fast
-
-- CRDT runs in memory
-- No database in hot path
-- Only sequential log writes
-- WebSockets avoid overhead
-
----
-
-## Why this design scales
-
-- Documents are sharded
-- Logs are partitioned
-- CRDTs converge
-- No locks
-
----
-
-## What comes next?
-
-We can now:
-
-- Edit
-- Merge
-- Persist
-
-Next we need to understand:
-
-> How do we find documents, control access, and share them?
-
-That is the **metadata and permission system**.
-
----
-
-## Chapter 6 — Metadata, Permissions, and Sharing (Deep Dive)
-
----
-
-## Why metadata is a first-class system
-
-Google Docs is not just a text editor.
-
-It is also:
-
-- A file system
-- A collaboration platform
-- A security system
-
-That means the system must always answer:
-
-- Who owns this document?
-- Who is allowed to view it?
-- Who is allowed to edit it?
-- Who shared it with whom?
-- Where does it appear in folders?
-- Can it be found by search?
-
-This data must be:
-
-- Correct
-- Immediately consistent
-- Never lost
-
-So it **cannot** live in CRDTs or event logs.
-
----
-
-## Two very different types of data
-
-| Data Type        | Examples                  | Requirements                           |
-| ---------------- | ------------------------- | -------------------------------------- |
-| Document content | Text, formatting, edits   | Eventually consistent, high-throughput |
-| Metadata         | Owner, title, permissions | Strongly consistent, transactional     |
-
-These must be stored separately.
-
----
-
-## High-level architecture
-
-```text
-                 ┌──────────────────┐
-                 │      Docs UI      │
-                 │ (Web / Mobile App)│
-                 └─────────┬────────┘
-                           │
-                           ▼
-                 ┌──────────────────┐
-                 │   Metadata API    │
-                 │ (Docs, Folders,   │
-                 │  Sharing)         │
-                 └───────┬───────┬───┘
-                         │       │
-                         │       │
-                         ▼       ▼
-              ┌────────────────┐ ┌──────────────────┐
-              │  Metadata DB    │ │  Permission       │
-              │ (Docs, Owners,  │ │  Engine           │
-              │  Folders)       │ │ (Access Control)  │
-              └────────────────┘ └─────────┬────────┘
-                                             │
-                                             ▼
-                                   ┌──────────────────┐
-                                   │   Metadata DB     │
-                                   │ (Permission Rows)│
-                                   └──────────────────┘
-
-                           ┌──────────────────┐
-                           │   Search Index    │
-                           │ (ElasticSearch)   │
-                           └─────────┬────────┘
-                                     ▲
-                                     │
-                           Metadata API updates
-
-            ┌──────────────────┐
-            │ Realtime Server   │
-            │ (CRDT, Live Edits)│
-            └─────────┬────────┘
-                      │
-                      ▼
-            ┌──────────────────┐
-            │ Permission Engine │
-            │ (Edit / View?)    │
-            └──────────────────┘
-```
-
----
-
-## Metadata database
-
-This is a globally consistent database (like Spanner).
-
-It stores tables such as:
-
-```text
-Documents
----------
-doc_id (PK)
-owner_id
-title
-created_at
-last_modified
-folder_id
-is_deleted
-
-Permissions
-------------
-doc_id
-user_id
-role   (owner, editor, commenter, viewer)
-granted_by
-granted_at
-```
-
-This database:
-
-- Supports transactions
-- Supports queries
-- Is strongly consistent
-
----
-
-## Why strong consistency is mandatory
-
-If Alice removes Bob’s access:
-
-- Bob must lose access immediately
-- Even if he has the document open
-
-Eventual consistency would allow security leaks.
-
-So permissions always come from this database.
-
----
-
-## How sharing works (step-by-step)
-
-Alice clicks **Share** → adds Bob as editor.
-
-```text
-Alice                    UI                 Metadata API            Metadata DB
-  |                       |                       |                       |
-  |---- Add Bob ---------->|                       |                       |
-  |                       |                       |                       |
-  |                       |---- grant(doc,Bob) --->|                       |
-  |                       |        (editor)       |                       |
-  |                       |                       |---- begin txn ------>|
-  |                       |                       |---- insert permission|
-  |                       |                       |---- commit ---------->|
-  |                       |                       |                       |
-  |                       |<------ success -------|                       |
-  |<------ UI update -----|                       |                       |
-```
-
-The document itself is not touched.
-
----
-
-## How access is enforced in realtime editing
-
-When Bob opens a document:
-
-```text
-Bob                    Gateway            Realtime Server        Permission Engine        Metadata DB
- |                        |                       |                      |                      |
- |---- Open doc --------->|                       |                      |                      |
- |                        |---- Connect Bob ----->|                      |                      |
- |                        |                       |---- Can Bob edit? -->|                      |
- |                        |                       |                      |---- Query ---------->|
- |                        |                       |                      |<--- Role = Editor ---|
- |                        |                       |<--- Allow edit ------|                      |
- |                        |                       |                      |                      |
-```
-
-If Bob is only a viewer, the CRDT engine will refuse his operations.
-
----
-
-## Why permissions are NOT in CRDT
-
-CRDTs:
-
-- Are eventually consistent
-- Allow replicas to diverge temporarily
-
-Permissions must be:
-
-- Immediate
-- Global
-- Unambiguous
-
-So they are enforced outside the CRDT layer.
-
----
-
-## Folder & file listing
-
-When you open Google Docs home page:
-
-1. UI calls Metadata API
-2. API queries:
-   - Documents where user has permission
-   - Sorted by last_modified
-3. Results returned
-
-This is fast because:
-
-- It uses indexed tables
-- Not event logs
-- Not CRDTs
-
----
-
-## Search
-
-Metadata DB feeds a search index.
-
-So when you search:
-
-- You query the index
-- It returns doc_ids
-- Permissions are rechecked before showing results
-
-This prevents information leaks.
-
----
-
-## What we have achieved
-
-We now have:
-
-| Layer             | Solves                |
-| ----------------- | --------------------- |
-| CRDT + Logs       | Editing and history   |
-| Metadata DB       | Ownership and sharing |
-| Permission Engine | Security              |
-| Search Index      | Discovery             |
-
-Each system does one job well.
-
----
-
-## What comes next?
-
-Now the system works — but it must be fast for users everywhere.
-
-Next we design:
-
-> Caching, CDN, and performance optimization
-
----
-
-## Chapter 7 — Caching & Performance
-
----
-
-## Why caching is critical in Google Docs
-
-Google Docs has:
-
-- Billions of documents
-- Millions of active users
-- People opening the same docs repeatedly
-
-Without caching:
-
-- Every open would hit storage
-- Latency would be high
-- Costs would explode
-
-Caching makes the system:
-
-- Fast
-- Cheap
-- Scalable
-
----
-
-## What needs to be cached?
-
-Three very different things:
-
-| Data               | Why                          |
-| ------------------ | ---------------------------- |
-| Document snapshots | Large, frequently opened     |
-| Metadata           | Needed for listing & sharing |
-| Permissions        | Needed on every access       |
-
-Each requires a different caching strategy.
-
----
-
-## High-level caching architecture
-
-```text
-        ┌──────────┐
-        │  User    │
-        └────┬─────┘
-             │
-             ▼
-     ┌────────────────┐
-     │   Global CDN    │
-     │ (Snapshots, JS) │
-     └───────┬────────┘
-             │
-             ▼
-     ┌────────────────┐
-     │ WebSocket Gate  │
-     │ (Auth + Route)  │
-     └───────┬────────┘
-             │
-             ▼
-     ┌────────────────┐
-     │ Realtime Server │
-     │ (CRDT + Docs)   │
-     └───────┬────────┘
-             │
-      ┌──────┴───────┐
-      │              │
-      ▼              ▼
-┌──────────────┐  ┌────────────────┐
-│ Redis Cache  │  │   Event Log     │
-│ (Metadata,   │  │ (Kafka / PubSub)│
-│ Permissions) │  └────────────────┘
-└───────┬──────┘
-        │
-        ▼
-┌────────────────┐
-│  Metadata DB   │
-│ (Spanner / SQL)│
-└────────────────┘
-```
-
----
-
-## CDN for static and snapshot data
-
-When you open a large doc:
-
-- The initial snapshot is fetched
-- This snapshot rarely changes
-
-So it is cached in a global CDN:
-
-- Near the user
-- Extremely fast
-- Very cheap
-
-Only realtime edits go to servers.
-
----
-
-## What happens when a user opens a document
-
-1. UI calls Metadata API → permissions
-2. UI downloads snapshot from CDN
-3. UI opens WebSocket to Realtime Server
-4. Server sends Kafka tail ops
-5. CRDT merges snapshot + ops
-6. Live collaboration begins
-
----
-
-## Redis for hot metadata
-
-Metadata like:
-
-- Titles
-- Owner
-- Last modified
-- Folder
-
-Is stored in Redis.
-
-So listing documents does not hit Spanner every time.
-
-Cache invalidation happens when:
-
-- Sharing changes
-- Title changes
-- Folder moves
-
----
-
-## Permission cache
-
-Every edit requires:
-
-> Is this user allowed to do this?
-
-Permissions are cached in memory and Redis.
-
-But:
-
-- Writes go to DB
-- Cache is invalidated immediately
-
-This ensures:
-
-- Security
-- Low latency
-
----
-
-## Realtime document cache
-
-Realtime servers keep:
-
-- CRDT state in memory
-- Recently used documents hot
-
-So active documents never touch disk.
-
----
-
-## Why write data is not cached
-
-Operations are:
-
-- Write-heavy
-- Append-only
-- Sequential
-
-Caching writes adds:
-
-- Complexity
-- Risk of data loss
-
-So writes always go directly to the event log.
-
----
-
-## What happens when cache misses?
-
-If:
-
-- Snapshot not in CDN
-- Metadata not in Redis
-
-Then:
-
-- Data is fetched from storage
-- Cache is filled
-- Next user is fast
-
----
-
-## Why this works
-
-| Layer          | Benefit           |
-| -------------- | ----------------- |
-| CDN            | Fast initial load |
-| Redis          | Fast listings     |
-| In-memory CRDT | Real-time speed   |
-| Event log      | Durable writes    |
-
----
-
-## What comes next?
-
-Now that reads are fast and writes are safe, we can look at:
-
-> How the browser works  
-> How it stores data  
-> How it syncs
-
-That is the **Frontend Architecture**.
-
----
-
-## Chapter 8 — Frontend, Offline Storage, and Sync Engine
-
----
-
-## Frontend Component Architecture
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│                         GOOGLE DOCS APP                        │
-├───────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                 Document Editor Module                  │  │
-│  │ ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │  │
-│  │ │ Text Canvas  │  │ Formatting   │  │ Cursor Layer │   │  │
-│  │ │              │  │ Toolbar      │  │              │   │  │
-│  │ │ - Paragraphs │  │ - Bold/Italic │  │ - Carets     │   │  │
-│  │ │ - Tables     │  │ - Lists       │  │ - Colors     │   │  │
-│  │ │ - Images     │  │ - Headers     │  │ - Names      │   │  │
-│  │ └──────────────┘  └──────────────┘  └──────────────┘   │  │
-│  └─────────────────────────────────────────────────────────┘  │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                Collaboration Module                     │  │
-│  │ ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │  │
-│  │ │ CRDT Engine  │  │ Presence     │  │ Commenting   │   │  │
-│  │ │              │  │ Service      │  │ & Suggest   │   │  │
-│  │ │ - Insert     │  │ - Online users│  │ - Threads   │   │  │
-│  │ │ - Delete     │  │ - Cursors     │  │ - Mentions  │   │  │
-│  │ │ - Merge      │  │               │  │             │   │  │
-│  │ └──────────────┘  └──────────────┘  └──────────────┘   │  │
-│  └─────────────────────────────────────────────────────────┘  │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │               Offline & Sync Module                     │  │
-│  │ ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │  │
-│  │ │ IndexedDB    │  │ Local Op Log │  │ Sync Manager │   │  │
-│  │ │              │  │              │  │              │   │  │
-│  │ │ - Snapshot   │  │ - Pending Ops│  │ - Retry      │   │  │
-│  │ │ - CRDT State │  │ - Acked Ops   │  │ - Dedup      │   │  │
-│  │ └──────────────┘  └──────────────┘  └──────────────┘   │  │
-│  └─────────────────────────────────────────────────────────┘  │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │                Networking Layer                         │  │
-│  │ ┌──────────────┐  ┌──────────────┐                     │  │
-│  │ │ WebSocket    │  │ Auth Token   │                     │  │
-│  │ │ Client       │  │ Manager      │                     │  │
-│  │ └──────────────┘  └──────────────┘                     │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────┘
-```
-
-## Why frontend must behave like a database
-
-In Google Docs, the browser must guarantee:
-
-> “If the user types something, it is never lost.”
-
-The server might be unreachable.
-The tab might crash.
-The laptop might shut down.
-
-So the browser must be able to:
-
-- Persist data locally
-- Recover after crashes
-- Sync later
-- Merge safely
-
-This turns the browser into a **distributed database node**.
-
----
-
-## What the browser stores locally
-
-The browser uses **IndexedDB** (or similar) for persistence.
-
-We store:
-
-```text
-LocalSnapshot
--------------
-docId
-crdtStateBlob
-lastSyncedLogOffset
-
-LocalOperations
-----------------
-opId (PK)
-docId
-operationBlob
-timestamp
-sentToServer (boolean)
-```
-
-This is a **mini write-ahead log**.
-
----
-
-## High-level frontend architecture
-
-```text
-                ┌──────────────────┐
-                │     Editor UI     │
-                │  (Typing, Cursor) │
-                └─────────┬────────┘
-                          │
-                          ▼
-                ┌──────────────────┐
-                │    CRDT Engine    │
-                │ (Local Merge)     │
-                └───────┬───────┬──┘
-                        │       │
-                        │       │
-                        ▼       ▼
-              ┌────────────────┐ ┌────────────────────┐
-              │ Local Op Log    │ │  Local Snapshot     │
-              │ (Pending Ops)  │ │ (CRDT State)        │
-              └───────┬────────┘ └──────────┬─────────┘
-                      │                     │
-                      ▼                     ▼
-                ┌────────────────────────────────┐
-                │          IndexedDB              │
-                │ (Persistent Browser Storage)   │
-                └─────────────┬──────────────────┘
-                              │
-                              ▼
-                     ┌──────────────────┐
-                     │   Sync Engine     │
-                     │ (Retry, Dedup)    │
-                     └───────┬──────────┘
-                             │
-                             ▼
-                     ┌──────────────────┐
-                     │   WebSocket       │
-                     │ (Server Link)     │
-                     └──────────────────┘
-```
-
----
-
-## What happens when you type
-
-1. User types `A`
-2. CRDT creates an operation
-3. CRDT applies it locally
-4. UI updates immediately
-5. Operation is written to `LocalOperations` in IndexedDB
-6. If online, Sync Engine sends it to server
-
-Nothing waits for the network.
-
----
-
-## What happens when the network drops
-
-WebSocket disconnects.
-
-From now on:
-
-- CRDT continues generating operations
-- Each operation is appended to `LocalOperations`
-- `sentToServer = false`
-
-The document keeps evolving locally.
-
-No data is lost.
-
----
-
-## What happens when the browser crashes
-
-Because every operation is in IndexedDB:
-
-- Nothing disappears
-
-On reload:
-
-1. Snapshot is loaded
-2. CRDT state is restored
-3. Unsynced ops are replayed
-4. UI becomes exactly what it was
-
----
-
-## What happens when the network comes back
-
-The Sync Engine runs this loop:
-
-```text
-for each operation where sentToServer = false:
-    send to server
-    wait for ack
-    mark sentToServer = true
-```
-
-At the same time:
-
-- Server sends any missing remote operations
-- CRDT merges both streams
-
----
-
-## How duplicates are avoided
-
-Every operation has a globally unique `opId`.
-
-The server:
-
-- Stores opIds in the event log
-- Rejects duplicates
-
-So retries are safe.
-
----
-
-## What if server is ahead of client
-
-If server has newer operations:
-
-- It streams them
-- CRDT merges them
-- Local UI updates
-
-If client is ahead:
-
-- Client streams local ops
-- Server merges them
-
-Both sides converge.
-
----
-
-## Why this is safe
-
-This is a **two-phase sync**:
-
-| Phase     | Purpose                |
-| --------- | ---------------------- |
-| Local log | Never lose user edits  |
-| Event log | Global durability      |
-| CRDT      | Merge without conflict |
-
-Even if:
-
-- Browser crashes
-- Network flaps
-- Server restarts
-
-All edits survive.
-
----
-
-## Why this scales
-
-Millions of browsers:
-
-- Do their own logging
-- Do their own merging
-- Do their own caching
-
-The backend only coordinates.
-
-This is why Google Docs can support billions of users.
-
----
-
-## What comes next?
-
-Now that we understand the browser and offline sync, we can finally define:
-
-> The backend databases  
-> Which DB stores what  
-> Why they are chosen
-
-That is **Backend Data Architecture**.
-
----
-
-## APIs & Cursor/Presence System
-
----
-
-# Part 1 — API Contract Tables
-
-These are the **real interfaces** between:
-
-- Frontend
-- Gateways
-- Metadata
-- Realtime servers
-
----
-
-## 1️⃣ Authentication
-
-| Method | Endpoint      | Description          |
-| ------ | ------------- | -------------------- |
-| POST   | /auth/login   | Login & get JWT      |
-| POST   | /auth/refresh | Refresh access token |
-| GET    | /auth/me      | Get user profile     |
-
----
-
-## 2️⃣ Document Metadata APIs
-
-| Method | Endpoint       | Description           |
-| ------ | -------------- | --------------------- |
-| POST   | /docs          | Create new document   |
-| GET    | /docs/{docId}  | Get document metadata |
-| GET    | /docs?folder=X | List documents        |
-| PATCH  | /docs/{docId}  | Rename / move         |
-| DELETE | /docs/{docId}  | Soft delete           |
-
----
-
-## 3️⃣ Sharing & Permissions
-
-| Method | Endpoint                     | Description      |
-| ------ | ---------------------------- | ---------------- |
-| POST   | /docs/{docId}/share          | Add collaborator |
-| GET    | /docs/{docId}/permissions    | List users       |
-| DELETE | /docs/{docId}/share/{userId} | Remove access    |
-
----
-
-## 4️⃣ Realtime WebSocket Protocol
-
-WebSocket URL:
-
-```
-wss://docs.example.com/ws?docId=123&token=JWT
-```
-
-Messages:
-
-| Type   | Payload        | Purpose           |
-| ------ | -------------- | ----------------- |
-| JOIN   | userId         | Join document     |
-| OP     | CRDT operation | Edit              |
-| CURSOR | {pos, color}   | Cursor update     |
-| ACK    | opId           | Confirm operation |
-| SNAP   | snapshot       | Initial state     |
-| PING   | —              | Keep alive        |
-
----
-
-# Part 2 — Cursor & Presence System
-
----
-
-## Why cursors are critical
-
-Without seeing other users:
-
-- People type over each other
-- Collaboration feels chaotic
-
-So every user must see:
-
-- Where others are typing
-- Their selection range
-- Their name & color
-
-This is **not part of the document text**.
-
----
-
-## Presence vs Cursor vs Edits
-
-Google Docs runs **three independent realtime streams**:
-
-| Stream   | What it carries      | Durability |
-| -------- | -------------------- | ---------- |
-| Edits    | CRDT operations      | Kafka      |
-| Cursors  | Selection, caret     | Memory     |
-| Presence | Online/offline state | Memory     |
-
-Why they are separated:
-
-- **Edits** must survive crashes → go to Kafka
-- **Cursors** are ephemeral → never stored
-- **Presence** is heartbeat-based → auto expires
-
-This prevents:
-
-- Kafka overload
-- Replaying cursor junk
-- Wasting bandwidth on presence history
-
----
-
-## Cursor data model
-
-Each user has:
-
-```json
-{
-  "userId": "u7",
-  "docId": "d1",
-  "anchorId": "char_512",
-  "focusId": "char_520",
-  "color": "#4CAF50",
-  "lastSeen": 1712345678
-}
-```
-
-We store:
-
-- Which CRDT elements the cursor spans
-- Not numeric positions
-
-This avoids shifting problems.
-
----
-
-## Cursor update flow
-
-```text
-User                     Realtime Server               Other Users
-  |                              |                            |
-  |---- CURSOR {anchor,focus} --->|                            |
-  |                              |---- Broadcast cursor ----->|
-  |                              |                            |
-```
-
-This is:
-
-- Not written to Kafka
-- Not stored in DB
-- Only in memory
-
-Because:
-
-> Cursor state is ephemeral.
-
----
-
-## How CRDT prevents overwrite
-
-If Alice and Bob both type:
-
-- CRDT assigns unique IDs
-- Characters never overwrite
-- Cursors move relative to IDs
-
-So:
-
-- Even if Bob types inside Alice’s selection
-- Both changes survive
-
----
-
-## How UI uses cursor data
-
-The frontend:
-
-- Maps CRDT IDs → screen positions
-- Renders colored carets
-- Shows name tags
-
-When text shifts:
-
-- CRDT updates mapping
-- Cursor moves visually
-
----
-
-## Why this works
-
-| Problem                  | Solution            |
-| ------------------------ | ------------------- |
-| Two users type same spot | CRDT IDs            |
-| Cursor jumps             | Anchor IDs          |
-| Network delay            | Independent cursors |
-| Performance              | No persistence      |
-
----
-
-## Chapter 9 — Backend Storage: How Every Keystroke Is Stored Forever
-
----
-
-## Backend Component Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    GOOGLE DOCS BACKEND                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │            API & Authentication Layer                │   │
-│  │  - OAuth2                                           │   │
-│  │  - JWT Validation                                   │   │
-│  │  - Rate Limiting                                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │          WebSocket Gateway Layer                     │   │
-│  │  - Connection mgmt                                  │   │
-│  │  - Geo routing                                      │   │
-│  │  - Doc sharding                                     │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │        Realtime Collaboration Servers                │   │
-│  │  - CRDT Engine                                      │   │
-│  │  - In-memory Doc State                               │   │
-│  │  - Fan-out                                          │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │           Persistence Layer                          │   │
-│  │  ┌────────────┐   ┌────────────┐   ┌─────────────┐ │   │
-│  │  │ Kafka      │   │ Snapshot DB│   │ PostgreSQL  │ │   │
-│  │  │ (Ops Log)  │   │ (S3/GCS)    │   │ (Metadata)  │ │   │
-│  │  └────────────┘   └────────────┘   └─────────────┘ │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │         Search & Indexing                            │   │
-│  │  - Elasticsearch                                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Why storage is not just “save to database”
-
-In Google Docs, we do not save files.
-
-We save:
-
-- Millions of keystrokes
-- From millions of users
-- In real time
-- With full history
-- With zero data loss
-
-This creates three fundamentally different storage problems:
-
-| Type          | Example                          |
-| ------------- | -------------------------------- |
-| Transactional | Who owns this doc?               |
-| Event-based   | User typed “A”                   |
-| State-based   | What does the doc look like now? |
-
-One database cannot do all three well.
-
-So we split them.
-
----
-
-## The three storage layers
-
-```text
-        ┌──────────────────┐
-        │  Realtime Server │
-        │ (CRDT + Live Ops)│
-        └─────────┬────────┘
-                  │
-                  ▼
-        ┌──────────────────┐
-        │  Operation Log   │
-        │ (Kafka / PubSub) │
-        └─────────┬────────┘
-                  │
-                  ▼
-        ┌──────────────────┐
-        │ Snapshot Store   │
-        │   (S3 / GCS)     │
-        └──────────────────┘
-
-        ┌──────────────────┐
-        │  Metadata Store  │
-        │ (Docs, Users,    │
-        │  Permissions)   │
-        └─────────┬────────┘
-                  │
-                  ▼
-        ┌──────────────────┐
-        │   Search Index   │
-        │ (ElasticSearch)  │
-        └──────────────────┘
-```
-
-Each layer solves a different problem.
-
----
-
-## Layer 1 — Metadata Store (Who can access what?)
-
-This stores:
-
-- Document titles
-- Owners
-- Sharing
-- Folder structure
-
-These are:
-
-- Small
-- Frequently queried
-- Must be correct
-
-This data behaves like:
-
-> A file system
-
-So it needs:
-
-- Transactions
-- Indexes
-- Strong consistency
-
----
-
-## Layer 2 — Operation Log (What changed?)
-
-This stores:
-
-- Every CRDT operation
-- In strict order
-- Forever
-
-This data is:
-
-- Huge
-- Write-heavy
-- Append-only
-- Never updated
-
-This behaves like:
-
-> A video recording of the document
-
----
-
-## Layer 3 — Snapshot Store (What is the current state?)
-
-Replaying 10 million operations would be slow.
-
-So periodically we store:
-
-- The full CRDT state
-- At a certain point in the log
-
-This allows fast loading.
-
----
-
-## How a keystroke is stored
-
-User types `A`.
-
-```text
-User                 Realtime Server            Operation Log           Snapshot Store
-  |                        |                         |                         |
-  |---- Insert "A" ------->|                         |                         |
-  |                        |---- CRDT merge -------->|                         |
-  |                        |                         |                         |
-  |                        |---- Append operation -->|                         |
-  |                        |                         |                         |
-  |<--------- Ack ---------|                         |                         |
-  |                        |                         |---- Periodic snapshot ->|
-  |                        |                         |                         |
-```
-
-The key rule:
-
-> The operation is written to the log before success is confirmed.
-
----
-
-## Why logs are better than databases for edits
-
-If we tried to store operations in a normal database:
-
-| Database     | Problem         |
-| ------------ | --------------- |
-| Updates      | We never update |
-| Indexes      | We never query  |
-| Transactions | We don’t need   |
-| Writes/sec   | Too slow        |
-
-Logs are perfect:
-
-- Sequential
-- Append-only
-- Replicated
-- Replayable
-
----
-
-## How history works
-
-Version history is just:
-
-> Different positions in the log
-
-“Restore yesterday” = replay log until yesterday’s offset.
-
-No backups. No copies.
-
----
-
-## Now map this to real technologies
-
-We implement the three layers using:
-
-| Layer          | Real Tech          |
-| -------------- | ------------------ |
-| Metadata       | PostgreSQL / MySQL |
-| Operation Log  | Kafka              |
-| Snapshot Store | S3 / GCS           |
-| Search Index   | ElasticSearch      |
-
----
-
-## Metadata — PostgreSQL
-
-Schema:
-
-```sql
-Documents(doc_id, owner_id, title, folder_id, last_modified)
-Permissions(doc_id, user_id, role)
-Folders(folder_id, owner_id, name)
-```
-
-This powers:
-
-- Sharing
-- Listing
-- Access control
-
----
-
-## Operation Log — Kafka
-
-Each operation is written to Kafka.
-
-Documents are partitioned by:
-
-```text
-hash(docId)
-```
-
-So:
-
-- All ops for a doc are ordered
-- Writes scale horizontally
-
----
-
-## Snapshot Store — S3
-
-Every few seconds:
-
-- CRDT state is serialized
-- Stored in S3
-
-On load:
-
-- Fetch snapshot
-- Replay Kafka from offset
-
----
-
-## Why this design is unbeatable
-
-| Requirement  | How it is achieved |
-| ------------ | ------------------ |
-| No data loss | Kafka              |
-| Fast load    | S3 snapshots       |
-| History      | Kafka offsets      |
-| Security     | PostgreSQL         |
-| Scale        | Partitioning       |
-
----
-
-Now we have:
-
-- Frontend
-- Networking
-- CRDT
-- Logs
-- Databases
-
-The final step is:
-
-> How do we scale this globally?
-
-That is **Chapter 10 — Sharding, Hot Docs, and Global Scale**.
-
----
-
-## Chapter 10 — Scaling, Sharding, and Hot Documents
-
----
-
-## Why scaling Google Docs is uniquely hard
-
-Most apps scale by:
-
-- Adding more servers
-- Adding more databases
-
-Google Docs cannot do this easily because:
-
-- Many users edit the **same document**
-- That document must have a **single authoritative state**
-
-This creates a **hotspot problem**.
-
----
-
-## How documents are sharded
-
-We shard by `docId`.
-
-```text
-shard = hash(docId) % N
-```
-
-Each shard owns:
-
-- A set of documents
-- Their CRDT state
-- Their active users
-
-This allows horizontal scaling.
-
----
-
-## What happens when a document is hot?
-
-A normal document:
-
-- 1–3 users
-- Few ops per second
-
-A hot document:
-
-- 100+ users
-- Thousands of ops per second
-
-One server might not handle this.
-
----
-
-## Hot document architecture
-
-```text
-        ┌──────────────┐      ┌──────────────┐
-        │    Users     │      │    Users     │
-        └──────┬───────┘      └──────┬───────┘
-               │                         │
-               ▼                         ▼
-        ┌────────────────────────────────────┐
-        │      Primary Realtime Node          │
-        │   (CRDT + Write Authority)          │
-        └───────────────┬────────────────────┘
-                        │
-                        ▼
-                ┌────────────────┐
-                │     Kafka       │
-                │  (Ops Log)      │
-                └────────────────┘
-                        ▲
-                        │
-        ┌────────────────────────────────────┐
-        │          Replica Realtime Node      │
-        │     (Read Fan-out / Mirror)          │
-        └───────────────┬────────────────────┘
-                        │
-                        └──────── Sync ───────┘
-```
-
-Primary handles writes.  
-Replica helps with fan-out.
-
----
-
-## Why we don’t allow multiple writers
-
-If two servers write:
-
-- Order breaks
-- CRDT becomes complex
-- Latency increases
-
-So:
-
-> One writer, many readers
-
----
-
-## Load shedding
-
-If a document is overloaded:
-
-- Typing rate is throttled
-- Operations are batched
-- UI shows “high activity”
-
-This protects the system.
-
----
-
-## Scaling Kafka
-
-Kafka is sharded by `docId`.
-
-So:
-
-- Hot documents use one partition
-- Cold documents use others
-
-Kafka scales linearly.
-
----
-
-## Kafka Hot Partition Protection
-
-If a document becomes extremely hot:
-
-- Its Kafka partition is rate-limited
-- Operations are batched
-- Snapshots are generated more frequently
-- Replica fan-out absorbs read load
-
-This prevents:
-
-- Broker overload
-- Consumer lag explosion
-
----
-
-## Scaling metadata
-
-Postgres is:
-
-- Replicated
-- Read-scaled
-- Cached
-
-Sharing and listing do not hit CRDT servers.
-
----
-
-## Disaster recovery
-
-If a region dies:
-
-- Kafka replicas survive
-- Snapshots are in S3
-- Metadata DB fails over
-
-Docs continue.
-
----
-
-## Why this scales to billions
-
-| Layer    | Scale mechanism  |
-| -------- | ---------------- |
-| Frontend | Local CRDT       |
-| Realtime | Doc sharding     |
-| Logs     | Kafka partitions |
-| Storage  | S3               |
-| Metadata | SQL + replicas   |
-
-Every bottleneck has a horizontal escape hatch.
-
----
-
-## Chapter 11 — Security, Privacy, and Abuse Prevention
-
----
-
-## Why security is existential for Google Docs
-
-Google Docs stores:
-
-- Personal notes
-- Legal contracts
-- Financial data
-- Company secrets
-
-A single bug could expose:
-
-- Millions of private documents
-
-So security is not optional. It is built into every layer.
-
----
-
-## The threat model
-
-We must defend against:
-
-| Threat              | Example                                |
-| ------------------- | -------------------------------------- |
-| Unauthorized access | Someone opens a doc without permission |
-| Token theft         | Session hijacking                      |
-| Replay attacks      | Resending old operations               |
-| Malicious edits     | Injecting fake CRDT ops                |
-| Insider abuse       | Staff accessing private docs           |
-
----
-
-## Identity & Authentication
-
-All users authenticate via:
-
-- OAuth2
-- Short-lived access tokens
-
-Tokens are:
-
-- Signed
-- Time-limited
-- Bound to devices
-
-WebSocket connections require valid tokens.
-
----
-
-## Authorization flow
-
-```text
-User                    Gateway               Realtime Server        Permission Engine
-  |                        |                       |                        |
-  |---- Open WebSocket --->|                       |                        |
-  |        + token         |                       |                        |
-  |                        |---- Validate token -->|                        |
-  |                        |                       |                        |
-  |                        |---- Connect user ---->|                        |
-  |                        |                       |---- Can edit doc? ---->|
-  |                        |                       |<--- Allow / Deny ------|
-  |                        |                       |                        |
-```
-
-Permissions are checked:
-
-- On connect
-- On every operation
-
----
-
-## Why permissions are not cached blindly
-
-Caching permissions too aggressively risks:
-
-- A user keeping access after removal
-
-So:
-
-- Permissions have short TTLs
-- Revocations are pushed to servers
-
----
-
-## Operation-level security
-
-Every CRDT operation includes:
-
-- userId
-- docId
-- opId
-
-Server verifies:
-
-- Sender matches token
-- User has edit rights
-- opId is new
-
-This prevents:
-
-- Spoofing
-- Replay
-- Injection
-
----
-
-## Data encryption
-
-| Layer            | Encryption        |
-| ---------------- | ----------------- |
-| Browser → Server | TLS               |
-| Kafka            | Encrypted at rest |
-| S3               | Encrypted         |
-| PostgreSQL       | Encrypted         |
-
-Even Google engineers cannot see plaintext easily.
-
----
-
-## Chapter 12 — Interview-Style Deep Dives
-
----
-
-## 1️⃣ How do you guarantee no data loss?
-
-We use **three layers of durability**:
-
-| Layer             | What it protects   |
-| ----------------- | ------------------ |
-| Local browser log | Offline & crashes  |
-| Kafka             | Server crashes     |
-| S3 snapshots      | Long-term recovery |
-
-If any layer fails, another can replay.
-
----
-
-## 2️⃣ What if Kafka loses a partition?
-
-Kafka runs with:
-
-- Replication
-- Quorum writes
-
-So:
-
-- Data exists on multiple nodes
-- Leader election happens
-- Realtime servers reconnect
-
-No operations are lost.
-
----
-
-## 3️⃣ What if two regions both get edits?
-
-CRDT guarantees:
-
-- Order doesn’t matter
-- Merges are deterministic
-- Replicas converge
-
-This allows:
-
-- Active-active regions
-- Global collaboration
-
----
-
-## 4️⃣ How do you handle 1,000 people editing one doc?
-
-We:
-
-- Use one primary realtime server
-- Add fan-out replicas
-- Batch operations
-- Throttle abusive users
-
-CRDT still keeps state consistent.
-
----
-
-## 5️⃣ How do you rollback a document?
-
-We:
-
-- Load a snapshot
-- Replay Kafka up to old offset
-- Publish new CRDT state
-
-This is instant and safe.
-
----
-
-## 6️⃣ What happens if a realtime server crashes?
-
-1. Users reconnect
-2. New server loads snapshot
-3. Replays Kafka
-4. CRDT state rebuilt
-
-No data loss.
-
----
-
-## 7️⃣ Why not store full text?
-
-Because:
-
-- Too slow
-- No history
-- Conflicts overwrite data
-
-Operations + logs are superior.
-
----
-
-## 8️⃣ How do you keep latency low globally?
-
-- Geo routing
-- CDN snapshots
-- WebSockets
-- Local CRDT
-
-The hot path never touches databases.
-
----
-
-## 9️⃣ How do you handle schema changes?
-
-Operations are versioned.
-
-CRDT engine:
-
-- Knows how to apply old ops
-- Can migrate state
-
-This allows zero-downtime upgrades.
-
----
-
-## 🔟 Why is this design better than locking?
-
-Locks:
-
-- Block users
-- Fail offline
-- Break under latency
-
-CRDT:
-
-- Never blocks
-- Always merges
-- Scales globally
-
----
+> [!NOTE]
+> **Key Insight:** Optimistic UI requires a local undo stack that is separate from the user-facing Ctrl+Z undo history. The internal rollback stack tracks unACKed ops for reconciliation purposes. The user-facing undo history tracks logical editing intent. Conflating them would cause Ctrl+Z to undo server reconciliation adjustments that the user never consciously made.
