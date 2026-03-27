@@ -269,6 +269,24 @@ graph TD
 > [!IMPORTANT]
 > This is the flow interviewers want to hear you walk through. Every step has a purpose — know WHY each step exists.
 
+### 🔄 The One-Line Flow (Say This First)
+
+```
+Client → apply locally → send op → Server → transform against concurrent ops
+       → append to log → broadcast transformed op → other clients apply
+```
+
+This is the entire system in one line. Everything else — WebSocket, Cassandra, Redis, OT engine — exists to make each arrow in this flow **correct**, **fast**, and **durable**.
+
+| Arrow | Mechanism | Failure mode if skipped |
+|---|---|---|
+| `apply locally` | Optimistic apply before server ACK | Editing feels laggy — 200ms+ perceived latency |
+| `send op` | WebSocket frame with `{type, pos, char, client_version}` | Server cannot transform without the version gap |
+| `transform` | OT function adjusts positions against concurrent ops | Documents diverge — different clients see different text |
+| `append to log` | Cassandra write BEFORE broadcast | Op lost on server crash — cannot replay on reconnect |
+| `broadcast` | Push to all connected clients on same doc_id | Peers never see the change |
+| `other clients apply` | Client-side OT against own pending ops | Client and server state desync — rollback spiral |
+
 ### 🔄 Complete Operation Lifecycle
 
 ```
@@ -766,15 +784,16 @@ stateDiagram-v2
 
 ### Trade-off 1: OT vs CRDT
 
-| Dimension | OT | CRDT |
+| Aspect | OT | CRDT |
 |---|---|---|
-| Central server required | Yes | No |
-| Implementation complexity | High — transform all op-type combinations | Medium — position explosion mitigation |
-| Offline support | Difficult — server reconciliation needed | Native — peers merge independently |
-| Integration with central auth/versioning | Natural fit | Requires retrofitting |
+| Control | Centralized — one server imposes total order | Distributed — peers merge independently |
+| Complexity | Medium — transform function per op-type pair | High — fractional indices, position explosion, compaction |
+| Ordering | Required — server version number is the total ordering | Not required — operations are commutative by design |
+| Offline support | Difficult — server reconciliation on reconnect | Native — peers merge any op set in any order |
+| Integration with auth/versioning | Natural fit — central server already exists | Requires retrofitting — designed for no-server topologies |
 
 **Chosen: OT.**
-One-line reason: a central server is already required for access control, versioning, and billing — OT's single-ordering-point requirement is not an additional constraint.
+One-line reason: a central server is already required for access control, versioning, and billing — OT's single-ordering-point requirement is not an additional constraint. CRDT's primary advantage (no central server) is irrelevant when the central server already exists.
 
 #### When to use OT vs When to use CRDT
 
