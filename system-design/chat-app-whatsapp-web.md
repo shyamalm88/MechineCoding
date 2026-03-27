@@ -442,8 +442,11 @@ sequenceDiagram
     participant C as Client
     participant S as Chat Server
 
-    C->>S: HTTP GET /ws/chat<br/>Upgrade: websocket<br/>Sec-WebSocket-Key: &lt;base64&gt;
-    S-->>C: HTTP 101 Switching Protocols<br/>Upgrade: websocket<br/>Sec-WebSocket-Accept: &lt;hash&gt;
+    Note over C: Wants to open a WebSocket
+    C->>S: HTTP GET /ws/chat
+    Note over C,S: Headers: Upgrade: websocket, Connection: Upgrade, Sec-WebSocket-Key
+    S-->>C: HTTP 101 Switching Protocols
+    Note over C,S: Headers: Upgrade: websocket, Sec-WebSocket-Accept
     Note over C,S: TCP connection upgraded — full-duplex WS active
     C->>S: WS Frame: send_message
     S->>C: WS Frame: new_message / delivery_receipt
@@ -512,16 +515,16 @@ sequenceDiagram
     CS1->>R: GET ws:session:UserB
     R-->>CS1: "chat_server_2"
     CS1->>K: Publish to user_B.inbox topic
-    CS1-->>A: ✓ Single tick (stored)
+    CS1-->>A: ACK - Single tick (stored)
     K->>CS2: CS2 consumes delivery event
     CS2->>B: WS: push new_message
     CS2->>K: Publish delivery_ack
     K->>CS1: CS1 consumes ack
-    CS1-->>A: ✓✓ Double tick (delivered)
+    CS1-->>A: ACK - Double tick (delivered)
     B->>CS2: WS: read_receipt
     CS2->>K: Publish read_ack
     K->>CS1: CS1 consumes read_ack
-    CS1-->>A: ✓✓ Blue ticks (read)
+    CS1-->>A: ACK - Blue ticks (read)
 ```
 
 **Step-by-step:**
