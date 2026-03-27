@@ -420,9 +420,15 @@ graph TD
 
 ## 6. Deep Dives
 
+In a system design interview, deep dives are where you demonstrate senior-level thinking. The goal is not to list technologies — it is to show that you understand the *problems* each component solves, the *trade-offs* you accept, and *what you would do differently* at different scales. Walk through each component as a decision: "I chose X because of problem Y, and the trade-off I'm accepting is Z."
+
 ### 6.1 Deep Dive 1 — WebSocket Connection Management & Sticky Sessions
 
 #### Why WebSocket?
+
+**Setting up the problem:** The naive approach is simple HTTP. The client posts a message, and polls for replies. Let's walk through why each protocol fails at scale before landing on WebSocket.
+
+> **Why WebSocket?** The core problem with HTTP polling: at 1 billion users, even 1 poll per second = 1 billion requests/second just to check for new messages — the vast majority of which return empty responses. This is pure waste. WebSocket maintains a single persistent TCP connection per user. The server pushes messages the instant they arrive. Zero polling overhead. The connection cost is paid once at handshake time.
 
 Before choosing WebSocket, let us consider the alternatives:
 
@@ -463,6 +469,8 @@ Each Chat Server holds WebSocket connections **in memory**. User A's connection 
 
 #### Connection Mapping in Redis
 
+> **Why Redis?** The problem: every message delivery requires knowing which Chat Server holds the recipient's WebSocket connection. This lookup happens 1.16 million times per second. A database lookup adds 10–50ms of disk I/O per message route decision — that alone blows our 300ms latency budget. Redis answers this in under 1ms from memory, and its TTL feature automatically cleans up stale sessions when a user disconnects.
+
 When User A connects to Chat Server 1, the server writes:
 
 ```
@@ -499,7 +507,11 @@ EXPIRE ws:session:usr_8f3k2 30
 
 ### 6.2 Deep Dive 2 — Message Delivery Flow (1:1 and Group) + Offline Handling
 
+**Setting up the problem:** A message arrives at Chat Server 1. The recipient is connected to Chat Server 2. Chat Server 1 has no direct reference to the recipient's WebSocket connection object. How do we bridge this gap at 1.16 million messages per second without coupling the servers together? This is the core routing problem.
+
 #### 6.2.1 One-to-One Message Delivery
+
+> **Why Kafka?** The problem: if Chat Server 1 calls Chat Server 2 directly to forward a message (via HTTP or gRPC), what happens when Chat Server 2 is temporarily down or overloaded? The message is silently dropped. Our non-functional requirement is zero message loss. Kafka solves this by acting as a durable log — Chat Server 1 writes to Kafka and gets an acknowledgment; Chat Server 2 consumes at its own pace. If Chat Server 2 crashes, the message waits in Kafka until it recovers. The producer and consumer are fully decoupled.
 
 ```mermaid
 sequenceDiagram
@@ -538,7 +550,40 @@ sequenceDiagram
 7. Chat Server 2 pushes the message to User B over their active WebSocket connection.
 8. Chat Server 2 sends a delivery ACK back through Kafka (or directly via internal gRPC) to Chat Server 1, which forwards a double-tick to User A.
 
-#### 6.2.2 Group Message Delivery
+#### 6.2.2 Fast Path vs Reliable Path — A Senior-Level Insight
+
+This is the design decision that separates a robust chat system from a fragile one. There are two distinct concerns in message delivery:
+
+**The Fast Path** — optimized for latency:
+User A → Chat Server 1 → Redis lookup → Kafka publish → Chat Server 2 → User B
+
+Everything on this path is designed to be non-blocking. Chat Server 1 does not wait for Chat Server 2 to confirm delivery before responding to User A. The single tick is issued as soon as Cassandra confirms the write. This keeps end-to-end perceived latency under 300ms.
+
+**The Reliable Path** — optimized for durability:
+- Message is written to Cassandra **before** any delivery is attempted.
+- The Kafka publish and Cassandra write happen **concurrently** (not sequentially).
+- If Chat Server 2 is down, the message sits in Kafka. When CS2 recovers, it consumes the backlog and delivers. The message was never lost.
+- If the user is offline entirely, the message is in Cassandra. On reconnect, the client fetches it via REST.
+
+**The key insight:** the single tick (stored) means "this message is safe — it will eventually reach you." The double tick (delivered) means "it reached the device." These are separate guarantees, served by separate subsystems. Never conflate them.
+
+```mermaid
+graph LR
+    subgraph FastPath["Fast Path (latency-optimized)"]
+        A["User A"] -->|WS frame| CS1["Chat Server 1"]
+        CS1 -->|Redis lookup| R["Redis"]
+        CS1 -->|Kafka publish| K["Kafka"]
+        K --> CS2["Chat Server 2"]
+        CS2 -->|WS push| B["User B"]
+    end
+    subgraph ReliablePath["Reliable Path (durability)"]
+        CS1 -->|concurrent write| CassDB["Cassandra\nmessage stored forever"]
+    end
+```
+
+---
+
+#### 6.2.3 Group Message Delivery
 
 Group messaging adds a fan-out problem: one message must be delivered to N members.
 
@@ -584,7 +629,7 @@ graph TD
 
 The async fan-out approach decouples the sender's acknowledgment from the delivery complexity. User A gets their single tick immediately; the fan-out happens in the background.
 
-#### 6.2.3 Offline Message Handling
+#### 6.2.4 Offline Message Handling
 
 When User B is offline (no entry in Redis session map):
 
@@ -614,7 +659,7 @@ flowchart TD
 
 **Key insight:** Push notifications are a "wake-up call," not a delivery mechanism. The actual messages are always fetched from Cassandra. This avoids push notification size limits and ordering issues.
 
-#### 6.2.4 Message Storage Schema (Cassandra)
+#### 6.2.5 Message Storage Schema (Cassandra)
 
 ```sql
 -- Cassandra table for messages
@@ -646,7 +691,48 @@ At 100B messages/day, Cassandra is the only realistic choice. PostgreSQL would r
 
 ---
 
-### 6.3 Deep Dive 3 (Bonus) — Message Status: Sent / Delivered / Read Receipts
+### 6.3 Deep Dive 3 — Message Ordering
+
+#### The Problem
+
+Two users send messages at the same millisecond. Which arrives first at Chat Server 1 depends entirely on network jitter — not send time. With Cassandra's eventual consistency across replicas, two different clients reading from different replicas might see the same messages in different order.
+
+Even with a single replica, consider:
+- User A sends M1 at T=100ms
+- User B sends M2 at T=101ms
+- Due to network delay, M2 arrives at Chat Server 1 before M1
+- M2 gets written to Cassandra first
+
+Without ordering controls, User A sees: M1, M2. User B sees: M2, M1.
+
+#### Solution 1: TIMEUUID as the Clustering Key
+
+Cassandra's `TIMEUUID` (UUID Type 1) encodes a nanosecond-precision timestamp plus a random component for uniqueness. Using TIMEUUID as the clustering key means messages are stored in time order on disk, and time-range queries (`WHERE sent_at > X`) are efficient.
+
+```sql
+PRIMARY KEY ((conversation_id), sent_at, message_id)
+-- sent_at is TIMEUUID, not a plain timestamp
+-- Guarantees: no two messages share the exact same key
+-- Even if two messages arrive at the same nanosecond, the random component differentiates them
+```
+
+#### Solution 2: Client-Side Sequence Numbers
+
+Each client maintains a monotonically incrementing `seq` counter per conversation. Every message sent includes `{ seq: 42 }`. When the recipient receives `seq: 44` but has only seen up to `seq: 42`, it knows `seq: 43` is missing and requests a gap fill from the server.
+
+This gives us **causal ordering** at the conversation level without requiring a distributed sequence number generator.
+
+#### Solution 3: Last-Write-Wins with Vector Clocks (Alternative Approach)
+
+For systems requiring stronger ordering guarantees (e.g., collaborative editing), vector clocks can establish a partial order across concurrent events. For a chat app, LWW with TIMEUUID is sufficient — users tolerate minor ordering variations at the millisecond scale.
+
+#### Trade-off Accepted
+
+We do not guarantee global ordering across all conversations or even strict per-conversation ordering under extreme concurrent load. What we guarantee: monotonic reads within a session (you will never see a message disappear after seeing it), and eventual convergence (all replicas will agree on the same order within seconds).
+
+---
+
+### 6.4 Deep Dive 4 (Bonus) — Message Status: Sent / Delivered / Read Receipts
 
 The three-tick system requires careful state tracking and is often tricky at scale.
 
@@ -707,6 +793,8 @@ This is a per-user preference stored in the User DB and checked by the Chat Serv
 ### 7.1 Cassandra vs MySQL/PostgreSQL for Message Storage
 
 **Decision: Cassandra**
+
+> **Why Cassandra?** The problem: we need to write 1.16 million messages per second, sustained, 24/7. PostgreSQL's write path is limited by its single primary node — even with tuning, a primary handles roughly 50–100K writes/second before degrading. At our scale, we'd need 10–20 PostgreSQL primaries with a complex sharding layer on top. Cassandra's multi-master design eliminates this — every node accepts writes simultaneously. Adding nodes scales write capacity linearly. No shard routing logic needed.
 
 The primary argument is write throughput. At 1.16 million messages per second (average), no single PostgreSQL instance can keep up. Even with read replicas and connection pooling, PostgreSQL's write path is limited to the primary node.
 
@@ -811,337 +899,61 @@ This design supports 1 billion users exchanging 100 billion messages per day wit
 
 ---
 
-# Frontend System Design: Chat Application (WhatsApp Web)
+# Frontend Notes: Chat Application
+
+> Chat is a **backend-heavy system (~85% backend, ~15% frontend)**. In an interview, spend the majority of time on WebSocket routing, message delivery, and Cassandra. The frontend notes below cover the 2–3 frontend concepts that interviewers do ask about.
 
 ---
 
-## F1. Problem Statement & Scope
+## F1. The Three Frontend Problems Worth Discussing
 
-Design the frontend of a real-time chat web application (like WhatsApp Web). The client must maintain a persistent WebSocket connection, render thousands of messages efficiently, handle offline states gracefully, and deliver a sub-100ms perceived response to user actions.
+### 1. WebSocket Client (Singleton + Reconnect)
 
-**In Scope:**
-- Authentication flow (phone number + OTP)
-- Chat list view (conversation list)
-- Message thread view (1:1 and group)
-- Real-time message sending and receiving via WebSocket
-- Message status indicators (sent, delivered, read)
-- Media upload and preview (images, videos)
-- Infinite scroll / lazy loading of message history
-- Typing indicators and online/offline presence
-- Push notifications (background tab)
-- Offline support (IndexedDB queue)
+The WebSocket connection must be a singleton — opened once on login, reused for the entire session.
 
-**Out of Scope:**
-- Voice/video calls UI
-- End-to-end encryption UI
-- Native mobile app design
-
----
-
-## F2. Requirements
-
-### F2.1 Functional Requirements
-
-1. User can log in with phone number and OTP.
-2. User sees a list of all conversations, ordered by most recent message.
-3. User can open a conversation and see message history (lazy-loaded).
-4. User can type and send messages in real time.
-5. Messages show status: clock (sending) → single tick (sent) → double tick (delivered) → blue ticks (read).
-6. User can upload and preview images/videos before sending.
-7. User can create/manage groups.
-8. Typing indicators appear when the other party is typing.
-9. Online/offline presence shown per contact.
-10. App works partially when offline (read cached messages, queue outgoing messages).
-
-### F2.2 Non-Functional Requirements
-
-| Requirement        | Target                                              |
-|--------------------|-----------------------------------------------------|
-| Initial load time  | < 3s on 4G (TTI — Time to Interactive)             |
-| Message render     | < 100ms perceived latency on send                  |
-| Scroll performance | 60 fps while scrolling through 10,000+ messages    |
-| Offline support    | Read last 50 messages per chat without network      |
-| Bundle size        | < 200KB gzipped JS (code-split aggressively)       |
-| Accessibility      | WCAG 2.1 AA compliance                             |
-
----
-
-## F3. Back-of-the-Envelope Estimations (Frontend)
-
-```
-Concurrent browser sessions (DAU on web): ~50 million
-WebSocket connections sustained per client: 1 persistent connection
-Messages rendered per user session: ~500-2000 messages across chats
-Average chat list size: 30-50 conversations
-Average message size (payload to client): ~500 bytes JSON
-Media thumbnail size: ~20KB (compressed preview)
-IndexedDB budget per user: ~50MB (last 50 messages × 1000 chats)
-```
-
----
-
-## F4. API Contracts (Frontend Perspective)
-
-### REST endpoints consumed by the client
-
-```
-GET  /api/v1/chats?userId={id}
-     Response: [{ chatId, lastMessage, unreadCount, participants }]
-
-GET  /api/v1/chats/{chatId}/messages?offset={x}&limit=50
-     Response: [{ messageId, senderId, content, mediaUrl, status, timestamp }]
-
-POST /api/v1/users/register
-     Body: { phone, name }
-
-POST /api/v1/users/login
-     Body: { phone, otp }
-     Response: { jwtToken, userId }
-
-POST /api/v1/media/upload
-     Body: FormData (multipart)
-     Response: { mediaUrl, thumbnailUrl }
-```
-
-### WebSocket events (client ↔ server)
-
-```
-Client → Server:
-  { type: "send_message",   chatId, content, mediaUrl?, clientMsgId }
-  { type: "typing_start",   chatId }
-  { type: "typing_stop",    chatId }
-  { type: "read_receipt",   chatId, messageId }
-
-Server → Client:
-  { type: "new_message",    chatId, message }
-  { type: "message_status", chatId, messageId, status }   // delivered | read
-  { type: "typing",         chatId, userId, isTyping }
-  { type: "presence",       userId, status }               // online | offline
-```
-
----
-
-## F5. Progressive UI Architecture Diagrams
-
-### Diagram 1 — Simple Component Tree
-
-```mermaid
-graph TD
-    AppShell["App Shell\nauth check · WS init · route guard"]
-
-    Sidebar["Sidebar"]
-    SearchBar["SearchBar"]
-    ChatList["ChatList"]
-    ChatItem["ChatItem"]
-
-    ChatWindow["Chat Window"]
-    MessageList["MessageList\nvirtual list"]
-    MessageBubble["MessageBubble"]
-    TypingIndicator["TypingIndicator"]
-    MessageInput["MessageInput"]
-    MediaUploader["MediaUploader"]
-
-    AppShell --> Sidebar
-    AppShell --> ChatWindow
-
-    Sidebar --> SearchBar
-    Sidebar --> ChatList
-    ChatList --> ChatItem
-
-    ChatWindow --> MessageList
-    ChatWindow --> TypingIndicator
-    ChatWindow --> MessageInput
-    MessageList --> MessageBubble
-    MessageInput --> MediaUploader
-```
-
-### Diagram 2 — Evolved Architecture with State & Data Flow
-
-```mermaid
-graph TD
-    Auth["Auth Module\nOTP + JWT"]
-    APIGW["API Gateway\nBackend"]
-    AppShell["App Shell"]
-    WSClient["WebSocket Client\nsingleton\n· reconnect · heartbeat · outbox"]
-    GlobalState["Global State\nZustand / Redux\nmessages · chats · presence · typing"]
-    Sidebar["Sidebar\nChatList · Search · Unread"]
-    MessageList["MessageList\nvirtual list\nMessageBubble · lazy load · sticky scroll"]
-    MediaUpload["MediaUploader\npresigned S3 URL"]
-    IndexedDB[("IndexedDB\noffline cache\nmessages · chat metadata")]
-    S3["S3 / CDN"]
-
-    Auth -->|HTTP REST| APIGW
-    APIGW -->|JWT stored in memory| AppShell
-    AppShell --> WSClient
-    AppShell --> GlobalState
-    WSClient <-->|WS frames| APIGW
-    WSClient -->|dispatch events| GlobalState
-    GlobalState --> Sidebar
-    GlobalState --> MessageList
-    GlobalState --> MediaUpload
-    AppShell -->|cache miss| IndexedDB
-    MediaUpload -->|direct upload| S3
-```
-
----
-
-## F6. Deep Dives
-
-### F6.1 WebSocket Client Management
-
-The WebSocket connection is the most critical frontend concern. It must be a **singleton** — opened once when the user authenticates and kept alive for the entire session.
-
-**Connection lifecycle:**
+**Reconnect strategy:**
 ```mermaid
 flowchart LR
-    Start([App Start]) --> Auth[Authenticate\nOTP + JWT]
-    Auth --> OpenWS[Open WebSocket]
-    OpenWS --> Subscribe[Subscribe to events]
-    Subscribe --> Active{Connected?}
+    Start([Login]) --> OpenWS[Open WebSocket]
+    OpenWS --> Active{Connected?}
     Active -->|Yes| Active
-    Active -->|Disconnect| Backoff[Exponential backoff\n1s · 2s · 4s · max 30s]
+    Active -->|Disconnect| Backoff[Exponential backoff\n1s - 2s - 4s - max 30s]
     Backoff --> ReAuth[Re-authenticate]
-    ReAuth --> Fetch[Fetch missed messages\nsince lastSeen]
-    Fetch --> Subscribe
+    ReAuth --> Fetch[Fetch missed messages\nGET /messages?since=lastSeen]
+    Fetch --> Active
 ```
 
-**Outgoing message queue (offline support):**
-When the device is offline, outgoing messages should NOT be dropped. Instead:
-```mermaid
-flowchart TD
-    UserSend["User sends message"] --> GenID["Generate clientMsgId\nUUID"]
-    GenID --> ShowUI["Show in UI\nclock — pending status"]
-    ShowUI --> Enqueue["Enqueue in IndexedDB outbox"]
-    Enqueue --> Online{Online?}
-    Online -->|Yes| SendWS["Send via WebSocket"]
-    Online -->|No| Wait["Wait for reconnect"]
-    Wait --> SendWS
-    SendWS --> ACK["Server ACK\n(message_id returned)"]
-    ACK --> UpdateStatus["Update status\nclock → single tick"]
-```
+On reconnect, always fetch missed messages via REST — never rely on the WebSocket to replay what was missed.
 
-This gives the user instant perceived feedback even without network.
-
-**Heartbeat / Keep-alive:**
-Send a ping frame every 25 seconds to prevent NAT/proxy timeouts. If no pong received within 5 seconds, close and reconnect.
+**Offline outbox:** When the device is offline, queue outgoing messages in IndexedDB. Drain the queue on reconnect.
 
 ---
 
-### F6.2 Virtual List for Message Rendering
+### 2. Virtual List for Message Rendering
 
-Rendering 10,000+ messages in the DOM will freeze the browser. Use **windowed / virtual rendering** — only the visible messages (+ a small buffer above/below) are actually in the DOM.
+Rendering 10,000+ messages in the DOM causes scroll stuttering and frame drops. Only render the visible window (~15–20 messages) plus a small buffer. Use `react-virtual` or `react-window`.
 
-```
-Visible viewport (~15 messages rendered in DOM)
-
-+-------------------------------+
-|  [msg 4980]  out of DOM      |  ^
-|  [msg 4981]  out of DOM      |  |  scroll buffer (10 msgs)
-|  [msg 4982]  in DOM          |  |
-|  [msg 4983]  in DOM          |  |  visible window
-|  ...                         |  |
-|  [msg 4995]  in DOM          |  |
-|  [msg 4996]  out of DOM      |  v
-+-------------------------------+
-
-Only ~25-30 DOM nodes exist at any time regardless of total message count.
-Library: react-window or react-virtual (TanStack Virtual)
-```
-
-**Sticky scroll:** When the user is at the bottom, new messages should auto-scroll down. When the user has scrolled up (reading history), do NOT auto-scroll — just show a "X new messages" badge.
-
-**Lazy loading upward:**
-```
-User scrolls to top of visible window
-  → Trigger fetch: GET /chats/{chatId}/messages?offset={currentOldest}&limit=50
-  → Prepend to message list
-  → Restore scroll position (preserve viewport position during DOM update)
-```
+**Key behaviors:**
+- **Sticky scroll**: auto-scroll to bottom when the user is at the bottom. Pause auto-scroll when user scrolls up.
+- **Lazy load upward**: fetch older messages when scrolling to the top. Preserve scroll position during DOM update (calculate height delta before/after prepend).
 
 ---
 
-### F6.3 Media Upload Flow
+### 3. Optimistic UI
 
-Never send binary data through the WebSocket. Use a pre-signed URL pattern:
+Show the message in the UI immediately on send (with a "pending" clock icon). Do not wait for the server ACK. On server ACK, swap the clientMsgId for the server messageId and update the status to single tick.
 
-```
-+--------+   POST /api/v1/media/upload-url   +-----------+
-| Client | ---------------------------------> | Media Svc |
-|        | <--------------------------------- |           |
-|        |   { presignedUrl, mediaUrl }       +-----------+
-|        |
-|        |   PUT presignedUrl (direct to S3)  +-----+
-|        | ---------------------------------> | S3  |
-|        | <---------------------------------  |     |
-|        |   200 OK                           +-----+
-|        |
-|        |   WS: send_message { mediaUrl }    +-----------+
-|        | ---------------------------------> | Chat Svc  |
-+--------+                                   +-----------+
-```
-
-Show a **local blob preview** (`URL.createObjectURL`) immediately while upload is in progress. Replace with the CDN URL once the upload completes. This gives instant visual feedback.
+If the server returns an error, show a retry option. This makes the UI feel instant while the network does its work in the background.
 
 ---
 
-## F7. State Management Design
+## F2. What NOT to Over-Engineer on the Frontend
 
-Use a lightweight store (Zustand or Redux Toolkit) with the following slices:
+For a chat app interview, do **not** go deep on:
+- State management library choice (Zustand vs Redux) — mention it, don't deep-dive
+- Component architecture — not relevant unless specifically asked
+- CSS/accessibility — out of scope
+- PWA/service workers — mention briefly if asked about offline
 
-```
-store/
-  authSlice         — userId, jwtToken, isAuthenticated
-  chatsSlice        — chat list, unread counts, last message per chat
-  messagesSlice     — Map<chatId, Message[]>, loading states, pagination cursors
-  presenceSlice     — Map<userId, "online" | "offline" | lastSeen>
-  typingSlice       — Map<chatId, Set<userId>> (who is typing in each chat)
-  uiSlice           — activeChat, modals, theme
-```
-
-**WebSocket events update the store directly:**
-```
-WS "new_message"    → messagesSlice.addMessage + chatsSlice.updateLastMessage
-WS "message_status" → messagesSlice.updateStatus
-WS "typing"         → typingSlice.setTyping
-WS "presence"       → presenceSlice.setPresence
-```
-
----
-
-## F8. Caching Strategy (Frontend)
-
-| Data               | Cache Location  | TTL / Strategy                                  |
-|--------------------|-----------------|--------------------------------------------------|
-| Chat list          | In-memory store | Invalidate on new message WS event               |
-| Message history    | IndexedDB       | Keep last 50 messages per chat, LRU evict older |
-| User profiles      | In-memory Map   | 5 min TTL, re-fetch on stale                     |
-| Media thumbnails   | Browser cache   | CDN sets Cache-Control: max-age=31536000         |
-| Auth token         | Memory only     | Never in localStorage (XSS risk)                 |
-
----
-
-## F9. Trade-offs & Bottlenecks (Frontend)
-
-| Decision                          | Chosen Approach             | Why / Trade-off                                                                 |
-|-----------------------------------|-----------------------------|---------------------------------------------------------------------------------|
-| Real-time protocol                | WebSocket (singleton)       | Full-duplex; polling would waste bandwidth and add latency                     |
-| Message rendering                 | Virtual list                | DOM with 10K+ nodes → jank; virtual list keeps it at ~30 nodes at all times   |
-| Auth token storage                | JS memory (not localStorage)| localStorage is XSS-readable; memory is wiped on tab close (acceptable trade-off) |
-| Optimistic UI on send             | Yes (show immediately)      | Perceived latency drops to 0ms; rollback on server error                       |
-| Media upload path                 | Direct S3 presigned URL     | Avoids routing binary data through backend; cheaper and faster                 |
-| Offline message queue             | IndexedDB outbox            | Survives page refresh; localStorage size limit too small for message data      |
-| State management library          | Zustand (or Redux Toolkit)  | Zustand: simpler for real-time apps; Redux: better devtools for larger teams   |
-| Typing indicator debounce         | 300ms debounce on keypress  | Prevents flooding the server with WS events on every keystroke                 |
-
----
-
-## F10. Frontend Summary
-
-The frontend design revolves around three core challenges:
-
-1. **Persistent WebSocket management** — singleton connection, reconnect strategy, offline outbox, and missed-message recovery on reconnect.
-2. **Performant message rendering** — virtual list (windowed rendering) to handle unlimited message history at 60fps without DOM overload.
-3. **Optimistic UI** — every user action (send message, media upload) provides instant feedback before server confirmation, with clean rollback paths.
-
-The REST API handles authentication, history loading, and group management. The WebSocket handles everything real-time: messages, status updates, typing indicators, and presence.
+The interviewer wants to hear about WebSocket management, message ordering on the client, and how the client handles the reliable/fast path split (optimistic UI = fast path; retry on failure = reliable path).
 
