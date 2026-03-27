@@ -179,7 +179,7 @@ graph TD
     ReqDB[("Ride Request DB (analytics)")]
     Redis[("Redis Geo + State + Lock")]
     K[["Kafka (trip events)"]]
-    TripDB[("PostgreSQL (trips, payments)"]]
+    TripDB[("PostgreSQL (trips, payments)")]
     Maps["Google Maps API"]
 
     Rider -->|HTTPS| LB
