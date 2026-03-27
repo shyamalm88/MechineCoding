@@ -567,19 +567,48 @@ Everything on this path is designed to be non-blocking. Chat Server 1 does not w
 
 **The key insight:** the single tick (stored) means "this message is safe — it will eventually reach you." The double tick (delivered) means "it reached the device." These are separate guarantees, served by separate subsystems. Never conflate them.
 
-```mermaid
-graph LR
-    subgraph FastPath["Fast Path (latency-optimized)"]
-        A["User A"] -->|WS frame| CS1["Chat Server 1"]
-        CS1 -->|Redis lookup| R["Redis"]
-        CS1 -->|Kafka publish| K["Kafka"]
-        K --> CS2["Chat Server 2"]
-        CS2 -->|WS push| B["User B"]
-    end
-    subgraph ReliablePath["Reliable Path (durability)"]
-        CS1 -->|concurrent write| CassDB["Cassandra\nmessage stored forever"]
-    end
 ```
+FAST PATH    (latency-optimized):
+  User A --[WS]--> Chat Server 1 --[Redis lookup]--> Chat Server 2 --[WS]--> User B
+  Non-blocking. Best-effort. Optimized for < 300ms.
+
+RELIABLE PATH (durability-optimized):
+  Chat Server 1 --[concurrent write]--> Cassandra
+  Blocking on ACK. Message is safe the moment Cassandra confirms.
+  If fast path fails: Cassandra is the fallback source of truth on reconnect.
+
+Single tick  = Cassandra confirmed.  Message will NEVER be lost.
+Double tick  = WS push succeeded.    Message reached the device.
+```
+
+```mermaid
+graph TD
+    A["User A"]
+    CS1["Chat Server 1"]
+    R(["Redis\nsession map"])
+    K[["Kafka\ndurable log"]]
+    CS2["Chat Server 2"]
+    B["User B"]
+    Cass[("Cassandra\nmessage stored forever")]
+
+    A -->|1 WS frame| CS1
+    CS1 -->|2a concurrent write| Cass
+    CS1 -->|2b Redis lookup| R
+    R -->|server_id| CS1
+    CS1 -->|3 Kafka publish| K
+    CS1 -->|4 single tick ACK| A
+    K -->|5 consume| CS2
+    CS2 -->|6 WS push| B
+    CS2 -->|7 delivery ACK| K
+    K -->|8 double tick| CS1
+    CS1 -->|9 double tick| A
+
+    style Cass fill:#2d6a4f,color:#fff
+    style K fill:#1d3557,color:#fff
+```
+
+> [!IMPORTANT]
+> **This is the senior-level insight.** Steps 2a and 2b happen concurrently — the Cassandra write and the Kafka publish are not sequential. The single tick fires as soon as Cassandra ACKs (step 4), regardless of whether User B is online. If User B is offline, the fast path never runs, but the message is already safe in Cassandra. On reconnect, User B fetches from Cassandra via REST. Zero message loss is guaranteed by the reliable path, not the fast path.
 
 ---
 
@@ -716,11 +745,29 @@ PRIMARY KEY ((conversation_id), sent_at, message_id)
 -- Even if two messages arrive at the same nanosecond, the random component differentiates them
 ```
 
-#### Solution 2: Client-Side Sequence Numbers
+#### Solution 2: Per-Conversation Sequence Numbers (`chat_id + seq`)
 
-Each client maintains a monotonically incrementing `seq` counter per conversation. Every message sent includes `{ seq: 42 }`. When the recipient receives `seq: 44` but has only seen up to `seq: 42`, it knows `seq: 43` is missing and requests a gap fill from the server.
+Each client tracks a monotonically increasing sequence number **per conversation** (not globally). Every message includes `{ chat_id, seq: 42 }`.
 
-This gives us **causal ordering** at the conversation level without requiring a distributed sequence number generator.
+```
+Client state:  Map<chat_id, last_seq_seen>
+
+On receive seq=44 when last_seen=42:
+  → seq 43 is missing
+  → request gap fill: GET /chats/{chat_id}/messages?from_seq=43&limit=10
+```
+
+Schema impact:
+
+```sql
+PRIMARY KEY ((conversation_id), client_seq, message_id)
+-- conversation_id: partition key — all messages in a chat on the same nodes
+-- client_seq:      clustering key — per-chat monotonic counter
+-- message_id:      tie-breaker for concurrent sends at same seq
+```
+
+> [!IMPORTANT]
+> **Ordering is per-conversation, not global.** A global sequence number at 1.16M msg/sec would require a distributed counter — a single-node bottleneck. Per-conversation counters are cheap because they are scoped: `chat_id` already partitions the space. Each conversation orders itself independently.
 
 #### Solution 3: Last-Write-Wins with Vector Clocks (Alternative Approach)
 
@@ -728,7 +775,7 @@ For systems requiring stronger ordering guarantees (e.g., collaborative editing)
 
 #### Trade-off Accepted
 
-We do not guarantee global ordering across all conversations or even strict per-conversation ordering under extreme concurrent load. What we guarantee: monotonic reads within a session (you will never see a message disappear after seeing it), and eventual convergence (all replicas will agree on the same order within seconds).
+We guarantee: monotonic reads within a session (you will never see a message disappear after seeing it), and per-conversation eventual convergence (all replicas agree on the same order within seconds). We do **not** guarantee strict global ordering — and we do not need it.
 
 ---
 
@@ -867,7 +914,38 @@ The system is designed for AP (Availability + Partition Tolerance) per the CAP t
 
 ---
 
-### 7.6 Bottlenecks and How We Mitigate Them
+### 7.6 At-Least-Once vs Exactly-Once Delivery
+
+**The problem:** Kafka guarantees at-least-once delivery by default. If Chat Server 2 consumes a message and crashes before committing its Kafka offset, Kafka redelivers the same message when CS2 restarts. User B receives the message twice.
+
+**Why not exactly-once natively?** Kafka's transactional API (true exactly-once semantics) requires 2-phase commit across producers and consumers. This adds significant write latency and operational complexity. Not worth it for a chat app where a rare duplicate is a minor nuisance, not a financial error.
+
+**Our solution: idempotency at the application layer.**
+
+Every message carries a `client_message_id` (UUID generated by the sender's device before sending). Before Chat Server 2 delivers to User B, it checks:
+
+```
+Redis: GET dedup:{client_message_id}
+  → key exists:  duplicate — discard silently
+  → key missing: deliver to User B, then SET dedup:{client_message_id} 1 EX 86400
+```
+
+This turns at-least-once Kafka delivery into **effectively-once** delivery at the app layer.
+
+| Guarantee | Mechanism | Cost |
+|---|---|---|
+| At-least-once | Kafka default | Free |
+| Exactly-once | Kafka transactions (2PC) | High latency + complexity |
+| **Effectively-once** | At-least-once + Redis dedup key | **Chosen — low cost** |
+
+> [!IMPORTANT]
+> **Why a queue is mandatory, not optional.** Without Kafka, Chat Server 1 must call Chat Server 2 directly. If CS2 is down, the message is silently dropped — no retry, no durability. The queue is the component that makes zero-message-loss a guarantee rather than a hope. This is not an optimization; it is a correctness requirement.
+
+**Trade-off accepted:** The Redis dedup key has a 24-hour TTL. A duplicate delivered more than 24 hours after the original (practically impossible in normal operation) would not be caught. Acceptable.
+
+---
+
+### 7.7 Bottlenecks and How We Mitigate Them
 
 | Bottleneck                         | Mitigation                                                          |
 |------------------------------------|---------------------------------------------------------------------|
@@ -881,19 +959,55 @@ The system is designed for AP (Availability + Partition Tolerance) per the CAP t
 
 ---
 
-## 8. Summary
+## 8. Interview Summary
 
-This design supports 1 billion users exchanging 100 billion messages per day with end-to-end delivery under 300ms, zero message loss, and high availability.
+> [!TIP]
+> When the interviewer says "walk me through your design," hit these 5 decisions in order. Each has a WHY, a WHAT, and a TRADE-OFF. This is what separates a senior answer from a mid-level one.
 
-**Key architectural decisions:**
+---
 
-1. **WebSocket** for real-time bidirectional messaging — the only protocol that efficiently supports chat at scale.
-2. **Sticky sessions** with a Redis connection map — solves the stateful WebSocket routing problem without sacrificing horizontal scalability.
-3. **Kafka** between Chat Servers — decouples delivery, enables zero message loss, and handles group fan-out asynchronously.
-4. **Cassandra** for messages — the only database capable of handling 1M+ writes/sec with linear horizontal scaling and no single point of failure.
-5. **PostgreSQL** for Users and Groups — relational data that benefits from joins and ACID guarantees.
-6. **S3 + CDN** for media — offloads binary data from the message pipeline, serves content at global edge locations.
-7. **Eventual consistency** — deliberately chosen because the use case (chat) does not require strict linearizability, and availability is more important than perfect ordering.
+### The 5 Decisions That Define This System
+
+| # | Decision | Problem it solves | Trade-off accepted |
+|---|----------|-------------------|--------------------|
+| 1 | **WebSocket** | HTTP polling = 1B empty requests/sec at our scale. WS = 1 persistent connection per user, server pushes on arrival. | Stateful connections complicate horizontal scaling → solved with sticky sessions + Redis map. |
+| 2 | **Redis for session map** | 1.16M route lookups/sec. DB disk I/O = 10–50ms each = latency budget blown. Redis = <1ms in-memory. TTL auto-cleans stale sessions. | In-memory is volatile. Redis Cluster + auto-reconnect on TTL expiry mitigates failure. |
+| 3 | **Kafka between servers** | Direct server-to-server calls = silent message drop if recipient server is down. Kafka = durable log. CS2 recovers and consumes backlog. **The queue is a correctness requirement, not an optimization.** | Added 5–20ms latency. Worth it for zero message loss. |
+| 4 | **Cassandra for messages** | 1.16M writes/sec sustained. PostgreSQL primary tops at ~100K/sec. Cassandra multi-master scales linearly by adding nodes. | No joins, eventual consistency. Separate PostgreSQL handles relational User/Group data. |
+| 5 | **At-least-once + dedup** | Exactly-once (2PC) is expensive and slow. At-least-once Kafka + Redis `clientMsgId` dedup key = effectively-once at low cost. | 24h dedup TTL window. Duplicates beyond that are practically impossible and accepted. |
+
+---
+
+### Fast Path vs Reliable Path — Say This Out Loud in the Interview
+
+```
+Fast Path   (latency):   WS → Chat Server → Redis → Kafka → Chat Server → WS
+Reliable Path (safety):  Chat Server → Cassandra   (concurrent, non-blocking)
+
+Single tick  = Cassandra confirmed.  This message will NEVER be lost.
+Double tick  = WS push confirmed.    This message reached the device.
+
+These are different guarantees served by different subsystems.
+```
+
+---
+
+### Message Ordering in One Paragraph
+
+Ordering is **scoped per conversation, not global**. The Cassandra partition key is `conversation_id` — all messages in a chat land on the same nodes, making range queries fast. The clustering key is `(client_seq, message_id)` — messages are stored in per-chat sequence order. Clients track `last_seq_seen` per chat and request gap fills when a sequence number jumps. A global sequence number at 1.16M msg/sec would require a distributed counter — a bottleneck. Per-chat counters are free.
+
+---
+
+### Key Insights Checklist
+
+> [!IMPORTANT]
+> These are the lines that make an interviewer lean forward. Memorize them.
+
+- **"The queue is mandatory for correctness, not performance."** Without Kafka, any server crash between receive and forward = silent message loss.
+- **"Single tick and double tick are served by different subsystems."** Cassandra guarantees storage. WebSocket guarantees delivery. Never conflate.
+- **"Ordering is per-conversation. A global sequence number is a bottleneck at this scale."**
+- **"Presence data is ephemeral. Storing it in a DB creates unnecessary write load — Redis with TTL is the correct tool because the data has a natural expiry."**
+- **"We chose AP over CP deliberately. Chat tolerates eventual consistency. A bank cannot. Always justify your CAP choice."**
 
 ---
 
