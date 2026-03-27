@@ -255,17 +255,31 @@ graph LR
 > [!NOTE]
 > **Key Insight:** Write path and read path never conflict. Writes overwrite one sorted set entry (O(log N)). Reads scan a bounding box (O(N+log M)). No locking. No transactions. This is why Redis Geo handles 1.67M concurrent writes while serving sub-10ms matching queries.
 
-#### Update Frequency by Driver State
+#### Update Frequency by Driver State — Accuracy vs Cost Trade-off
 
-```
-Driver state      Update frequency    Reason
-──────────────    ────────────────    ──────────────────────────────────
-IDLE              Every 5 seconds     Low urgency — driver not en route
-RESERVED          Every 2 seconds     Rider watching incoming driver ETA
-ON_TRIP           Every 1 second      Rider tracking live position
-```
+**The problem:** More frequent updates = better map accuracy for the rider. But 5M drivers × 1 update/sec = 5M Redis writes/sec. Every frequency choice is a cost/accuracy trade-off.
 
-**Batching:** Location Service buffers 500ms of updates, pipeline-writes to Redis. Publishes to Kafka only for ON_TRIP drivers. Reduces Redis write load 3–5× without increasing visible latency.
+| Driver state | Update frequency | Redis writes/sec (at 5M drivers) | Why this frequency |
+|---|---|---|---|
+| `IDLE` | Every 5s | 1M writes/sec | No rider watching — coarse position enough for matching |
+| `RESERVED` | Every 2s | 2.5M writes/sec | Rider watching ETA countdown on map |
+| `ON_TRIP` | Every 1s | 5M writes/sec | Rider watching live position; smooth animation required |
+
+**The trade-off explicitly stated:**
+
+| Dimension | High frequency (every 1s always) | State-adaptive frequency |
+|---|---|---|
+| Map accuracy | Perfect for all states | Perfect ON_TRIP, acceptable IDLE |
+| Redis write load | 5M writes/sec constant | 1–5M writes/sec, scales with active trips |
+| Cost at 5M drivers | ~5M writes/sec × 24h = ~430B writes/day | ~60–70% lower in normal conditions |
+| Rider experience impact | Identical for ON_TRIP | Identical where it matters |
+
+**Chosen: State-adaptive frequency.** IDLE drivers are not being watched by a rider — 5-second position accuracy is enough for the matching geo query. ON_TRIP drivers have a rider actively watching — 1-second is required for smooth map animation.
+
+> [!NOTE]
+> **Key Insight:** Update frequency is not a single tuning knob — it is a function of driver state. Sending 1-second updates from IDLE drivers wastes 60–70% of Redis write capacity for zero rider-visible benefit. The state machine (section 6.4) already knows each driver's state — frequency is derived from it for free.
+
+**Batching:** Location Service buffers 500ms of updates, pipeline-writes to Redis in one round-trip. Publishes to Kafka only for ON_TRIP drivers (rider needs real-time map). Reduces Redis write load 3–5× without increasing visible latency.
 
 #### The Fan-Out Problem (ON_TRIP)
 
@@ -311,112 +325,199 @@ Driver phone disconnects → WebSocket closes → Location Svc detects
 
 ### 6.3 Driver Matching
 
-**Here is the problem:** When a rider requests a trip, find the best available nearby driver, offer them the ride, and assign atomically — without double-booking — in under 300ms.
+**Here is the problem:** When a rider requests a trip, find the best available nearby driver, offer them the ride, and assign atomically — without double-booking — in under 300ms. This is the heart of Uber's system. Everything else is plumbing around this.
 
-#### Step 1: Geospatial Search
+The matching pipeline has 5 steps. They all run sequentially in < 300ms:
 
 ```
-Pickup: (12.9716, 77.5946) → Geohash: tdr1wc (~1.2km cell)
+[1] Geo index search → [2] Eligibility filter → [3] ETA-based ranking
+         → [4] Sequential dispatch + timeout → [5] Atomic state transition
+```
 
+#### Step 1: Geo Index Search (Geohash / H3)
+
+**Why a geo index?** You cannot scan 5M driver rows in a DB on every ride request. A geo index converts 2D coordinates into a prefix-searchable key — nearby drivers share a key prefix.
+
+**Geohash** (traditional approach): converts (lat, lng) → alphanumeric string. Cells are rectangular.
+
+**H3** (Uber's actual approach): hexagonal cells. Every cell has exactly 6 equidistant neighbors — no edge/corner distortion like geohash rectangles. Uber open-sourced H3; this is what production systems use.
+
+```
+Pickup: (12.9716, 77.5946)
+Geohash (6 chars): tdr1wc  → ~1.2km × 0.6km rectangle
+H3 (resolution 8): 8828308281fffff → ~460m hexagon, 6 uniform neighbors
+
+Redis command (geohash, in practice):
 GEORADIUS drivers:idle:bangalore 77.5946 12.9716 3 km
-         WITHDIST WITHCOORD COUNT 100 ASC
+         WITHDIST COUNT 100 ASC
 
 Returns: [(driver_001, 0.3km), (driver_002, 0.7km), ...]
 ```
 
-| Geohash precision | Cell size | Use case |
-|---|---|---|
-| 6 chars | ~1.2km × 0.6km | Initial coarse search |
-| 7 chars | ~150m × 150m | Dense urban areas |
-| 8 chars | ~38m × 19m | Precise pickup matching |
-
-#### Step 2: Filter + Score Top K
-
-```
-Eligibility filter: state = IDLE, vehicle_type match, acceptance_rate > 60%, not blocked
-
-Score formula:
-  score = 0.40 × (1 / distance_km)
-        + 0.20 × acceptance_rate
-        + 0.25 × driver_rating
-        + 0.15 × (1 / trips_today)   # avoid driver fatigue
-```
-
-#### Step 3: Atomic Assignment (Preventing Double-Booking)
-
-**The problem:** Two concurrent ride requests find the same top driver. Both servers try to assign driver_001. Without a lock, one driver gets two rides.
-
-**Solution: Redis SETNX (atomic set-if-not-exists)**
-
-```
-SETNX lock:assignment:driver_001 ride_id_A  EX 30
-  → OK (lock acquired): send offer to driver_001, remove from idle pool
-  → FAIL (lock exists): this driver is already being offered — skip to next candidate
-```
-
-If the driver rejects or times out: `DEL lock:assignment:driver_001` → lock released → next cycle can offer them.
-If the server crashes mid-assignment: TTL auto-expires the lock in 30s → self-healing.
+| Geo method | Cell shape | Neighbor count | Used by |
+|---|---|---|---|
+| Geohash | Rectangle | 8 (varying distances) | Most systems, Redis built-in |
+| H3 | Hexagon | 6 (equidistant) | Uber (production), rideshare at scale |
 
 > [!NOTE]
-> **Key Insight:** SETNX is the right primitive for distributed mutual exclusion when the critical section is short (< 30s) and the system can tolerate a rare retry on crash. The alternative — a DB row lock (`SELECT FOR UPDATE`) — works correctly but costs 5–50ms per lock vs < 1ms for SETNX, and adds contention on the same DB already handling trip writes. See Trade-off 3.
+> **Key Insight:** H3 hexagons have uniform neighbor distances — no corner distortion. This matters for ETA calculation: every cell edge is equidistant, so "expand to adjacent cell" expands coverage uniformly. Geohash rectangles have longer diagonals than edges, creating search radius inconsistencies.
 
-#### Step 4: Dispatch Strategy
+#### Step 2: Eligibility Filter
+
+```
+From 100 GEORADIUS candidates, filter by:
+  ✓ driver.state = IDLE            (not RESERVED or ON_TRIP)
+  ✓ vehicle_type matches request
+  ✓ acceptance_rate > 60%
+  ✓ not blocked by this rider
+  ✓ rating above minimum threshold
+Remaining: ~10–20 eligible candidates → rank these
+```
+
+#### Step 3: ETA-Based Ranking (Not Distance)
+
+**Why ETA, not distance?** A driver 0.5km away stuck in traffic has a worse ETA than one 1.2km away on an open road. Riders experience wait time — not map distance.
+
+```
+For each eligible driver:
+  1. Call routing engine (Google Maps / internal) with driver's current location → rider pickup
+  2. Get eta_seconds (accounting for real-time traffic)
+  3. Score:
+       score = 0.50 × (1 / eta_seconds)       # ETA is primary signal
+             + 0.25 × driver_rating            # quality
+             + 0.15 × acceptance_rate          # reliability
+             + 0.10 × (1 / trips_today)        # avoid fatigue
+
+Top driver = lowest ETA + highest weighted score
+```
+
+> [!IMPORTANT]
+> **ETA vs distance — the critical distinction.** Distance is a proxy for ETA, but a bad one in cities. Real systems call the routing engine for every candidate in the top-K set. This is expensive (~10ms per call), so the candidate set must be pre-filtered to ≤ 20 drivers before ETA calculation. That is exactly what steps 1 and 2 achieve.
+
+#### Step 4: Sequential Dispatch with Timeout + Fallback Chain
+
+Real systems offer drivers sequentially (normal conditions), not all at once. Here is the exact sequence:
+
+```
+1. Take top-ranked driver (lowest ETA score)
+2. Attempt atomic state transition: IDLE → RESERVED (see Step 5)
+   → FAIL: another request already reserved this driver → go to step 1 with next candidate
+   → OK: proceed
+3. Push ride offer to driver's WebSocket (15-second response window)
+4. Driver responds:
+   → ACCEPT: confirm ride, notify rider, lock state as RESERVED
+   → DENY / no response in 15s: transition back RESERVED → IDLE, go to step 1 with next candidate
+5. If all candidates in current radius exhausted: expand radius (see below)
+6. If all 3 radius rounds exhausted: return "no driver found" to rider
+```
 
 ```mermaid
 flowchart TD
-    A["Ride request received"] --> B{Supply/demand ratio}
-    B -->|Normal demand| C["Sequential offer — best driver first"]
-    B -->|Surge / low supply| D["Parallel offer — top K simultaneously"]
-    C --> C1["15s timeout per driver"]
-    D --> D1["First to accept wins; cancel others"]
-    C1 -->|No response| C2["Move to next candidate"]
-    C2 -->|All rejected| E["Expand radius: 2km → 3km → 5km"]
-    D1 --> F["SETNX lock — atomic assignment"]
-    E --> A
+    A["Ride request received"] --> B["Step 1+2: Geo search + filter"]
+    B --> C["Step 3: ETA-rank top 20"]
+    C --> D["Step 4: Take top driver"]
+    D --> E["Atomic IDLE → RESERVED transition"]
+    E -->|Transition failed - already taken| D
+    E -->|Transition OK| F["Push offer via WebSocket — 15s timeout"]
+    F -->|ACCEPT| G["Confirmed. Notify rider."]
+    F -->|DENY or timeout| H["RESERVED → IDLE. Next candidate."]
+    H --> D
+    D -->|All candidates exhausted| I["Expand radius: 2km → 3km → 5km"]
+    I -->|Max radius exhausted| J["No driver found"]
+    I --> B
 ```
 
-#### Step 5: Radius Expansion
+#### Step 5: Atomic State Transition (The Consistency Mechanism)
+
+**Here is the key insight the feedback is pointing at:** Real systems do not rely on a separate distributed lock. The **state transition itself is the lock**.
 
 ```
-Round 1: 2km radius, 2 min timeout → quality match
-Round 2: 3km radius, 2 min timeout → balance quality + availability
-Round 3: 5km radius, 2 min timeout → availability over quality
-Round 4: fail request → return "no driver found"
+Atomic operation (Redis Lua script or MULTI/EXEC with WATCH):
+
+WATCH driver:state:driver_001
+  current = GET driver:state:driver_001
+  IF current != "IDLE": DISCARD → another request got there first → skip this driver
+  MULTI
+    SET driver:state:driver_001 RESERVED EX 30
+    ZREM drivers:idle:bangalore driver_001
+  EXEC
+    → OK:   state changed atomically. Driver removed from idle pool. Send offer.
+    → FAIL: EXEC returned nil (someone else committed between WATCH and EXEC) → skip driver
+```
+
+The state machine is the lock. There is no separate `lock:assignment` key — the transition from IDLE → RESERVED is the mutual exclusion. If it fails, the driver is already taken. Move on.
+
+> [!IMPORTANT]
+> **State machine replaces distributed locks.** The atomic IDLE → RESERVED transition (WATCH/MULTI/EXEC) ensures a driver is either fully available or fully reserved — never both. No separate lock key. No TTL races. The state is the truth. This is why state machines at the Redis layer are the production pattern for preventing double-booking — not external lock services.
+
+#### Radius Expansion
+
+```
+Round 1: 2km,  2-min timeout → quality match (close driver, good ETA)
+Round 2: 3km,  2-min timeout → balance quality + availability
+Round 3: 5km,  2-min timeout → availability over quality
+Round 4:       → fail request → "no driver found"
 ```
 
 ---
 
 ### 6.4 Driver State Machine
 
+> Real systems do not prevent double-booking with a distributed lock. They prevent it by making the **state transition itself atomic**. The state machine is the lock.
+
 ```mermaid
 stateDiagram-v2
     [*] --> OFFLINE
-    OFFLINE --> IDLE : app opened, goes online
-    IDLE --> RESERVED : ride offer accepted, SETNX lock acquired
-    RESERVED --> ON_TRIP : driver arrives, starts ride
-    ON_TRIP --> IDLE : ride ended
-    IDLE --> OFFLINE : app closed / heartbeat timeout
-    RESERVED --> IDLE : driver denied / offer timed out, lock released
+    OFFLINE --> IDLE : app opened, heartbeat begins
+    IDLE --> RESERVED : atomic transition on offer dispatch
+    RESERVED --> ON_TRIP : driver taps "Start Ride"
+    ON_TRIP --> IDLE : driver taps "End Ride"
+    IDLE --> OFFLINE : app closed / TTL expired
+    RESERVED --> IDLE : driver denied / 15s timeout elapsed
 ```
 
-**State storage in Redis:**
+**Why this prevents double-booking — without a separate lock:**
+
+Each state maps to exactly one pool. A driver can only be in one pool at a time:
+
+| State | Pool membership | Update frequency | Who cares |
+|---|---|---|---|
+| `IDLE` | `drivers:idle:{city}` sorted set (geo-indexed) | Every 5s | Match engine queries this |
+| `RESERVED` | No pool — removed from idle on transition | Every 2s | Rider sees "driver en route" |
+| `ON_TRIP` | No pool — location events go to Kafka | Every 1s | Rider map live tracking |
+| `OFFLINE` | No pool — key expired via TTL | None | Auto-evicted, no cleanup job |
+
+**The atomic transition:**
 
 ```
-Key:   driver:state:{driver_id}
-Value: IDLE | RESERVED | ON_TRIP | OFFLINE
-TTL:   30s (refreshed by heartbeat every 15s)
+To reserve driver_001 for ride_A:
+
+WATCH driver:state:driver_001
+  current_state = GET driver:state:driver_001
+  IF current_state != "IDLE":
+    DISCARD          ← another request got here first → skip this driver
+  MULTI
+    SET driver:state:driver_001  RESERVED  EX 30
+    ZREM drivers:idle:bangalore  driver_001
+  EXEC
+    → nil  (EXEC failed: state changed between WATCH and EXEC) → skip driver
+    → OK   (atomic commit: state = RESERVED, removed from idle pool) → send offer
 ```
 
+Two servers racing to reserve the same driver: only one `EXEC` succeeds. The other gets `nil` and moves to the next candidate. No lock key. No lock service. The **state is the truth**.
+
+**Crash recovery via TTL:**
+
 ```
-Pool membership:
-  IDLE     → member of sorted set: drivers:idle:{city}  (geospatial index)
-  RESERVED → removed from idle pool on SETNX acquisition
-  ON_TRIP  → not in idle pool; location published to Kafka for rider fan-out
-  OFFLINE  → key expired; not in any pool
+Driver app crashes mid-trip → WebSocket closes → heartbeat stops
+  → TTL on driver:state:{driver_id} expires in 30s
+  → Driver auto-transitions to OFFLINE
+  → Removed from all pools automatically
+  → No cleanup cron job needed
 ```
 
-> [!NOTE]
-> **Key Insight:** The state machine is the consistency mechanism. IDLE → RESERVED transition is a Redis atomic operation (SETNX + ZREM in a pipeline). A driver is either fully available or fully reserved — never both. TTL ensures crashed drivers auto-evict without a cleanup job.
+> [!IMPORTANT]
+> **The state machine replaces distributed locks.** IDLE → RESERVED is the mutual exclusion. If two servers race, only one atomic WATCH/MULTI/EXEC commits. The other detects the conflict and skips. This is the production pattern — not a separate lock key, not ZooKeeper, not a DB row lock. The state machine IS the lock.
 
 ---
 
