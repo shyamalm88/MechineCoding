@@ -552,7 +552,7 @@ Alice sees "ABDC", Bob sees "ABCD" -- DIVERGED. Documents are inconsistent.
 
 ### 6.2 OT vs CRDT — The Core Algorithm Choice
 
-Both OT and CRDT solve the concurrent edit problem. They take fundamentally different approaches.
+Both OT and CRDT solve the concurrent edit problem. They take fundamentally different approaches. Understanding both deeply — including CRDT's real production costs — is what separates a junior answer ("use CRDT, it's simpler") from a senior answer.
 
 #### OT (Operational Transformation)
 
@@ -571,44 +571,108 @@ Both OT and CRDT solve the concurrent edit problem. They take fundamentally diff
 | Delete(A) vs Delete(B), A < B | B becomes B - 1 |
 | Delete(A) vs Delete(B), A >= B | B stays B |
 
+---
+
 #### CRDT (Conflict-free Replicated Data Type)
 
-- Position is encoded as a fractional index (e.g., 0.25, 0.75) rather than an integer
-- Insert between two positions by choosing a fractional value between them
-- Merge is deterministic: sort all elements by their fractional position
-- No central server required — any peer can merge independently
+CRDT = Conflict-free Replicated Data Type. The core guarantee: **any two peers that have seen the same set of operations will converge to the same document state — regardless of the order in which those operations arrived.** No central server required to enforce this. The data structure itself makes convergence guaranteed.
 
-**The Alice/Bob example with CRDT:**
+**The fundamental difference from OT:** OT needs a server to impose order before merging. CRDT makes operations commutative — you can apply them in any order and always get the same result.
+
+---
+
+##### How CRDT Merge Works (Operation-Based)
+
+In the operation-based model (which is what text editors use), each peer sends only the *delta* — the operation — not the full document. The key insight is that every character gets a **permanent unique identity**, not an integer position that shifts when other chars are inserted.
 
 ```
-Initial state:
-  "B" at position 0.50
-  "C" at position 0.75
-
-Alice inserts "A" between 0 and "B": position = 0.25  ->  A(0.25) B(0.50) C(0.75)
-Bob inserts "D" between "C" and 1.0: position = 0.875 ->  B(0.50) C(0.75) D(0.875)
-
-Merge: sort by position value
-  A(0.25)  B(0.50)  C(0.75)  D(0.875)  =  "ABCD"
-
-Both clients converge to "ABCD" without any central server. Correct.
+Each character carries:
+  id:    a unique identifier (never reused, even after deletion)
+  after: the id of the character this was inserted after (the "anchor")
+  value: the character itself
 ```
 
-#### OT vs CRDT Comparison
+**The Alice/Bob example:**
+
+```
+Document: "BC"   (B has id=1, C has id=2)
+
+Alice inserts "A" before B (anchor: start):
+  op: { id=3, after=start, value="A" }
+  Alice's state: "ABC"
+
+Bob inserts "D" after C (anchor: id=2):
+  op: { id=4, after=id2, value="D" }
+  Bob's state: "BCD"
+
+Both ops arrive at the other peer.
+No transformation needed — each op says "insert after THIS character (by id)".
+Both peers apply both ops and converge:
+
+  start → A(id=3) → B(id=1) → C(id=2) → D(id=4)
+  Rendered: "ABCD"  ✓  — both peers agree, no server needed.
+```
+
+**Why this works:** Alice's op doesn't say "insert at position 0." It says "insert after start." Bob's op doesn't say "insert at position 3." It says "insert after id=2 (C)." Integer positions shift when chars are inserted — unique IDs don't.
+
+**What happens when two peers insert at the same position concurrently?**
+
+```
+Alice types "B" after A (anchor: id=1)   →   "ABC"
+Bob types "X" after A (anchor: id=1)     →   "AXC"
+
+Both say "insert after id=1". Tie-break rule: deterministic sort by peer identity.
+Both peers converge to the same order — either "ABXC" or "AXBC" — consistently.
+```
+
+The result is arbitrary (the tie-break picks a winner) but always consistent. OT has the same limitation — the server's commit order decides. Neither algorithm can read intent.
+
+---
+
+##### Tombstoning — The Hidden Cost of CRDT
+
+**Deleted characters cannot be physically removed from a CRDT.** This is the most important production constraint.
+
+Here's why:
+
+```
+Document: A(id=1) → B(id=2) → C(id=3)
+
+Alice deletes B. Her view: A(id=1) → C(id=3)
+
+Bob (offline) types "D" after B — his op says: "after id=2"
+
+Bob reconnects. If B was physically deleted, id=2 no longer exists.
+Bob's operation has no anchor — it cannot be placed correctly.
+
+Solution: B becomes a tombstone — invisible to the user, but still in the structure:
+  A(id=1) → [B, id=2, deleted] → D(id=4) → C(id=3)
+  Rendered: "ADC"
+```
+
+**At scale:** A heavily-edited document accumulates tombstones — invisible deleted characters that stay in memory on every client. A 10,000-word document could have 50,000 tombstones. Periodic cleanup ("compaction") removes them once every peer has confirmed they've seen the deletion — but coordinating that cleanup across offline mobile clients is a hard engineering problem.
+
+> [!NOTE]
+> **Key Insight:** Tombstoning is not a bug — it is the price of CRDT's "no central server" guarantee. You cannot fully delete a character until every peer has acknowledged the deletion. OT has no tombstoning because the server is always the ordering authority — deletion is final immediately.
+
+---
+
+#### OT vs CRDT — Comparison
 
 | Dimension | OT | CRDT |
 |---|---|---|
-| Server topology | Requires single central ordering server | Works peer-to-peer or distributed |
-| Conflict resolution | Transform function (complex to implement correctly) | Sort by fractional position (simpler merge) |
-| Offline editing | Difficult — must reconcile with server on reconnect | Native — any peer can merge independently |
-| Position explosion | Not a problem | Fractional indices grow unbounded (mitigated by compaction) |
-| Correctness surface | Large — all op-type combinations must be handled | Smaller — merge is a sort |
-| Used by | Google Docs, Notion | Figma (Logoot), Liveblocks, Yjs, Automerge |
+| Server required | Yes — single central ordering server per document | No — peers merge independently |
+| Conflict resolution | Transform function adjusts positions against concurrent ops | Operations are self-describing (anchor by id) — no transform needed |
+| Offline editing | Hard — must reconnect to server to reconcile | Native — peers merge op sets in any order |
+| Deletion | Final — server confirms immediately | Tombstone — char stays in structure until all peers confirm |
+| Compaction overhead | None | Required — periodic cleanup of accumulated tombstones |
+| Data structures | Linear text (transform rules don't generalize) | Arbitrary structures (JSON trees, shapes) |
+| Used by | Google Docs (historically) | VS Code Live Share, Figma, Notion |
 
 **Chosen for this design: OT**
 
 > [!NOTE]
-> **Key Insight:** OT vs CRDT is not about which is "better" — it is about topology. If your system already requires a central server (for access control, versioning, billing, and audit logs), then OT is the correct choice. CRDT's primary advantage — no central server — becomes irrelevant in a system that already has one. Adding CRDT's complexity (position explosion, compaction, fractional index management) for an advantage you do not need is wasteful.
+> **Key Insight:** OT vs CRDT is not about which is "better" — it is about topology. OT requires a central server, which is a cost only if you don't already have one. Google Docs already has a central server for auth, versioning, and billing — OT's requirement is free. CRDT's advantages (no server, offline-native) only matter when you genuinely need peer-to-peer or multi-region without a single home region.
 
 ---
 
@@ -787,31 +851,65 @@ stateDiagram-v2
 | Aspect | OT | CRDT |
 |---|---|---|
 | Control | Centralized — one server imposes total order | Distributed — peers merge independently |
-| Complexity | Medium — transform function per op-type pair | High — fractional indices, position explosion, compaction |
+| Complexity | Medium — transform function per op-type pair | High — tombstoning, compaction, vector clock GC |
 | Ordering | Required — server version number is the total ordering | Not required — operations are commutative by design |
-| Offline support | Difficult — server reconciliation on reconnect | Native — peers merge any op set in any order |
+| Offline support | Hard — server reconciliation required on reconnect | Native — any peer merges any op set in any order |
+| Data structures | Linear text only — transform rules don't generalize | Arbitrary — Automerge handles JSON trees, shapes |
 | Integration with auth/versioning | Natural fit — central server already exists | Requires retrofitting — designed for no-server topologies |
+| Tombstone overhead | None | Required — deleted chars stay as markers until GC |
 
-**Chosen: OT.**
+**Chosen for this design: OT.**
 One-line reason: a central server is already required for access control, versioning, and billing — OT's single-ordering-point requirement is not an additional constraint. CRDT's primary advantage (no central server) is irrelevant when the central server already exists.
 
-#### When to use OT vs When to use CRDT
+---
+
+#### Where to Use OT vs CRDT vs Both — The Honest Answer
+
+> [!IMPORTANT]
+> **Google Docs historically used OT (Google Wave / Jupiter algorithm, 2009). Whether the current production system uses pure OT, CRDT, or a hybrid is not publicly confirmed by Google.** The original design is well-documented. The current design at Google's scale — billions of documents, offline Android/iOS apps, multi-region — may have evolved. Claiming certainty either way is incorrect.
+
+| Use Case | Right Choice | Reason |
+|---|---|---|
+| Real-time online collaborative editing, < 100ms latency | OT | Central server already exists; low complexity; fast path |
+| Mobile offline editing (hours or days offline) | CRDT | Reconnect reconciliation without server round-trip; offline ops merge natively |
+| Multi-region active-active (no single "home" region) | CRDT | OT's single ordering server becomes a cross-region bottleneck |
+| Structured data (shapes, JSON trees, embedded objects) | CRDT (Automerge-style) | OT transform functions don't generalize beyond linear text |
+| Comments, suggestions, presence metadata | CRDT or last-write-wins | Not linear text; central ordering less critical |
+| Short offline windows (< 1 min), server always reachable | OT | Reconnect is a simple log catch-up; CRDT overhead not justified |
+
+**Can Google use both?** Yes — and this is the likely direction at scale:
+
+```
+Layer 1: Real-time online editing (happy path)
+  → OT Server handles the live session
+  → All clients connected → central ordering → < 100ms latency
+
+Layer 2: Offline / multi-device reconciliation (cold path)
+  → Mobile app goes offline for hours
+  → On reconnect: large divergence window → CRDT-style merge
+  → Treat offline edits as concurrent CRDT ops; server applies merge rules
+
+Layer 3: Structured content (comments, embedded objects, JSON)
+  → These are not linear text — OT transform rules don't cover them
+  → JSON CRDT (Automerge) handles arbitrary data structures natively
+```
+
+This is a **hybrid architecture**: OT for the hot real-time path, CRDT for the cold/offline path and non-text data. Neither algorithm alone handles all cases at Google's scale and product surface.
 
 | Signal | Choose OT | Choose CRDT |
 |---|---|---|
-| Server topology | You already have a central server (auth, billing, audit) | Peer-to-peer or multi-master without a single owner |
-| Offline support | Short offline windows; reconnect to reconcile | Long offline or mesh networks (mobile, local-first apps) |
-| Team size building it | Small team, correctness over flexibility | Large infra team with bandwidth to maintain CRDT compaction |
-| Data model | Linear text (Google Docs, Notion, code editors) | Arbitrary data structures (Figma shapes, JSON trees) |
-| Real-world example | Google Docs, Notion, Quip | Figma, Liveblocks, Yjs, Automerge |
+| Server topology | Central server already exists | Peer-to-peer or multi-master |
+| Offline window | Short (seconds to minutes) | Long (hours, days, mesh networks) |
+| Data model | Linear text | Arbitrary structures (JSON, vector graphics) |
+| Team / maintenance | Small team, correctness priority | Large infra team comfortable with compaction and GC |
+| Real-world: text editors | Google Docs (historically), Notion, Quip | VS Code Live Share (Yjs), GitHub Copilot Workspace (Automerge) |
 
 > [!IMPORTANT]
-> **When to use which — the one-line rule:**
-> OT = simpler but centralized. CRDT = scalable but complex.
-> If you already have a central server, OT's centralization is not a cost — it is free. Add CRDT only when peer-to-peer or multi-master is a genuine requirement.
+> OT = simpler but centralized. CRDT = distributed but carries tombstone and compaction cost.
+> The correct answer in an interview is not "use OT" or "use CRDT" — it is: "OT for the real-time hot path where a central server already exists; CRDT for offline reconciliation and non-text structured data where distributed merge is genuinely required."
 
 > [!NOTE]
-> **Key Insight:** CRDT's "no central server" advantage is only valuable in a truly peer-to-peer system. Google Docs is not peer-to-peer — it has accounts, permissions, and audit logs. The central server exists regardless. OT is simpler to reason about and operationally maintain when a central ordering point already exists.
+> **Key Insight:** The reason to know CRDT deeply is not to argue for replacing OT. It is to design the offline and structured-data layers correctly — the layers where OT's central ordering requirement becomes a bottleneck rather than a free constraint.
 
 ---
 
