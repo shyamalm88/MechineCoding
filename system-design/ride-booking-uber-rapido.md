@@ -1,4 +1,39 @@
-# Ride Booking Flow - Uber/Rapido (HLD)
+# System Design: Ride Booking (Uber / Rapido)
+
+---
+
+## 🧠 Mental Model
+
+> Uber is built on two concurrent real-time systems: **location tracking** and **driver matching**. Every second, millions of drivers push their GPS coordinates. When a rider requests a trip, the system must find the closest available driver, atomically assign them, and keep both parties' maps in sync — all under 300ms. The hardest problems are concurrency (preventing double-booking) and geospatial search at scale.
+
+```
+                ┌──────────────────────────────────────────────────────────────┐
+                │                     FAST PATH                                 │
+ ┌──────────┐  │  ┌───────────────┐  GEORADIUS   ┌──────────────┐             │
+ │  Driver  │──►│  │ Location Svc  │ ───────────► │ Match Engine │ ──► Driver  │
+ │  App     │  │  │ (Redis Geo)   │              │ (top K score)│    notified  │
+ └──────────┘  │  └───────────────┘              └──────┬───────┘             │
+  every 3-5s   │                                        │ SETNX (atomic lock) │
+               └────────────────────────────────────────┼─────────────────────┘
+                                                         │
+               ┌─────────────────────────────────────────▼────────────────────┐
+               │                    RELIABLE PATH                               │
+               │  Trip event ──► Kafka ──► Trip DB (Postgres/Cassandra)        │
+               │  (start, end, fare, route) — durable, for billing & history   │
+               └──────────────────────────────────────────────────────────────┘
+```
+
+## ⚡ Core Design Principle
+
+| Path | Mechanism | Optimizes for | Example |
+|------|-----------|---------------|---------|
+| **Fast Path** | Redis GEOADD + GEORADIUS + SETNX | Latency (< 300ms) | Driver location updates, matching, map sync |
+| **Reliable Path** | Kafka → PostgreSQL / Cassandra | Durability (billing, audit) | Trip start/end events, fare calculation, history |
+
+> [!IMPORTANT]
+> **Driver location is fast path only.** Current location is overwritten every 3–5 seconds — only the latest value matters. Trip events (start, pickup, dropoff) are reliable path — persisted durably because they drive billing. Never conflate real-time ephemeral data (location) with durable transactional data (trip records).
+
+---
 
 ## Table of Contents
 
@@ -179,6 +214,47 @@ WebSocket connections: 10 million (users + drivers)
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### 🚦 Driver State Machine
+
+The driver state machine is what prevents double-booking. Only `IDLE` drivers can receive ride requests. The state is stored in Redis (`driver:state:{driver_id}`) — not in the database — because it changes at high frequency and must be readable in sub-millisecond.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> OFFLINE : Driver opens app
+
+    OFFLINE --> IDLE : Go online
+    IDLE --> RESERVED : Accepts ride request
+    RESERVED --> ON_TRIP : Arrives at pickup\nstarts trip
+    RESERVED --> IDLE : Rider cancels\nor driver declines
+    ON_TRIP --> IDLE : Trip completed
+    IDLE --> OFFLINE : Go offline / connection lost
+    RESERVED --> OFFLINE : Connection lost\n(auto-reassign ride)
+    ON_TRIP --> OFFLINE : Connection lost\n(trip continues, syncs on reconnect)
+
+    IDLE : IDLE\nAvailable for new rides\nShown in GEORADIUS results
+    RESERVED : RESERVED\nAssigned, going to pickup\nRemoved from idle pool
+    ON_TRIP : ON_TRIP\nPassenger in vehicle\nLocation tracked for rider
+    OFFLINE : OFFLINE\nNot shown to riders
+```
+
+**State storage in Redis:**
+```
+Key:   driver:state:{driver_id}
+Value: IDLE | RESERVED | ON_TRIP | OFFLINE
+TTL:   30 seconds (refreshed by heartbeat every 15s)
+       If heartbeat stops → TTL expires → driver set OFFLINE automatically
+```
+
+**Why this matters:**
+- `GEORADIUS` query only returns drivers in the `IDLE` pool (`drivers:idle:{city}`)
+- On `RESERVED`: driver is atomically removed from idle pool → invisible to new ride requests
+- On trip completion: driver re-added to idle pool → immediately available again
+- TTL-based OFFLINE: no explicit logout needed — heartbeat absence auto-cleans the state
+
+> [!NOTE]
+> **Key Insight:** The driver state machine is the consistency mechanism. It is not enough to have a "driver is available" boolean. The state machine with atomic transitions (SETNX on assignment + ZREM from idle pool in a Lua script or pipeline) ensures a driver is either fully available or fully reserved — never partially in both. This is the distributed systems equivalent of a mutex.
 
 ---
 
@@ -362,112 +438,235 @@ WebSocket connections: 10 million (users + drivers)
      │                │                │                │                │
 ```
 
-### Real-Time Driver Tracking
+### 📍 Real-Time Driver Location System
+
+Driver location is the foundation of Uber's system. Without accurate, low-latency location data, matching is impossible. Here is how it works end to end.
+
+#### Why Redis for Location (Not a Database)
+
+| | Redis | PostgreSQL |
+|---|---|---|
+| Write frequency | 1M+ writes/sec (all drivers, every 3-5s) | Would saturate the primary |
+| Read pattern | Geospatial radius query | No native geospatial index |
+| Data lifetime | Ephemeral — only latest position matters | Would accumulate stale rows |
+| Native geo support | `GEOADD`, `GEORADIUS`, `GEODIST` | PostGIS extension needed |
+
+> [!NOTE]
+> **Key Insight:** Location data is ephemeral. The previous GPS coordinate is worthless the moment the next one arrives. Storing location history in a transactional DB adds write amplification for data with zero long-term value. Redis holds only the *current* location. Trip waypoints (for route reconstruction) are written to durable storage via Kafka.
+
+#### Update Frequency and Batching
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    DRIVER LOCATION UPDATE FLOW                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   Driver App                  Location Service              Rider App       │
-│   ──────────                  ────────────────              ─────────       │
-│        │                            │                           │           │
-│   Every 3-5 sec                     │                           │           │
-│        │                            │                           │           │
-│   ─────┼──── WS: location_update ──>│                           │           │
-│        │    { lat, lng, heading,    │                           │           │
-│        │      speed, timestamp }    │                           │           │
-│        │                            │                           │           │
-│        │                   ─────────┼─── Update Redis ──────────│           │
-│        │                   │        │   GEOADD drivers:active   │           │
-│        │                   │        │   {lng} {lat} {driver_id} │           │
-│        │                   │        │                           │           │
-│        │                   │        │   If driver has active    │           │
-│        │                   │        │   ride, publish to rider  │           │
-│        │                   │        │                           │           │
-│        │                   │        │──── WS: driver_location ──│──────────>│
-│        │                   │        │    { lat, lng, eta }      │           │
-│        │                   │        │                           │           │
-│        │                   │        │                    Update map marker  │
-│        │                   │        │                    Recalculate ETA    │
-│        │                   │        │                           │           │
-│                                                                              │
-│   Batching Strategy:                                                        │
-│   ──────────────────                                                         │
-│   • Collect updates for 1 second                                            │
-│   • Batch write to Redis                                                    │
-│   • Publish to subscribers                                                  │
-│   • Reduces write load by 3-5x                                              │
-│                                                                              │
-│   Compression:                                                              │
-│   ────────────                                                               │
-│   • Send delta from last position (not full coordinates)                   │
-│   • Binary protocol for mobile (Protocol Buffers)                          │
-│   • Reduce bandwidth by 60%                                                 │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+Driver state         Update frequency    Reason
+─────────────────    ────────────────    ──────────────────────────────────────
+IDLE (searching)     Every 5 seconds     Low urgency — driver not en route
+RESERVED (to pickup) Every 2 seconds     Rider watching ETA on map
+ON_TRIP              Every 1 second      Rider tracking live position
 ```
 
-### Driver Matching Algorithm
+**Batching strategy:**
+- Location Service buffers updates for 500ms
+- Batch-writes to Redis using pipeline (reduces round trips)
+- Publishes to Kafka only for ON_TRIP drivers (rider needs real-time map)
+- Reduces Redis write load by 3–5x without increasing visible latency
+
+#### Location Update Flow
+
+```mermaid
+sequenceDiagram
+    participant D as Driver App
+    participant LS as Location Service
+    participant Redis as Redis Geo
+    participant K as Kafka
+    participant R as Rider App
+
+    Note over D: Every 1-5 seconds
+    D->>LS: WS: { lat, lng, heading, speed, driver_id, state }
+    LS->>Redis: GEOADD drivers:idle:{city} {lng} {lat} {driver_id}
+    Note over LS,Redis: Overwrites previous coordinate — only latest matters
+
+    alt Driver is ON_TRIP
+        LS->>K: Publish location_update { driver_id, lat, lng, ride_id }
+        K->>LS: Location Consumer reads
+        LS->>R: WebSocket push: driver_moved { lat, lng, eta_seconds }
+    end
+```
+
+#### Geohash-Based Proximity Search
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    DRIVER MATCHING ALGORITHM                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   Step 1: Find Nearby Drivers                                               │
-│   ───────────────────────────                                                │
-│   ┌─────────────────────────────────────────────────────────────────────┐  │
-│   │  GEORADIUS drivers:active:{city} {pickup_lng} {pickup_lat} 3 km    │  │
-│   │  WITHDIST WITHCOORD COUNT 50                                        │  │
-│   └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│   Returns: List of (driver_id, distance, lat, lng)                         │
-│                                                                              │
-│                                                                              │
-│   Step 2: Filter Eligible Drivers                                           │
-│   ────────────────────────────────                                           │
-│   • Ride type matches (Auto, Bike, Car)                                    │
-│   • Driver is online and available                                          │
-│   • Not already on another ride                                             │
-│   • Rating above threshold                                                  │
-│   • Not blocked by rider                                                    │
-│                                                                              │
-│                                                                              │
-│   Step 3: Score Drivers                                                     │
-│   ─────────────────────                                                      │
-│   ┌─────────────────────────────────────────────────────────────────────┐  │
-│   │  score = w1 * (1/distance)        // Closer is better              │  │
-│   │        + w2 * acceptance_rate     // Higher acceptance preferred   │  │
-│   │        + w3 * rating              // Higher rating preferred       │  │
-│   │        + w4 * recent_trips        // Active drivers preferred      │  │
-│   │        - w5 * cancellation_rate   // Lower cancellation preferred  │  │
-│   │                                                                     │  │
-│   │  Weights: w1=0.4, w2=0.2, w3=0.2, w4=0.1, w5=0.1                  │  │
-│   └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│                                                                              │
-│   Step 4: Broadcast to Top N Drivers                                       │
-│   ────────────────────────────────────                                       │
-│   • Send ride request to top 5-10 drivers simultaneously                  │
-│   • First to accept wins                                                    │
-│   • Use distributed lock for fairness                                      │
-│                                                                              │
-│   Alternative: Sequential Offering                                          │
-│   • Offer to best match first                                              │
-│   • Timeout after 15 seconds                                               │
-│   • Move to next driver                                                     │
-│   • Better driver quality, longer wait                                     │
-│                                                                              │
-│                                                                              │
-│   Step 5: Confirm Match                                                     │
-│   ─────────────────────                                                      │
-│   • Atomic operation: SETNX ride:{id}:driver {driver_id}                  │
-│   • Prevent double-booking                                                  │
-│   • Notify rider via WebSocket                                              │
-│   • Update driver status to "on_trip"                                      │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+Pickup coordinate: (12.9716, 77.5946)
+Geohash (6 chars): tdr1wc  ← ~1.2km cell
+
+Adjacent cells to search:
+  tdr1wc (center)
+  tdr1wb, tdr1wf, tdr1wd, tdr1w9, tdr1we, tdr1w3, tdr1w6, tdr1w7
+
+Redis GEORADIUS searches all cells within radius automatically.
+No manual cell enumeration needed — built into the Redis Geo command.
+```
+
+### 🎯 Driver Matching — The Core Backend Problem
+
+Driver matching is the heart of Uber's system design. It must solve three hard problems simultaneously: **geospatial search at scale**, **concurrency control** (prevent double-booking), and **dispatch strategy** (sequential vs parallel offers).
+
+---
+
+#### Step 1: Geospatial Search with Geohashing
+
+Every driver's location is stored in Redis using the `GEOADD` command, which indexes coordinates into a geohash under the hood.
+
+**Why geohashing?**
+- Geohash converts (latitude, longitude) into a string prefix (e.g., `tdr1wc`)
+- Nearby locations share common prefixes — `tdr1wc` and `tdr1wd` are adjacent cells
+- Querying nearby drivers = querying a single Redis Sorted Set key, not scanning a DB table
+- Redis `GEORADIUS` executes this in O(N+log(M)) — fast enough for sub-100ms matching
+
+```
+Pickup location: (12.9716, 77.5946) → Geohash: tdr1wc
+
+Redis command:
+GEORADIUS drivers:idle:bangalore 77.5946 12.9716 3 km
+         WITHDIST WITHCOORD COUNT 100 ASC
+
+Returns: [(driver_001, 0.3km, lng, lat), (driver_002, 0.7km, ...), ...]
+```
+
+**Geohash precision levels:**
+| Precision | Cell size | Use case |
+|---|---|---|
+| 6 chars | ~1.2 km × 0.6 km | Initial coarse search |
+| 7 chars | ~150m × 150m | Refined search in dense areas |
+| 8 chars | ~38m × 19m | Precise pickup matching |
+
+> [!NOTE]
+> **Key Insight:** Redis stores driver locations in a geospatially-indexed Sorted Set (Geo index). The score is an integer encoding of the geohash. `GEORADIUS` queries this sorted set by bounding box — no full scan, no DB join. This is why location lookup at 1M concurrent drivers is sub-millisecond.
+
+---
+
+#### Step 2: Filter and Score Top K Drivers
+
+From the 100 candidates returned by `GEORADIUS`, filter by eligibility:
+- Driver state = `IDLE` (not `RESERVED` or `ON_TRIP`)
+- Vehicle type matches rider's request
+- Acceptance rate > threshold (e.g., > 60%)
+- Not blocked by this rider
+- Rating above minimum threshold
+
+Score the remaining candidates:
+
+```
+score = 0.40 × (1 / distance_km)      # Closer is better
+      + 0.20 × acceptance_rate         # Reliable drivers preferred
+      + 0.20 × rating                  # Quality signal
+      + 0.10 × recent_trips_count      # Active drivers preferred
+      - 0.10 × cancellation_rate       # Penalize frequent cancellers
+```
+
+Select **Top K** (K = 5–10 in normal conditions, K = 15–20 during surge).
+
+---
+
+#### Step 3: Dispatch Strategy — Sequential vs Parallel
+
+```mermaid
+graph TD
+    A["Top K candidates scored"] --> B{Dispatch mode?}
+
+    B -->|Normal demand| C["Sequential Offer"]
+    B -->|Surge / low supply| D["Parallel Offer"]
+
+    C --> C1["Offer to #1 driver\n(15 second timeout)"]
+    C1 -->|Accepted| E["Atomic lock: SETNX"]
+    C1 -->|Declined / timeout| C2["Offer to #2 driver"]
+    C2 -->|Accepted| E
+    C2 -->|Declined| C3["... up to #K driver"]
+    C3 -->|No one accepts| F["Expand radius\n2km to 3km to 5km"]
+    F -->|Still no match| G["Cancel + notify rider\n(2 min timeout)"]
+
+    D --> D1["Offer to top 5-10 simultaneously"]
+    D1 -->|First accepts| E
+    D1 -->|Multiple accept| H["SETNX: only one wins\nothers get cancellation event"]
+```
+
+| Strategy | Wait time | Acceptance rate | Risk |
+|---|---|---|---|
+| Sequential | Higher (~45s) | Higher (drivers get exclusive window) | Slow during surge |
+| Parallel | Lower (~15s) | Lower (drivers may decline if they see others) | Duplicate notifications |
+
+> [!NOTE]
+> **Key Insight:** Sequential vs parallel is a latency-vs-quality trade-off. Sequential gives the best driver the first shot — improving rider experience but increasing wait time. Parallel minimizes wait time at the cost of wasted notifications. Uber uses **parallel in high-demand areas**, **sequential in low-demand areas** — the system switches dynamically based on supply/demand ratio.
+
+---
+
+#### Step 4: Atomic Driver Assignment (Preventing Double-Booking)
+
+This is the concurrency problem. Multiple rides could match the same driver simultaneously. Without atomic assignment, the same driver gets assigned to two rides.
+
+**Solution: Redis SETNX as a distributed lock**
+
+```
+Command: SETNX lock:assignment:{driver_id} {ride_id} EX 30
+
+Behavior:
+  → If key does NOT exist: set succeeds → this ride "wins" the driver
+  → If key already EXISTS: set fails → another ride already claimed this driver
+  → EX 30: lock auto-expires in 30s if crash prevents cleanup
+
+After successful SETNX:
+  1. Update driver state: SET driver:state:{driver_id} RESERVED
+  2. Remove driver from idle pool: ZREM drivers:idle:{city} {driver_id}
+  3. Publish trip_matched event to Kafka (reliable path)
+  4. Push WebSocket notification to both rider and driver
+```
+
+> [!IMPORTANT]
+> **This is the key concurrency insight.** `SETNX` (Set if Not eXists) is an atomic Redis operation. It is the correct primitive for distributed mutual exclusion in this context — not ZooKeeper, not database transactions, not application-level locks. Redis atomicity guarantees that even if 100 concurrent matching requests race for the same driver, exactly one wins.
+
+---
+
+#### Step 5: Radius Expansion on No Match
+
+If no driver accepts within the timeout:
+
+```
+Round 1: GEORADIUS ... 2 km → no match after 60s
+Round 2: GEORADIUS ... 3 km → no match after 60s
+Round 3: GEORADIUS ... 5 km → no match after 60s
+Final:   Cancel ride, notify rider: "No drivers available"
+```
+
+Total timeout: ~2 minutes. Rider can retry or change vehicle type.
+
+---
+
+#### Full Matching Flow (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    participant R as Rider App
+    participant GW as API Gateway
+    participant MS as Match Service
+    participant Redis as Redis
+    participant WS as WebSocket Server
+    participant D as Driver App
+    participant K as Kafka
+
+    R->>GW: POST /rides/request { pickup, dropoff, type }
+    GW->>MS: route to Match Service
+    MS->>Redis: GEORADIUS drivers:idle 2km COUNT 100
+    Redis-->>MS: [(driver_A, 0.3km), (driver_B, 0.7km), ...]
+    MS->>MS: filter + score → top K
+    MS->>Redis: SETNX lock:assignment:driver_A ride_001 EX 30
+    Redis-->>MS: OK (lock acquired)
+    MS->>Redis: SET driver:state:driver_A RESERVED
+    MS->>K: publish trip_matched event
+    MS->>WS: push ride_request to driver_A
+    WS->>D: ride_request { ride_id, pickup, rider_name }
+    D->>WS: accept { ride_id }
+    WS->>MS: driver accepted
+    MS->>GW: driver matched
+    GW->>R: WebSocket: driver_assigned { driver_id, eta }
 ```
 
 ---
@@ -1318,6 +1517,134 @@ WebSocket connections: 10 million (users + drivers)
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## ⚖️ Key Trade-offs
+
+> [!TIP]
+> This is the section interviewers love. Every decision below follows the structure: **problem → options → chosen → trade-off accepted**.
+
+---
+
+### Trade-off 1: Geohashing vs PostGIS for Geospatial Search
+
+| | Redis + Geohash | PostGIS (PostgreSQL) |
+|---|---|---|
+| Throughput | 1M+ writes/sec (in-memory) | Bounded by disk I/O |
+| Query latency | < 1ms (GEORADIUS) | 10–100ms (index scan) |
+| Data durability | Ephemeral (TTL) | Durable |
+| Operational cost | Low (Redis is simple) | Higher (PostGIS tuning) |
+
+**Chosen: Redis Geohashing**
+
+> [!NOTE]
+> **Key Insight:** Location data is ephemeral. Only the current position matters. Redis Geo gives sub-millisecond spatial queries on ephemeral data. PostGIS is the right choice when you need durable geospatial data (e.g., storing trip routes for audit). Use the right tool for the data's lifetime.
+
+---
+
+### Trade-off 2: Sequential vs Parallel Driver Dispatch
+
+| | Sequential | Parallel |
+|---|---|---|
+| Rider wait time | Higher (~45s avg) | Lower (~15s avg) |
+| Driver quality | Higher (best driver first) | Lower (first responder wins) |
+| Notification waste | Zero | High (K-1 drivers get cancelled) |
+| Surge behavior | Poor (bottleneck) | Good (fast fill) |
+
+**Chosen: Dynamic — parallel during surge, sequential in normal demand**
+
+> [!NOTE]
+> **Key Insight:** The optimal dispatch strategy is a function of supply/demand ratio. When supply is scarce (surge), speed matters most — parallel. When supply is plentiful, quality matters — sequential. Hard-coding one strategy means either slow matching in normal conditions or poor quality during surge.
+
+---
+
+### Trade-off 3: Accuracy vs Latency in Driver Matching Radius
+
+| | Small radius (2km) | Large radius (5km+) |
+|---|---|---|
+| Match quality | High (nearby drivers) | Lower (distant drivers) |
+| Match rate | Lower in sparse areas | Higher |
+| ETA accuracy | Good | Poor (ETA can be 15+ min) |
+| System load | Low | High (more candidates to score) |
+
+**Chosen: Dynamic radius expansion — start small, expand on timeout**
+
+> [!NOTE]
+> **Key Insight:** Fixed radius is a false economy. Starting at 2km preserves match quality. Expanding on timeout preserves match rate. The system adapts to local supply conditions without manual tuning per city.
+
+---
+
+### Trade-off 4: Driver State in Redis vs Database
+
+| | Redis (chosen) | Database |
+|---|---|---|
+| Read latency | < 1ms | 5–50ms |
+| Write frequency | Every heartbeat (15s) | Same — unsustainable |
+| Durability | Ephemeral (TTL) | Durable |
+| Failure mode | State reset on crash (drivers re-register) | Stale state persists |
+
+**Chosen: Redis with TTL**
+
+> [!NOTE]
+> **Key Insight:** Driver availability state is ephemeral. If a driver's app crashes, their state should automatically become OFFLINE — not persist indefinitely. Redis TTL does this for free. A database would require a separate staleness-detection cron job. Redis TTL is the correct primitive for data with a natural expiry.
+
+---
+
+### Trade-off 5: At-Least-Once vs Exactly-Once for Trip Events
+
+Kafka delivers trip events (trip_start, trip_end, fare_calculated) at-least-once. If the consumer crashes mid-processing, it reprocesses the event. This means a trip_end event could be processed twice.
+
+**Solution: Idempotency key on trip events**
+
+```
+Each event carries: { event_id: UUID, ride_id, type, timestamp }
+Consumer: before processing, check Redis SET processed:{event_id}
+  → exists: skip (duplicate)
+  → missing: process, then SET processed:{event_id} EX 86400
+```
+
+> [!NOTE]
+> **Key Insight:** Exactly-once delivery in Kafka requires 2-phase commit — expensive. At-least-once + idempotency key gives effectively-once delivery at near-zero cost. The event_id UUID is the deduplication key. This pattern is identical to the WhatsApp client_message_id dedup pattern.
+
+---
+
+## 🏁 Interview Summary
+
+> [!TIP]
+> When the interviewer says "walk me through your Uber design," hit these points in order. Each is a decision with a clear WHY.
+
+### The 6 Decisions That Define This System
+
+| Decision | Problem It Solves | Trade-off Accepted |
+|---|---|---|
+| Redis Geo (not PostGIS) | 1M+ location writes/sec; sub-ms spatial queries | Ephemeral — state lost on Redis failure (re-registers within 15s via heartbeat) |
+| Driver State Machine | Prevents double-booking; only IDLE drivers in idle pool | State in Redis = not durable. Acceptable: drivers re-register automatically |
+| SETNX for assignment | Atomic mutual exclusion — one driver, one ride | 30s lock TTL means rare lock expiry on crash; handled by retry logic |
+| Dynamic radius expansion | Balances match quality (small radius) vs match rate (large radius) | Higher latency on expansion rounds; acceptable vs "no ride found" |
+| Sequential vs parallel dispatch | Adapts to supply/demand; optimal in both normal and surge | Parallel wastes K-1 driver notifications in normal conditions |
+| Kafka for trip events | Decouples matching (fast) from billing/history (reliable) | Adds 5–20ms latency to durable writes; acceptable |
+
+### Fast Path vs Reliable Path
+
+```
+Fast Path   (latency):   Driver location → Redis Geo → GEORADIUS → SETNX → WebSocket push
+Reliable Path (safety):  Trip events → Kafka → PostgreSQL/Cassandra (billing, history)
+
+Location = fast path only (ephemeral, overwritten every 3-5s)
+Trip record = reliable path (durable, drives billing and audit)
+```
+
+### Key Insights Checklist
+
+> [!IMPORTANT]
+> These are the lines that make an interviewer lean forward. Know them cold.
+
+- **"Driver location is ephemeral — only the current position matters."** Redis overwrites it every 3–5 seconds. Storing location history in a DB = write amplification for zero-value data.
+- **"The driver state machine is the consistency mechanism, not a lock."** IDLE → RESERVED transition (SETNX + ZREM from idle pool) is atomic. A driver is either fully available or fully reserved — never both.
+- **"SETNX, not ZooKeeper, not DB transactions."** Redis SETNX is the right primitive for distributed mutual exclusion when the critical section is short (< 30s) and the system can tolerate a rare retry on crash.
+- **"Sequential vs parallel dispatch is a supply/demand decision, not a fixed architecture."** Hard-coding one strategy is wrong — the system should adapt dynamically.
+- **"Push notification = wake-up call, not delivery vehicle."** Driver app receives a push when offline, then WebSocket delivers the actual ride request on reconnect.
 
 ---
 
