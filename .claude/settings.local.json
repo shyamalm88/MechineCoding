@@ -7,7 +7,9 @@
       "Bash(npm run dev:*)",
       "Bash(tree:*)",
       "Bash(wc:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(ls \"/Volumes/Personal/MechineCoding/system-design/latest & updated/\")",
+      "Bash(git -C /Volumes/Personal/MechineCoding show HEAD:system-design/zomato-food-delivery.md)"
     ],
     "deny": [],
     "ask": []

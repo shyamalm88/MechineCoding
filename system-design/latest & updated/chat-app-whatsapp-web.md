@@ -2,374 +2,211 @@
 
 ---
 
-## 🧠 Mental Model
+## Mental Model
 
-> Chat systems are built on **two independent flows** running concurrently: **real-time delivery** and **reliable persistence**. The fast path (WebSocket) tries to deliver instantly. The reliable path (Cassandra + Kafka) ensures the message survives any failure. Production chat is the careful orchestration of both — never conflating them.
+Chat systems run **two independent flows concurrently**: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to deliver a message instantly. The reliable path (Cassandra write) ensures the message is durable the moment it lands. Production chat is the careful orchestration of both — never conflating them.
 
 ```
-                        ┌─────────────────────────────────────────────────────┐
-                        │                    FAST PATH                         │
-   ┌────────┐  WS frame │  ┌────────────┐  Redis  ┌──────┐  Kafka  ┌────────┐ │  WS push  ┌────────┐
-   │ User A │ ─────────►│  │ Chat Srvr1 │ ──────► │Redis │ ──────► │ Kafka  │ │ ─────────►│ User B │
-   └────────┘           │  └─────┬──────┘  lookup └──────┘         └────┬───┘ │           └────────┘
-                        └────────│────────────────────────────────────────────┘
-                                 │ concurrent write
-                        ┌────────▼────────────────────────────────────────────┐
-                        │                  RELIABLE PATH                       │
-                        │              ┌─────────────────┐                    │
-                        │              │    Cassandra     │  ← message is safe │
-                        │              │  (durable store) │    the moment this │
-                        │              └─────────────────┘    write confirms   │
-                        └─────────────────────────────────────────────────────┘
+                        +-----------------------------------------------------+
+                        |                    FAST PATH                         |
+   +--------+  WS frame |  +------------+  Redis  +------+  Kafka  +--------+ |  WS push  +--------+
+   | User A | --------->|  | Chat Srvr1 | ------> |Redis | ------> | Kafka  | | --------->| User B |
+   +--------+           |  +-----+------+  lookup +------+         +----+---+ |           +--------+
+                        +--------|--------------------------------------------+
+                                 | concurrent write
+                        +--------v--------------------------------------------+
+                        |                  RELIABLE PATH                       |
+                        |              +-----------------+                     |
+                        |              |    Cassandra    |  <- message is safe |
+                        |              | (durable store) |    the moment this  |
+                        |              +-----------------+    write confirms   |
+                        +-----------------------------------------------------+
 ```
 
 > [!IMPORTANT]
-> **Single tick ≠ Double tick.** Single tick = Cassandra confirmed (reliable path). Double tick = WebSocket push succeeded (fast path). These are separate guarantees. The fast path can fail. The reliable path must not.
+> **Single tick != Double tick.** Single tick = Cassandra confirmed (reliable path). Double tick = WebSocket push succeeded (fast path). These are separate guarantees from separate subsystems. The fast path can fail. The reliable path must not.
 
----
+### Core Design Principles
 
-## ⚡ Core Design Principle
-
-| Path | Mechanism | Optimizes for | Can fail? |
-|------|-----------|---------------|-----------|
-| **Fast Path** | WebSocket → Chat Server → Redis → Kafka → Chat Server → WebSocket | Latency (< 300ms) | Yes — user may be offline, server may crash |
-| **Reliable Path** | Chat Server → Cassandra (concurrent, non-blocking) | Durability (zero message loss) | No — replicated, durable by design |
+| Path | Optimized For | Mechanism |
+|---|---|---|
+| Fast Path | Latency (< 300ms) | WS frame -> Chat Server -> Redis lookup -> Kafka publish -> Chat Server -> WS push |
+| Reliable Path | Durability (zero loss) | Chat Server -> Cassandra write (concurrent, non-blocking, replicated) |
 
 > [!NOTE]
-> **Key Insight:** Both paths run concurrently on every message send. They are not sequential. The single tick fires as soon as Cassandra ACKs — regardless of fast path outcome. This is the architectural decision that makes zero message loss possible while maintaining low latency.
+> **Key Insight:** Both paths run concurrently on every message send — not sequentially. The single tick fires when Cassandra ACKs, regardless of fast path outcome. This is what makes zero message loss possible while keeping latency low.
 
 ---
 
-## 1. Problem Statement & Scope
-
-Design a real-time chat application similar to WhatsApp or Facebook Messenger. The system must support one-to-one messaging, group messaging, media sharing, and message status tracking (sent, delivered, read) at massive scale — targeting 1 billion users exchanging 100 billion messages per day.
-
-**In Scope:**
-- User registration and authentication (phone-number based)
-- One-to-one (1:1) real-time messaging
-- Group messaging
-- Message history with lazy loading (infinite scroll)
-- Media file sharing (images, videos)
-- Message status: Sent → Delivered → Read (1 tick, 2 ticks, blue ticks)
-- Offline message delivery
-
-**Out of Scope:**
-- Voice and video calls
-- Stories / Status features
-- End-to-end encryption design (acknowledged as a real-world concern, not covered here)
-- Payment features
-
----
-
-## 2. Requirements
-
-### 2.1 Functional Requirements (MVP)
-
-1. **User sign-up / sign-in** — Phone number based registration, similar to WhatsApp. Users receive a JWT token upon successful login.
-2. **One-to-one messaging** — Two users can send and receive text messages in real time.
-3. **Group messaging** — Users can create groups, add/remove members, and send messages to all members.
-4. **Message history** — Users can scroll back through past messages using lazy loading (pagination via offset + limit).
-5. **Media file sharing** — Users can send images and videos; media is stored in blob storage (S3) and the URL is stored in the message record.
-6. **Message status** — Each message shows delivery state:
-   - Single tick: server received and stored the message
-   - Double tick: message delivered to the recipient's device
-   - Blue ticks: recipient has opened and read the message
-
-### 2.2 Non-Functional Requirements
-
-| Requirement         | Target                                      |
-|---------------------|---------------------------------------------|
-| Scale               | 1 billion total users                       |
-| Message throughput  | 100 billion messages/day (~1.16M msg/sec)   |
-| Storage             | ~100 TB/day (text messages alone)           |
-| Availability        | High availability (99.99%+)                 |
-| Consistency         | Eventual consistency (not a banking system) |
-| Latency             | < 300ms end-to-end message delivery         |
-| Reliability         | Zero message loss                           |
-| CAP theorem choice  | AP (Availability + Partition Tolerance)     |
-
-**Justification for eventual consistency:** A chat app can tolerate a message arriving slightly out of order or a recipient seeing a tick update a second late. We must never drop a message, but we do not need strict linearizability.
-
----
-
-## 3. Back-of-the-Envelope Estimations
-
-### 3.1 Users and Messages
+## 0. Assumptions & Scale
 
 ```
 Total users:                    1,000,000,000   (1 billion)
-Assume 50% DAU:                   500,000,000   (500 million)
+DAU (50% of total):               500,000,000   (500 million)
 Messages per user per day:               ~100
 Total messages per day:       100,000,000,000   (100 billion)
 
-Messages per second (peak, 2x avg):
-  100B / 86,400 sec ≈ 1,157,000 msg/sec
-  Peak ≈ 2,300,000 msg/sec (2.3 million/sec)
+Average throughput:  100B / 86,400 sec  ~  1,157,000 msg/sec
+Peak throughput (2x avg):               ~  2,300,000 msg/sec
+
+Kafka partitions needed (1 partition = ~50K msg/sec):
+  2.3M / 50K = ~46 partitions minimum
+
+WebSocket connections at peak:
+  Assume 10% DAU online simultaneously = 50M concurrent WS connections
+  Chat Server handles 50K connections each -> 1,000 Chat Server instances
+
+Storage (text, avg 1 KB/message):
+  100B messages/day x 1 KB = 100 TB/day
+  100 TB/day x 365 = ~36.5 PB/year
+  With 3x Cassandra replication: ~110 PB/year
+
+Media (10% of messages, avg 500 KB):
+  10B media/day x 500 KB = ~5 PB/day (S3 + CDN)
+
+Redis session map memory:
+  50M active users x ~100 bytes/entry = ~5 GB -- fits in a single Redis node
 ```
 
-### 3.2 Storage
+> [!NOTE]
+> **Key Insight:** These numbers drive every decision below. 1.16M writes/sec breaks PostgreSQL. 50M concurrent connections require sticky sessions. 5 GB session map fits comfortably in Redis Cluster. Always show the math before naming a technology.
 
-```
-Average message size:                    1 KB
-Messages per day:                      100 B
-Storage per day (text):          100 TB/day
-Storage per year (text):      ~36.5 PB/year
-
-Media messages (assume 10% of messages carry media):
-  10B media messages/day
-  Average media size: 500 KB (thumbnail + compressed video)
-  Media storage per day:   ~5 PB/day (served via CDN, object storage)
-
-Total message DB storage per year: ~36.5 PB (text only, before replication)
-With 3x replication: ~110 PB/year
-```
-
-### 3.3 Bandwidth
-
-```
-Ingress (messages sent to system):
-  1.16M msg/sec x 1 KB = ~1.16 GB/sec ingress
-
-Egress (messages delivered, avg 1.5 recipients):
-  ~1.74 GB/sec egress (text only)
-
-WebSocket connections (active users at peak):
-  ~100M concurrent WebSocket connections
-```
-
-### 3.4 WebSocket Server Sizing
-
-```
-Assumption: 1 Chat Server handles 50,000 concurrent WebSocket connections
-Servers needed: 100M / 50,000 = 2,000 Chat Server instances
-```
+*These numbers drive the following decisions: Cassandra over SQL, Kafka over direct calls, Redis for session routing, WebSocket over polling.*
 
 ---
 
-## 4. API Design
+## 1. Problem + Scope
 
-All REST endpoints go through the HTTP API Gateway. Real-time messaging uses a separate WebSocket endpoint through the WebSocket Gateway.
+Design a real-time chat application at WhatsApp scale — 1 billion users, 100 billion messages/day. The system must support 1:1 messaging, group messaging, media sharing, and message status tracking (sent, delivered, read) with zero message loss and sub-300ms end-to-end latency.
 
----
+**In Scope:** user registration, 1:1 real-time messaging, group messaging (small and large groups), message history with pagination, media sharing, message status (1 tick / 2 ticks / blue ticks), offline message delivery.
 
-### 4.1 User Endpoints
-
-**Register a new user**
-```
-POST /api/v1/users/register
-
-Request Body:
-{
-  "phone": "+14155552671",
-  "name": "Alice Smith",
-  "metadata": { "device_type": "ios", "app_version": "2.4.1" }
-}
-
-Response 201:
-{
-  "user_id": "usr_8f3k2",
-  "name": "Alice Smith",
-  "phone": "+14155552671",
-  "created_at": "2026-03-28T10:00:00Z"
-}
-```
-
-**Login**
-```
-POST /api/v1/users/login
-
-Request Body:
-{
-  "phone": "+14155552671",
-  "otp": "482910"
-}
-
-Response 200:
-{
-  "user_id": "usr_8f3k2",
-  "jwt_token": "eyJhbGciOiJIUzI1NiIs...",
-  "expires_at": "2026-04-28T10:00:00Z"
-}
-```
+**Out of Scope:** voice/video calls, Stories/Status features, end-to-end encryption design, payments.
 
 ---
 
-### 4.2 Chat Endpoints
+## 2. Functional Requirements
 
-**List all chats for a user**
-```
-GET /api/v1/chats?userId={userId}
-Authorization: Bearer <jwt_token>
-
-Response 200:
-{
-  "chats": [
-    {
-      "chat_id": "chat_ab12",
-      "type": "one_to_one",
-      "participant": { "user_id": "usr_9b2k", "name": "Bob" },
-      "last_message": "Hey, are you free tonight?",
-      "last_message_at": "2026-03-28T09:55:00Z",
-      "unread_count": 3
-    }
-  ]
-}
-```
-
-**Fetch message history (lazy load / infinite scroll)**
-```
-GET /api/v1/chats/{chatId}/messages?offset={x}&limit={y}
-Authorization: Bearer <jwt_token>
-
-Response 200:
-{
-  "messages": [
-    {
-      "message_id": "msg_001",
-      "sender_id": "usr_8f3k2",
-      "content": "Hey!",
-      "media_url": null,
-      "status": "read",
-      "sent_at": "2026-03-28T09:50:00Z"
-    }
-  ],
-  "next_offset": 20,
-  "has_more": true
-}
-```
+1. **User registration** — Phone-number-based sign-up; JWT issued on successful OTP verification.
+2. **1:1 real-time messaging** — Two users exchange text messages with sub-300ms delivery.
+3. **Group messaging** — Create groups, add/remove members, send to all members simultaneously.
+4. **Message history** — Scroll back through past messages with lazy-loading pagination.
+5. **Media sharing** — Send images and videos; media stored in S3, URL stored in message record.
+6. **Message status** — Each message tracks: single tick (stored), double tick (delivered to device), blue ticks (opened by recipient).
+7. **Offline delivery** — Messages delivered via push notification (APNs/FCM) when recipient is offline; full history fetched on reconnect.
 
 ---
 
-### 4.3 Group Endpoints
+## 3. Non-Functional Requirements
 
-**Create a group**
-```
-POST /api/v1/groups
-Authorization: Bearer <jwt_token>
+| Requirement | Target |
+|---|---|
+| Availability | 99.99% uptime |
+| Latency | < 300ms end-to-end message delivery |
+| Consistency | Eventual consistency (AP — availability over strong consistency) |
+| Durability | Zero message loss |
+| Throughput | 1.16M msg/sec sustained, 2.3M msg/sec peak |
+| Storage | 100 TB/day text; 5 PB/day media |
+| CAP choice | AP — chat tolerates brief inconsistency; we must never drop a message |
 
-Request Body:
-{
-  "name": "Team Alpha",
-  "creator_id": "usr_8f3k2",
-  "member_ids": ["usr_9b2k", "usr_7c1m"]
-}
+**Consistency Model:**
 
-Response 201:
-{
-  "group_id": "grp_5x9z",
-  "name": "Team Alpha",
-  "member_count": 3
-}
-```
-
-**Add a member**
-```
-POST /api/v1/groups/{groupId}/members
-Authorization: Bearer <jwt_token>
-
-Request Body:
-{
-  "user_id": "usr_4d8n"
-}
-
-Response 200:
-{ "message": "Member added successfully" }
-```
-
-**Remove a member**
-```
-DELETE /api/v1/groups/{groupId}/members/{userId}
-Authorization: Bearer <jwt_token>
-
-Response 200:
-{ "message": "Member removed successfully" }
-```
-
-**Group message history**
-```
-GET /api/v1/groups/{groupId}/messages?offset={x}&limit={y}
-Authorization: Bearer <jwt_token>
-
-Response 200: (same structure as chat message history)
-```
+| Domain | Model | Justification |
+|---|---|---|
+| Messages | Eventual (Cassandra quorum) | Slight out-of-order on read is acceptable; loss is not |
+| Session map | Eventual (Redis TTL) | Stale entry causes a missed push, not lost message — fallback is pull-on-reconnect |
+| Group membership | Strong (PostgreSQL) | Wrong fan-out target list is a correctness bug |
+| User accounts | Strong (PostgreSQL) | Auth must be authoritative |
 
 ---
 
-### 4.4 WebSocket Endpoint
+## 4. End-to-End Flow
 
-**Establish real-time connection**
-```
-WS /ws/chat
-Headers:
-  Authorization: Bearer <jwt_token>
-  Upgrade: websocket
-  Connection: Upgrade
-```
+### 4.1 Message Send and Delivery (1:1)
 
-Once connected, the client and server exchange JSON frames:
+```mermaid
+sequenceDiagram
+    participant A as User A
+    participant CS1 as Chat Server 1
+    participant Cass as Cassandra
+    participant R as Redis
+    participant K as Kafka
+    participant CS2 as Chat Server 2
+    participant B as User B
 
-**Send a message (client → server):**
-```json
-{
-  "type": "send_message",
-  "chat_id": "chat_ab12",
-  "recipient_id": "usr_9b2k",
-  "content": "Hello Bob!",
-  "media_url": null,
-  "client_message_id": "local_uuid_001"
-}
-```
-
-**Receive a message (server → client):**
-```json
-{
-  "type": "new_message",
-  "message_id": "msg_server_001",
-  "chat_id": "chat_ab12",
-  "sender_id": "usr_8f3k2",
-  "content": "Hello Bob!",
-  "sent_at": "2026-03-28T10:01:00Z"
-}
+    A->>CS1: WS send_message [to: UserB, content, clientMsgId]
+    CS1->>Cass: Write message, status=stored
+    CS1->>R: GET ws:session:UserB
+    R-->>CS1: chat_server_2
+    CS1->>K: Publish to user.UserB.inbox
+    CS1-->>A: ACK single tick [stored]
+    K->>CS2: Consume delivery event
+    CS2->>B: WS push new_message
+    CS2->>K: Publish delivery_ack
+    K->>CS1: Consume delivery_ack
+    CS1-->>A: ACK double tick [delivered]
+    B->>CS2: WS read_receipt [last_read_msg_id]
+    CS2->>K: Publish read_ack
+    K->>CS1: Consume read_ack
+    CS1-->>A: ACK blue ticks [read]
 ```
 
-**Delivery receipt (server → sender):**
-```json
-{
-  "type": "delivery_receipt",
-  "message_id": "msg_server_001",
-  "status": "delivered",
-  "delivered_at": "2026-03-28T10:01:01Z"
-}
+### 4.2 Read Receipt State Machine
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> PENDING : User taps send
+    PENDING --> SENT : Cassandra ACK, message_id assigned
+    SENT --> DELIVERED : Recipient device received WS push
+    DELIVERED --> READ : Recipient opens conversation
 ```
 
-**Read receipt (server → sender):**
-```json
-{
-  "type": "read_receipt",
-  "message_id": "msg_server_001",
-  "status": "read",
-  "read_at": "2026-03-28T10:02:00Z"
-}
+### 4.3 Offline Delivery / Push Fallback
+
+```mermaid
+flowchart TD
+    A["User A sends message"]
+    CS1["Chat Server 1"]
+    Cass[("Cassandra - status: stored")]
+    R{"Redis: User B online?"}
+    Push["Send push via APNs / FCM"]
+    Wake["User B device wakes, opens app"]
+    Reconnect["User B establishes new WS connection"]
+    Fetch["GET /chats/chatId/messages since lastSeen"]
+    Ack["Client sends delivery ACKs"]
+    Notify["Server sends double tick to User A"]
+
+    A --> CS1
+    CS1 --> Cass
+    CS1 --> R
+    R -->|not connected| Push
+    Push --> Wake
+    Wake --> Reconnect
+    Reconnect --> Fetch
+    Fetch --> Ack
+    Ack --> Notify
 ```
+
+> [!NOTE]
+> **Key Insight:** Push notification = wake-up call, not delivery vehicle. APNs/FCM have payload size limits and no ordering guarantee. Cassandra has neither. Always treat push as a signal to pull, not as the delivery mechanism itself.
 
 ---
 
-## 5. System Architecture
+## 5. High-Level Architecture
 
-### 5.1 Diagram 1 — Simple High-Level Design
-
-A clean starting point: clients talk to an API Gateway, which routes to dedicated services backed by their own databases.
+### Simple Design (starting point)
 
 ```mermaid
 graph TD
     Client["Mobile / Web Client"]
-    GW["API Gateway\n(auth · rate limit · routing)"]
+    GW["API Gateway - auth, routing"]
     US["User Service"]
-    CS["Chat Service\n(REST only — no WS yet)"]
+    CS["Chat Service - REST only"]
     GS["Group Service"]
-    UDB[("User DB\nPostgreSQL")]
-    MDB[("Message DB\nPostgreSQL")]
-    GDB[("Group DB\nPostgreSQL")]
+    UDB[("User DB - PostgreSQL")]
+    MDB[("Message DB - PostgreSQL")]
+    GDB[("Group DB - PostgreSQL")]
 
     Client -->|HTTPS| GW
     GW --> US
@@ -380,39 +217,33 @@ graph TD
     GS --> GDB
 ```
 
-**Limitations of this design:**
-- REST polling required for message delivery — wasteful at scale
-- Single message DB (Postgres) cannot handle 100B writes/day
-- No real-time capability
+**Limitations:** REST polling wastes bandwidth. Single PostgreSQL message DB cannot handle 100B writes/day. No real-time push capability.
 
 ---
 
-### 5.2 Diagram 2 — Evolved Production Design
-
-We introduce a dedicated WebSocket Gateway, Chat Server fleet, Redis for connection mapping, Kafka for cross-server message routing, Cassandra for message storage, S3 + CDN for media, and a separate Group Service.
+### Evolved Production Design
 
 ```mermaid
 graph TD
     Client["Mobile / Web Client"]
-
-    HTTPGW["HTTP API Gateway\n(REST: auth · history · groups)"]
-    WSGW["WebSocket Gateway\n(sticky routing · auth · rate limit)"]
+    HTTPGW["HTTP API Gateway - REST: auth, history, groups"]
+    WSGW["WebSocket Gateway - sticky routing, auth, rate limit"]
 
     US["User Service"]
     GS["Group Service"]
     CS1["Chat Server 1"]
     CS2["Chat Server 2"]
     CSN["Chat Server N"]
+    FO["Fan-out Service - async group delivery"]
+    PN["Push Notification Service - APNs / FCM"]
 
-    UDB[("User DB\nPostgreSQL")]
-    GDB[("Group DB\nPostgreSQL")]
-
-    Kafka[["Apache Kafka\n(cross-server delivery · fan-out)"]]
-    Cassandra[("Cassandra\nMessage Store\npartitioned by conversation_id")]
-    Redis(["Redis Cluster\nsession map: user_id → server_id\nmessage cache"])
-
-    S3["S3 / Blob Storage\n(raw media files)"]
-    CDN["CDN Edge\n(global media delivery)"]
+    UDB[("User DB - PostgreSQL")]
+    GDB[("Group DB - PostgreSQL")]
+    Cass[("Cassandra - Message Store - partitioned by conversation_id")]
+    Redis(["Redis Cluster - session map and dedup keys"])
+    Kafka[["Apache Kafka - cross-server delivery and fan-out"]]
+    S3["S3 - Blob Storage"]
+    CDN["CDN Edge - global media delivery"]
 
     Client -->|HTTPS REST| HTTPGW
     Client -->|WebSocket| WSGW
@@ -431,774 +262,289 @@ graph TD
     CS1 <--> Kafka
     CS2 <--> Kafka
     CSN <--> Kafka
+    Kafka --> FO
+    Kafka --> PN
 
-    Kafka --> Cassandra
     CS1 <--> Redis
     CS2 <--> Redis
+    Kafka --> Cass
+    CS1 --> Cass
+    CS2 --> Cass
 ```
 
-**Component responsibilities:**
-
-| Component            | Role                                                                 |
-|----------------------|----------------------------------------------------------------------|
-| HTTP API Gateway     | REST endpoints for auth, history, group management                   |
-| WebSocket Gateway    | Sticky routing, authentication, rate limiting for WS connections     |
-| Chat Service         | Manages WebSocket connections, message routing, receipt handling      |
-| User Service         | Registration, login, profile management                              |
-| Group Service        | Group CRUD, member management, fan-out coordination                  |
-| Cassandra            | Primary message store — high write throughput, partition tolerant    |
-| PostgreSQL (User DB) | User accounts — relational, easy to query                           |
-| PostgreSQL (Group DB)| Group metadata and group_members mapping                             |
-| Redis                | WebSocket server mapping (user_id → server_id), session tokens       |
-| Kafka                | Cross-server message delivery and async group fan-out                |
-| S3 / Blob Storage    | Raw media files (images, videos)                                     |
-| CDN                  | Media delivery at edge — low latency downloads globally              |
+| Component | Role |
+|---|---|
+| WebSocket Gateway | Sticky routing, auth, rate limiting for all WS connections |
+| Chat Server fleet | Holds WS connections, routes messages, handles receipts |
+| Redis Cluster | Session map (user -> server), dedup key store |
+| Kafka | Durable cross-server delivery log; group fan-out pipeline |
+| Cassandra | Primary message store — high write throughput, partitioned by conversation |
+| PostgreSQL (User/Group) | Relational data requiring joins or transactions |
+| Fan-out Service | Async worker that expands group events into per-member deliveries |
+| Push Notification Service | Sends APNs/FCM wake-up when recipient has no active WS |
+| S3 + CDN | Raw media storage and global edge delivery |
 
 ---
 
-## 6. Deep Dives
+## 6. Data Model
 
-In a system design interview, deep dives are where you demonstrate senior-level thinking. The goal is not to list technologies — it is to show that you understand the *problems* each component solves, the *trade-offs* you accept, and *what you would do differently* at different scales. Walk through each component as a decision: "I chose X because of problem Y, and the trade-off I'm accepting is Z."
+| Entity | Storage | Key Columns | Why this store |
+|---|---|---|---|
+| messages | Cassandra | partition: conversation_id; cluster: client_seq DESC, message_id; cols: sender_id, content, media_url, status, sent_at | 1.16M writes/sec exceeds PostgreSQL ceiling. Partition by conversation co-locates all messages for fast range reads. No joins needed. |
+| users | PostgreSQL | user_id PK, phone, display_name, created_at | Low write rate. Needs relational integrity. Auth must be authoritative. |
+| groups | PostgreSQL | group_id PK, name, owner_id, created_at | Relational — group_members is a join table; membership queries need joins. |
+| group_members | PostgreSQL | group_id + user_id composite PK, joined_at, role | Foreign key relationships to users and groups. Transactional add/remove. |
+| ws_sessions | Redis | key: ws:session:user_id, value: chat_server_id, TTL: 30s | Ephemeral — expires on disconnect. 1.16M lookups/sec needs < 1ms. DB disk I/O would blow latency budget. |
+| presence | Redis | key: presence:user_id, value: last_seen_ts, TTL: 60s | Same as session — ephemeral, high-frequency writes (every heartbeat). TTL auto-cleans on disconnect. |
+| dedup_keys | Redis | key: dedup:client_msg_id, value: 1, TTL: 24h | Converts at-least-once Kafka delivery into effectively-once at app layer. |
+| media_objects | S3 | object key: media/conv_id/msg_id/filename | Binary blobs; S3 = unlimited scale, presigned URLs for direct client upload. CDN serves reads. |
 
-### 6.1 Deep Dive 1 — WebSocket Connection Management & Sticky Sessions
+---
 
-#### Why WebSocket?
+## 7. Deep Dives
 
-**Setting up the problem:** The naive approach is simple HTTP. The client posts a message, and polls for replies. Let's walk through why each protocol fails at scale before landing on WebSocket.
+### 7.1 WebSocket + Sticky Sessions
 
-> **Why WebSocket?** The core problem with HTTP polling: at 1 billion users, even 1 poll per second = 1 billion requests/second just to check for new messages — the vast majority of which return empty responses. This is pure waste. WebSocket maintains a single persistent TCP connection per user. The server pushes messages the instant they arrive. Zero polling overhead. The connection cost is paid once at handshake time.
+**Here's the problem we're solving:** At 500M DAU we need to push messages to clients in real time. HTTP polling is the naive solution. Let's show why it fails.
 
-Before choosing WebSocket, let us consider the alternatives:
+| Protocol | Mechanism | Problem at scale |
+|---|---|---|
+| HTTP Polling | Client polls every N seconds | 500M users x 1 poll/sec = 500M requests/sec, mostly empty |
+| Long Polling | Client holds connection, server replies late | Reconnects every ~30s, doubles effective connection count |
+| SSE | Server pushes events, unidirectional | Client still needs a separate POST to send — not full-duplex |
+| WebSocket | Full-duplex persistent TCP | One connection per user; server pushes only when there is data |
 
-| Protocol      | How it works                                       | Problem                                                     |
-|---------------|----------------------------------------------------|-------------------------------------------------------------|
-| HTTP Polling  | Client polls server every N seconds                | Wasteful, high latency, unnecessary requests                |
-| Long Polling  | Client holds connection open, server responds late | Reconnects every ~30 sec, doubles the connection count      |
-| SSE           | Server pushes events, client listens               | Unidirectional — client needs a separate POST to send       |
-| **WebSocket** | Full-duplex persistent TCP connection              | Single connection handles send and receive — **chosen**     |
+**Why WebSocket wins:** It is a math problem. 500M users x 1 poll/sec = 500M wasted requests/sec. WebSocket reduces that to zero. One persistent connection, server pushes on arrival.
 
-WebSocket is the correct choice for a chat application because both client and server need to push data at any time. The connection is established once and reused for the entire session.
+**Sticky sessions problem:** Each Chat Server holds WS connection objects in memory. If User A is on Chat Server 1 and a load balancer routes their next frame to Chat Server 2, there is no connection object there. Solution: WebSocket Gateway uses consistent hashing on `user_id` to always route to the same server.
 
-> [!NOTE]
-> **Key Insight:** WebSocket vs HTTP is not a preference — it is a math problem. 1B users × 1 poll/sec = 1B requests/sec, the vast majority returning empty. WebSocket reduces this to 0 polling requests. One persistent connection per user, server pushes only when there is data.
-
-#### WebSocket Handshake
+**Redis for connection routing:** When User A connects to Chat Server 1, it writes `ws:session:{user_id} = chat_server_1` with a 30s TTL. Any Chat Server routing a message to User A does a single Redis GET — sub-1ms from memory. On heartbeat (every 25s), the Chat Server refreshes the TTL. On disconnect or missed heartbeat, the key expires automatically.
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant S as Chat Server
+    participant WG as WS Gateway
+    participant CS as Chat Server 1
+    participant R as Redis
 
-    Note over C: Wants to open a WebSocket
-    C->>S: HTTP GET /ws/chat
-    Note over C,S: Headers: Upgrade: websocket, Connection: Upgrade, Sec-WebSocket-Key
-    S-->>C: HTTP 101 Switching Protocols
-    Note over C,S: Headers: Upgrade: websocket, Sec-WebSocket-Accept
-    Note over C,S: TCP connection upgraded — full-duplex WS active
-    C->>S: WS Frame: send_message
-    S->>C: WS Frame: new_message / delivery_receipt
+    C->>WG: HTTP GET /ws/chat + JWT
+    WG->>WG: Validate JWT, hash userId to CS1
+    WG->>CS: Proxy upgrade request
+    CS-->>C: HTTP 101 Switching Protocols
+    CS->>R: SET ws:session:userId = chat_server_1 EX 30
+    loop every 25 seconds
+        C->>CS: PING frame
+        CS-->>C: PONG frame
+        CS->>R: EXPIRE ws:session:userId 30
+    end
+    Note over CS,R: No PING for 30s = key expires, connection closed
 ```
-
-After the HTTP 101 response, the TCP connection is "upgraded" and both sides can send frames freely.
-
-#### Sticky Sessions Problem
-
-Each Chat Server holds WebSocket connections **in memory**. User A's connection lives inside Chat Server 1's process. If a subsequent request from User A hits Chat Server 2, there is no connection object there. Therefore:
-
-- The WebSocket Gateway uses **sticky routing** — once a user connects to Chat Server 1, all subsequent WS frames from that user go to Chat Server 1.
-- Sticky routing is implemented via consistent hashing on user_id at the WS Gateway level.
-
-#### Connection Mapping in Redis
-
-> **Why Redis?** The problem: every message delivery requires knowing which Chat Server holds the recipient's WebSocket connection. This lookup happens 1.16 million times per second. A database lookup adds 10–50ms of disk I/O per message route decision — that alone blows our 300ms latency budget. Redis answers this in under 1ms from memory, and its TTL feature automatically cleans up stale sessions when a user disconnects.
-
-When User A connects to Chat Server 1, the server writes:
-
-```
-Redis Key:   ws:session:usr_8f3k2
-Redis Value: chat_server_1
-TTL:         30 seconds (refreshed on each heartbeat)
-```
-
-Any other Chat Server that needs to deliver a message to User A can look up this key to find the right server.
 
 > [!NOTE]
-> **Key Insight:** Presence is ephemeral → Redis is ideal. A user's session mapping expires naturally when they disconnect. Storing this in a database forces unnecessary disk I/O at 1.16M lookups/sec and requires a cleanup job for stale rows. Redis TTL handles both — automatically.
-
-#### Heartbeat and Reconnection
-
-```
-Client sends PING frame every 25 seconds
-Chat Server responds with PONG frame
-If no PING received in 30s → server closes connection and deletes Redis key
-Client detects disconnect → reconnects with exponential backoff
-On reconnect → fetches missed messages via REST (GET /chats/{chatId}/messages)
-```
-
-#### Database Schema — Session Mapping
-
-Redis handles the live session mapping. No persistent DB needed for this — TTL handles stale sessions automatically.
-
-```
-Redis Hash (alternative structure for richer data):
-HSET ws:session:usr_8f3k2 server_id "chat_server_1"
-                           connected_at "2026-03-28T10:00:00Z"
-                           device_id "iphone_14_abc"
-EXPIRE ws:session:usr_8f3k2 30
-```
+> **Key Insight:** Presence is ephemeral -> Redis with TTL is ideal. DB creates write amplification for data with a natural expiry. Redis TTL handles cleanup automatically — no cron job needed.
 
 ---
 
-### 6.2 Deep Dive 2 — Message Delivery Flow (1:1 and Group) + Offline Handling
+### 7.2 Message Ordering
 
-**Setting up the problem:** A message arrives at Chat Server 1. The recipient is connected to Chat Server 2. Chat Server 1 has no direct reference to the recipient's WebSocket connection object. How do we bridge this gap at 1.16 million messages per second without coupling the servers together? This is the core routing problem.
+**Here's the problem we're solving:** Two users send messages at the same millisecond. Network jitter means either could arrive at the Chat Server first. With Cassandra's eventual consistency, two replicas could briefly serve different orderings to different clients. How do we guarantee users see messages in the correct order?
 
-#### 6.2.1 One-to-One Message Delivery
+**Naive solution and why it fails:** A global sequence counter (single atomic counter across all messages) would force every write to serialize through one node — a bottleneck at 1.16M msg/sec. That bottleneck defeats horizontal scaling.
 
-> **Why Kafka?** The problem: if Chat Server 1 calls Chat Server 2 directly to forward a message (via HTTP or gRPC), what happens when Chat Server 2 is temporarily down or overloaded? The message is silently dropped. Our non-functional requirement is zero message loss. Kafka solves this by acting as a durable log — Chat Server 1 writes to Kafka and gets an acknowledgment; Chat Server 2 consumes at its own pace. If Chat Server 2 crashes, the message waits in Kafka until it recovers. The producer and consumer are fully decoupled.
+**Chosen solution:**
 
-```mermaid
-sequenceDiagram
-    participant A as User A
-    participant CS1 as Chat Server 1
-    participant R as Redis
-    participant K as Kafka
-    participant CS2 as Chat Server 2
-    participant B as User B
+1. **TIMEUUID clustering key** — Cassandra's TIMEUUID encodes nanosecond-precision timestamp plus a random component for uniqueness. Messages stored by TIMEUUID are naturally time-ordered on disk, making range reads efficient even with concurrent writes at the same nanosecond.
 
-    A->>CS1: WS: send_message { to: UserB, content }
-    CS1->>CS1: Persist to Cassandra
-    CS1->>R: GET ws:session:UserB
-    R-->>CS1: "chat_server_2"
-    CS1->>K: Publish to user_B.inbox topic
-    CS1-->>A: ACK - Single tick (stored)
-    K->>CS2: CS2 consumes delivery event
-    CS2->>B: WS: push new_message
-    CS2->>K: Publish delivery_ack
-    K->>CS1: CS1 consumes ack
-    CS1-->>A: ACK - Double tick (delivered)
-    B->>CS2: WS: read_receipt
-    CS2->>K: Publish read_ack
-    K->>CS1: CS1 consumes read_ack
-    CS1-->>A: ACK - Blue ticks (read)
-```
+2. **Per-conversation sequence numbers** — Each client tracks a monotonically increasing `client_seq` per conversation. Every outgoing message includes `{conversation_id, client_seq}`. Cassandra primary key: `PRIMARY KEY ((conversation_id), client_seq, message_id)`. If a client receives `seq=44` when `last_seen=42`, it knows seq 43 is missing and issues a gap-fill: `GET /chats/{id}/messages?from_seq=43&limit=5`.
 
-**Step-by-step:**
-
-1. User A sends a WS frame to Chat Server 1 with message content and recipient_id.
-2. Chat Server 1 persists the message to Cassandra immediately. Generates a server-side message_id.
-3. Chat Server 1 looks up Redis: `GET ws:session:usr_UserB` → returns `chat_server_2`.
-4. Chat Server 1 publishes the message to a Kafka topic (e.g., `user.{userB_id}.inbox`).
-5. Chat Server 2 is a Kafka consumer subscribed to User B's inbox topic.
-6. Chat Server 1 sends a single-tick ACK back to User A over WS (server has stored the message).
-7. Chat Server 2 pushes the message to User B over their active WebSocket connection.
-8. Chat Server 2 sends a delivery ACK back through Kafka (or directly via internal gRPC) to Chat Server 1, which forwards a double-tick to User A.
-
-#### 6.2.2 Fast Path vs Reliable Path — A Senior-Level Insight
-
-This is the design decision that separates a robust chat system from a fragile one. There are two distinct concerns in message delivery:
-
-**The Fast Path** — optimized for latency:
-User A → Chat Server 1 → Redis lookup → Kafka publish → Chat Server 2 → User B
-
-Everything on this path is designed to be non-blocking. Chat Server 1 does not wait for Chat Server 2 to confirm delivery before responding to User A. The single tick is issued as soon as Cassandra confirms the write. This keeps end-to-end perceived latency under 300ms.
-
-**The Reliable Path** — optimized for durability:
-- Message is written to Cassandra **before** any delivery is attempted.
-- The Kafka publish and Cassandra write happen **concurrently** (not sequentially).
-- If Chat Server 2 is down, the message sits in Kafka. When CS2 recovers, it consumes the backlog and delivers. The message was never lost.
-- If the user is offline entirely, the message is in Cassandra. On reconnect, the client fetches it via REST.
-
-**The key insight:** the single tick (stored) means "this message is safe — it will eventually reach you." The double tick (delivered) means "it reached the device." These are separate guarantees, served by separate subsystems. Never conflate them.
-
-```
-FAST PATH    (latency-optimized):
-  User A --[WS]--> Chat Server 1 --[Redis lookup]--> Chat Server 2 --[WS]--> User B
-  Non-blocking. Best-effort. Optimized for < 300ms.
-
-RELIABLE PATH (durability-optimized):
-  Chat Server 1 --[concurrent write]--> Cassandra
-  Blocking on ACK. Message is safe the moment Cassandra confirms.
-  If fast path fails: Cassandra is the fallback source of truth on reconnect.
-
-Single tick  = Cassandra confirmed.  Message will NEVER be lost.
-Double tick  = WS push succeeded.    Message reached the device.
-```
-
-```mermaid
-graph TD
-    A["User A"]
-    CS1["Chat Server 1"]
-    R(["Redis\nsession map"])
-    K[["Kafka\ndurable log"]]
-    CS2["Chat Server 2"]
-    B["User B"]
-    Cass[("Cassandra\nmessage stored forever")]
-
-    A -->|1 WS frame| CS1
-    CS1 -->|2a concurrent write| Cass
-    CS1 -->|2b Redis lookup| R
-    R -->|server_id| CS1
-    CS1 -->|3 Kafka publish| K
-    CS1 -->|4 single tick ACK| A
-    K -->|5 consume| CS2
-    CS2 -->|6 WS push| B
-    CS2 -->|7 delivery ACK| K
-    K -->|8 double tick| CS1
-    CS1 -->|9 double tick| A
-
-    style Cass fill:#2d6a4f,color:#fff
-    style K fill:#1d3557,color:#fff
-```
+**Trade-off accepted:** We guarantee monotonic reads within a session and per-conversation eventual convergence. We do not guarantee strict global ordering across conversations — and do not need it.
 
 > [!IMPORTANT]
-> **This is the senior-level insight.** Steps 2a and 2b happen concurrently — the Cassandra write and the Kafka publish are not sequential. The single tick fires as soon as Cassandra ACKs (step 4), regardless of whether User B is online. If User B is offline, the fast path never runs, but the message is already safe in Cassandra. On reconnect, User B fetches from Cassandra via REST. Zero message loss is guaranteed by the reliable path, not the fast path.
+> **Ordering is per-conversation, not global.** A global sequence number at 1.16M msg/sec is a distributed counter bottleneck — a single serialization point. Scoping ordering to `conversation_id` gives strong enough guarantees for chat at zero added cost, because the partition key already co-locates all messages for a conversation.
+
+> [!NOTE]
+> **Key Insight:** Global ordering at scale = distributed counter bottleneck. Scope ordering to partition key. Per-conversation ordering is all a chat app needs and it comes for free from the Cassandra partition design.
 
 ---
 
-#### 6.2.3 Group Message Delivery
+### 7.3 Offline Delivery and Push Fallback
 
-Group messaging adds a fan-out problem: one message must be delivered to N members.
+**Here's the problem we're solving:** User B is offline — no entry in the Redis session map. Chat Server has a message to deliver but no WebSocket connection to push to. We still need User B to receive the message, and we need User A to eventually see double ticks.
 
-**For small groups (< 100 members) — synchronous fan-out:**
+**Naive solution and why it fails:** Drop the message if the user is offline, or retry infinitely in memory. Either drops messages or leaks memory during extended offline periods.
 
-```mermaid
-graph TD
-    A["User A sends to Group G"]
-    CS1["Chat Server 1"]
-    GS["Group Service\nfetch all member_ids"]
-    R["Redis\nlookup: user → server"]
-    SrvN["Target Chat Servers"]
-    Members["Group Members 1..N"]
+**Chosen solution — two-stage fallback:**
 
-    A --> CS1
-    CS1 --> GS
-    GS --> R
-    R --> SrvN
-    SrvN --> Members
-```
+Stage 1 — Durable persistence: The message is already in Cassandra from the reliable path. It will not be lost regardless of what happens next.
 
-**For large groups (1000+ members) — asynchronous fan-out:**
+Stage 2 — Push notification as wake-up: Chat Server detects no Redis session entry for User B. It publishes a push event to Kafka, consumed by the Push Notification Service, which sends an APNs (iOS) or FCM (Android) notification. This is a wake-up signal — payload is minimal (sender name, preview text), not the full message.
 
-```mermaid
-graph TD
-    A["User A sends to Group G"]
-    CS1["Chat Server 1"]
-    K[["Kafka\ngroup.groupId.messages"]]
-    FC["Fan-out Consumer Service\n(dedicated async worker)"]
-    GDB[("Group DB\nfetch member list")]
-    SrvN["Each Member's Chat Server"]
-    Members["Group Members 1..N"]
+Stage 3 — Pull on reconnect: User B's device wakes and opens the app. The app re-establishes the WebSocket connection, then immediately fetches missed messages: `GET /chats/{id}/messages?since={last_seen_msg_id}`. Client ACKs receipt, triggering double-tick back to User A.
 
-    A --> CS1
-    CS1 -->|"single Kafka event"| K
-    CS1 -->|"immediate single tick"| A
-    K --> FC
-    FC --> GDB
-    GDB --> FC
-    FC -->|individual delivery events| SrvN
-    SrvN --> Members
-```
-
-The async fan-out approach decouples the sender's acknowledgment from the delivery complexity. User A gets their single tick immediately; the fan-out happens in the background.
+**Trade-off accepted:** Push notifications are best-effort (OS may throttle or drop them on low-battery mode). The message is always in Cassandra — worst case the user sees it when they next open the app. We accept this graceful degradation over message loss.
 
 > [!NOTE]
-> **Key Insight:** Fan-out strategy is a function of group size. Small group = synchronous fan-out is fine (bounded work). Large group = synchronous fan-out blocks the sender and overloads the Chat Server. The threshold (here: 100 members) is a tuneable engineering decision, not a fixed rule.
+> **Key Insight:** Push notification = wake-up call, not delivery vehicle. APNs/FCM have a 4KB payload limit and no ordering guarantee. Cassandra has neither. The reliable path (Cassandra) is the delivery vehicle; push is just the notification.
 
-#### 6.2.4 Offline Message Handling
+---
 
-When User B is offline (no entry in Redis session map):
+## 8. Bottlenecks & Scaling
+
+**What breaks first at 10x scale (10x = 11.6M msg/sec, 500M concurrent WS connections):**
+
+| Component | Current ceiling | What breaks at 10x | Fix |
+|---|---|---|---|
+| Chat Server fleet | 1K servers x 50K connections | Memory per server becomes the limit | Reduce connections per server, auto-scale horizontally; WS Gateway consistent hashing distributes evenly |
+| Kafka throughput | ~46 partitions for 2.3M/sec | Consumer lag grows, delivery latency climbs | Increase partition count linearly; scale consumer fleet in parallel |
+| Cassandra write path | Linear scale by adding nodes | Hot partitions on viral conversations | Shard partition key: (conversation_id, bucket) where bucket = day or hour; limits max partition size |
+| Redis session map | ~5 GB for 50M users | ~50 GB at 500M — still fits in Redis Cluster | Add Redis Cluster nodes; session map is read-heavy so read replicas help |
+| Fan-out for large groups | Async fan-out service | 10M-member broadcast = 10M Kafka events per message | Tiered fan-out: small groups direct, large groups use a dedicated broadcast pipeline with rate limiting |
+
+**Fan-out strategy by group size:**
 
 ```mermaid
 flowchart TD
-    A["User A sends message"]
-    CS1["Chat Server 1"]
-    Cass[("Cassandra\nstatus: stored")]
-    R{"Redis lookup:\nUser B online?"}
-    Push["Send push notification\nAPNs / FCM"]
-    Wake["User B device wakes up\nopens app"]
-    Reconnect["User B establishes\nnew WS connection"]
-    Fetch["Client fetches missed messages\nGET /chats/chatId/messages"]
-    Ack["Client sends delivery ACKs"]
-    Notify["Server notifies User A\ndouble tick"]
+    Msg["Group message arrives"]
+    Check{"Group size?"}
+    Small["Less than 100 members: synchronous fan-out\nChat Server fetches member list,\npublishes N delivery events directly"]
+    Medium["100 to 10K members: async fan-out\nSingle Kafka event, Fan-out Service\nexpands to N delivery events"]
+    Large["More than 10K members: broadcast pipeline\nDedicated broadcast workers,\nrate-limited, sharded by member range"]
 
-    A --> CS1
-    CS1 --> Cass
-    CS1 --> R
-    R -->|"not connected"| Push
-    Push --> Wake
-    Wake --> Reconnect
-    Reconnect --> Fetch
-    Fetch --> Ack
-    Ack --> Notify
+    Msg --> Check
+    Check -->|small| Small
+    Check -->|medium| Medium
+    Check -->|large| Large
 ```
-
-**Key insight:** Push notifications are a "wake-up call," not a delivery mechanism. The actual messages are always fetched from Cassandra. This avoids push notification size limits and ordering issues.
 
 > [!NOTE]
-> **Key Insight:** Push notification → Cassandra fetch is the correct offline pattern. APNs/FCM have a payload size limit (~4KB) and no delivery ordering guarantee. Cassandra has neither constraint. Always treat push as a signal to pull, not as the delivery vehicle itself.
-
-#### 6.2.5 Message Storage Schema (Cassandra)
-
-```sql
--- Cassandra table for messages
-CREATE TABLE messages (
-    conversation_id  UUID,           -- partition key (chat_id or group_id)
-    sent_at          TIMESTAMP,      -- clustering key (DESC for recent-first)
-    message_id       UUID,
-    sender_id        UUID,
-    content          TEXT,
-    media_url        TEXT,           -- null if text-only
-    message_type     TEXT,           -- 'text', 'image', 'video'
-    status           TEXT,           -- 'stored', 'delivered', 'read'
-    PRIMARY KEY ((conversation_id), sent_at, message_id)
-) WITH CLUSTERING ORDER BY (sent_at DESC);
-```
-
-**Why Cassandra over PostgreSQL for messages?**
-
-| Dimension             | Cassandra                              | PostgreSQL                         |
-|-----------------------|----------------------------------------|------------------------------------|
-| Write throughput      | Millions of writes/sec per node        | Thousands of writes/sec per node   |
-| Horizontal scaling    | Native, linear scaling                 | Complex sharding required          |
-| Single point of fail  | No SPOF, multi-master                  | Primary node is SPOF               |
-| Consistency model     | Tunable (eventual default)             | Strong (ACID)                      |
-| Message workload fit  | Excellent (append-heavy, partition by  | Poor at this scale                 |
-|                       | conversation_id, time-range queries)   |                                    |
-
-At 100B messages/day, Cassandra is the only realistic choice. PostgreSQL would require hundreds of shards with complex routing logic, and still could not match Cassandra's write path performance.
+> **Key Insight:** Fan-out strategy is a function of group size — the threshold is tuneable. Small group = synchronous is fine (bounded work). Large group = synchronous blocks the sender and overloads the Chat Server. The threshold (100 members) is an engineering decision, not a fixed rule.
 
 ---
 
-### 6.3 Deep Dive 3 — Message Ordering
+## 9. Failure Scenarios
 
-#### The Problem
-
-Two users send messages at the same millisecond. Which arrives first at Chat Server 1 depends entirely on network jitter — not send time. With Cassandra's eventual consistency across replicas, two different clients reading from different replicas might see the same messages in different order.
-
-Even with a single replica, consider:
-- User A sends M1 at T=100ms
-- User B sends M2 at T=101ms
-- Due to network delay, M2 arrives at Chat Server 1 before M1
-- M2 gets written to Cassandra first
-
-Without ordering controls, User A sees: M1, M2. User B sees: M2, M1.
-
-#### Solution 1: TIMEUUID as the Clustering Key
-
-Cassandra's `TIMEUUID` (UUID Type 1) encodes a nanosecond-precision timestamp plus a random component for uniqueness. Using TIMEUUID as the clustering key means messages are stored in time order on disk, and time-range queries (`WHERE sent_at > X`) are efficient.
-
-```sql
-PRIMARY KEY ((conversation_id), sent_at, message_id)
--- sent_at is TIMEUUID, not a plain timestamp
--- Guarantees: no two messages share the exact same key
--- Even if two messages arrive at the same nanosecond, the random component differentiates them
-```
-
-#### Solution 2: Per-Conversation Sequence Numbers (`chat_id + seq`)
-
-Each client tracks a monotonically increasing sequence number **per conversation** (not globally). Every message includes `{ chat_id, seq: 42 }`.
-
-```
-Client state:  Map<chat_id, last_seq_seen>
-
-On receive seq=44 when last_seen=42:
-  → seq 43 is missing
-  → request gap fill: GET /chats/{chat_id}/messages?from_seq=43&limit=10
-```
-
-Schema impact:
-
-```sql
-PRIMARY KEY ((conversation_id), client_seq, message_id)
--- conversation_id: partition key — all messages in a chat on the same nodes
--- client_seq:      clustering key — per-chat monotonic counter
--- message_id:      tie-breaker for concurrent sends at same seq
-```
-
-> [!IMPORTANT]
-> **Ordering is per-conversation, not global.** A global sequence number at 1.16M msg/sec would require a distributed counter — a single-node bottleneck. Per-conversation counters are cheap because they are scoped: `chat_id` already partitions the space. Each conversation orders itself independently.
-
-#### Solution 3: Last-Write-Wins with Vector Clocks (Alternative Approach)
-
-For systems requiring stronger ordering guarantees (e.g., collaborative editing), vector clocks can establish a partial order across concurrent events. For a chat app, LWW with TIMEUUID is sufficient — users tolerate minor ordering variations at the millisecond scale.
-
-#### Trade-off Accepted
-
-We guarantee: monotonic reads within a session (you will never see a message disappear after seeing it), and per-conversation eventual convergence (all replicas agree on the same order within seconds). We do **not** guarantee strict global ordering — and we do not need it.
-
-> [!NOTE]
-> **Key Insight:** Global ordering at 1.16M msg/sec requires a distributed counter — a single serialization point and a bottleneck. Scoping ordering to `conversation_id` gives us strong enough guarantees for chat at zero added cost, because the partition key already co-locates all messages for a conversation.
-
----
-
-### 6.4 Deep Dive 4 (Bonus) — Message Status: Sent / Delivered / Read Receipts
-
-The three-tick system requires careful state tracking and is often tricky at scale.
-
-#### State Machine
-
-```mermaid
-stateDiagram-v2
-    direction TB
-    [*] --> PENDING : User taps send
-    PENDING --> SENT : Server ACK\n(message_id assigned)
-    SENT --> DELIVERED : Recipient device\nreceived message
-    DELIVERED --> READ : Recipient opens\nconversation
-
-    PENDING : PENDING\nclock icon · local only
-    SENT : SENT\nsingle tick ✓
-    DELIVERED : DELIVERED\ndouble tick ✓✓
-    READ : READ\nblue ticks ✓✓
-```
-
-#### How Each State Transition Works
-
-**SENT (single tick):**
-- Chat Server 1 receives the WS frame from User A.
-- Persists to Cassandra with status = `stored`.
-- Sends ACK frame back to User A with the server-generated `message_id`.
-- Client shows single tick.
-
-**DELIVERED (double tick):**
-- Chat Server 2 successfully pushes the message to User B's device over WS.
-- Chat Server 2 sends a delivery event back (via Kafka or gRPC) to Chat Server 1.
-- Chat Server 1 sends a `delivery_receipt` WS frame to User A.
-- Client shows double tick.
-- Cassandra message status updated to `delivered`.
-
-**READ (blue ticks):**
-- User B opens the conversation in the app.
-- Client sends a WS frame: `{ type: "read_receipt", message_ids: [...] }`.
-- Chat Server 2 receives this, updates Cassandra status to `read`.
-- Chat Server 2 publishes a read event → Chat Server 1 delivers a `read_receipt` frame to User A.
-- User A's client shows blue ticks.
-
-**Batch read receipts (Modern Optimization):**
-Rather than sending one read receipt per message, the client sends a single receipt with `{ last_read_message_id: "msg_099" }`, implying all messages up to that ID are read. This reduces WS frame volume significantly in active conversations.
-
-#### Read Receipt Privacy
-
-Some applications (like WhatsApp) allow users to disable read receipts. In that case:
-- The client does not send read receipt WS frames.
-- The server never updates status to `read` for that user.
-- The sender never sees blue ticks.
-
-This is a per-user preference stored in the User DB and checked by the Chat Server before forwarding read events.
-
----
-
-## 7. ⚖️ Key Trade-offs
-
-> [!TIP]
-> This is the section interviewers love. Every decision below follows the same structure: **problem → options → chosen → trade-off accepted**. Memorize the one-line reasoning for each.
-
----
-
-### 7.1 ⚖️ WebSocket vs HTTP — Latency vs Simplicity
-
-| | WebSocket | HTTP Polling |
+| Failure | Impact | Recovery |
 |---|---|---|
-| Latency | < 50ms push | 1–10s polling delay |
-| Server load | Low — 1 persistent conn/user | Very high — 1B empty requests/sec at scale |
-| Complexity | Stateful, sticky sessions needed | Simple, stateless |
-| Direction | Full-duplex (both sides push) | Half-duplex (client initiates only) |
-
-**Chosen: WebSocket**
-
-> [!NOTE]
-> **Key Insight:** WebSocket shifts complexity from the **network** (polling storms) to the **server** (connection state). We trade stateless simplicity for the ability to push messages in real time. The sticky session problem is solved by Redis — not by making WebSocket stateless.
+| WebSocket drop (client network) | Client loses real-time push | Client reconnects with exponential backoff (1s, 2s, 4s, max 30s); fetches missed messages via REST on reconnect |
+| Chat Server crash | All WS connections on that server drop | Clients reconnect to another server; Redis session key expires (30s TTL); in-flight Kafka messages are redelivered to another consumer in the group |
+| Kafka outage | Cross-server delivery pauses; no fan-out | Messages already in Cassandra (reliable path ran before Kafka publish); delivery resumes when Kafka recovers; clients pull from Cassandra on reconnect |
+| Cassandra node failure | Writes/reads may miss one replica | Cassandra replication factor 3 + quorum writes — tolerates 1 node failure; coordinator retries to healthy replica automatically |
+| Cassandra full outage | Message writes fail | Chat Server returns error to client; client shows send failure with retry option; no silent message loss |
+| Redis node failure | Session map lookups fail for affected keys | Redis Cluster redirects to replica; on total Redis failure, Chat Server falls back to delivering via Kafka to all servers (broadcast fan-out at cost of efficiency) |
+| Push notification failure | User not woken when offline | Message is in Cassandra; user sees it on next app open; no data loss |
+| Fan-out service crash | Group messages not fanned out | Kafka offset not committed; on restart, Fan-out Service replays from last committed offset; idempotent delivery via Redis dedup keys prevents duplicates |
 
 ---
 
-### 7.2 ⚖️ Cassandra vs SQL — Scalability vs Consistency
+## 10. Trade-offs
 
-| | Cassandra | PostgreSQL |
+### WebSocket vs HTTP Polling
+
+| Dimension | WebSocket | HTTP Polling |
+|---|---|---|
+| Latency | < 50ms push | 1-10s polling delay |
+| Server load | Low — 1 persistent conn/user | Very high — 500M empty requests/sec |
+| Complexity | Stateful, requires sticky sessions | Stateless, horizontally trivial |
+| Direction | Full-duplex | Half-duplex (client initiates only) |
+
+**Chosen: WebSocket** — At 500M DAU polling generates hundreds of millions of empty requests/sec. The trade-off I accept is stateful connections requiring sticky sessions, which is solved by the Redis session map.
+
+> [!NOTE]
+> **Key Insight:** WebSocket vs HTTP is a math problem. 500M users x 1 poll/sec = 500M empty requests/sec. WebSocket reduces polling to zero — server pushes only when there is data.
+
+---
+
+### Cassandra vs SQL for Messages
+
+| Dimension | Cassandra | PostgreSQL |
 |---|---|---|
 | Write throughput | Millions/sec per node, linear scaling | ~100K/sec, single primary bottleneck |
-| Scaling model | Add nodes → add capacity (no resharding) | Vertical first, then complex manual sharding |
-| Consistency | Eventual (tunable) | Strong (ACID) |
-| Joins / Transactions | Not supported | First-class feature |
-| Best fit | Append-heavy, time-series, partitioned by ID | Relational, low-write, query-flexible |
+| Scaling model | Add nodes = add capacity, no resharding | Vertical first, then complex manual sharding |
+| Consistency | Eventual (tunable quorum) | Strong ACID |
+| Joins / Transactions | Not supported | First-class |
+| Best fit for messages | Append-heavy, time-series, partition by conversation_id | Would require hundreds of shards to reach this scale |
 
-**Chosen: Cassandra for messages, PostgreSQL for users and groups**
+**Chosen: Cassandra for messages, PostgreSQL for users and groups** — 1.16M writes/sec exceeds PostgreSQL's ceiling. The trade-off I accept is no joins and eventual consistency — acceptable for chat where message tables need no relational queries.
 
 > [!NOTE]
-> **Key Insight:** Cassandra vs SQL is not a general preference — it is a **write throughput calculation**. At 1.16M writes/sec, PostgreSQL's single primary is a hard ceiling. Cassandra's multi-master design removes that ceiling. Use PostgreSQL where you need joins (User, Group tables). Use Cassandra where you need raw write scale (messages).
+> **Key Insight:** Cassandra vs SQL is a write throughput calculation, not a preference. Use PostgreSQL where you need joins. Use Cassandra where you need raw write scale.
 
 ---
 
-### 7.3 ⚖️ At-Least-Once vs Exactly-Once — Simplicity vs Correctness
+### At-Least-Once vs Exactly-Once Delivery
 
-| | At-least-once | Exactly-once |
+| Dimension | At-least-once | Exactly-once |
 |---|---|---|
-| Mechanism | Kafka default — retry on failure | Kafka transactions (2-phase commit) |
-| Latency impact | None | +20–100ms per message |
+| Mechanism | Kafka default — retry on consumer crash | Kafka transactions (2-phase commit) |
+| Latency impact | None | +20-100ms per message |
 | Complexity | Low | Very high — distributed transactions |
-| Duplicate risk | Rare (only on crash mid-ack) | None |
+| Duplicate risk | Rare — only on crash mid-ack | None |
 
-**Chosen: At-least-once + application-layer deduplication**
-
-Every message carries a `client_message_id` (UUID from sender). Before delivery, Chat Server checks `Redis: GET dedup:{client_message_id}`. If seen before → discard. If new → deliver and set with 24h TTL.
+**Chosen: At-least-once + application-layer dedup** — Every message carries a `client_message_id` (UUID from sender). Before delivery, Chat Server checks `Redis: GET dedup:{client_message_id}`. If seen, discard. If new, deliver and set key with 24h TTL. This makes Kafka at-least-once behave as effectively-once at near-zero cost.
 
 > [!NOTE]
-> **Key Insight:** Exactly-once delivery in distributed systems is expensive. At-least-once + a cheap Redis dedup key gives you **effectively-once** delivery at near-zero cost. This is the production pattern used by Kafka-based messaging systems at scale.
+> **Key Insight:** Exactly-once delivery in distributed systems is expensive. At-least-once + a Redis dedup key gives effectively-once delivery at near-zero cost. The queue is mandatory for correctness, not performance.
 
 ---
 
-### 7.4 ⚖️ Kafka vs Direct Server Calls — Durability vs Latency
+### Kafka vs Direct Server-to-Server Calls
 
-| | Kafka (queue) | Direct gRPC/HTTP |
+| Dimension | Kafka | Direct gRPC / HTTP |
 |---|---|---|
-| Durability | Message persisted in log — survives CS2 crash | Message lost if CS2 is down at time of call |
-| Coupling | Producers and consumers fully decoupled | Tight coupling — CS1 must know CS2's address |
-| Latency | +5–20ms (queue write + consume) | Lower (direct call) |
+| Durability | Message persisted in log — survives CS2 crash | Message lost if CS2 is down at call time |
+| Coupling | Producers and consumers fully decoupled | Tight coupling — CS1 must know CS2 address |
+| Latency | +5-20ms (write + consume) | Lower (direct call) |
 | Group fan-out | Natural — publish once, N consumers | Must call N servers explicitly |
 
-**Chosen: Kafka**
-
-> [!NOTE]
-> **Key Insight:** The queue is a **correctness requirement, not a performance optimization.** Without it, any server crash between receive and forward = silent message loss. With Kafka, zero message loss is a guarantee, not a hope.
-
----
-
-### 7.5 ⚖️ Redis vs DB for Presence and Session State
-
-**Presence data** (online/offline, last seen) and **session data** (user → server mapping) share one property: **they are ephemeral**. A user's online status expires when they disconnect. A session mapping expires when the connection closes.
-
-| | Redis (TTL) | Database |
-|---|---|---|
-| Presence update frequency | Every heartbeat (25s) — high write rate | Same — creates write amplification on primary |
-| Data lifetime | Short — seconds to minutes | Persisted indefinitely |
-| Read latency | < 1ms in memory | 5–50ms disk I/O |
-| Auto-expiry | Native TTL — cleans up automatically | Requires a cron job or manual cleanup |
-
-**Chosen: Redis**
-
-> [!NOTE]
-> **Key Insight:** Presence is ephemeral → Redis is ideal. Storing ephemeral data in a DB forces you to write a cleanup job, handle stale rows, and suffer unnecessary disk I/O for data that has a natural expiry. Redis TTL is the correct primitive here.
-
----
-
-### 7.6 ⚖️ At-Least-Once vs Exactly-Once Delivery
-
-*(See Section 7.3 above — this section covers the full delivery guarantee story.)*
-
----
-
-### 7.7 Bottlenecks and Mitigations
-
-| Bottleneck | Mitigation |
-|---|---|
-| WebSocket Gateway SPOF | Multiple WS Gateway nodes behind a TCP LB |
-| Chat Server memory limits | Limit connections per server, auto-scale fleet |
-| Cassandra hot partition | `conversation_id` distributes load evenly across nodes |
-| Redis node failure | Redis Cluster with replication; TTL-based reconnect auto-heals |
-| Kafka consumer lag at peak | Increase partition count, scale consumer fleet |
-| Large group fan-out (1M+ members) | Async fan-out service, rate-limited, Kafka pipeline |
-| Media storage cost | CDN caching reduces S3 egress; lifecycle policies archive old media |
-
----
-
-### 7.3 Redis vs Database for Session/Connection Mapping
-
-**Decision: Redis**
-
-The session map (`user_id → server_id`) is read on every message send operation. With 1.16M messages/sec, that is 1.16M Redis lookups per second. Redis handles millions of reads/sec at sub-millisecond latency from memory.
-
-Storing this in PostgreSQL would require disk I/O on every message route decision — latency would be 10-100x higher and the DB would become a bottleneck.
-
-**Trade-off accepted:** Redis is in-memory. A Redis node failure loses session data. We mitigate this with Redis Cluster (multi-node replication) and the TTL mechanism — clients reconnect automatically and re-register their session within seconds.
-
----
-
-### 7.4 Kafka vs Direct Server-to-Server Calls for Cross-Server Delivery
-
-**Decision: Kafka**
-
-If Chat Server 1 calls Chat Server 2 directly (via gRPC or HTTP) to forward a message, we introduce tight coupling and a failure mode: if Chat Server 2 is temporarily unavailable, the message is dropped.
-
-Kafka decouples the producer (Chat Server 1) from the consumer (Chat Server 2). If Chat Server 2 is down, the message sits in Kafka. When Chat Server 2 recovers, it consumes the backlog. This gives us the zero message loss guarantee.
-
-**Trade-off accepted:** Kafka introduces added latency (typically 5-20ms additional). For our < 300ms target, this is acceptable. Kafka also adds operational complexity — it requires its own cluster, ZooKeeper/KRaft management, and topic partitioning strategy.
-
-**Alternative Approach:** For a smaller system or team, Redis pub/sub can replace Kafka for cross-server message routing. Redis pub/sub is simpler but does not persist messages — if the subscriber is down when the event fires, the message is lost. Kafka's durable log is worth the complexity at our scale.
-
----
-
-### 7.5 Eventual Consistency Trade-off
-
-The system is designed for AP (Availability + Partition Tolerance) per the CAP theorem.
-
-**What this means in practice:**
-- A message may be stored on one Cassandra node and briefly unavailable on replicas during a network partition. A recipient on a different read replica might not immediately see the latest message.
-- Read receipts may arrive slightly out of order.
-- Two users may briefly see different tick statuses for the same message.
-
-**Why this is acceptable:**
-- We are not a banking system. Message ordering within a few milliseconds does not harm the user experience.
-- WhatsApp and Facebook Messenger both operate with eventual consistency and users find it acceptable.
-
-**What we never compromise on:**
-- Zero message loss: Kafka's durable log and Cassandra's replication factor (typically 3) ensure a message written to the system is never dropped.
-- Monotonic reads within a session: A user will never see a message disappear after seeing it (Cassandra's LWW last-write-wins policy handles this cleanly with timestamps as clustering keys).
-
----
-
-### 7.6 At-Least-Once vs Exactly-Once Delivery
-
-**The problem:** Kafka guarantees at-least-once delivery by default. If Chat Server 2 consumes a message and crashes before committing its Kafka offset, Kafka redelivers the same message when CS2 restarts. User B receives the message twice.
-
-**Why not exactly-once natively?** Kafka's transactional API (true exactly-once semantics) requires 2-phase commit across producers and consumers. This adds significant write latency and operational complexity. Not worth it for a chat app where a rare duplicate is a minor nuisance, not a financial error.
-
-**Our solution: idempotency at the application layer.**
-
-Every message carries a `client_message_id` (UUID generated by the sender's device before sending). Before Chat Server 2 delivers to User B, it checks:
-
-```
-Redis: GET dedup:{client_message_id}
-  → key exists:  duplicate — discard silently
-  → key missing: deliver to User B, then SET dedup:{client_message_id} 1 EX 86400
-```
-
-This turns at-least-once Kafka delivery into **effectively-once** delivery at the app layer.
-
-| Guarantee | Mechanism | Cost |
-|---|---|---|
-| At-least-once | Kafka default | Free |
-| Exactly-once | Kafka transactions (2PC) | High latency + complexity |
-| **Effectively-once** | At-least-once + Redis dedup key | **Chosen — low cost** |
+**Chosen: Kafka** — Direct server calls create a silent message drop risk on any recipient server failure. The trade-off is +5-20ms latency, well within our 300ms budget.
 
 > [!IMPORTANT]
-> **Why a queue is mandatory, not optional.** Without Kafka, Chat Server 1 must call Chat Server 2 directly. If CS2 is down, the message is silently dropped — no retry, no durability. The queue is the component that makes zero-message-loss a guarantee rather than a hope. This is not an optimization; it is a correctness requirement.
-
-**Trade-off accepted:** The Redis dedup key has a 24-hour TTL. A duplicate delivered more than 24 hours after the original (practically impossible in normal operation) would not be caught. Acceptable.
+> **The queue is a correctness requirement, not a performance optimization.** Without Kafka, any server crash between receive and forward = silent message loss. With Kafka, zero message loss is a guarantee, not a hope.
 
 ---
 
-### 7.7 Bottlenecks and How We Mitigate Them
+## Interview Summary
 
-| Bottleneck                         | Mitigation                                                          |
-|------------------------------------|---------------------------------------------------------------------|
-| WebSocket Gateway becoming SPOF    | Horizontal scaling, multiple WS Gateway nodes behind a TCP LB      |
-| Chat Server memory limits          | Limit connections per server, auto-scale fleet, shed connections    |
-| Cassandra hot partition            | Good partition key (conversation_id distributes load evenly)        |
-| Redis single point of failure      | Redis Cluster with replication and sentinel                         |
-| Kafka consumer lag during peak     | Increase partition count, scale consumer fleet, monitor lag         |
-| Large group fan-out (1M members)   | Async fan-out service, rate-limited delivery, async Kafka pipeline  |
-| Media storage costs                | CDN caching reduces S3 egress, lifecycle policies archive old media |
+### Key Decisions
 
----
-
-## 8. Interview Summary
-
-> [!TIP]
-> When the interviewer says "walk me through your design," hit these 5 decisions in order. Each has a WHY, a WHAT, and a TRADE-OFF. This is what separates a senior answer from a mid-level one.
+| Decision | Problem it solves | Trade-off accepted |
+|---|---|---|
+| WebSocket + sticky sessions | HTTP polling = 500M empty requests/sec. WS = 1 persistent connection per user, real-time push. | Stateful connections require sticky sessions. Solved by Redis session map. |
+| Redis for session routing | 1.16M route lookups/sec. DB disk I/O = 10-50ms each = latency budget blown. Redis = < 1ms in-memory. | In-memory is volatile. Redis Cluster + TTL auto-reconnect mitigates failure. |
+| Kafka between servers | Direct server-to-server calls = silent message drop on recipient crash. Kafka = durable log, consumer recovers and replays. | Added 5-20ms latency. Worth it for zero message loss guarantee. |
+| Cassandra for messages | 1.16M writes/sec sustained. PostgreSQL primary tops at ~100K/sec. Cassandra multi-master scales linearly. | No joins, eventual consistency. PostgreSQL handles relational User/Group data. |
+| At-least-once + Redis dedup | Exactly-once (2PC) adds 20-100ms latency and high complexity. At-least-once + dedup key = effectively-once at low cost. | 24h dedup TTL. Duplicates beyond that window are practically impossible. |
 
 ---
 
-### The 5 Decisions That Define This System
-
-| # | Decision | Problem it solves | Trade-off accepted |
-|---|----------|-------------------|--------------------|
-| 1 | **WebSocket** | HTTP polling = 1B empty requests/sec at our scale. WS = 1 persistent connection per user, server pushes on arrival. | Stateful connections complicate horizontal scaling → solved with sticky sessions + Redis map. |
-| 2 | **Redis for session map** | 1.16M route lookups/sec. DB disk I/O = 10–50ms each = latency budget blown. Redis = <1ms in-memory. TTL auto-cleans stale sessions. | In-memory is volatile. Redis Cluster + auto-reconnect on TTL expiry mitigates failure. |
-| 3 | **Kafka between servers** | Direct server-to-server calls = silent message drop if recipient server is down. Kafka = durable log. CS2 recovers and consumes backlog. **The queue is a correctness requirement, not an optimization.** | Added 5–20ms latency. Worth it for zero message loss. |
-| 4 | **Cassandra for messages** | 1.16M writes/sec sustained. PostgreSQL primary tops at ~100K/sec. Cassandra multi-master scales linearly by adding nodes. | No joins, eventual consistency. Separate PostgreSQL handles relational User/Group data. |
-| 5 | **At-least-once + dedup** | Exactly-once (2PC) is expensive and slow. At-least-once Kafka + Redis `clientMsgId` dedup key = effectively-once at low cost. | 24h dedup TTL window. Duplicates beyond that are practically impossible and accepted. |
-
----
-
-### Fast Path vs Reliable Path — Say This Out Loud in the Interview
+### Fast Path vs Reliable Path
 
 ```
-Fast Path   (latency):   WS → Chat Server → Redis → Kafka → Chat Server → WS
-Reliable Path (safety):  Chat Server → Cassandra   (concurrent, non-blocking)
+Fast Path   (latency):    WS -> Chat Server -> Redis -> Kafka -> Chat Server -> WS
+Reliable Path (durability): Chat Server -> Cassandra   (concurrent, non-blocking)
 
-Single tick  = Cassandra confirmed.  This message will NEVER be lost.
-Double tick  = WS push confirmed.    This message reached the device.
+Single tick  = Cassandra confirmed.   This message will NEVER be lost.
+Double tick  = WS push confirmed.     This message reached the device.
 
-These are different guarantees served by different subsystems.
+These are different guarantees from different subsystems -- never conflate them.
 ```
 
 ---
 
 ### Message Ordering in One Paragraph
 
-Ordering is **scoped per conversation, not global**. The Cassandra partition key is `conversation_id` — all messages in a chat land on the same nodes, making range queries fast. The clustering key is `(client_seq, message_id)` — messages are stored in per-chat sequence order. Clients track `last_seq_seen` per chat and request gap fills when a sequence number jumps. A global sequence number at 1.16M msg/sec would require a distributed counter — a bottleneck. Per-chat counters are free.
+Ordering is **scoped per conversation, not global**. The Cassandra partition key is `conversation_id` — all messages in a chat land on the same nodes, making range queries fast. The clustering key is `(client_seq, message_id)` — messages are stored in per-chat sequence order. Clients track `last_seq_seen` per chat and request gap fills when a sequence number jumps. A global sequence counter at 1.16M msg/sec would be a distributed counter bottleneck. Per-conversation counters are free because the partition key already scopes the space.
 
 ---
 
 ### Key Insights Checklist
 
 > [!IMPORTANT]
-> These are the lines that make an interviewer lean forward. Memorize them.
+> These are the lines that make an interviewer lean forward. Say them out loud.
 
 - **"The queue is mandatory for correctness, not performance."** Without Kafka, any server crash between receive and forward = silent message loss.
-- **"Single tick and double tick are served by different subsystems."** Cassandra guarantees storage. WebSocket guarantees delivery. Never conflate.
-- **"Ordering is per-conversation. A global sequence number is a bottleneck at this scale."**
-- **"Presence data is ephemeral. Storing it in a DB creates unnecessary write load — Redis with TTL is the correct tool because the data has a natural expiry."**
-- **"We chose AP over CP deliberately. Chat tolerates eventual consistency. A bank cannot. Always justify your CAP choice."**
-
----
-
----
-
-# Frontend Notes: Chat Application
-
-> Chat is a **backend-heavy system (~85% backend, ~15% frontend)**. In an interview, spend the majority of time on WebSocket routing, message delivery, and Cassandra. The frontend notes below cover the 2–3 frontend concepts that interviewers do ask about.
-
----
-
-## F1. The Three Frontend Problems Worth Discussing
-
-### 1. WebSocket Client (Singleton + Reconnect)
-
-The WebSocket connection must be a singleton — opened once on login, reused for the entire session.
-
-**Reconnect strategy:**
-```mermaid
-flowchart LR
-    Start([Login]) --> OpenWS[Open WebSocket]
-    OpenWS --> Active{Connected?}
-    Active -->|Yes| Active
-    Active -->|Disconnect| Backoff[Exponential backoff\n1s - 2s - 4s - max 30s]
-    Backoff --> ReAuth[Re-authenticate]
-    ReAuth --> Fetch[Fetch missed messages\nGET /messages?since=lastSeen]
-    Fetch --> Active
-```
-
-On reconnect, always fetch missed messages via REST — never rely on the WebSocket to replay what was missed.
-
-**Offline outbox:** When the device is offline, queue outgoing messages in IndexedDB. Drain the queue on reconnect.
-
----
-
-### 2. Virtual List for Message Rendering
-
-Rendering 10,000+ messages in the DOM causes scroll stuttering and frame drops. Only render the visible window (~15–20 messages) plus a small buffer. Use `react-virtual` or `react-window`.
-
-**Key behaviors:**
-- **Sticky scroll**: auto-scroll to bottom when the user is at the bottom. Pause auto-scroll when user scrolls up.
-- **Lazy load upward**: fetch older messages when scrolling to the top. Preserve scroll position during DOM update (calculate height delta before/after prepend).
-
----
-
-### 3. Optimistic UI
-
-Show the message in the UI immediately on send (with a "pending" clock icon). Do not wait for the server ACK. On server ACK, swap the clientMsgId for the server messageId and update the status to single tick.
-
-If the server returns an error, show a retry option. This makes the UI feel instant while the network does its work in the background.
-
----
-
-## F2. What NOT to Over-Engineer on the Frontend
-
-For a chat app interview, do **not** go deep on:
-- State management library choice (Zustand vs Redux) — mention it, don't deep-dive
-- Component architecture — not relevant unless specifically asked
-- CSS/accessibility — out of scope
-- PWA/service workers — mention briefly if asked about offline
-
-The interviewer wants to hear about WebSocket management, message ordering on the client, and how the client handles the reliable/fast path split (optimistic UI = fast path; retry on failure = reliable path).
-
+- **"Single tick and double tick are served by different subsystems."** Cassandra guarantees storage. WebSocket guarantees delivery. The fast path can fail; the reliable path must not.
+- **"Ordering is per-conversation. A global sequence number is a distributed counter bottleneck at this scale."**
+- **"Presence data is ephemeral. Storing it in a DB creates unnecessary write amplification — Redis with TTL is correct because the data has a natural expiry."**
+- **"We chose AP over CP deliberately. Chat tolerates eventual consistency. Always justify your CAP choice with the specific failure mode you are accepting."**
+- **"Push notification is a wake-up call, not a delivery vehicle. The reliable path is Cassandra; push is just the doorbell."**
