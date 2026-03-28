@@ -1,14 +1,21 @@
 # System Design: Cloud Storage (Google Drive / Dropbox)
 
+> Designing Google Drive is not about storing files — it’s about syncing state across distributed clients at scale.
+
 ---
 
 ## 🧠 Mental Model
 
+A cloud storage system is not just storing files.
+
+It is continuously syncing file state across distributed clients, ensuring changes propagate reliably and efficiently.
+
 > **Google Drive is not a filesystem. It is a metadata store with a blob storage backend.**
 
-A "folder" in Google Drive is not a directory — it is a row in a database with `type = "folder"`. Moving a file is not moving bytes on disk — it is changing a `parent_id` field in a metadata record. The actual file bytes live in S3 (or equivalent blob storage), addressed by a content hash. The metadata DB is the source of truth for *what exists*. The blob store is the source of truth for *what the bytes are*.
+A "folder" in Google Drive is not a directory — it is a row in a database with `type = "folder"`. Moving a file is not moving bytes on disk — it is changing a `parent_id` field in a metadata record. The actual file bytes live in S3 (or equivalent blob storage), addressed by a content hash. The metadata DB is the source of truth for _what exists_. The blob store is the source of truth for _what the bytes are_.
 
 The system runs two paths:
+
 - **Fast path**: Client chunks the file → uploads directly to S3 via pre-signed URL (bypasses backend) → S3 notifies backend on completion
 - **Reliable path**: Metadata written to DB before upload confirmed → quota enforced → sync notification sent to other devices
 
@@ -29,13 +36,13 @@ The system runs two paths:
 
 ## ⚡ Core Design Principle
 
-| Principle | Mechanism | Optimizes for | Can fail? |
-|-----------|-----------|---------------|-----------|
-| **Fast Path — upload** | Pre-signed URL → client uploads directly to S3 | Throughput (large files bypass backend) | Yes — client retries failed chunks |
-| **Reliable Path — metadata** | DB write before upload confirmed; quota enforced atomically | Durability + correctness | No — must not confirm upload without metadata |
-| **File = content hash** | SHA-256 hash of chunk → deduplication key | Storage efficiency (zero duplicate bytes) | No — same hash = same bytes, guaranteed |
-| **Folder = metadata row** | `type = "folder"`, `parent_id` field | Simplicity; O(1) move/rename | No — metadata only |
-| **Sync via notification** | S3 event → Notification Service → WebSocket/push to devices | Near-real-time sync across devices | Yes — at-least-once + idempotent apply |
+| Principle                    | Mechanism                                                   | Optimizes for                             | Can fail?                                     |
+| ---------------------------- | ----------------------------------------------------------- | ----------------------------------------- | --------------------------------------------- |
+| **Fast Path — upload**       | Pre-signed URL → client uploads directly to S3              | Throughput (large files bypass backend)   | Yes — client retries failed chunks            |
+| **Reliable Path — metadata** | DB write before upload confirmed; quota enforced atomically | Durability + correctness                  | No — must not confirm upload without metadata |
+| **File = content hash**      | SHA-256 hash of chunk → deduplication key                   | Storage efficiency (zero duplicate bytes) | No — same hash = same bytes, guaranteed       |
+| **Folder = metadata row**    | `type = "folder"`, `parent_id` field                        | Simplicity; O(1) move/rename              | No — metadata only                            |
+| **Sync via notification**    | S3 event → Notification Service → WebSocket/push to devices | Near-real-time sync across devices        | Yes — at-least-once + idempotent apply        |
 
 > [!IMPORTANT]
 > **File data never touches the application server.** The backend only handles metadata. File bytes go client → S3 directly via pre-signed URL. This is the architectural decision that makes Google Drive scale — the upload bottleneck is the client's bandwidth and S3 throughput, not application server capacity.
@@ -44,6 +51,38 @@ The system runs two paths:
 > **Key Insight:** Deduplication works at the chunk level, not the file level. If you upload the same 10GB video twice, only one copy of each chunk is stored. The second upload is just a metadata pointer — no bytes transferred. This is why Dropbox could serve billions of files with a fraction of the expected storage cost.
 
 ---
+
+## 🔄 Sync Engine (Core System)
+
+The sync engine is the heart of the system.
+
+Whenever a file changes:
+
+1. Client detects change (file watcher)
+2. File is chunked
+3. Only delta is sent to server
+4. Server stores new version
+5. Event is pushed to other clients
+6. Clients fetch and apply updates
+
+👉 Key Insight:
+This is not a storage problem — it is a synchronization problem across distributed clients.
+
+## 💻 Client Architecture
+
+A significant part of the system runs on the client.
+
+Client responsibilities:
+
+- Detect file changes (watcher)
+- Split files into chunks
+- Maintain local metadata
+- Sync with server asynchronously
+
+👉 Key Insight:
+Client is not passive — it actively participates in synchronization.
+
+> See "Frontend Notes" section for deeper breakdown of Chunker, Watcher, and Upload Manager.
 
 ## 1. Problem Statement & Scope
 
@@ -58,6 +97,7 @@ Design a cloud storage platform (Google Drive / Dropbox) supporting file upload,
 ## 2. Requirements
 
 ### Functional
+
 1. User creates account; gets storage quota (e.g., 15 GB free)
 2. Upload files and folders of any size (including multi-GB videos)
 3. Download files from any device, anywhere
@@ -67,14 +107,14 @@ Design a cloud storage platform (Google Drive / Dropbox) supporting file upload,
 
 ### Non-Functional
 
-| Requirement | Target | Reasoning |
-|---|---|---|
-| Scale | Millions of users, billions of files | Mandates blob storage + sharded metadata DB |
-| Availability | High — prefer AP over CP for upload/sync | User cannot upload if service is down; brief sync delay acceptable |
-| Consistency (metadata) | Eventual consistency for sync | A 1–2 second sync lag is invisible to users |
-| Durability | 99.999999999% (11 nines) | Uploaded files must never be lost — replicated across AZs |
-| Large file support | Files up to 10–15 GB | Requires chunked upload, not single HTTP request |
-| Sync latency | < 2 seconds after upload completes | Devices should feel "live" |
+| Requirement            | Target                                   | Reasoning                                                          |
+| ---------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| Scale                  | Millions of users, billions of files     | Mandates blob storage + sharded metadata DB                        |
+| Availability           | High — prefer AP over CP for upload/sync | User cannot upload if service is down; brief sync delay acceptable |
+| Consistency (metadata) | Eventual consistency for sync            | A 1–2 second sync lag is invisible to users                        |
+| Durability             | 99.999999999% (11 nines)                 | Uploaded files must never be lost — replicated across AZs          |
+| Large file support     | Files up to 10–15 GB                     | Requires chunked upload, not single HTTP request                   |
+| Sync latency           | < 2 seconds after upload completes       | Devices should feel "live"                                         |
 
 > [!IMPORTANT]
 > **CAP framing:** Upload and sync prefer **availability** — it is acceptable for a newly uploaded file to take 1–2 seconds to appear on other devices. Metadata operations (quota enforcement, permission changes) prefer **consistency** — a user must never exceed quota or access a file they were not given permission to.
@@ -121,30 +161,30 @@ Sync notifications:
 
 ### Folder Management
 
-| Method | Endpoint | Request | Response |
-|---|---|---|---|
-| `POST` | `/folders` | `{ name, parent_id, type: "folder" }` | `{ folder_id, metadata }` |
-| `GET` | `/folders/{id}` | — | `{ folder_id, name, owner, permissions, created_at }` |
-| `GET` | `/folders/{id}/contents` | `?page, page_size` | `[{ id, name, type, size, modified_at }]` |
-| `PATCH` | `/folders/{id}` | `{ name?, parent_id? }` | `{ updated_metadata }` |
-| `DELETE` | `/folders/{id}` | — | `{ status: "deleted" }` |
+| Method   | Endpoint                 | Request                               | Response                                              |
+| -------- | ------------------------ | ------------------------------------- | ----------------------------------------------------- |
+| `POST`   | `/folders`               | `{ name, parent_id, type: "folder" }` | `{ folder_id, metadata }`                             |
+| `GET`    | `/folders/{id}`          | —                                     | `{ folder_id, name, owner, permissions, created_at }` |
+| `GET`    | `/folders/{id}/contents` | `?page, page_size`                    | `[{ id, name, type, size, modified_at }]`             |
+| `PATCH`  | `/folders/{id}`          | `{ name?, parent_id? }`               | `{ updated_metadata }`                                |
+| `DELETE` | `/folders/{id}`          | —                                     | `{ status: "deleted" }`                               |
 
 ### File Upload (3-step multipart)
 
-| Method | Endpoint | Request | Response |
-|---|---|---|---|
-| `POST` | `/files/initiate` | `{ name, size, parent_id, chunk_count, total_hash }` | `{ file_id, upload_id, pre_signed_urls: [url_per_chunk] }` |
-| `PUT` | S3 pre-signed URL (direct) | `chunk bytes` | `{ etag }` (from S3) |
-| `POST` | `/files/complete` | `{ file_id, upload_id, chunk_etags[] }` | `{ file_id, download_url }` |
+| Method | Endpoint                   | Request                                              | Response                                                   |
+| ------ | -------------------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
+| `POST` | `/files/initiate`          | `{ name, size, parent_id, chunk_count, total_hash }` | `{ file_id, upload_id, pre_signed_urls: [url_per_chunk] }` |
+| `PUT`  | S3 pre-signed URL (direct) | `chunk bytes`                                        | `{ etag }` (from S3)                                       |
+| `POST` | `/files/complete`          | `{ file_id, upload_id, chunk_etags[] }`              | `{ file_id, download_url }`                                |
 
 ### File Operations
 
-| Method | Endpoint | Request | Response |
-|---|---|---|---|
-| `GET` | `/files/{id}` | — | `{ metadata + pre_signed_download_url }` |
-| `DELETE` | `/files/{id}` | — | `{ status: "deleted" }` |
-| `POST` | `/files/{id}/share` | `{ user_email, permission: "read" | "write" }` | `{ share_link }` |
-| `GET` | `/files/{id}/permissions` | — | `[{ user, permission }]` |
+| Method   | Endpoint                  | Request                           | Response                                 |
+| -------- | ------------------------- | --------------------------------- | ---------------------------------------- | ---------------- |
+| `GET`    | `/files/{id}`             | —                                 | `{ metadata + pre_signed_download_url }` |
+| `DELETE` | `/files/{id}`             | —                                 | `{ status: "deleted" }`                  |
+| `POST`   | `/files/{id}/share`       | `{ user_email, permission: "read" | "write" }`                               | `{ share_link }` |
+| `GET`    | `/files/{id}/permissions` | —                                 | `[{ user, permission }]`                 |
 
 > [!NOTE]
 > **Key Insight:** The 3-step upload (initiate → upload to S3 → complete) is the correct pattern for large files. The backend never touches file bytes — it only creates pre-signed URLs and records metadata on completion. This is how you scale to 5,800 uploads/sec without application server bottleneck.
@@ -224,18 +264,18 @@ The entire upload design is built around one principle: **file bytes must never 
 
 #### Step-by-Step Upload Flow
 
-| Step | Who | What | Why |
-|---|---|---|---|
-| 1 | Client (Chunker) | Split file into 5MB chunks; hash each chunk (SHA-256) | Enables deduplication + parallel upload + partial retry |
-| 2 | Client → Upload Service | `POST /files/initiate` with total_hash + chunk_count | Backend reserves upload slot, checks quota, checks dedup |
-| 3 | Upload Service → Dedup Service | Does total_hash exist in MetaDB? | If yes: skip all uploads, just create metadata pointer |
-| 4 | Upload Service → S3 | Generate N pre-signed PUT URLs (one per chunk) | Client will upload directly; backend stays out of data path |
-| 5 | Upload Service → Client | Return `{ file_id, upload_id, pre_signed_urls[] }` | Client now has everything needed to upload without further backend calls |
-| 6 | Client → S3 | PUT each chunk to its pre-signed URL (parallel) | N chunks upload simultaneously → N× faster than sequential |
-| 7 | S3 → Message Queue | `upload_completed` event per chunk | Reliable handoff; backend not holding connection open |
-| 8 | Upload Service (consumer) | Verify all chunks received; commit metadata to DB | Atomic: either all chunks committed or none |
-| 9 | Upload Service → Quota Service | Decrement available quota for user | Enforced after upload, not before — prevents TOCTOU race |
-| 10 | Notification Service | Fan-out sync event to user's other devices | Devices learn a new file exists; download on demand |
+| Step | Who                            | What                                                  | Why                                                                      |
+| ---- | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1    | Client (Chunker)               | Split file into 5MB chunks; hash each chunk (SHA-256) | Enables deduplication + parallel upload + partial retry                  |
+| 2    | Client → Upload Service        | `POST /files/initiate` with total_hash + chunk_count  | Backend reserves upload slot, checks quota, checks dedup                 |
+| 3    | Upload Service → Dedup Service | Does total_hash exist in MetaDB?                      | If yes: skip all uploads, just create metadata pointer                   |
+| 4    | Upload Service → S3            | Generate N pre-signed PUT URLs (one per chunk)        | Client will upload directly; backend stays out of data path              |
+| 5    | Upload Service → Client        | Return `{ file_id, upload_id, pre_signed_urls[] }`    | Client now has everything needed to upload without further backend calls |
+| 6    | Client → S3                    | PUT each chunk to its pre-signed URL (parallel)       | N chunks upload simultaneously → N× faster than sequential               |
+| 7    | S3 → Message Queue             | `upload_completed` event per chunk                    | Reliable handoff; backend not holding connection open                    |
+| 8    | Upload Service (consumer)      | Verify all chunks received; commit metadata to DB     | Atomic: either all chunks committed or none                              |
+| 9    | Upload Service → Quota Service | Decrement available quota for user                    | Enforced after upload, not before — prevents TOCTOU race                 |
+| 10   | Notification Service           | Fan-out sync event to user's other devices            | Devices learn a new file exists; download on demand                      |
 
 ```mermaid
 sequenceDiagram
@@ -270,11 +310,11 @@ sequenceDiagram
 
 #### Chunk Size Trade-off
 
-| Chunk size | Pros | Cons |
-|---|---|---|
-| 1 MB | More granular retry; better dedup ratio | More API calls (metadata overhead) |
-| 5 MB | Balance of retry granularity and API overhead | Standard — used by S3 multipart minimum |
-| 50 MB | Fewer API calls | Large retry unit; bad on flaky connections |
+| Chunk size | Pros                                          | Cons                                       |
+| ---------- | --------------------------------------------- | ------------------------------------------ |
+| 1 MB       | More granular retry; better dedup ratio       | More API calls (metadata overhead)         |
+| 5 MB       | Balance of retry granularity and API overhead | Standard — used by S3 multipart minimum    |
+| 50 MB      | Fewer API calls                               | Large retry unit; bad on flaky connections |
 
 **Chosen: 5 MB chunks.** Matches S3 multipart minimum, provides reasonable retry granularity on slow connections, and limits chunk metadata DB entries to ~200 per 1GB file.
 
@@ -301,6 +341,7 @@ Storage saved: 2/3 chunks = 66% storage and bandwidth savings
 ```
 
 **Dedup ratio in practice:**
+
 - File-level dedup: ~30% of uploads are exact duplicates (same file uploaded again)
 - Chunk-level dedup: ~60–70% reduction (files sharing partial content: video edits, document revisions)
 - Dropbox reportedly achieves ~60% storage savings through chunk-level dedup
@@ -341,13 +382,13 @@ CREATE TABLE permissions (
 
 **Operations map to simple SQL:**
 
-| User action | What actually happens |
-|---|---|
-| Create folder | `INSERT INTO file_metadata (type='folder', parent_id=X)` |
-| Rename file | `UPDATE file_metadata SET name='new_name' WHERE file_id=Y` |
-| Move file | `UPDATE file_metadata SET parent_id=Z WHERE file_id=Y` |
-| Delete folder | `UPDATE file_metadata SET deleted_at=NOW() WHERE file_id=X` (soft delete) |
-| List folder contents | `SELECT * FROM file_metadata WHERE parent_id=X AND deleted_at IS NULL` |
+| User action          | What actually happens                                                     |
+| -------------------- | ------------------------------------------------------------------------- |
+| Create folder        | `INSERT INTO file_metadata (type='folder', parent_id=X)`                  |
+| Rename file          | `UPDATE file_metadata SET name='new_name' WHERE file_id=Y`                |
+| Move file            | `UPDATE file_metadata SET parent_id=Z WHERE file_id=Y`                    |
+| Delete folder        | `UPDATE file_metadata SET deleted_at=NOW() WHERE file_id=X` (soft delete) |
+| List folder contents | `SELECT * FROM file_metadata WHERE parent_id=X AND deleted_at IS NULL`    |
 
 > [!NOTE]
 > **Key Insight:** Google Drive does not manage a real filesystem. Every "folder operation" is a metadata DB update. This means rename and move are O(1) operations regardless of folder size. A folder with 10,000 files is moved by changing one `parent_id` value.
@@ -382,6 +423,8 @@ Local filesystem monitor (inotify on Linux, FSEvents on macOS, FileSystemWatcher
     → No:  skip (content identical, only access time changed)
 ```
 
+## 🧠 Conflict Resolution
+
 **Conflict resolution (two devices edit same file offline):**
 
 ```
@@ -401,12 +444,12 @@ Server receives both:
 
 ### 6.5 Fast Path vs Reliable Path
 
-| | Fast Path | Reliable Path |
-|---|---|---|
-| **What** | File bytes → S3 (direct) | Metadata → PostgreSQL; quota → Redis |
-| **Mechanism** | Pre-signed URL + S3 multipart | DB write before confirming upload |
-| **Can fail?** | Yes — client retries chunks | No — must not confirm without metadata |
-| **Latency** | Bounded by client bandwidth | < 20ms (DB write) |
+|               | Fast Path                     | Reliable Path                          |
+| ------------- | ----------------------------- | -------------------------------------- |
+| **What**      | File bytes → S3 (direct)      | Metadata → PostgreSQL; quota → Redis   |
+| **Mechanism** | Pre-signed URL + S3 multipart | DB write before confirming upload      |
+| **Can fail?** | Yes — client retries chunks   | No — must not confirm without metadata |
+| **Latency**   | Bounded by client bandwidth   | < 20ms (DB write)                      |
 
 ---
 
@@ -421,13 +464,13 @@ Server receives both:
 
 Here is the problem: 5,800 upload requests/sec at an average of 2.5 MB/chunk = 14.5 GB/sec of file data. Routing this through application servers would require massive server capacity for a problem that is purely about moving bytes.
 
-| Dimension | Pre-Signed URL (direct to S3) | Proxied Upload (via app server) |
-|---|---|---|
-| App server load | Zero — no bytes transit servers | 14.5 GB/sec through servers |
-| Throughput ceiling | S3 capacity (effectively unlimited) | Application server bandwidth |
-| Latency | Client → S3 directly (1 hop) | Client → Server → S3 (2 hops) |
-| Security | URL expires in 15min; scoped to one object | Server controls all access |
-| Complexity | Client must handle pre-signed URL flow | Simpler client, complex server |
+| Dimension          | Pre-Signed URL (direct to S3)              | Proxied Upload (via app server) |
+| ------------------ | ------------------------------------------ | ------------------------------- |
+| App server load    | Zero — no bytes transit servers            | 14.5 GB/sec through servers     |
+| Throughput ceiling | S3 capacity (effectively unlimited)        | Application server bandwidth    |
+| Latency            | Client → S3 directly (1 hop)               | Client → Server → S3 (2 hops)   |
+| Security           | URL expires in 15min; scoped to one object | Server controls all access      |
+| Complexity         | Client must handle pre-signed URL flow     | Simpler client, complex server  |
 
 **Chosen: Pre-signed URLs.**
 
@@ -440,12 +483,12 @@ We never proxy file bytes through application servers. File data goes client →
 
 ### Trade-off 2: Chunk-Level vs File-Level Deduplication
 
-| Dimension | Chunk-level (5MB blocks) | File-level (whole file hash) |
-|---|---|---|
-| Dedup ratio | 60–70% (partial content shared) | 30% (exact duplicates only) |
-| Metadata overhead | N chunk records per file | 1 record per file |
-| Partial upload support | Resume from last successful chunk | Must restart entire file |
-| Implementation complexity | Higher — chunk hash lookup | Lower — single hash check |
+| Dimension                 | Chunk-level (5MB blocks)          | File-level (whole file hash) |
+| ------------------------- | --------------------------------- | ---------------------------- |
+| Dedup ratio               | 60–70% (partial content shared)   | 30% (exact duplicates only)  |
+| Metadata overhead         | N chunk records per file          | 1 record per file            |
+| Partial upload support    | Resume from last successful chunk | Must restart entire file     |
+| Implementation complexity | Higher — chunk hash lookup        | Lower — single hash check    |
 
 **Chosen: Chunk-level deduplication.**
 
@@ -458,13 +501,13 @@ We deduplicate at the chunk level because most storage savings come from shared 
 
 ### Trade-off 3: PostgreSQL vs NoSQL for Metadata
 
-| Dimension | PostgreSQL (chosen) | Cassandra / DynamoDB |
-|---|---|---|
-| Directory hierarchy queries | Natural — recursive CTE or adjacency list | Complex — requires denormalization |
-| Permission joins | Native — permissions table JOIN | Requires denormalization or multiple reads |
-| Consistency | Strong (ACID) | Eventual |
-| Write throughput | ~100K writes/sec (sharded) | Multi-million writes/sec |
-| Operational complexity | Moderate | Higher |
+| Dimension                   | PostgreSQL (chosen)                       | Cassandra / DynamoDB                       |
+| --------------------------- | ----------------------------------------- | ------------------------------------------ |
+| Directory hierarchy queries | Natural — recursive CTE or adjacency list | Complex — requires denormalization         |
+| Permission joins            | Native — permissions table JOIN           | Requires denormalization or multiple reads |
+| Consistency                 | Strong (ACID)                             | Eventual                                   |
+| Write throughput            | ~100K writes/sec (sharded)                | Multi-million writes/sec                   |
+| Operational complexity      | Moderate                                  | Higher                                     |
 
 **Chosen: PostgreSQL with sharding by owner_id.**
 
@@ -477,12 +520,12 @@ Metadata is relational — files have parents, permissions have users, users hav
 
 ### Trade-off 4: Eventual Consistency vs Strong Consistency for Sync
 
-| Dimension | Eventual (chosen for sync) | Strong consistency |
-|---|---|---|
-| Sync latency | 1–2 seconds | Near-zero |
-| Implementation | Notification + pull | Distributed lock / consensus |
-| Availability | High — devices sync independently | Lower — requires coordination |
-| User impact | 1-2s lag before new file appears | Immediate |
+| Dimension      | Eventual (chosen for sync)        | Strong consistency            |
+| -------------- | --------------------------------- | ----------------------------- |
+| Sync latency   | 1–2 seconds                       | Near-zero                     |
+| Implementation | Notification + pull               | Distributed lock / consensus  |
+| Availability   | High — devices sync independently | Lower — requires coordination |
+| User impact    | 1-2s lag before new file appears  | Immediate                     |
 
 **Chosen: Eventual consistency for sync, strong consistency for metadata.**
 
@@ -495,12 +538,12 @@ A 1–2 second sync delay between devices is invisible to users. We accept this 
 
 ### Trade-off 5: CDN vs Direct S3 for Downloads
 
-| Dimension | CDN (CloudFront / Akamai) | Direct S3 |
-|---|---|---|
-| Download latency | < 50ms (edge node) | 50–300ms (S3 region) |
-| Cost | Higher (CDN fees) | Lower per-GB |
-| Cache hit ratio | High for popular shared files | No caching |
-| Global availability | Edge nodes in 200+ locations | Regional |
+| Dimension           | CDN (CloudFront / Akamai)     | Direct S3            |
+| ------------------- | ----------------------------- | -------------------- |
+| Download latency    | < 50ms (edge node)            | 50–300ms (S3 region) |
+| Cost                | Higher (CDN fees)             | Lower per-GB         |
+| Cache hit ratio     | High for popular shared files | No caching           |
+| Global availability | Edge nodes in 200+ locations  | Regional             |
 
 **Chosen: CDN for downloads, direct S3 for uploads.**
 
@@ -515,14 +558,14 @@ Downloads benefit from CDN because popular files (shared documents, team assets)
 
 ### The 6 Decisions That Define This System
 
-| Decision | Problem It Solves | Trade-off Accepted |
-|---|---|---|
-| Pre-signed URLs (not proxied) | 25 TB/day of file bytes bypasses application servers | 3-step client upload flow; client SDK complexity |
-| Chunk-level dedup (SHA-256) | 60–70% storage savings; partial upload resume | Chunk metadata overhead in DB |
-| Metadata DB, not filesystem | O(1) rename/move; clean permission joins | PostgreSQL sharding complexity |
-| Eventual consistency for sync | High availability; simple architecture | 1–2s sync lag between devices |
-| CDN for downloads | Sub-50ms download globally for popular files | CDN cost for egress |
-| Message queue for S3 → sync | Reliable handoff from upload complete to notification | 200–500ms additional sync latency |
+| Decision                      | Problem It Solves                                     | Trade-off Accepted                               |
+| ----------------------------- | ----------------------------------------------------- | ------------------------------------------------ |
+| Pre-signed URLs (not proxied) | 25 TB/day of file bytes bypasses application servers  | 3-step client upload flow; client SDK complexity |
+| Chunk-level dedup (SHA-256)   | 60–70% storage savings; partial upload resume         | Chunk metadata overhead in DB                    |
+| Metadata DB, not filesystem   | O(1) rename/move; clean permission joins              | PostgreSQL sharding complexity                   |
+| Eventual consistency for sync | High availability; simple architecture                | 1–2s sync lag between devices                    |
+| CDN for downloads             | Sub-50ms download globally for popular files          | CDN cost for egress                              |
+| Message queue for S3 → sync   | Reliable handoff from upload complete to notification | 200–500ms additional sync latency                |
 
 ### Fast Path vs Reliable Path
 
@@ -556,9 +599,19 @@ File record = reliable path (PostgreSQL, ACID, quota-enforced)
 
 **Frontend / Backend split: 70% backend, 30% frontend.** The upload pipeline, sync, and storage are the interview core. But the client components deserve mention — they do real work.
 
-| Concept | What to say in an interview |
-|---|---|
-| **Chunker** | Client splits files into 5MB chunks; hashes each chunk (SHA-256). Small files (< 5MB) bypass chunking. Large files split and uploaded in parallel — 10 concurrent chunk uploads = 10× faster than sequential. |
-| **Watcher** | OS-native filesystem monitor (inotify/FSEvents). Detects creates, modifies, deletes. Debounces 500ms to avoid thrashing on rapid changes. Compares content hash with last known state — skips unchanged files even if access time changed. |
-| **Upload Manager** | Orchestrates 3-step upload: initiate → parallel chunk uploads → complete. Handles retry on failed chunks (not full file retry). Maintains local state: which chunks are uploaded, which are pending. Resumes interrupted uploads from last checkpoint. |
-| **Conflict resolution UI** | When offline edits conflict: creates "file (Device X's conflicted copy)" — user sees both versions and chooses. No silent data loss. |
+| Concept                    | What to say in an interview                                                                                                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Chunker**                | Client splits files into 5MB chunks; hashes each chunk (SHA-256). Small files (< 5MB) bypass chunking. Large files split and uploaded in parallel — 10 concurrent chunk uploads = 10× faster than sequential.                                          |
+| **Watcher**                | OS-native filesystem monitor (inotify/FSEvents). Detects creates, modifies, deletes. Debounces 500ms to avoid thrashing on rapid changes. Compares content hash with last known state — skips unchanged files even if access time changed.             |
+| **Upload Manager**         | Orchestrates 3-step upload: initiate → parallel chunk uploads → complete. Handles retry on failed chunks (not full file retry). Maintains local state: which chunks are uploaded, which are pending. Resumes interrupted uploads from last checkpoint. |
+| **Conflict resolution UI** | When offline edits conflict: creates "file (Device X's conflicted copy)" — user sees both versions and chooses. No silent data loss.                                                                                                                   |
+
+## 🚀 60-sec Overview
+
+- Files → stored in blob storage (S3)
+- Metadata → stored in DB (PostgreSQL)
+- Upload → direct via pre-signed URLs
+- Sync → notification + pull model
+- Dedup → chunk-level hashing
+
+👉 System = sync engine + metadata DB + blob storage
