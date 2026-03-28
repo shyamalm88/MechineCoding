@@ -1,6 +1,100 @@
 # System Design: Zomato / Food Delivery App
 
-## 🧠 Mental Model
+## 1. Problem + Scope
+
+Design a food delivery platform that connects customers with restaurants and delivery partners, supporting restaurant discovery, order placement, payment, real-time GPS tracking, and delivery. The system must handle 300 orders/sec peak, 100K GPS writes/sec from drivers, and guarantee that no order is lost after payment succeeds.
+
+**In scope:** Restaurant browse and search, cart management, order placement + payment, delivery partner assignment, real-time GPS tracking, order state notifications.
+
+**Out of scope:** Restaurant menu management portal, financial settlement/payouts, surge pricing, fraud detection, machine learning recommendations.
+
+---
+
+## 2. Assumptions & Scale
+
+**Scale baseline:**
+- 50M registered users, 10M daily active users
+- 500K restaurants, 1M active delivery partners
+- 5M orders/day → ~60 orders/sec average, **300 orders/sec peak**
+- 50K concurrent order tracking sessions at lunch/dinner peak
+
+**GPS write load — the single hardest write path:**
+```
+1,000,000 active drivers × 1 ping every 10s = 100,000 writes/sec peak
+PostgreSQL ceiling ~50–100K writes/sec with contention → cannot absorb this directly
+Kafka write buffer required → consumers fan out to Redis (live) and Cassandra (audit)
+```
+
+**Storage estimates:**
+- Orders: ~1KB × 5M/day = 5GB/day → ~1.8TB/year (PostgreSQL, 3-year retention)
+- GPS history: 100K writes/sec × ~10 bytes × 86400s = ~86GB/day → ~2.5TB/month (Cassandra, 30-day retention)
+- Menu images: ~500KB × 500K restaurants = 250GB (S3 + CDN, rarely changes)
+- Total active hot storage: ~10–15TB/year
+
+**Redis memory budget:**
+```
+Sessions:              10M × 1KB   = 10GB
+Carts (active):       500K × 2KB   = 1GB
+Restaurant list cache: 50K × 5KB   = 250MB
+Driver locations:     100K × 500B  = 50MB
+Geo index:            100K drivers  = ~100MB
+Idempotency keys:      5M × 100B   = 500MB
+Total: ~12GB → use 32GB instance with LRU eviction on cache keys
+```
+
+**Kafka throughput:** Peak ~100K events/sec across GPS and order topics. 5 brokers, replication factor 3, 10 partitions per topic.
+
+> These numbers drive every storage and infrastructure decision below. The GPS write load is why we need Kafka + Cassandra. The 300 orders/sec peak is why PostgreSQL is perfectly fine for orders.
+
+---
+
+## 3. Functional Requirements
+
+- **Restaurant Discovery:** Browse restaurants filtered by location, cuisine, rating, delivery time, and dietary preference
+- **Search:** Full-text + geo search across restaurant names and dish names; autocomplete suggestions
+- **Cart Management:** Add/remove items, apply promo codes, re-validate prices at checkout
+- **Order Placement:** Checkout with address selection and payment processing; order confirmation under 2 seconds
+- **Delivery Assignment:** Find and assign the nearest idle delivery partner; handle rejection and timeout fallbacks
+- **Real-time Tracking:** Live GPS updates from delivery partner visible to customer in under 1 second
+- **Order State Notifications:** Push/SMS for every state transition (confirmed, preparing, picked up, delivered)
+- **Order History:** Customer can view all past orders and re-order
+
+---
+
+## 4. Non-Functional Requirements
+
+| Requirement | Target |
+|---|---|
+| Restaurant listing latency | Under 500ms |
+| Search results latency | Under 300ms |
+| Order placement end-to-end | Under 2s |
+| GPS tracking update latency | Under 1s customer-visible |
+| Availability | 99.9% (8.7 hours downtime/year) |
+| Order durability | Zero loss after payment success |
+| GPS write throughput | 100K writes/sec sustained |
+| Peak order throughput | 300 orders/sec |
+
+### Consistency Model
+
+Different parts of the system require different consistency guarantees based on business risk and failure cost.
+
+| Domain | Consistency | Why |
+|---|---|---|
+| Orders | Strong (ACID) | Cannot lose or duplicate — financial record |
+| Payments | Strong | Financial correctness, regulatory requirement |
+| Inventory / item availability | Strong per restaurant | Prevent selling unavailable items |
+| Delivery assignment | Strong | One rider per order — Redis SETNX lock |
+| GPS tracking updates | Eventual | Jitter acceptable; 1s staleness imperceptible |
+| Restaurant listings | Eventual | Slight staleness fine for browse |
+| Reviews and ratings | Eventual | Not business-critical |
+| Search results | Eventual | Cached and indexed |
+
+> [!IMPORTANT]
+> The system is eventually consistent everywhere except money and orders. PostgreSQL ACID transactions for order + payment, Redis distributed locks for delivery assignment, Kafka async propagation everywhere else.
+
+---
+
+## 5. 🧠 Mental Model
 
 Every food delivery interview is really three sub-systems layered on top of each other. The entire platform exists to coordinate three actors — each with a distinct flow and a distinct bottleneck. The key insight is that these three flows are **decoupled by Kafka**: Customer flow writes to `order.placed` → Restaurant flow consumes and confirms → `order.confirmed` fires → Delivery flow picks it up. No service ever calls another service directly. That is the architecture in one sentence.
 
@@ -46,101 +140,32 @@ Every food delivery interview is really three sub-systems layered on top of each
 
 ---
 
-## 0. Assumptions & Scale
+## 6. API Design
 
-**Scale baseline:**
-- 50M registered users, 10M daily active users
-- 500K restaurants, 1M active delivery partners
-- 5M orders/day → ~60 orders/sec average, **300 orders/sec peak**
-- 50K concurrent order tracking sessions at lunch/dinner peak
+### Customer APIs
 
-**GPS write load — the single hardest write path:**
-```
-1,000,000 active drivers × 1 ping every 10s = 100,000 writes/sec peak
-PostgreSQL ceiling ~50–100K writes/sec with contention → cannot absorb this directly
-Kafka write buffer required → consumers fan out to Redis (live) and Cassandra (audit)
-```
+| Method | Endpoint | Key Parameters | Response |
+|---|---|---|---|
+| GET | `/api/v1/restaurants` | `lat`, `lng`, `cuisine`, `page` | Geo-filtered restaurant list with ETA and rating |
+| GET | `/api/v1/restaurants/{id}/menu` | `restaurant_id` (path) | Full menu with categories, items, and customizations |
+| POST | `/api/v1/cart/items` | `restaurant_id`, `item_id`, `quantity`, `customizations` | Updated cart with new total |
+| POST | `/api/v1/orders` | `cart_id`, `address_id`, `payment_method`, `idempotency_key` | `{ order_id, status, eta }` |
+| GET | `/api/v1/orders/{id}/track` | `order_id` (path) | Current state, partner location (lat/lng), updated ETA |
 
-**Storage estimates:**
-- Orders: ~1KB × 5M/day = 5GB/day → ~1.8TB/year (PostgreSQL, 3-year retention)
-- GPS history: 100K writes/sec × ~10 bytes × 86400s = ~86GB/day → ~2.5TB/month (Cassandra, 30-day retention)
-- Menu images: ~500KB × 500K restaurants = 250GB (S3 + CDN, rarely changes)
-- Total active hot storage: ~10–15TB/year
+### Delivery Partner APIs
 
-**Redis memory budget:**
-```
-Sessions:              10M × 1KB   = 10GB
-Carts (active):       500K × 2KB   = 1GB
-Restaurant list cache: 50K × 5KB   = 250MB
-Driver locations:     100K × 500B  = 50MB
-Geo index:            100K drivers  = ~100MB
-Idempotency keys:      5M × 100B   = 500MB
-Total: ~12GB → use 32GB instance with LRU eviction on cache keys
-```
+| Method | Endpoint | Key Parameters | Response |
+|---|---|---|---|
+| POST | `/api/v1/delivery/available` | `lat`, `lng`, `partner_id` | Confirmation; registers partner in Redis Geo index |
+| POST | `/api/v1/delivery/orders/{id}/accept` | `order_id` (path), `partner_id` | Assignment confirmation or conflict (if another partner accepted first) |
+| POST | `/api/v1/delivery/location` | `lat`, `lng`, `order_id`, `partner_id` | Acknowledgement; GPS ping every 10s |
 
-**Kafka throughput:** Peak ~100K events/sec across GPS and order topics. 5 brokers, replication factor 3, 10 partitions per topic.
-
-> These numbers drive every storage and infrastructure decision below. The GPS write load is why we need Kafka + Cassandra. The 300 orders/sec peak is why PostgreSQL is perfectly fine for orders.
+> [!NOTE]
+> **`POST /api/v1/orders` is the most architecturally interesting endpoint.** It is synchronous for the customer — cart validation, order creation, and payment processing all complete within the 2-second SLA before a response is returned. However, it immediately triggers async Kafka events after the PostgreSQL commit: an `order.placed` event notifies the restaurant, and an `order.confirmed` event (published by the Restaurant Service after acknowledgement) kicks off the driver assignment flow. The customer sees a confirmed order instantly; restaurant notification and driver matching happen entirely out of band.
 
 ---
 
-## 1. Problem + Scope
-
-Design a food delivery platform that connects customers with restaurants and delivery partners, supporting restaurant discovery, order placement, payment, real-time GPS tracking, and delivery. The system must handle 300 orders/sec peak, 100K GPS writes/sec from drivers, and guarantee that no order is lost after payment succeeds.
-
-**In scope:** Restaurant browse and search, cart management, order placement + payment, delivery partner assignment, real-time GPS tracking, order state notifications.
-
-**Out of scope:** Restaurant menu management portal, financial settlement/payouts, surge pricing, fraud detection, machine learning recommendations.
-
----
-
-## 2. Functional Requirements
-
-- **Restaurant Discovery:** Browse restaurants filtered by location, cuisine, rating, delivery time, and dietary preference
-- **Search:** Full-text + geo search across restaurant names and dish names; autocomplete suggestions
-- **Cart Management:** Add/remove items, apply promo codes, re-validate prices at checkout
-- **Order Placement:** Checkout with address selection and payment processing; order confirmation under 2 seconds
-- **Delivery Assignment:** Find and assign the nearest idle delivery partner; handle rejection and timeout fallbacks
-- **Real-time Tracking:** Live GPS updates from delivery partner visible to customer in under 1 second
-- **Order State Notifications:** Push/SMS for every state transition (confirmed, preparing, picked up, delivered)
-- **Order History:** Customer can view all past orders and re-order
-
----
-
-## 3. Non-Functional Requirements
-
-| Requirement | Target |
-|---|---|
-| Restaurant listing latency | Under 500ms |
-| Search results latency | Under 300ms |
-| Order placement end-to-end | Under 2s |
-| GPS tracking update latency | Under 1s customer-visible |
-| Availability | 99.9% (8.7 hours downtime/year) |
-| Order durability | Zero loss after payment success |
-| GPS write throughput | 100K writes/sec sustained |
-| Peak order throughput | 300 orders/sec |
-
-### Consistency Model
-
-Different parts of the system require different consistency guarantees based on business risk and failure cost.
-
-| Domain | Consistency | Why |
-|---|---|---|
-| Orders | Strong (ACID) | Cannot lose or duplicate — financial record |
-| Payments | Strong | Financial correctness, regulatory requirement |
-| Inventory / item availability | Strong per restaurant | Prevent selling unavailable items |
-| Delivery assignment | Strong | One rider per order — Redis SETNX lock |
-| GPS tracking updates | Eventual | Jitter acceptable; 1s staleness imperceptible |
-| Restaurant listings | Eventual | Slight staleness fine for browse |
-| Reviews and ratings | Eventual | Not business-critical |
-| Search results | Eventual | Cached and indexed |
-
-> [!IMPORTANT]
-> The system is eventually consistent everywhere except money and orders. PostgreSQL ACID transactions for order + payment, Redis distributed locks for delivery assignment, Kafka async propagation everywhere else.
-
----
-
-## 4. End-to-End Flow
+## 7. End-to-End Flow
 
 The happy path for order placement and delivery assignment — the core interview flow.
 
@@ -192,7 +217,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ### Simple Design
 
@@ -280,7 +305,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 | Entity | Storage | Key Columns | Why This Store |
 |---|---|---|---|
@@ -303,7 +328,7 @@ graph TD
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
 ### 7.1 Driver Location Write Architecture
 
@@ -425,7 +450,7 @@ WebSocket eliminates polling. The server pushes only when there is a new GPS poi
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 **What breaks first as scale grows 10x:**
 
@@ -460,7 +485,7 @@ WebSocket eliminates polling. The server pushes only when there is a new GPS poi
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -477,7 +502,7 @@ WebSocket eliminates polling. The server pushes only when there is a new GPS poi
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### WebSocket vs HTTP Polling for Tracking
 
@@ -546,7 +571,7 @@ WebSocket eliminates polling. The server pushes only when there is a new GPS poi
 
 ---
 
-## Interview Summary
+## 14. Interview Summary
 
 ### Key Decisions Table
 
@@ -594,7 +619,7 @@ These are the lines an interviewer wants to hear out loud:
 
 1. "Three actors, three flows, three bottlenecks — geo-search scale, event-driven restaurant notification, and 100K GPS writes per second. Kafka decouples all three so each flow fails in isolation."
 2. "100K GPS writes per second is the single hardest challenge. No relational database absorbs this directly. Kafka buffers it; Redis holds the live state with TTL equal to the update interval for free liveness detection — no polling, no manual cleanup."
-3. "WebSocket versus polling is a math problem. At 1M tracking sessions polling every 3 seconds, we serve 333K empty HTTP responses per second. WebSocket eliminates this entirely — the server only sends bytes when the GPS position changes."
+3. "WebSocket versus polling for tracking is a math problem. At 1M tracking sessions polling every 3 seconds, we serve 333K empty HTTP responses per second. WebSocket eliminates this entirely — the server only sends bytes when the GPS position changes."
 4. "PostgreSQL for orders is a correctness choice, not a performance choice. 300 orders per second is trivial for PostgreSQL. ACID transactions mean I never write compensating logic for a partial order-plus-payment failure. That code never exists."
 5. "The Kafka event bus is a correctness requirement. If Order Service calls Restaurant Service directly, a 500ms restaurant timeout becomes a 500ms order placement latency spike. Kafka makes order placement constant-time regardless of how many downstream consumers exist."
 6. "I accept at-least-once delivery everywhere and add idempotency keys at the consumer. This gives effectively-once behavior without Kafka 2PC overhead. The dedup key is the correctness mechanism — not the delivery guarantee."

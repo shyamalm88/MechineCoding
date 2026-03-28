@@ -2,43 +2,17 @@
 
 ---
 
-## Mental Model
+## 1. Problem + Scope
 
-Chat systems run **two independent flows concurrently**: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to deliver a message instantly. The reliable path (Cassandra write) ensures the message is durable the moment it lands. Production chat is the careful orchestration of both — never conflating them.
+Design a real-time chat application at WhatsApp scale — 1 billion users, 100 billion messages/day. The system must support 1:1 messaging, group messaging, media sharing, and message status tracking (sent, delivered, read) with zero message loss and sub-300ms end-to-end latency.
 
-```
-                        +-----------------------------------------------------+
-                        |                    FAST PATH                         |
-   +--------+  WS frame |  +------------+  Redis  +------+  Kafka  +--------+ |  WS push  +--------+
-   | User A | --------->|  | Chat Srvr1 | ------> |Redis | ------> | Kafka  | | --------->| User B |
-   +--------+           |  +-----+------+  lookup +------+         +----+---+ |           +--------+
-                        +--------|--------------------------------------------+
-                                 | concurrent write
-                        +--------v--------------------------------------------+
-                        |                  RELIABLE PATH                       |
-                        |              +-----------------+                     |
-                        |              |    Cassandra    |  <- message is safe |
-                        |              | (durable store) |    the moment this  |
-                        |              +-----------------+    write confirms   |
-                        +-----------------------------------------------------+
-```
+**In Scope:** user registration, 1:1 real-time messaging, group messaging (small and large groups), message history with pagination, media sharing, message status (1 tick / 2 ticks / blue ticks), offline message delivery.
 
-> [!IMPORTANT]
-> **Single tick != Double tick.** Single tick = Cassandra confirmed (reliable path). Double tick = WebSocket push succeeded (fast path). These are separate guarantees from separate subsystems. The fast path can fail. The reliable path must not.
-
-### Core Design Principles
-
-| Path | Optimized For | Mechanism |
-|---|---|---|
-| Fast Path | Latency (< 300ms) | WS frame -> Chat Server -> Redis lookup -> Kafka publish -> Chat Server -> WS push |
-| Reliable Path | Durability (zero loss) | Chat Server -> Cassandra write (concurrent, non-blocking, replicated) |
-
-> [!NOTE]
-> **Key Insight:** Both paths run concurrently on every message send — not sequentially. The single tick fires when Cassandra ACKs, regardless of fast path outcome. This is what makes zero message loss possible while keeping latency low.
+**Out of Scope:** voice/video calls, Stories/Status features, end-to-end encryption design, payments.
 
 ---
 
-## 0. Assumptions & Scale
+## 2. Assumptions & Scale
 
 ```
 Total users:                    1,000,000,000   (1 billion)
@@ -75,17 +49,7 @@ Redis session map memory:
 
 ---
 
-## 1. Problem + Scope
-
-Design a real-time chat application at WhatsApp scale — 1 billion users, 100 billion messages/day. The system must support 1:1 messaging, group messaging, media sharing, and message status tracking (sent, delivered, read) with zero message loss and sub-300ms end-to-end latency.
-
-**In Scope:** user registration, 1:1 real-time messaging, group messaging (small and large groups), message history with pagination, media sharing, message status (1 tick / 2 ticks / blue ticks), offline message delivery.
-
-**Out of Scope:** voice/video calls, Stories/Status features, end-to-end encryption design, payments.
-
----
-
-## 2. Functional Requirements
+## 3. Functional Requirements
 
 1. **User registration** — Phone-number-based sign-up; JWT issued on successful OTP verification.
 2. **1:1 real-time messaging** — Two users exchange text messages with sub-300ms delivery.
@@ -97,7 +61,7 @@ Design a real-time chat application at WhatsApp scale — 1 billion users, 100 b
 
 ---
 
-## 3. Non-Functional Requirements
+## 4. Non-Functional Requirements
 
 | Requirement | Target |
 |---|---|
@@ -120,9 +84,61 @@ Design a real-time chat application at WhatsApp scale — 1 billion users, 100 b
 
 ---
 
-## 4. End-to-End Flow
+## 5. 🧠 Mental Model
 
-### 4.1 Message Send and Delivery (1:1)
+Chat systems run **two independent flows concurrently**: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to deliver a message instantly. The reliable path (Cassandra write) ensures the message is durable the moment it lands. Production chat is the careful orchestration of both — never conflating them.
+
+```
+                        +-----------------------------------------------------+
+                        |                    FAST PATH                         |
+   +--------+  WS frame |  +------------+  Redis  +------+  Kafka  +--------+ |  WS push  +--------+
+   | User A | --------->|  | Chat Srvr1 | ------> |Redis | ------> | Kafka  | | --------->| User B |
+   +--------+           |  +-----+------+  lookup +------+         +----+---+ |           +--------+
+                        +--------|--------------------------------------------+
+                                 | concurrent write
+                        +--------v--------------------------------------------+
+                        |                  RELIABLE PATH                       |
+                        |              +-----------------+                     |
+                        |              |    Cassandra    |  <- message is safe |
+                        |              | (durable store) |    the moment this  |
+                        |              +-----------------+    write confirms   |
+                        +-----------------------------------------------------+
+```
+
+> [!IMPORTANT]
+> **Single tick != Double tick.** Single tick = Cassandra confirmed (reliable path). Double tick = WebSocket push succeeded (fast path). These are separate guarantees from separate subsystems. The fast path can fail. The reliable path must not.
+
+### Core Design Principles
+
+| Path | Optimized For | Mechanism |
+|---|---|---|
+| Fast Path | Latency (< 300ms) | WS frame -> Chat Server -> Redis lookup -> Kafka publish -> Chat Server -> WS push |
+| Reliable Path | Durability (zero loss) | Chat Server -> Cassandra write (concurrent, non-blocking, replicated) |
+
+> [!NOTE]
+> **Key Insight:** Both paths run concurrently on every message send — not sequentially. The single tick fires when Cassandra ACKs, regardless of fast path outcome. This is what makes zero message loss possible while keeping latency low.
+
+---
+
+## 6. API Design
+
+| Method | Path | Description |
+|---|---|---|
+| POST | /api/v1/auth/register | Register user, returns JWT |
+| POST | /api/v1/auth/login | Login, returns JWT + session |
+| GET | /api/v1/conversations | List conversations with last message + unread count |
+| GET | /api/v1/conversations/{id}/messages?before=&limit= | Paginated message history (cursor-based) |
+| POST | /api/v1/conversations/{id}/messages | Send message, returns {message_id, status: SENT} |
+| POST | /api/v1/conversations/group | Create group with {name, member_ids} |
+
+> [!NOTE]
+> **WebSocket (/ws) is used for real-time delivery** — the REST APIs above are for initial load and history. The message send endpoint returns `SENT` immediately; `DELIVERED` and `READ` come back asynchronously over WebSocket.
+
+---
+
+## 7. End-to-End Flow
+
+### 7.1 Message Send and Delivery (1:1)
 
 ```mermaid
 sequenceDiagram
@@ -151,7 +167,7 @@ sequenceDiagram
     CS1-->>A: ACK blue ticks [read]
 ```
 
-### 4.2 Read Receipt State Machine
+### 7.2 Read Receipt State Machine
 
 ```mermaid
 stateDiagram-v2
@@ -162,7 +178,7 @@ stateDiagram-v2
     DELIVERED --> READ : Recipient opens conversation
 ```
 
-### 4.3 Offline Delivery / Push Fallback
+### 7.3 Offline Delivery / Push Fallback
 
 ```mermaid
 flowchart TD
@@ -193,7 +209,7 @@ flowchart TD
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ### Simple Design (starting point)
 
@@ -286,7 +302,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 | Entity | Storage | Key Columns | Why this store |
 |---|---|---|---|
@@ -301,9 +317,9 @@ graph TD
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
-### 7.1 WebSocket + Sticky Sessions
+### 10.1 WebSocket + Sticky Sessions
 
 **Here's the problem we're solving:** At 500M DAU we need to push messages to clients in real time. HTTP polling is the naive solution. Let's show why it fails.
 
@@ -345,7 +361,7 @@ sequenceDiagram
 
 ---
 
-### 7.2 Message Ordering
+### 10.2 Message Ordering
 
 **Here's the problem we're solving:** Two users send messages at the same millisecond. Network jitter means either could arrive at the Chat Server first. With Cassandra's eventual consistency, two replicas could briefly serve different orderings to different clients. How do we guarantee users see messages in the correct order?
 
@@ -367,7 +383,7 @@ sequenceDiagram
 
 ---
 
-### 7.3 Offline Delivery and Push Fallback
+### 10.3 Offline Delivery and Push Fallback
 
 **Here's the problem we're solving:** User B is offline — no entry in the Redis session map. Chat Server has a message to deliver but no WebSocket connection to push to. We still need User B to receive the message, and we need User A to eventually see double ticks.
 
@@ -388,7 +404,7 @@ Stage 3 — Pull on reconnect: User B's device wakes and opens the app. The app 
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 **What breaks first at 10x scale (10x = 11.6M msg/sec, 500M concurrent WS connections):**
 
@@ -421,7 +437,7 @@ flowchart TD
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -436,7 +452,7 @@ flowchart TD
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### WebSocket vs HTTP Polling
 
@@ -503,7 +519,7 @@ flowchart TD
 
 ---
 
-## Interview Summary
+## 14. Interview Summary
 
 ### Key Decisions
 

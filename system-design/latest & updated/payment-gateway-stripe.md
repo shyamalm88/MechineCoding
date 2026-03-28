@@ -2,39 +2,17 @@
 
 ---
 
-## 🧠 Mental Model
+## 0. Problem + Scope
 
-A payment gateway is not simply a transaction processor — it is a correctness-first orchestration layer that moves money safely across multiple financial entities while maintaining an immutable audit trail. Three sequential phases drive every payment: the merchant registers a **payment intent**, the gateway creates a **secure session** and hosts the card entry page, and the user submits card details for **authorization**. The gateway tokenizes, scores for fraud, routes to a payment processor, writes the double-entry ledger, and fans webhooks out to the merchant — all while guaranteeing idempotency across every step.
+Design a payment gateway (like Stripe or Razorpay) that merchants integrate into checkout flows to accept card payments. The gateway handles secure card collection, tokenization, fraud scoring, processor routing, immutable ledger maintenance, and merchant webhook delivery.
 
-```
-Phase 1: INTENT                 Phase 2: SESSION               Phase 3: PAY
-Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card on GW page
-         |                               |                              |
-  Idempotency-Key check          Redis TTL 10min                Fraud check  <50ms
-  PostgreSQL INSERT               session_id returned           Tokenize -> Vault
-  intent_id returned             checkout_url redirect          Route -> Processor
-         |                               |                              |
-  Redis: SET key->intent_id       User browser opens GW page    Ledger write (4 rows)
-  EX 86400 (dedup 24h)            countdown timer starts        Kafka -> Webhook -> Merchant
-```
+**In scope:** payment intent creation, gateway-hosted checkout sessions, card tokenization via vault, pre-auth fraud scoring, double-entry ledger, transaction state machine, webhook delivery, hourly reconciliation.
 
-### ⚡ Core Design Principles
-
-| Path | Optimized For | Mechanism |
-|---|---|---|
-| Fast Path | Latency under 200ms gateway | Redis session lookup + fraud rules + Vault tokenization + sync processor call |
-| Reliable Path | Correctness — zero double-charges, zero lost money | Idempotency keys, append-only ledger, ACID PostgreSQL, reconciliation job |
-| Audit Path | Immutable money trail | Double-entry bookkeeping — debits = credits invariant per payment_id |
-
-> [!IMPORTANT]
-> **The gateway hosts the checkout page — not the merchant.** Card data enters on gateway infrastructure only. This is not a UX decision — it is the PCI DSS compliance boundary. Merchants never see raw card numbers.
-
-> [!NOTE]
-> **Key Insight:** Money movement must be correct (no duplication), durable (never lost), and auditable (fully traceable). Latency is secondary to correctness. A 50ms fraud check on the critical path is the right trade-off — a double-charged payment cannot be silently fixed.
+**Out of scope:** actual bank-level money movement (payment processor is a black box), partial payments and installments, ML model training for fraud (inference is in scope), refunds and chargebacks (extensions worth mentioning).
 
 ---
 
-## 0. Assumptions & Scale
+## 1. Assumptions & Scale
 
 ```
 Scale target:    10,000 TPS peak
@@ -70,16 +48,6 @@ Fraud scoring:
 ```
 
 These numbers drive the following decisions: append-only ledger partitioning for write throughput, Redis for sessions and idempotency (not PostgreSQL), Kafka for webhook fan-out, and synchronous fraud scoring with an ML timeout fallback.
-
----
-
-## 1. Problem + Scope
-
-Design a payment gateway (like Stripe or Razorpay) that merchants integrate into checkout flows to accept card payments. The gateway handles secure card collection, tokenization, fraud scoring, processor routing, immutable ledger maintenance, and merchant webhook delivery.
-
-**In scope:** payment intent creation, gateway-hosted checkout sessions, card tokenization via vault, pre-auth fraud scoring, double-entry ledger, transaction state machine, webhook delivery, hourly reconciliation.
-
-**Out of scope:** actual bank-level money movement (payment processor is a black box), partial payments and installments, ML model training for fraud (inference is in scope), refunds and chargebacks (extensions worth mentioning).
 
 ---
 
@@ -124,7 +92,55 @@ Design a payment gateway (like Stripe or Razorpay) that merchants integrate into
 
 ---
 
-## 4. End-to-End Flow
+## 4. 🧠 Mental Model
+
+A payment gateway is not simply a transaction processor — it is a correctness-first orchestration layer that moves money safely across multiple financial entities while maintaining an immutable audit trail. Three sequential phases drive every payment: the merchant registers a **payment intent**, the gateway creates a **secure session** and hosts the card entry page, and the user submits card details for **authorization**. The gateway tokenizes, scores for fraud, routes to a payment processor, writes the double-entry ledger, and fans webhooks out to the merchant — all while guaranteeing idempotency across every step.
+
+```
+Phase 1: INTENT                 Phase 2: SESSION               Phase 3: PAY
+Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card on GW page
+         |                               |                              |
+  Idempotency-Key check          Redis TTL 10min                Fraud check  <50ms
+  PostgreSQL INSERT               session_id returned           Tokenize -> Vault
+  intent_id returned             checkout_url redirect          Route -> Processor
+         |                               |                              |
+  Redis: SET key->intent_id       User browser opens GW page    Ledger write (4 rows)
+  EX 86400 (dedup 24h)            countdown timer starts        Kafka -> Webhook -> Merchant
+```
+
+### ⚡ Core Design Principles
+
+| Path | Optimized For | Mechanism |
+|---|---|---|
+| Fast Path | Latency under 200ms gateway | Redis session lookup + fraud rules + Vault tokenization + sync processor call |
+| Reliable Path | Correctness — zero double-charges, zero lost money | Idempotency keys, append-only ledger, ACID PostgreSQL, reconciliation job |
+| Audit Path | Immutable money trail | Double-entry bookkeeping — debits = credits invariant per payment_id |
+
+> [!IMPORTANT]
+> **The gateway hosts the checkout page — not the merchant.** Card data enters on gateway infrastructure only. This is not a UX decision — it is the PCI DSS compliance boundary. Merchants never see raw card numbers.
+
+> [!NOTE]
+> **Key Insight:** Money movement must be correct (no duplication), durable (never lost), and auditable (fully traceable). Latency is secondary to correctness. A 50ms fraud check on the critical path is the right trade-off — a double-charged payment cannot be silently fixed.
+
+---
+
+## 5. API Design
+
+| Method | Path | Description |
+|---|---|---|
+| POST | /api/v1/payment-intents | Create payment intent {amount, currency, idempotency_key}, returns {intent_id, client_secret} |
+| POST | /api/v1/payment-intents/{id}/confirm | Confirm payment with tokenized card, triggers bank charge |
+| GET | /api/v1/payment-intents/{id} | Poll payment status |
+| POST | /api/v1/refunds | Initiate refund {payment_intent_id, amount} |
+| POST | /api/v1/webhooks | Receive async events from payment processors (idempotent) |
+| POST | /api/v1/tokens | Tokenize card details → returns opaque token (PCI scope boundary) |
+
+> [!IMPORTANT]
+> The `idempotency_key` on `POST /payment-intents` is the most critical design decision in the API — it's what prevents double charges on network retries. The webhooks endpoint must be idempotent too because payment processors deliver at-least-once.
+
+---
+
+## 6. End-to-End Flow
 
 The complete 3-phase charge flow: client → payment service → gateway → bank → webhook callback.
 
@@ -186,7 +202,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 7. High-Level Architecture
 
 ### Simple Design
 
@@ -276,7 +292,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 8. Data Model
 
 | Entity | Storage | Key Columns | Why this store |
 |---|---|---|---|
@@ -301,9 +317,9 @@ IEEE 754 cannot represent 0.10 exactly. Across 10,000 transactions, float arithm
 
 ---
 
-## 7. Deep Dives
+## 9. Deep Dives
 
-### 7.1 Idempotency Keys — Preventing Double Charges
+### 9.1 Idempotency Keys — Preventing Double Charges
 
 **Here is the problem we are solving:** Merchant calls `POST /payment-intents`, network times out. Merchant does not know if the gateway received the request. Merchant retries. Without idempotency: two intents created, user charged twice.
 
@@ -349,7 +365,7 @@ Idempotency applies at every layer:
 
 ---
 
-### 7.2 Webhook Reliability + Retry
+### 9.2 Webhook Reliability + Retry
 
 **Here is the problem we are solving:** After a payment is authorized, the merchant's server must be notified so it can fulfill the order. Webhook delivery is a synchronous HTTP call to an external server the gateway does not control — that server can be down, slow, or unreachable for hours.
 
@@ -386,7 +402,7 @@ sequenceDiagram
 
 ---
 
-### 7.3 Fraud Detection — Two-Phase Architecture
+### 9.3 Fraud Detection — Two-Phase Architecture
 
 **Here is the problem we are solving:** At 10,000 TPS, fraudulent cards from card testing attacks, stolen credentials, and geo-anomaly attacks arrive in the same traffic as legitimate payments. Without a fraud gate, every fraudulent authorization is a direct financial loss plus processor fees plus reversal cost.
 
@@ -426,7 +442,7 @@ graph LR
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 10. Bottlenecks & Scaling
 
 ### Peak Transaction Volume (10,000 TPS)
 
@@ -460,7 +476,7 @@ graph LR
 
 ---
 
-## 9. Failure Scenarios
+## 11. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -477,7 +493,7 @@ graph LR
 
 ---
 
-## 10. Trade-offs
+## 12. Trade-offs
 
 ### Idempotency Key Storage — Redis vs PostgreSQL
 
@@ -528,7 +544,7 @@ graph LR
 
 ---
 
-## Interview Summary
+## 13. Interview Summary
 
 ### Key Decisions
 

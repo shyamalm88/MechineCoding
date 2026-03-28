@@ -2,7 +2,80 @@
 
 ---
 
-## Mental Model
+## 1. Problem + Scope
+
+Design a configurable homepage platform (like Amazon/Flipkart) where the UI is driven entirely by backend configuration. Business teams change layouts 5-10x/week without code deploys. Different users (cohorts, geographies, device types, A/B experiments) see different templates. Pages must load fast: FCP under 1s, LCP under 2.5s, CLS under 0.1.
+
+**In scope:** Config Service (versioning, validation, staged rollout), Personalization Engine (segment resolution, experiment assignment), Rendering Engine (component registry, fallback, lazy loading), BFF data aggregation, SSR + GraphQL streaming pipeline, CDN/edge caching strategy.
+
+**Out of scope:** Product catalog service internals, recommendation ML model training, ads auction engine, user authentication.
+
+---
+
+## 2. Assumptions & Scale
+
+```
+Users:
+  100M DAU
+  Average 10 homepage loads/day = 1B page loads/day
+
+Traffic:
+  1B / 86,400s = ~11,574 req/sec average
+  Peak (2x): ~23,000 req/sec
+
+CDN cache hit ratio:
+  Config template: ~90% hit (cohort-static, TTL 5 min)
+  Origin hits after CDN: ~2,300 req/sec
+
+Data per page:
+  5-8 data sources in parallel (hero, recs, ads, categories)
+  Each source: ~10-50 KB -- total ~200 KB per page
+
+Bandwidth at peak:
+  23,000 req/sec x 200 KB = ~4.6 GB/sec (mostly CDN + S3)
+  App servers: ~2,300 req/sec x 50 KB = ~115 MB/sec
+
+Config storage:
+  ~10,000 templates (device x locale x segment x variants)
+  Each template: ~5 KB -- total ~50 MB -- fits entirely in Redis
+  ~20 versions per template -- ~1 GB PostgreSQL -- trivial
+```
+
+> *These numbers drive every decision below: CDN absorbs 90% of traffic, personalization must resolve in under 50ms, config must fit in Redis, SSR must complete above-fold in under 400ms.*
+
+---
+
+## 3. Functional Requirements
+
+1. **Config-driven layout** — backend sends template JSON defining sections, types, and order; clients render without knowing the layout at build time
+2. **Personalization** — different users (cohorts, geo, device) see different templates resolved server-side before the first byte is sent
+3. **A/B testing** — experiment variants assigned consistently per user without code deploys or frontend changes
+4. **Progressive loading** — above-fold renders immediately; below-fold sections stream in as data arrives
+5. **Skeleton placeholders** — every section reserves fixed pixel space before data loads, preventing layout shift
+6. **Business team control** — non-engineers modify homepage layout via config dashboard; no engineer required for layout changes
+7. **Config rollout** — new templates staged (canary to 10% to 100%) with instant rollback capability
+
+---
+
+## 4. Non-Functional Requirements
+
+| Requirement | Target | Reasoning |
+|---|---|---|
+| Throughput | 23,000 req/sec peak | Amazon-scale; CDN absorbs 90% |
+| FCP (First Contentful Paint) | Under 1s | User sees content immediately; SSR + CDN |
+| LCP (Largest Contentful Paint) | Under 2.5s | Google Core Web Vital threshold |
+| CLS (Cumulative Layout Shift) | Under 0.1 | Fixed heights in config; skeletons fill reserved space |
+| TTI (Time to Interactive) | Under 3s | Critical JS bundle under 100 KB; deferred hydration |
+| Config availability | 99.99% | Stale-config CDN fallback; no blank pages |
+| Personalization latency | Under 50ms | Must not block the critical path to FCP |
+| Config propagation | Under 30s after publish | Kafka to CDN purge + Redis invalidation |
+
+> [!NOTE]
+> **Key Insight:** This is primarily a performance problem, not a storage problem. The challenge is not storing page configs — it is delivering them fast enough that the user sees content in under 1s on a slow connection. Every architectural decision (CDN, SSR, @defer, fixed heights) targets one of the Core Web Vitals.
+
+---
+
+## 5. Mental Model
 
 A homepage is not rendered by code — it is **assembled dynamically from configuration, data, and experiment assignments at runtime.** Three systems collaborate to produce what the user sees:
 
@@ -37,80 +110,23 @@ A homepage is not rendered by code — it is **assembled dynamically from config
 
 ---
 
-## 0. Assumptions & Scale
+## 6. API Design
 
-```
-Users:
-  100M DAU
-  Average 10 homepage loads/day = 1B page loads/day
-
-Traffic:
-  1B / 86,400s = ~11,574 req/sec average
-  Peak (2x): ~23,000 req/sec
-
-CDN cache hit ratio:
-  Config template: ~90% hit (cohort-static, TTL 5 min)
-  Origin hits after CDN: ~2,300 req/sec
-
-Data per page:
-  5-8 data sources in parallel (hero, recs, ads, categories)
-  Each source: ~10-50 KB -- total ~200 KB per page
-
-Bandwidth at peak:
-  23,000 req/sec x 200 KB = ~4.6 GB/sec (mostly CDN + S3)
-  App servers: ~2,300 req/sec x 50 KB = ~115 MB/sec
-
-Config storage:
-  ~10,000 templates (device x locale x segment x variants)
-  Each template: ~5 KB -- total ~50 MB -- fits entirely in Redis
-  ~20 versions per template -- ~1 GB PostgreSQL -- trivial
-```
-
-> *These numbers drive every decision below: CDN absorbs 90% of traffic, personalization must resolve in under 50ms, config must fit in Redis, SSR must complete above-fold in under 400ms.*
-
----
-
-## 1. Problem + Scope
-
-Design a configurable homepage platform (like Amazon/Flipkart) where the UI is driven entirely by backend configuration. Business teams change layouts 5-10x/week without code deploys. Different users (cohorts, geographies, device types, A/B experiments) see different templates. Pages must load fast: FCP under 1s, LCP under 2.5s, CLS under 0.1.
-
-**In scope:** Config Service (versioning, validation, staged rollout), Personalization Engine (segment resolution, experiment assignment), Rendering Engine (component registry, fallback, lazy loading), BFF data aggregation, SSR + GraphQL streaming pipeline, CDN/edge caching strategy.
-
-**Out of scope:** Product catalog service internals, recommendation ML model training, ads auction engine, user authentication.
-
----
-
-## 2. Functional Requirements
-
-1. **Config-driven layout** — backend sends template JSON defining sections, types, and order; clients render without knowing the layout at build time
-2. **Personalization** — different users (cohorts, geo, device) see different templates resolved server-side before the first byte is sent
-3. **A/B testing** — experiment variants assigned consistently per user without code deploys or frontend changes
-4. **Progressive loading** — above-fold renders immediately; below-fold sections stream in as data arrives
-5. **Skeleton placeholders** — every section reserves fixed pixel space before data loads, preventing layout shift
-6. **Business team control** — non-engineers modify homepage layout via config dashboard; no engineer required for layout changes
-7. **Config rollout** — new templates staged (canary to 10% to 100%) with instant rollback capability
-
----
-
-## 3. Non-Functional Requirements
-
-| Requirement | Target | Reasoning |
+| Method | Path | Description |
 |---|---|---|
-| Throughput | 23,000 req/sec peak | Amazon-scale; CDN absorbs 90% |
-| FCP (First Contentful Paint) | Under 1s | User sees content immediately; SSR + CDN |
-| LCP (Largest Contentful Paint) | Under 2.5s | Google Core Web Vital threshold |
-| CLS (Cumulative Layout Shift) | Under 0.1 | Fixed heights in config; skeletons fill reserved space |
-| TTI (Time to Interactive) | Under 3s | Critical JS bundle under 100 KB; deferred hydration |
-| Config availability | 99.99% | Stale-config CDN fallback; no blank pages |
-| Personalization latency | Under 50ms | Must not block the critical path to FCP |
-| Config propagation | Under 30s after publish | Kafka to CDN purge + Redis invalidation |
+| GET | /api/v1/homepage?user_id=&platform=&version= | Fetch personalized page config — returns ordered section list with component types and data |
+| GET | /api/v1/config/{page_id}?experiment_id= | Fetch specific page config for A/B experiment variant |
+| POST | /api/v1/cart/items | Add item {product_id, quantity, seller_id} |
+| GET | /api/v1/cart | Fetch current cart with prices re-validated |
+| POST | /api/v1/cart/checkout | Convert cart to order, returns {order_id} |
+| POST | /api/v1/config (admin) | Publish new page config version |
 
 > [!NOTE]
-> **Key Insight:** This is primarily a performance problem, not a storage problem. The challenge is not storing page configs — it is delivering them fast enough that the user sees content in under 1s on a slow connection. Every architectural decision (CDN, SSR, @defer, fixed heights) targets one of the Core Web Vitals.
+> `GET /homepage` is the most architecturally interesting endpoint — it drives the entire server-driven UI pattern. The response is a config payload (section types + data URLs), not HTML or components. The client renders whatever sections the server returns, which means new section types can be deployed without app updates.
 
 ---
 
-## 4. End-to-End Flow
+## 7. End-to-End Flow
 
 App launch to config fetch to render sections:
 
@@ -157,7 +173,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ### Simple Design
 
@@ -230,7 +246,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 | Entity | Storage | Key Columns | Why This Store |
 |---|---|---|---|
@@ -247,9 +263,9 @@ graph TD
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
-### 7.1 Config Schema Design + A/B Testing
+### 10.1 Config Schema Design + A/B Testing
 
 Here's the problem: a homepage layout change sounds simple — "move the carousel above the banner." Done wrong, it causes a production incident. Bad config = blank sections for millions of users at 11,500 req/sec. The Config Service is not a JSON blob store — it is a production system with schema validation and controlled rollout.
 
@@ -325,7 +341,7 @@ Without consistent hashing, the same user sees a different variant each page loa
 
 ---
 
-### 7.2 Server-Driven UI Rendering Pipeline
+### 10.2 Server-Driven UI Rendering Pipeline
 
 Here's the problem: the backend sends `"type": "HeroBanner"` in the config JSON. The client must render it without knowing the full list of types at build time. And when it receives a type it has never seen, it must not crash.
 
@@ -359,7 +375,7 @@ flowchart TD
 
 ---
 
-### 7.3 Config Caching + Invalidation
+### 10.3 Config Caching + Invalidation
 
 Here's the problem: 11,500 req/sec for a homepage that is 90% identical across users in the same cohort. Hitting the origin for every config fetch wastes compute and adds latency.
 
@@ -399,7 +415,7 @@ sequenceDiagram
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 ### Config Cache Stampede
 
@@ -424,7 +440,7 @@ sequenceDiagram
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery Strategy |
 |---|---|---|
@@ -439,7 +455,7 @@ sequenceDiagram
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### Server-Driven UI vs Client-Driven (Hardcoded) UI
 
@@ -489,7 +505,7 @@ sequenceDiagram
 
 ---
 
-## Interview Summary
+## 14. Interview Summary
 
 ### Key Decisions
 

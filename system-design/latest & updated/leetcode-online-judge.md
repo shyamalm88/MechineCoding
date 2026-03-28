@@ -2,6 +2,80 @@
 
 ---
 
+## 1. Problem + Scope
+
+Design LeetCode — a platform where users browse coding problems, write solutions in a browser IDE, submit code for automated judging, and compete in timed competitions with a live leaderboard. The hard problems are safe untrusted code execution at scale and serving a live aggregated ranking to 100K concurrent users without destroying the database.
+
+**In scope:** Problem catalog (browse, filter, view), code submission and judging, isolated code execution, competition mode with up to 100K participants, near-real-time leaderboard (2–5 second freshness).
+
+**Out of scope:** User authentication, admin tooling for problem creation, discussion forums, subscription/payments.
+
+---
+
+## 2. Assumptions & Scale
+
+**Scale we are designing for:**
+- 100,000 DAU (peak = competition day)
+- 3,000 problems in catalog
+- Competitions: up to 100,000 participants, 90 minutes, 10 problems
+
+**Read QPS:**
+- Problem list: 100K users × 10 sessions/day = 1M reads/day → ~12 QPS (trivial, cacheable)
+- Problem detail: 100K users × 5 views/day = 500K reads/day → ~6 QPS
+
+**Write QPS (submissions):**
+- Normal day: 100K users × 10 submissions/day = 1M/day → ~12 writes/sec
+- Competition average: 100K users over 90 min → ~18 submissions/sec
+- Competition end-of-round burst: final 10 min → **500–1,000 submissions/sec**
+
+**Leaderboard read QPS:**
+- 100K users polling every 3 seconds = **~33,000 leaderboard reads/sec** during competition
+- This cannot touch the database — must be served from Redis
+
+**Storage:**
+- 3,000 problems × 50KB avg = ~150MB (trivial)
+- Submissions: 1M/day × 5KB avg = 5GB/day → ~1.8TB/year (PostgreSQL + cold archival)
+- Code blobs: S3, no size concern at this scale
+
+> [!NOTE]
+> **Key Insight:** The leaderboard read volume (33K QPS) is 1,000x the write volume. The problem is not writes — it is serving aggregated read results at scale without re-computing on every request.
+
+*These numbers drive the following decisions: queue before execution (burst absorption), Redis sorted set for leaderboard (33K QPS from memory), S3 for code blobs (SQS message size limit), Docker warm pool (low startup latency at high throughput).*
+
+---
+
+## 3. Functional Requirements
+
+1. Users can browse a paginated, filterable problem list (by difficulty, category)
+2. Users can view a full problem with description, code stubs per language, and sample test cases
+3. Users can write code in a browser IDE (Monaco) and submit for judging
+4. Submissions return pass/fail with per-test-case outcomes and runtime metrics
+5. Users can join a competition; accepted submissions count toward a live leaderboard
+6. Users can view the competition leaderboard with near-real-time updates during the contest
+
+---
+
+## 4. Non-Functional Requirements
+
+| Requirement | Target |
+|---|---|
+| Availability | AP — eventual consistency acceptable; site must stay up for 100K concurrent users |
+| Code execution security | Full isolation from host OS, DB, and network per submission |
+| Submission throughput | Handle 500–1,000 submissions/sec burst without dropping any |
+| Leaderboard freshness | 2–5 second update interval during competition |
+| Submission result latency | Result visible within ~10 seconds of submit |
+| Durability | No submission silently dropped; queue provides persistence |
+
+**Consistency Model:**
+
+| Domain | Consistency | Justification |
+|---|---|---|
+| Submission result (DB) | Strong | User must see their own result correctly |
+| Leaderboard (Redis) | Eventual (~ms CDC lag) | Stale for milliseconds is acceptable |
+| Problem catalog (cache) | Eventual (minutes) | Problems rarely change; cache TTL is fine |
+
+---
+
 ## 🧠 Mental Model
 
 LeetCode is a code execution pipeline wrapped around a problem catalog. Three flows define the system: users browse problems (simple read-heavy), submit code for judging (async queue + isolated container), and compete with a live leaderboard (Redis sorted set updated via CDC). The hardest part is not storing problems — it is safely running untrusted code at scale and serving an aggregated leaderboard to 33K concurrent readers without touching the database on every request.
@@ -34,81 +108,23 @@ LeetCode is a code execution pipeline wrapped around a problem catalog. Three fl
 
 ---
 
-## 0. Assumptions & Scale
+## 6. API Design
 
-**Scale we are designing for:**
-- 100,000 DAU (peak = competition day)
-- 3,000 problems in catalog
-- Competitions: up to 100,000 participants, 90 minutes, 10 problems
-
-**Read QPS:**
-- Problem list: 100K users × 10 sessions/day = 1M reads/day → ~12 QPS (trivial, cacheable)
-- Problem detail: 100K users × 5 views/day = 500K reads/day → ~6 QPS
-
-**Write QPS (submissions):**
-- Normal day: 100K users × 10 submissions/day = 1M/day → ~12 writes/sec
-- Competition average: 100K users over 90 min → ~18 submissions/sec
-- Competition end-of-round burst: final 10 min → **500–1,000 submissions/sec**
-
-**Leaderboard read QPS:**
-- 100K users polling every 3 seconds = **~33,000 leaderboard reads/sec** during competition
-- This cannot touch the database — must be served from Redis
-
-**Storage:**
-- 3,000 problems × 50KB avg = ~150MB (trivial)
-- Submissions: 1M/day × 5KB avg = 5GB/day → ~1.8TB/year (PostgreSQL + cold archival)
-- Code blobs: S3, no size concern at this scale
+| Method | Path | Description |
+|---|---|---|
+| GET | /api/v1/problems?difficulty=&tags=&page= | List problems with filters and pagination |
+| GET | /api/v1/problems/{id} | Problem detail — description, constraints, examples |
+| POST | /api/v1/submissions | Submit code {problem_id, language, code} → returns {submission_id} immediately (async) |
+| GET | /api/v1/submissions/{id} | Poll result — status: PENDING / RUNNING / ACCEPTED / WRONG_ANSWER / TLE / MLE |
+| GET | /api/v1/leaderboard/{contest_id}?page= | Contest leaderboard — paginated, sorted by score desc |
+| POST | /api/v1/contests/{id}/register | Register for a contest |
 
 > [!NOTE]
-> **Key Insight:** The leaderboard read volume (33K QPS) is 1,000x the write volume. The problem is not writes — it is serving aggregated read results at scale without re-computing on every request.
-
-*These numbers drive the following decisions: queue before execution (burst absorption), Redis sorted set for leaderboard (33K QPS from memory), S3 for code blobs (SQS message size limit), Docker warm pool (low startup latency at high throughput).*
+> **POST /submissions is the most important endpoint — it is intentionally async.** The submission is queued immediately and the client polls GET /submissions/{id} every 3 seconds. This is NOT a design compromise — LeetCode itself works this way. Polling is correct here because execution time is variable (milliseconds to seconds), and WebSocket would be overkill for a single status check.
 
 ---
 
-## 1. Problem + Scope
-
-Design LeetCode — a platform where users browse coding problems, write solutions in a browser IDE, submit code for automated judging, and compete in timed competitions with a live leaderboard. The hard problems are safe untrusted code execution at scale and serving a live aggregated ranking to 100K concurrent users without destroying the database.
-
-**In scope:** Problem catalog (browse, filter, view), code submission and judging, isolated code execution, competition mode with up to 100K participants, near-real-time leaderboard (2–5 second freshness).
-
-**Out of scope:** User authentication, admin tooling for problem creation, discussion forums, subscription/payments.
-
----
-
-## 2. Functional Requirements
-
-1. Users can browse a paginated, filterable problem list (by difficulty, category)
-2. Users can view a full problem with description, code stubs per language, and sample test cases
-3. Users can write code in a browser IDE (Monaco) and submit for judging
-4. Submissions return pass/fail with per-test-case outcomes and runtime metrics
-5. Users can join a competition; accepted submissions count toward a live leaderboard
-6. Users can view the competition leaderboard with near-real-time updates during the contest
-
----
-
-## 3. Non-Functional Requirements
-
-| Requirement | Target |
-|---|---|
-| Availability | AP — eventual consistency acceptable; site must stay up for 100K concurrent users |
-| Code execution security | Full isolation from host OS, DB, and network per submission |
-| Submission throughput | Handle 500–1,000 submissions/sec burst without dropping any |
-| Leaderboard freshness | 2–5 second update interval during competition |
-| Submission result latency | Result visible within ~10 seconds of submit |
-| Durability | No submission silently dropped; queue provides persistence |
-
-**Consistency Model:**
-
-| Domain | Consistency | Justification |
-|---|---|---|
-| Submission result (DB) | Strong | User must see their own result correctly |
-| Leaderboard (Redis) | Eventual (~ms CDC lag) | Stale for milliseconds is acceptable |
-| Problem catalog (cache) | Eventual (minutes) | Problems rarely change; cache TTL is fine |
-
----
-
-## 4. End-to-End Flow
+## 7. End-to-End Flow
 
 User submits code → API enqueues → Docker worker judges → client polls for result → leaderboard updates via CDC.
 
@@ -148,7 +164,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ### Simple Design
 
@@ -203,7 +219,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 | Entity | Storage | Key Columns | Why this store |
 |---|---|---|---|
@@ -224,7 +240,7 @@ More solved problems = higher integer part. Among ties, faster last solve = high
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
 ### 7.1 Docker Container Isolation and Security Hardening
 
@@ -353,7 +369,7 @@ The API server enqueues immediately and returns 202 Accepted. Workers drain the 
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 ### Judge Worker Pool Sizing
 
@@ -385,7 +401,7 @@ The API server enqueues immediately and returns 202 Accepted. Workers drain the 
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -399,7 +415,7 @@ The API server enqueues immediately and returns 202 Accepted. Workers drain the 
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### Docker vs VM vs Lambda for Isolation
 
@@ -454,7 +470,7 @@ The API server enqueues immediately and returns 202 Accepted. Workers drain the 
 
 ---
 
-## Interview Summary
+## 14. Interview Summary
 
 ### Key Decisions
 

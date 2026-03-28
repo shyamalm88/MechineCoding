@@ -2,7 +2,84 @@
 
 ---
 
-## Mental Model
+## 1. Problem + Scope
+
+Google Docs allows multiple users to edit the same document simultaneously in real time. Changes made by one user must appear in every other user's browser within 100ms. The system handles billions of documents, millions of concurrent editors, and guarantees zero data loss through an immutable operations log.
+
+**In scope:** CRUD documents, real-time collaborative editing, cursor and presence tracking, document versioning and restore, offline editing with reconnect sync.
+
+**Out of scope:** Comments and suggestions (separate service), permissions/sharing UI (IAM service), Spreadsheets and Slides (different data models).
+
+---
+
+## 2. Assumptions & Scale
+
+| Parameter | Value | Reasoning |
+|---|---|---|
+| Total documents | 1 billion | Given |
+| Concurrent active editors | 1 million | ~0.1% of documents active at any time |
+| Operations per editor per second | 5 | 1 keystroke per 200ms |
+| Peak operations/sec | 5 million | 1M editors x 5 ops/sec |
+| Operation payload size | ~200 bytes | type + position + char + version + client_id |
+| Operations write throughput | ~1 GB/sec | 5M ops x 200 bytes |
+| Average document snapshot size | ~50 KB | Typical rich-text document |
+| WebSocket connections | 1 million | One persistent connection per active editor |
+| Redis cursor entries | 1 million keys | One HSET per active document, TTL = 30s |
+
+**Cassandra sizing (operations log):**
+- 1 GB/sec peak write throughput → ~86 TB/day at peak; real average ~10 TB/day
+- Retain raw ops for 30 days → ~300 TB hot storage
+- Ops older than 30 days compacted into snapshots → S3 cold storage
+
+**WebSocket gateway sizing:**
+- 64 KB RAM per connection → 1M connections → ~64 GB RAM across gateway fleet
+- Horizontal scaling: shard by doc_id so all clients for one document land on one OT Server node
+
+**Redis sizing:**
+- `doc:{id}:canonical` per active document: ~50 KB x 1M active = ~50 GB hot (manageable with 256 GB Redis cluster)
+- `cursor:{id}` per active document: ~1 KB x 1M = ~1 GB (negligible)
+
+*These numbers drive three key decisions: Cassandra for append-only high-throughput ops log, Redis for in-memory canonical state and ephemeral cursors, and sticky WebSocket routing so OT has a single ordering point per document.*
+
+---
+
+## 3. Functional Requirements
+
+1. **CRUD Documents** — create, open, rename, and delete documents
+2. **Real-time collaborative editing** — all collaborators see changes within 100ms end-to-end
+3. **Conflict resolution** — concurrent edits from multiple users must converge to the same document
+4. **Cursor and presence** — see each collaborator's cursor position and online status
+5. **Document versioning** — view history, restore to any prior named or auto-saved version
+6. **Offline editing** — buffer local operations while offline, sync and reconcile on reconnect
+
+---
+
+## 4. Non-Functional Requirements
+
+| Requirement | Target |
+|---|---|
+| Edit propagation latency | < 100ms end-to-end |
+| Availability | 99.99% for solo editing; CP (strong convergence) for collaborative |
+| Durability | Zero data loss — ops appended to log before ACK |
+| Write throughput | 5 million ops/sec at peak |
+| Concurrent active editors | 1 million |
+| Storage retention | 30 days raw ops; indefinite snapshots in S3 |
+
+### Consistency Model
+
+| Domain | Model | Mechanism |
+|---|---|---|
+| Operations log | Linearizable (per document) | Single OT Server node owns each doc's session |
+| Document state across clients | Eventual + strongly convergent | OT transforms ensure all clients converge |
+| Cursor / presence | Ephemeral, eventual | Redis TTL; clients re-send on reconnect |
+| Metadata (title, permissions) | Strong (ACID) | PostgreSQL with transactions |
+
+> [!NOTE]
+> **Key Insight:** Google Docs makes a deliberate CAP choice. Solo editing: AP (availability — your edits always go through). Collaborative editing: CP — all collaborators must converge to the same state; the OT server is the single serialization point. If it is unreachable, clients buffer locally and display "reconnecting" rather than allowing irreconcilable divergence.
+
+---
+
+## 5. Mental Model
 
 > **Google Docs is not syncing text. It is syncing operations across distributed clients.**
 
@@ -39,84 +116,23 @@ Two users editing the same position at the same millisecond will produce diverge
 
 ---
 
-## 0. Assumptions & Scale
+## 6. API Design
 
-| Parameter | Value | Reasoning |
+| Method | Path | Description |
 |---|---|---|
-| Total documents | 1 billion | Given |
-| Concurrent active editors | 1 million | ~0.1% of documents active at any time |
-| Operations per editor per second | 5 | 1 keystroke per 200ms |
-| Peak operations/sec | 5 million | 1M editors x 5 ops/sec |
-| Operation payload size | ~200 bytes | type + position + char + version + client_id |
-| Operations write throughput | ~1 GB/sec | 5M ops x 200 bytes |
-| Average document snapshot size | ~50 KB | Typical rich-text document |
-| WebSocket connections | 1 million | One persistent connection per active editor |
-| Redis cursor entries | 1 million keys | One HSET per active document, TTL = 30s |
-
-**Cassandra sizing (operations log):**
-- 1 GB/sec peak write throughput → ~86 TB/day at peak; real average ~10 TB/day
-- Retain raw ops for 30 days → ~300 TB hot storage
-- Ops older than 30 days compacted into snapshots → S3 cold storage
-
-**WebSocket gateway sizing:**
-- 64 KB RAM per connection → 1M connections → ~64 GB RAM across gateway fleet
-- Horizontal scaling: shard by doc_id so all clients for one document land on one OT Server node
-
-**Redis sizing:**
-- `doc:{id}:canonical` per active document: ~50 KB x 1M active = ~50 GB hot (manageable with 256 GB Redis cluster)
-- `cursor:{id}` per active document: ~1 KB x 1M = ~1 GB (negligible)
-
-*These numbers drive three key decisions: Cassandra for append-only high-throughput ops log, Redis for in-memory canonical state and ephemeral cursors, and sticky WebSocket routing so OT has a single ordering point per document.*
-
----
-
-## 1. Problem + Scope
-
-Google Docs allows multiple users to edit the same document simultaneously in real time. Changes made by one user must appear in every other user's browser within 100ms. The system handles billions of documents, millions of concurrent editors, and guarantees zero data loss through an immutable operations log.
-
-**In scope:** CRUD documents, real-time collaborative editing, cursor and presence tracking, document versioning and restore, offline editing with reconnect sync.
-
-**Out of scope:** Comments and suggestions (separate service), permissions/sharing UI (IAM service), Spreadsheets and Slides (different data models).
-
----
-
-## 2. Functional Requirements
-
-1. **CRUD Documents** — create, open, rename, and delete documents
-2. **Real-time collaborative editing** — all collaborators see changes within 100ms end-to-end
-3. **Conflict resolution** — concurrent edits from multiple users must converge to the same document
-4. **Cursor and presence** — see each collaborator's cursor position and online status
-5. **Document versioning** — view history, restore to any prior named or auto-saved version
-6. **Offline editing** — buffer local operations while offline, sync and reconcile on reconnect
-
----
-
-## 3. Non-Functional Requirements
-
-| Requirement | Target |
-|---|---|
-| Edit propagation latency | < 100ms end-to-end |
-| Availability | 99.99% for solo editing; CP (strong convergence) for collaborative |
-| Durability | Zero data loss — ops appended to log before ACK |
-| Write throughput | 5 million ops/sec at peak |
-| Concurrent active editors | 1 million |
-| Storage retention | 30 days raw ops; indefinite snapshots in S3 |
-
-### Consistency Model
-
-| Domain | Model | Mechanism |
-|---|---|---|
-| Operations log | Linearizable (per document) | Single OT Server node owns each doc's session |
-| Document state across clients | Eventual + strongly convergent | OT transforms ensure all clients converge |
-| Cursor / presence | Ephemeral, eventual | Redis TTL; clients re-send on reconnect |
-| Metadata (title, permissions) | Strong (ACID) | PostgreSQL with transactions |
+| POST | /api/v1/documents | Create new document, returns {doc_id} |
+| GET | /api/v1/documents/{id} | Load document metadata + latest snapshot URL |
+| POST | /api/v1/documents/{id}/share | Share with {user_id, permission: viewer/editor} |
+| GET | /api/v1/documents/{id}/versions | List versions (major snapshots) |
+| POST | /api/v1/documents/{id}/versions/{v}/restore | Restore to a previous version |
+| WS | /ws/documents/{id} | Real-time collaboration channel |
 
 > [!NOTE]
-> **Key Insight:** Google Docs makes a deliberate CAP choice. Solo editing: AP (availability — your edits always go through). Collaborative editing: CP — all collaborators must converge to the same state; the OT server is the single serialization point. If it is unreachable, clients buffer locally and display "reconnecting" rather than allowing irreconcilable divergence.
+> The WebSocket connection is the core of the system — REST APIs handle document lifecycle (create, share, version history). All edit operations (insert, delete, format) travel exclusively over WebSocket as delta operations, never full document replacement.
 
 ---
 
-## 4. End-to-End Flow
+## 7. End-to-End Flow
 
 > [!IMPORTANT]
 > This is the flow interviewers want you to walk through. Every step has a purpose — know WHY each step exists.
@@ -172,7 +188,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ```mermaid
 graph TD
@@ -232,7 +248,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 ### PostgreSQL — Document Metadata
 
@@ -272,9 +288,9 @@ S3 holds immutable binary snapshots keyed as `doc_id/version_id/snapshot.bin`. S
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
-### 7.1 OT vs CRDT with Fractional Indexing
+### 10.1 OT vs CRDT with Fractional Indexing
 
 **Here's the problem we're solving:** Two clients generate operations concurrently against the same document state. Without reconciliation, they diverge permanently.
 
@@ -344,7 +360,7 @@ Merge: sort all characters by position value
 
 ---
 
-### 7.2 Redis Dual Role: Canonical State + Presence
+### 10.2 Redis Dual Role: Canonical State + Presence
 
 **Here's the problem we're solving:** When User B joins a document that User A has been editing for 10 minutes, the S3 snapshot is stale. The ops log has 3,000 events since then. Replaying 3,000 ops to reconstruct current state on every new join takes seconds — unacceptable at scale.
 
@@ -372,7 +388,7 @@ Merge: sort all characters by position value
 
 5. Last user disconnects
    -> Redis canonical TTL expires or is set short
-   -> Reconciliation job fires (see Deep Dive 7.3)
+   -> Reconciliation job fires (see Deep Dive 10.3)
    -> Redis key deleted
 ```
 
@@ -404,7 +420,7 @@ graph TD
 
 ---
 
-### 7.3 Session-End Reconciliation Job + Versioning
+### 10.3 Session-End Reconciliation Job + Versioning
 
 **Here's the problem we're solving:** Auto-save runs every 10-20 seconds during an editing session, producing hundreds of minor versions and millions of stored op events for a busy document. Left uncleaned, storage grows with every keystroke, not every session.
 
@@ -460,7 +476,7 @@ flowchart TD
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 ### Hot Document Problem
 
@@ -493,7 +509,7 @@ At 5M ops/sec, Cassandra is the primary write bottleneck. Cassandra's LSM-tree i
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -508,7 +524,7 @@ At 5M ops/sec, Cassandra is the primary write bottleneck. Cassandra's LSM-tree i
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### OT vs CRDT
 
@@ -578,7 +594,7 @@ At 5M ops/sec, Cassandra is the primary write bottleneck. Cassandra's LSM-tree i
 
 ---
 
-## Interview Summary
+## 14. Interview Summary
 
 ### Key Decisions
 

@@ -2,7 +2,89 @@
 
 ---
 
-## Mental Model
+## 1. Problem + Scope
+
+Design a ride-booking platform (Uber / Rapido) supporting fare estimation, driver matching, real-time location tracking, and payment — at millions of concurrent users and drivers.
+
+**In Scope:** Fare estimation, ride booking, driver matching, real-time location tracking (rider and driver), trip start/end, ratings, payments, surge pricing.
+
+**Out of Scope:** Driver onboarding, fleet management, surge zone boundary drawing, fraud detection internals, driver incentive programs.
+
+---
+
+## 2. Assumptions & Scale
+
+```
+Inputs:
+  Total drivers online:       5 million
+  Daily rides:                20 million
+  Peak concurrent requests:   500,000
+  Location update frequency:  every 1s (ON_TRIP), every 2s (RESERVED), every 5s (IDLE)
+
+Location writes/sec:
+  5M drivers x (1 update / 3s avg) = ~1.67M writes/sec -> Redis must handle this
+
+WebSocket connections (peak):
+  5M drivers + ~2M active riders = ~7M persistent connections
+
+Trip events/sec (Kafka):
+  20M rides/day / 86,400s = ~232 events/sec (well within Kafka capacity)
+
+Storage:
+  Trip record: ~1 KB x 20M rides/day = 20 GB/day (PostgreSQL)
+  Location history (waypoints): ~500 GPS points x 16B x 20M trips = ~160 GB/day (cold)
+  Driver metadata: 5M drivers x 1 KB = 5 GB (static, fits in memory)
+
+Bandwidth comparison:
+  Location update frame (WebSocket): ~20 bytes
+  Location update frame (HTTP polling): ~2 KB (headers + body)
+  At 1.67M updates/sec: WebSocket = 33 MB/s vs HTTP = 3.3 GB/s -> WebSocket wins 100x
+```
+
+These numbers drive the following decisions: Redis for geospatial search (not PostGIS), WebSocket (not HTTP polling), Kafka for fan-out (not direct server-to-server calls), and state-adaptive location frequency (not a fixed 1s tick).
+
+---
+
+## 3. Functional Requirements
+
+1. Rider gets a fare estimate (per vehicle type) for a pickup and drop location
+2. Rider books a ride; system matches a nearby available driver within 60 seconds
+3. Driver accepts or denies the ride offer (15-second window)
+4. Both rider and driver track each other on a live map
+5. Trip starts and ends; fare is finalized and payment is processed
+6. Rider and driver rate each other after trip completion
+7. Rider can cancel a ride before driver arrival; driver can cancel before trip start
+
+---
+
+## 4. Non-Functional Requirements
+
+| Requirement | Target |
+|---|---|
+| Latency — driver matching | < 300ms to dispatch first offer |
+| Latency — location update visible to rider | < 2s end-to-end |
+| Availability (rider-facing) | 99.9% — app down = revenue loss |
+| Consistency (driver assignment) | Strong — a driver must never be assigned to two rides simultaneously |
+| Durability (trip + billing data) | Zero loss — replicated DB + Kafka retention |
+| Location update throughput | 1.67M writes/sec sustained |
+| WebSocket connections | 7M concurrent at peak |
+
+**Consistency Model by Component:**
+
+| Component | Consistency | Why |
+|---|---|---|
+| Driver assignment (Redis WATCH/EXEC) | Strong | Prevents double-booking |
+| Driver location (Redis Geo) | Eventual | Overwrites on next tick; ephemeral |
+| Trip record (PostgreSQL) | Strong (ACID) | Financial correctness |
+| Surge multiplier (Redis cache) | Eventual (60s TTL) | Slight staleness is acceptable |
+| Ride history (read replica) | Eventual | Acceptable for non-real-time reads |
+
+> [!IMPORTANT]
+> **CAP Theorem framing:** This system intentionally makes different consistency trade-offs per component. Rider-facing read services (fare estimate, history) prefer availability. Driver assignment prefers strong consistency. Stating this explicitly in an interview shows CAP awareness at a component level — not a single global answer.
+
+---
+
+## 5. 🧠 Mental Model
 
 Uber is two concurrent real-time systems: **location tracking** and **driver matching**. Every 1–5 seconds, millions of drivers push their GPS coordinates into a geo-indexed in-memory store. When a rider requests a trip, the system finds the closest available driver by ETA (not distance), atomically assigns them via a state transition, and keeps both maps in sync — all under 300ms. The hardest problems are concurrency (preventing double-booking) and geospatial search at scale.
 
@@ -41,89 +123,32 @@ Uber is two concurrent real-time systems: **location tracking** and **driver mat
 
 ---
 
-## 0. Assumptions & Scale
+## 6. API Design
 
-```
-Inputs:
-  Total drivers online:       5 million
-  Daily rides:                20 million
-  Peak concurrent requests:   500,000
-  Location update frequency:  every 1s (ON_TRIP), every 2s (RESERVED), every 5s (IDLE)
+### Rider APIs
 
-Location writes/sec:
-  5M drivers x (1 update / 3s avg) = ~1.67M writes/sec -> Redis must handle this
-
-WebSocket connections (peak):
-  5M drivers + ~2M active riders = ~7M persistent connections
-
-Trip events/sec (Kafka):
-  20M rides/day / 86,400s = ~232 events/sec (well within Kafka capacity)
-
-Storage:
-  Trip record: ~1 KB x 20M rides/day = 20 GB/day (PostgreSQL)
-  Location history (waypoints): ~500 GPS points x 16B x 20M trips = ~160 GB/day (cold)
-  Driver metadata: 5M drivers x 1 KB = 5 GB (static, fits in memory)
-
-Bandwidth comparison:
-  Location update frame (WebSocket): ~20 bytes
-  Location update frame (HTTP polling): ~2 KB (headers + body)
-  At 1.67M updates/sec: WebSocket = 33 MB/s vs HTTP = 3.3 GB/s -> WebSocket wins 100x
-```
-
-These numbers drive the following decisions: Redis for geospatial search (not PostGIS), WebSocket (not HTTP polling), Kafka for fan-out (not direct server-to-server calls), and state-adaptive location frequency (not a fixed 1s tick).
-
----
-
-## 1. Problem + Scope
-
-Design a ride-booking platform (Uber / Rapido) supporting fare estimation, driver matching, real-time location tracking, and payment — at millions of concurrent users and drivers.
-
-**In Scope:** Fare estimation, ride booking, driver matching, real-time location tracking (rider and driver), trip start/end, ratings, payments, surge pricing.
-
-**Out of Scope:** Driver onboarding, fleet management, surge zone boundary drawing, fraud detection internals, driver incentive programs.
-
----
-
-## 2. Functional Requirements
-
-1. Rider gets a fare estimate (per vehicle type) for a pickup and drop location
-2. Rider books a ride; system matches a nearby available driver within 60 seconds
-3. Driver accepts or denies the ride offer (15-second window)
-4. Both rider and driver track each other on a live map
-5. Trip starts and ends; fare is finalized and payment is processed
-6. Rider and driver rate each other after trip completion
-7. Rider can cancel a ride before driver arrival; driver can cancel before trip start
-
----
-
-## 3. Non-Functional Requirements
-
-| Requirement | Target |
-|---|---|
-| Latency — driver matching | < 300ms to dispatch first offer |
-| Latency — location update visible to rider | < 2s end-to-end |
-| Availability (rider-facing) | 99.9% — app down = revenue loss |
-| Consistency (driver assignment) | Strong — a driver must never be assigned to two rides simultaneously |
-| Durability (trip + billing data) | Zero loss — replicated DB + Kafka retention |
-| Location update throughput | 1.67M writes/sec sustained |
-| WebSocket connections | 7M concurrent at peak |
-
-**Consistency Model by Component:**
-
-| Component | Consistency | Why |
+| Method | Path | Description |
 |---|---|---|
-| Driver assignment (Redis WATCH/EXEC) | Strong | Prevents double-booking |
-| Driver location (Redis Geo) | Eventual | Overwrites on next tick; ephemeral |
-| Trip record (PostgreSQL) | Strong (ACID) | Financial correctness |
-| Surge multiplier (Redis cache) | Eventual (60s TTL) | Slight staleness is acceptable |
-| Ride history (read replica) | Eventual | Acceptable for non-real-time reads |
+| POST | /api/v1/rides/request | Request ride {pickup_lat, pickup_lng, dest_lat, dest_lng}, returns {ride_id, fare_estimate, eta} |
+| GET | /api/v1/rides/{id}/status | Poll ride status + driver location |
+| DELETE | /api/v1/rides/{id} | Cancel ride (before driver assigned) |
+| POST | /api/v1/rides/{id}/rating | Rate driver post-ride |
 
-> [!IMPORTANT]
-> **CAP Theorem framing:** This system intentionally makes different consistency trade-offs per component. Rider-facing read services (fare estimate, history) prefer availability. Driver assignment prefers strong consistency. Stating this explicitly in an interview shows CAP awareness at a component level — not a single global answer.
+### Driver APIs
+
+| Method | Path | Description |
+|---|---|---|
+| PUT | /api/v1/drivers/availability | Toggle online/offline with current location |
+| POST | /api/v1/rides/{id}/accept | Accept dispatched ride request |
+| PUT | /api/v1/rides/{id}/status | Update status: ARRIVED, STARTED, COMPLETED |
+| POST | /api/v1/drivers/location | GPS ping {lat, lng} every 5s |
+
+> [!NOTE]
+> **Async matching design:** POST /rides/request is synchronous only for fare estimation. Driver matching happens asynchronously — the client polls GET /rides/{id}/status. This is why the system can afford to try multiple drivers without blocking the rider.
 
 ---
 
-## 4. End-to-End Flow
+## 7. End-to-End Flow
 
 ```mermaid
 sequenceDiagram
@@ -189,7 +214,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ### Simple Design
 
@@ -260,7 +285,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 | Entity | Storage | Key Columns | Why this store |
 |---|---|---|---|
@@ -276,7 +301,7 @@ graph TD
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
 ### 7.1 Driver Matching with Geohash and Atomic Assignment
 
@@ -450,7 +475,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 **What breaks first as scale grows 10x:**
 
@@ -472,7 +497,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -487,7 +512,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### Geohash vs Quadtree for Driver Geospatial Index
 
@@ -539,7 +564,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ---
 
-## Interview Summary
+## 14. Interview Summary
 
 > [!TIP]
 > When the interviewer says "walk me through your Uber design," hit these points in order. Each is a decision with a clear WHY.

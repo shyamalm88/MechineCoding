@@ -2,6 +2,94 @@
 
 ---
 
+## 1. Problem + Scope
+
+Design a cloud storage platform (Google Drive / Dropbox) supporting file upload, download, sync across devices, folder management, and sharing with permissions — at 50 million DAU storing 10 billion files.
+
+**In Scope:** File and folder upload/download, auto-sync across devices, directory structure (create/delete/rename/move), file sharing with read/write permissions, storage quota per user, chunk-level deduplication.
+
+**Out of Scope:** Real-time collaborative editing (separate system — see google-docs.md), video transcoding, full-text search within documents, virus scanning internals, mobile offline-first CRDT sync.
+
+---
+
+## 2. Assumptions & Scale
+
+```
+Active users:           50 million DAU
+Files per user:         ~200 average
+Total files:            10 billion
+Daily uploads:          50 million files/day
+Average file size:      500 KB
+Large files (>10 MB):   5% of uploads = 2.5 million/day
+
+Storage:
+  New data/day:   50M files x 500KB = 25 TB/day
+  After dedup:    ~60% unique (Dropbox reports ~70% dedup ratio)
+                  -> ~15 TB/day net new storage
+  5-year total:   15 TB x 365 x 5 = ~27 PB
+
+Upload throughput:
+  50M uploads/day / 86,400s = ~580 uploads/sec average
+  Peak (10x):              ~5,800 uploads/sec
+
+Metadata reads (folder browsing):
+  50M DAU x 20 opens/day = 1B reads/day = ~11,500 reads/sec
+
+Chunk operations:
+  Large file (1 GB) = 1 GB / 5 MB chunk = 200 chunks
+  5,800 uploads/sec x ~5 chunks avg = ~29,000 chunk uploads/sec
+  -> S3 must handle ~29K PUT requests/sec
+
+Sync notifications:
+  50M uploads/day -> fan-out to avg 3 devices = 150M notifications/day
+  -> ~1,700 WebSocket pushes/sec (manageable with pub/sub)
+```
+
+These numbers drive the following decisions: pre-signed URLs (cannot proxy 25 TB/day), chunk-level dedup (must reduce 27 PB over 5 years), PostgreSQL sharding (580 writes/sec, well within range but metadata is relational), and WebSocket + message queue for sync (1,700 pushes/sec is lightweight but must survive upload service restarts).
+
+---
+
+## 3. Functional Requirements
+
+1. User creates an account and gets a storage quota (e.g., 15 GB free)
+2. Upload files and folders of any size, including multi-GB videos
+3. Download files from any device and location
+4. Auto-sync: all connected devices update within 2 seconds when any device changes a file
+5. Share files and folders with other users; assign read or write permission
+6. Directory operations: create, rename, delete, and move folders and files
+7. Resume interrupted uploads — a failed chunk does not restart the whole file
+8. Storage deduplication — identical content stored only once regardless of who uploaded it
+
+---
+
+## 4. Non-Functional Requirements
+
+| Requirement | Target |
+|---|---|
+| Availability | 99.99% — prefer AP over CP for upload and sync |
+| Durability | 99.999999999% (11 nines) — replicated across AZs in S3 |
+| Upload latency | Bounded by client bandwidth — backend adds less than 100ms overhead |
+| Sync latency | Less than 2 seconds after upload completes |
+| Metadata read latency | Less than 50ms p99 for folder listing |
+| Consistency — metadata | Strong (ACID) for quota enforcement and permission checks |
+| Consistency — sync | Eventual — 1–2 second lag between devices is acceptable |
+| Large file support | Files up to 15 GB via chunked multipart upload |
+| Storage efficiency | Chunk-level dedup targeting 60–70% reduction |
+
+### Consistency Model
+
+| Domain | Model | Reason |
+|---|---|---|
+| Quota enforcement | Strong (ACID) | User must never exceed quota; two concurrent uploads need serialization |
+| Permission checks | Strong (ACID) | Access control must be correct at all times |
+| Folder listing | Eventual (read replica) | 1–2s stale list is invisible to users |
+| Cross-device sync | Eventual | Notification-driven pull; brief lag acceptable |
+
+> [!IMPORTANT]
+> **CAP framing:** Upload and sync prefer availability — a 1–2 second sync lag is acceptable. Quota and permission operations prefer consistency — a user must never exceed quota or access a file they were not granted permission to.
+
+---
+
 ## 🧠 Mental Model
 
 A cloud storage system is not just a file store — it continuously syncs file state across distributed clients, ensuring changes propagate reliably and efficiently. Three flows define everything: upload (client chunks file → pre-signed URL → S3 directly), metadata management (DB tracks what exists, not the bytes), and sync (S3 event → notification service → WebSocket push to other devices). The file bytes and the file record travel completely separate paths.
@@ -42,95 +130,23 @@ A "folder" is not a directory — it is a row in a database with `type = folder`
 
 ---
 
-## 0. Assumptions & Scale
+## 6. API Design
 
-```
-Active users:           50 million DAU
-Files per user:         ~200 average
-Total files:            10 billion
-Daily uploads:          50 million files/day
-Average file size:      500 KB
-Large files (>10 MB):   5% of uploads = 2.5 million/day
-
-Storage:
-  New data/day:   50M files x 500KB = 25 TB/day
-  After dedup:    ~60% unique (Dropbox reports ~70% dedup ratio)
-                  -> ~15 TB/day net new storage
-  5-year total:   15 TB x 365 x 5 = ~27 PB
-
-Upload throughput:
-  50M uploads/day / 86,400s = ~580 uploads/sec average
-  Peak (10x):              ~5,800 uploads/sec
-
-Metadata reads (folder browsing):
-  50M DAU x 20 opens/day = 1B reads/day = ~11,500 reads/sec
-
-Chunk operations:
-  Large file (1 GB) = 1 GB / 5 MB chunk = 200 chunks
-  5,800 uploads/sec x ~5 chunks avg = ~29,000 chunk uploads/sec
-  -> S3 must handle ~29K PUT requests/sec
-
-Sync notifications:
-  50M uploads/day -> fan-out to avg 3 devices = 150M notifications/day
-  -> ~1,700 WebSocket pushes/sec (manageable with pub/sub)
-```
-
-These numbers drive the following decisions: pre-signed URLs (cannot proxy 25 TB/day), chunk-level dedup (must reduce 27 PB over 5 years), PostgreSQL sharding (580 writes/sec, well within range but metadata is relational), and WebSocket + message queue for sync (1,700 pushes/sec is lightweight but must survive upload service restarts).
-
----
-
-## 1. Problem + Scope
-
-Design a cloud storage platform (Google Drive / Dropbox) supporting file upload, download, sync across devices, folder management, and sharing with permissions — at 50 million DAU storing 10 billion files.
-
-**In Scope:** File and folder upload/download, auto-sync across devices, directory structure (create/delete/rename/move), file sharing with read/write permissions, storage quota per user, chunk-level deduplication.
-
-**Out of Scope:** Real-time collaborative editing (separate system — see google-docs.md), video transcoding, full-text search within documents, virus scanning internals, mobile offline-first CRDT sync.
-
----
-
-## 2. Functional Requirements
-
-1. User creates an account and gets a storage quota (e.g., 15 GB free)
-2. Upload files and folders of any size, including multi-GB videos
-3. Download files from any device and location
-4. Auto-sync: all connected devices update within 2 seconds when any device changes a file
-5. Share files and folders with other users; assign read or write permission
-6. Directory operations: create, rename, delete, and move folders and files
-7. Resume interrupted uploads — a failed chunk does not restart the whole file
-8. Storage deduplication — identical content stored only once regardless of who uploaded it
-
----
-
-## 3. Non-Functional Requirements
-
-| Requirement | Target |
-|---|---|
-| Availability | 99.99% — prefer AP over CP for upload and sync |
-| Durability | 99.999999999% (11 nines) — replicated across AZs in S3 |
-| Upload latency | Bounded by client bandwidth — backend adds less than 100ms overhead |
-| Sync latency | Less than 2 seconds after upload completes |
-| Metadata read latency | Less than 50ms p99 for folder listing |
-| Consistency — metadata | Strong (ACID) for quota enforcement and permission checks |
-| Consistency — sync | Eventual — 1–2 second lag between devices is acceptable |
-| Large file support | Files up to 15 GB via chunked multipart upload |
-| Storage efficiency | Chunk-level dedup targeting 60–70% reduction |
-
-### Consistency Model
-
-| Domain | Model | Reason |
+| Method | Path | Description |
 |---|---|---|
-| Quota enforcement | Strong (ACID) | User must never exceed quota; two concurrent uploads need serialization |
-| Permission checks | Strong (ACID) | Access control must be correct at all times |
-| Folder listing | Eventual (read replica) | 1–2s stale list is invisible to users |
-| Cross-device sync | Eventual | Notification-driven pull; brief lag acceptable |
+| POST | /api/v1/files/upload/init | Initiate chunked upload, returns {upload_id, pre_signed_urls[]} |
+| POST | /api/v1/files/upload/complete | Confirm all chunks uploaded, triggers processing |
+| GET | /api/v1/files/{id}/download | Returns pre-signed S3 download URL (not the file bytes) |
+| GET | /api/v1/folders/{id}/children | List folder contents with metadata |
+| POST | /api/v1/files/{id}/share | Share with {email, permission: viewer/editor} |
+| GET | /api/v1/files/{id}/versions | List file version history |
 
-> [!IMPORTANT]
-> **CAP framing:** Upload and sync prefer availability — a 1–2 second sync lag is acceptable. Quota and permission operations prefer consistency — a user must never exceed quota or access a file they were not granted permission to.
+> [!NOTE]
+> The most architecturally interesting endpoints are upload/init and download — neither passes file bytes through the app server. Upload/init returns pre-signed S3 URLs so the client uploads directly to S3. Download returns a pre-signed URL the client fetches directly from CDN. The app server only handles metadata.
 
 ---
 
-## 4. End-to-End Flow
+## 7. End-to-End Flow
 
 File upload with pre-signed URL and chunk deduplication — the happy path from client to sync.
 
@@ -172,7 +188,7 @@ sequenceDiagram
 
 ---
 
-## 5. High-Level Architecture
+## 8. High-Level Architecture
 
 ### Simple Design
 
@@ -236,7 +252,7 @@ graph TD
 
 ---
 
-## 6. Data Model
+## 9. Data Model
 
 | Entity | Storage | Key Columns | Why this store |
 |---|---|---|---|
@@ -253,9 +269,9 @@ graph TD
 
 ---
 
-## 7. Deep Dives
+## 10. Deep Dives
 
-### 7.1 Pre-Signed URL Upload Flow
+### 10.1 Pre-Signed URL Upload Flow
 
 Here is the problem: at peak load, 5,800 uploads/sec at ~2.5 MB/chunk means 14.5 GB/sec of file data in flight. Routing this through application servers would require provisioning server capacity for a problem that is purely about moving bytes from one place to another.
 
@@ -277,7 +293,7 @@ Here is the problem: at peak load, 5,800 uploads/sec at ~2.5 MB/chunk means 14.5
 
 ---
 
-### 7.2 Chunk-Level Deduplication via SHA-256
+### 10.2 Chunk-Level Deduplication via SHA-256
 
 Here is the problem: 50 million uploads/day at 500 KB average = 25 TB/day of raw data. Many of those uploads share content — video edits share 90% of frames, document revisions share most paragraphs, backup tools re-upload unchanged files.
 
@@ -296,7 +312,7 @@ The file_metadata record becomes a list of chunk_hashes in order: `[hash_A, hash
 
 ---
 
-### 7.3 Sync Conflict Resolution
+### 10.3 Sync Conflict Resolution
 
 Here is the problem: Device A and Device B both edit the same file while offline. Both upload when they reconnect. The server sees two uploads targeting the same file_id with the same base version but different content hashes. One of them must win — but silently discarding the other is data loss.
 
@@ -315,7 +331,7 @@ On conflict, the server does not reject the upload. Instead it creates a second 
 
 ---
 
-## 8. Bottlenecks & Scaling
+## 11. Bottlenecks & Scaling
 
 **Bottleneck 1: Metadata DB read throughput (11,500 reads/sec for folder listing)**
 
@@ -340,7 +356,7 @@ Solution: Bloom filter in Redis for chunk hashes. Before hitting PostgreSQL, che
 
 ---
 
-## 9. Failure Scenarios
+## 12. Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -354,7 +370,7 @@ Solution: Bloom filter in Redis for chunk hashes. Before hitting PostgreSQL, che
 
 ---
 
-## 10. Trade-offs
+## 13. Trade-offs
 
 ### Pre-Signed URL vs Proxy Upload
 

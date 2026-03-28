@@ -9,7 +9,8 @@
       "Bash(wc:*)",
       "Bash(cat:*)",
       "Bash(ls \"/Volumes/Personal/MechineCoding/system-design/latest & updated/\")",
-      "Bash(git -C /Volumes/Personal/MechineCoding show HEAD:system-design/zomato-food-delivery.md)"
+      "Bash(git -C /Volumes/Personal/MechineCoding show HEAD:system-design/zomato-food-delivery.md)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []
