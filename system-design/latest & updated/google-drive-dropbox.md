@@ -148,7 +148,19 @@ A "folder" is not a directory — it is a row in a database with `type = folder`
 
 ## 7. End-to-End Flow
 
+### 7.1 Upload Flow
+
 File upload with pre-signed URL and chunk deduplication — the happy path from client to sync.
+
+**The story in plain English:**
+
+1. Client initiates upload by calling `POST /files/upload/init` with the file name, size, and a SHA-256 hash of the entire file.
+2. Upload Service checks if this exact file (by hash) already exists in storage — chunk-level deduplication. If another user already uploaded the same file, we skip uploading those chunks entirely.
+3. For chunks that don't exist yet, the server generates pre-signed S3 PUT URLs — one per chunk — and returns them to the client.
+4. The client uploads each chunk directly to S3 in parallel. The app server never touches file bytes. This is how you scale uploads without server bottleneck.
+5. Once all chunks are uploaded, the client calls `POST /files/upload/complete` with the file_id and chunk ETags.
+6. Upload Service commits the file metadata record to PostgreSQL — pointing to the chunk hashes in S3, not the file bytes directly.
+7. A `file_ready` event is published to Kafka. Notification Service consumes it and pushes a sync event to the user's other devices via WebSocket.
 
 ```mermaid
 sequenceDiagram
@@ -185,6 +197,62 @@ sequenceDiagram
 
 > [!NOTE]
 > **Key Insight:** The 3-step upload (initiate → upload to S3 → complete) is the correct pattern for large files. The backend never touches file bytes — it only creates pre-signed URLs and records metadata on completion. This is how you scale to 5,800 uploads/sec without application server bottleneck.
+
+---
+
+### 7.2 Download Flow
+
+File download with permission check and pre-signed CDN/S3 URL — the client fetches bytes directly, never through the app server.
+
+**The story in plain English:**
+
+1. User clicks a file — client calls `GET /files/{id}/download`.
+2. Metadata Service checks Redis cache for file metadata (name, size, S3 location). Cache hit returns in < 1ms. Cache miss falls back to PostgreSQL.
+3. Permission Service checks that this user has at least read access to the file (via the permissions table).
+4. Metadata Service generates a pre-signed S3/CDN GET URL with a short TTL (15 minutes) and returns it to the client.
+5. Client fetches the file directly from the CDN edge node — the app server is completely out of the data path.
+6. CDN cache hit: file served from edge in milliseconds. Cache miss: CDN fetches from S3 origin, caches at edge for future requests.
+   The app server never touches file bytes in either direction — upload or download.
+
+```mermaid
+sequenceDiagram
+    participant Client as Client
+    participant MetadataSvc as MetadataSvc
+    participant PermissionSvc as PermissionSvc
+    participant Redis as Redis
+    participant PostgreSQL as PostgreSQL
+    participant CDN as CDN
+    participant S3 as S3
+
+    Client->>MetadataSvc: GET /files/{id}/download
+    MetadataSvc->>Redis: Fetch file metadata by file_id
+    Redis-->>MetadataSvc: Cache hit - return metadata (s3_path, owner_id)
+    Note over MetadataSvc,PostgreSQL: Cache miss - fall through to PostgreSQL
+    MetadataSvc->>PostgreSQL: SELECT file_metadata WHERE file_id = {id}
+    PostgreSQL-->>MetadataSvc: file record (s3_path, content_hash, size)
+
+    MetadataSvc->>PermissionSvc: Check read access for user_id on file_id
+    PermissionSvc->>PostgreSQL: SELECT permission FROM permissions WHERE file_id AND user_id
+    PostgreSQL-->>PermissionSvc: permission = read or write or owner
+    PermissionSvc-->>MetadataSvc: Access granted
+
+    MetadataSvc->>S3: Generate pre-signed GET URL for s3_path (TTL 15 min)
+    S3-->>MetadataSvc: Pre-signed GET URL
+    MetadataSvc-->>Client: 200 OK with pre_signed_url (URL only, no file bytes)
+
+    Client->>CDN: GET file via pre-signed URL
+    alt CDN cache hit
+        CDN-->>Client: File bytes served from edge cache
+    else CDN cache miss
+        CDN->>S3: Fetch object from S3 origin
+        S3-->>CDN: File bytes
+        CDN->>CDN: Cache object at edge
+        CDN-->>Client: File bytes served from edge
+    end
+```
+
+> [!NOTE]
+> **Key Insight:** The app server never touches file bytes in either direction — upload bytes go Client → S3 directly via pre-signed PUT, download bytes go S3/CDN → Client directly via pre-signed GET. The app server is purely a metadata and URL-signing service.
 
 ---
 

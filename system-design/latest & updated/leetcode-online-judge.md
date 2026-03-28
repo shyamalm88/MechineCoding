@@ -128,6 +128,19 @@ LeetCode is a code execution pipeline wrapped around a problem catalog. Three fl
 
 User submits code → API enqueues → Docker worker judges → client polls for result → leaderboard updates via CDC.
 
+**The story in plain English:**
+
+1. User clicks "Submit" — `POST /submissions {problem_id, language, code}` is sent to the API.
+2. API uploads the code blob to S3 — we never store raw code in the database. S3 is cheaper and handles large payloads better.
+3. API enqueues a job to SQS: `{submission_id, s3_url, language, test_case_ids}`. Returns `202 Accepted` with `submission_id` immediately — no waiting.
+4. Client starts polling `GET /submissions/{id}` every 3 seconds. This is intentional — execution time is variable (ms to seconds), so polling is simpler and correct here. Not a WebSocket — you don't need a persistent connection for a one-time result.
+5. A Judge Worker picks up the job from SQS. It fetches the code from S3 and spins up a Docker container with the right language runtime.
+6. The container runs the code against all test cases with hard limits: 5 second CPU timeout, 256MB memory cap, read-only filesystem, network disabled. The container is destroyed after execution — no state leaks between submissions.
+7. Worker writes the result to PostgreSQL: status (ACCEPTED / WRONG_ANSWER / TLE / MLE), runtime_ms, memory_kb, test case details.
+8. PostgreSQL CDC (logical replication) emits the change event to Kafka.
+9. A consumer reads the Kafka event and executes `ZADD leaderboard:{contest_id} {score} {user_id}` in Redis. The leaderboard updates without the judge worker needing to know about it.
+10. Next poll from the client hits the API → PostgreSQL read → result returned. Client shows the verdict.
+
 ```mermaid
 sequenceDiagram
     participant Client

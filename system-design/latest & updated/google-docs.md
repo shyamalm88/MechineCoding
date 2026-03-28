@@ -143,6 +143,20 @@ Client → apply locally → send op → OT Server → transform against concurr
        → append to log → broadcast transformed op → other clients apply
 ```
 
+**The story in plain English:**
+
+1. Alice opens a document — her client connects via WebSocket, sending the doc_id and her last known version number.
+2. The OT Server checks Redis for the canonical document state. Cache hit — Alice gets the current document instantly without hitting Cassandra.
+3. Alice types "R" at position 29. Her client applies the change locally first — this is what makes editing feel instant. No waiting for the server.
+4. The client sends the operation to the server: {insert, position: 29, char: "R", based_on_version: 42}.
+5. The server checks: has anything been committed since version 42? Yes — Bob deleted a character at position 15.
+6. The server transforms Alice's operation against Bob's: position 29 is still valid after a deletion at 15, so the op stays as-is. (If Bob had deleted at position 20, Alice's position would shift to 28.)
+7. Before broadcasting to anyone, the server appends the transformed op to Cassandra. If the server crashes right now, no operation is lost.
+8. Server updates the Redis canonical copy — the next person who joins gets the latest state instantly.
+9. Server ACKs Alice with the new committed version (43). Her client promotes the op from "pending" to "committed".
+10. Server broadcasts the transformed op to Bob's client. Bob applies it on top of his own pending ops.
+11. Both clients now show identical documents — even though they were editing simultaneously.
+
 ```mermaid
 sequenceDiagram
     participant A as Client A (Alice)

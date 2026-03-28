@@ -155,6 +155,19 @@ Viewer --> API Gateway --> Metadata Service --> Redis Cache
 
 ### Upload Flow
 
+**The story in plain English:**
+
+1. Creator clicks "Upload" — client calls `POST /videos/upload/init` with filename, size, and format.
+2. Upload Service returns a `video_id` and a pre-signed S3 PUT URL. The video bytes never go through the app server.
+3. Client uploads the raw video file directly to S3 in chunks (multipart upload). Resumable if the connection drops.
+4. S3 notifies the Upload Service that all parts are received. Creator confirms via `POST /videos/upload/complete`.
+5. Upload Service publishes a `transcode_job` event to Kafka: `{video_id, s3_raw_path, target_qualities: [360p, 720p, 1080p, 4K]}`.
+6. Transcode Workers consume the job from Kafka. They auto-scale based on queue depth — more uploads = more workers spun up.
+7. Each worker fetches the raw video from S3, transcodes it into multiple resolutions using FFmpeg, and generates thumbnail images.
+8. Workers write the transcoded segments and an HLS manifest file (`.m3u8`) to S3. The manifest lists every segment URL for every quality tier.
+9. Worker writes video metadata to Cassandra: status = LIVE, manifest_url, thumbnail_url, duration.
+10. CDN is instructed to prefetch the manifest and first few segments. Video is now streamable — creator gets notified.
+
 ```mermaid
 sequenceDiagram
     participant C as Creator
@@ -181,6 +194,17 @@ sequenceDiagram
 ```
 
 ### Watch Flow
+
+**The story in plain English:**
+
+1. Viewer clicks a video. Client calls `GET /videos/{id}` to fetch metadata.
+2. Metadata Service checks Redis cache first. Cache hit: returns in < 1ms. Cache miss: reads from Cassandra, populates Redis with a 5-minute TTL.
+3. Response includes the manifest URL (a CDN URL pointing to the `.m3u8` file) — not any video bytes.
+4. The ABR player fetches the manifest from the CDN edge node. The manifest is a plain text file listing all quality tiers and their segment URLs.
+5. Player picks an initial quality based on current bandwidth estimate. Starts downloading 2-second video segments from the CDN.
+6. CDN serves segments from the edge cache — segments are immutable content with long TTLs, so cache hit rate is very high (> 95%). If cache miss, CDN fetches from S3 origin.
+7. Player continuously monitors download speed and buffer fill. If bandwidth drops, it switches to a lower quality tier on the next segment boundary — seamless, no rebuffering.
+8. Meanwhile, the client fires a `POST /view-event` — a fire-and-forget call. API increments a Redis counter. A batch job flushes Redis counts to Cassandra every 60 seconds. Eventual consistency is fine for view counts.
 
 ```mermaid
 sequenceDiagram

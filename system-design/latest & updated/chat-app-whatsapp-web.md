@@ -140,6 +140,15 @@ Chat systems run **two independent flows concurrently**: a fast path and a relia
 
 ### 7.1 Message Send and Delivery (1:1)
 
+**The story in plain English:**
+
+1. User A types a message and hits send — the app sends it over the existing WebSocket connection to Chat Server 1.
+2. Chat Server 1 immediately writes the message to Cassandra. The message is now durable. Single tick appears on User A's screen.
+3. Chat Server 1 checks Redis for User B's session: "which server is User B connected to?"
+4. Redis returns "Chat Server 2". Server 1 publishes the message to Kafka on User B's inbox topic.
+5. Chat Server 2 consumes the Kafka event and pushes the message to User B over their open WebSocket. Double tick appears.
+6. User B's app sends a read receipt when they open the chat. This flows back through Kafka to Server 1, then to User A. Blue ticks appear.
+
 ```mermaid
 sequenceDiagram
     participant A as User A
@@ -169,6 +178,15 @@ sequenceDiagram
 
 ### 7.2 Read Receipt State Machine
 
+**The story in plain English:**
+
+A message moves through 4 states — each one maps to a tick indicator users recognize:
+1. PENDING — message is in the client's outbox, not yet sent.
+2. SENT — Cassandra has acknowledged the write. One grey tick.
+3. DELIVERED — recipient's device received the WebSocket push. Two grey ticks.
+4. READ — recipient opened the conversation. Two blue ticks.
+Each transition is driven by an ACK flowing back from the recipient through Kafka to the sender's server.
+
 ```mermaid
 stateDiagram-v2
     direction LR
@@ -179,6 +197,16 @@ stateDiagram-v2
 ```
 
 ### 7.3 Offline Delivery / Push Fallback
+
+**The story in plain English:**
+
+1. User A sends a message. Chat Server 1 writes to Cassandra — message is safe regardless of what happens next.
+2. Server checks Redis: User B has no active WebSocket session — they're offline.
+3. Server sends a push notification via APNs (iOS) or FCM (Android). This is just a wake-up signal, not the message itself.
+   Why not deliver the message in the push payload? Payload size limits, no ordering guarantees, unreliable delivery.
+4. User B's device wakes up and the app opens a new WebSocket connection.
+5. App calls `GET /messages?since=lastSeen` — fetches all missed messages from Cassandra in one pull.
+6. App sends delivery ACKs for each message → double ticks appear for User A.
 
 ```mermaid
 flowchart TD

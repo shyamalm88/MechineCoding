@@ -128,7 +128,21 @@ A homepage is not rendered by code — it is **assembled dynamically from config
 
 ## 7. End-to-End Flow
 
+### 7.1 Page Load & Config Render
+
 App launch to config fetch to render sections:
+
+**The story in plain English:**
+
+1. User opens the app. The client requests the homepage from the CDN edge node.
+2. CDN cache miss — request forwards to the SSR layer.
+3. SSR calls the Personalization Engine: "what user segment is this?" Returns in < 10ms from Redis — frequent buyer, mobile, India.
+4. SSR calls the Experiment Service: "which A/B variant does this user get?" Resolved via a deterministic hash — same user always gets the same variant. Returns in < 5ms.
+5. SSR fetches the validated page template for this variant from the Config Service (also Redis-backed). The template is a JSON config: an ordered list of section types with their data sources.
+6. SSR fetches above-the-fold data (hero banner, categories, user context) in parallel via the BFF. Target: < 150ms.
+7. SSR returns the fully rendered HTML for above-the-fold content. User sees the page — First Contentful Paint achieved.
+8. Browser then progressively fetches below-the-fold sections (recommendations, ads) via GraphQL streaming. They fill in as data arrives.
+   Key insight: the client renders whatever sections the server config says — no app update needed to add a new section type.
 
 ```mermaid
 sequenceDiagram
@@ -170,6 +184,77 @@ sequenceDiagram
     BFF-->>Client: incremental @defer patches for below-fold sections
     Note over Client: Below-fold sections fill in progressively
 ```
+
+### 7.2 Add to Cart & Checkout
+
+**The story in plain English:**
+
+1. User taps "Add to Cart" on a product. Client sends `POST /cart/items {product_id, quantity}`.
+2. Cart Service re-fetches the current price from Product Service — the homepage config may have shown a cached/stale price. Always validate before adding to cart.
+3. Cart is stored in Redis `cart:{user_id}` with a 24-hour TTL. Not in a database — carts are ephemeral and high-write.
+4. User proceeds to checkout. Client calls `GET /cart` — Cart Service re-validates prices one final time.
+5. If any price has changed since the item was added: return 409 Conflict with updated prices. Client shows a "Price changed" toast. User must confirm before proceeding.
+6. User confirms → `POST /cart/checkout {address_id, payment_method}`.
+7. Cart Service hands off to Order Service → Payment Service. This is a synchronous chain — we block until payment is confirmed.
+8. On payment success: Redis cart is cleared, `order.placed` event is published to Kafka, and `{order_id}` is returned to the client.
+9. On payment failure: 402 returned, Redis cart is preserved — user can retry without re-adding items.
+
+```mermaid
+sequenceDiagram
+    participant Client as Client Browser
+    participant CartSvc as Cart Service
+    participant ProductSvc as Product Service
+    participant Redis as Redis cart:user_id TTL 24h
+    participant OrderSvc as Order Service
+    participant PaymentSvc as Payment Service
+    participant Kafka as Kafka
+
+    Note over Client,CartSvc: User taps Add to Cart on a product section
+    Client->>CartSvc: POST /cart/items with product_id, quantity, seller_id
+
+    Note over CartSvc,ProductSvc: Re-fetch current price - price can change after config was cached
+    CartSvc->>ProductSvc: get_item(product_id, seller_id) - availability and current price
+    ProductSvc-->>CartSvc: available=true, current_price=499
+
+    CartSvc->>Redis: HSET cart:user_id item with current_price, quantity - TTL 24h
+    Redis-->>CartSvc: updated cart stored
+
+    CartSvc-->>Client: updated cart total
+
+    Note over Client,CartSvc: User proceeds to checkout - prices re-validated one more time
+    Client->>CartSvc: GET /cart
+
+    CartSvc->>ProductSvc: re-validate prices for all items in cart
+    ProductSvc-->>CartSvc: prices confirmed or updated
+
+    alt price changed since item was added
+        CartSvc-->>Client: 409 Conflict with updated_price in body
+        Note over Client: Shows price changed toast - user must confirm
+    else prices unchanged
+        CartSvc-->>Client: cart with confirmed prices
+
+        Note over Client,CartSvc: User confirms and submits checkout
+        Client->>CartSvc: POST /cart/checkout with address_id, payment_method
+
+        CartSvc->>OrderSvc: create_order with cart items and confirmed prices
+        OrderSvc->>PaymentSvc: charge with amount, payment_method
+
+        alt payment success
+            PaymentSvc-->>OrderSvc: payment_id confirmed
+            OrderSvc-->>CartSvc: order_id created
+            CartSvc->>Redis: DEL cart:user_id - cart is cleared
+            CartSvc->>Kafka: publish order.placed with order_id and user_id
+            CartSvc-->>Client: order_id
+        else payment failure
+            PaymentSvc-->>OrderSvc: payment failed
+            OrderSvc-->>CartSvc: order failed
+            CartSvc-->>Client: 402 Payment Required - cart preserved in Redis
+        end
+    end
+```
+
+> [!NOTE]
+> **Key Insight:** Price re-validation at checkout (step 6) is mandatory — the config-driven homepage may have shown a price from a cached section. The cart checkout is the system boundary where you must read fresh from the source of truth, not from the config cache.
 
 ---
 

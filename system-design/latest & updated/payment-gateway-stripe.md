@@ -144,6 +144,26 @@ Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card
 
 The complete 3-phase charge flow: client → payment service → gateway → bank → webhook callback.
 
+**The story in plain English:**
+
+**Phase 1 — Intent:**
+1. Merchant backend calls `POST /payment-intents` with an idempotency key in the header.
+2. Payment Intent Service checks Redis: has this idempotency key been seen before? If yes, return the cached response — this is what prevents double charges on network retries.
+3. If new: create an intent record in PostgreSQL (status = CREATED), cache the idempotency key in Redis for 24 hours, return `intent_id` to the merchant.
+
+**Phase 2 — Session:**
+4. Merchant creates a checkout session using the intent_id. Session context is stored in Redis with a 10-minute TTL.
+5. Merchant redirects the user to the hosted checkout page with the session token.
+
+**Phase 3 — Authorization:**
+6. User enters card details on the checkout page. The card data goes to the Token Vault first — it never touches the merchant's servers. This is how PCI scope is reduced.
+7. Fraud Service scores the transaction in real-time: checks velocity counters in Redis (how many transactions from this card in the last hour?), device fingerprint, IP reputation.
+8. If risk score is acceptable, the tokenized card is sent to the Payment Processor (Visa/Mastercard network).
+9. Processor returns an authorization code. The Ledger Service writes two entries atomically: debit customer, credit gateway liability. Append-only — never updated.
+10. Payment status updates to AUTHORIZED in PostgreSQL.
+11. A `payment.succeeded` event is published to Kafka. Webhook Worker consumes it, signs the payload with HMAC-SHA256, and delivers it to the merchant's webhook URL.
+12. User is redirected to the merchant's success page.
+
 ```mermaid
 sequenceDiagram
     participant M as Merchant Backend

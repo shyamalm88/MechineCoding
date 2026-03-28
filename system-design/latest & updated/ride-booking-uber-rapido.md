@@ -150,6 +150,20 @@ Uber is two concurrent real-time systems: **location tracking** and **driver mat
 
 ## 7. End-to-End Flow
 
+**The story in plain English:**
+
+1. Rider taps "Request Ride" — sends `POST /rides` with pickup and destination coordinates.
+2. Match Service queries Redis Geo: `GEORADIUS drivers:idle:city 3km` — returns all idle drivers sorted by distance.
+3. Match Service filters by vehicle type, rating, and acceptance rate, then ranks by estimated ETA.
+4. The top driver is atomically reserved in Redis using `WATCH/MULTI/EXEC` — this prevents two rides from being assigned to the same driver simultaneously (the classic race condition).
+5. A push notification is sent to the driver's app: "New ride offer — 15 seconds to respond."
+6. Driver accepts → Match Service locks the driver's state in Redis to RESERVED, and pushes a WebSocket event to the rider: "Driver assigned, ETA 4 min."
+7. Real-time tracking begins. Driver app sends GPS pings every 1–2 seconds via WebSocket.
+8. Location Service writes to Redis Geo (overwrites driver position) and publishes to Kafka. A consumer on the rider's server reads the Kafka event and pushes the updated position to the rider's app over WebSocket.
+9. Driver arrives, starts trip → status set to ON_TRIP in Redis. Trip start event persisted to PostgreSQL via Kafka.
+10. Driver ends trip → `POST /rides/{id}/end` with final distance. Fare is calculated and charged asynchronously via Payment Service (Kafka consumer).
+11. Driver state returns to IDLE in Redis Geo pool — immediately available for the next ride.
+
 ```mermaid
 sequenceDiagram
     participant R as Rider App

@@ -167,7 +167,24 @@ Every food delivery interview is really three sub-systems layered on top of each
 
 ## 7. End-to-End Flow
 
+### 7.1 Order Placement & Driver Assignment
+
 The happy path for order placement and delivery assignment — the core interview flow.
+
+**The story in plain English:**
+
+1. Customer taps "Place Order" — the app sends `POST /orders` with cart_id, address, and payment method.
+2. Cart Service re-validates every item's price and availability before we touch money.
+3. Order Service creates an order row in PostgreSQL (status = PENDING) inside a transaction.
+4. Payment Service calls the payment gateway synchronously — we don't move forward until money is confirmed.
+5. On payment success, the transaction commits — order status becomes CONFIRMED. This is the point of no return.
+6. Order Service fires a `order.placed` event to Kafka — asynchronously, without blocking the customer response.
+7. Customer sees confirmation in under 2 seconds. Everything after this is async.
+8. Restaurant Service consumes the Kafka event and sends a push notification to the restaurant dashboard.
+9. Restaurant accepts → publishes `order.confirmed` back to Kafka.
+10. Delivery Matching Service picks it up, queries Redis Geo for all idle drivers within 5km, and broadcasts the order to all of them simultaneously.
+11. First driver to accept gets the order — locked via `SETNX` in Redis to prevent double assignment.
+12. Customer receives a WebSocket push: driver name, ETA, live location.
 
 ```mermaid
 sequenceDiagram
@@ -214,6 +231,65 @@ sequenceDiagram
 
 > [!NOTE]
 > **Key Insight:** The Kafka publish after the PostgreSQL commit is fire-and-forget. The order is durably saved before we even attempt to notify the restaurant. If Kafka is temporarily unavailable, the order is safe — events replay via outbox on recovery.
+
+---
+
+### 7.2 Real-Time GPS Tracking
+
+GPS ping ingestion, live location fan-out to the customer, and driver status updates.
+
+**The story in plain English:**
+
+1. Every 10 seconds, the driver app sends a GPS ping: `POST /delivery/location {lat, lng, order_id}`.
+2. Location Update Service publishes this to Kafka's `location_updates` topic immediately — no DB write yet.
+   Why Kafka first? 1M drivers × 1 ping/10s = 100K writes/sec. No database survives that directly.
+3. A Kafka consumer reads the event and does two writes:
+   - Updates `driver:loc:{id}` in Redis with TTL = 10s (so a silent driver auto-expires as unavailable).
+   - Appends to Redis Stream `tracking:{order_id}` for the WebSocket server to read.
+4. WebSocket Server is subscribed to the tracking stream — it pushes the new location to the customer's open connection.
+5. Customer sees the driver icon move on the map in near real-time (< 1s latency).
+6. When the driver taps "Picked Up", a separate status update goes to Order Service → PostgreSQL → Kafka → WebSocket → customer sees "Your order is on the way".
+
+```mermaid
+sequenceDiagram
+    participant Driver as Driver App
+    participant GW as API Gateway
+    participant LocSvc as Location Update Service
+    participant Kafka as Kafka
+    participant Redis as Redis
+    participant WS as WebSocket Server
+    participant C as Customer App
+    participant Order as Order Service
+    participant PG as PostgreSQL
+
+    Note over Driver,C: GPS tracking loop - every 10 seconds
+
+    Driver->>GW: POST /delivery/location lat, lng, order_id
+    GW->>LocSvc: Forward GPS ping
+    LocSvc->>Kafka: Publish to location_updates topic
+    Note over LocSvc,Kafka: Not written to DB directly - 100K writes/sec would collapse a DB
+
+    Kafka->>LocSvc: Consume location_updates event
+    LocSvc->>Redis: SET driver:loc:id lat,lng (TTL=10s)
+    LocSvc->>Redis: XADD tracking:order_id lat,lng,timestamp
+    Note over LocSvc,Redis: Redis Streams fan-out - multiple WS servers can subscribe
+
+    Redis-->>WS: New stream entry available on tracking:order_id
+    WS-->>C: Push location_update lat,lng over persistent WS connection
+    Note over WS,C: Customer sees driver moving on map in real-time under 1s
+
+    Note over Driver,C: Driver status update - driver taps Picked Up
+
+    Driver->>GW: PUT /delivery/orders/id/status - status PICKED_UP
+    GW->>Order: Update order status
+    Order->>PG: UPDATE order SET status=PICKED_UP
+    Order->>Kafka: Publish order.status.changed event
+    Kafka->>WS: Consume order.status.changed
+    WS-->>C: Push status_update PICKED_UP over WebSocket
+```
+
+> [!NOTE]
+> **Key Insight:** Kafka absorbs 100K GPS writes/sec as a buffer — no database can handle this write rate directly. Redis is the hot read path (sub-millisecond for proximity search). Cassandra stores the append-only GPS history for audit. Three stores, three different jobs.
 
 ---
 
