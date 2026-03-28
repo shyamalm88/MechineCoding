@@ -677,6 +677,36 @@ Solution: B becomes a tombstone — invisible to the user, but still in the stru
 
 ---
 
+##### Fractional Indexing — The Interview-Friendly CRDT Mental Model
+
+The ID-anchor model above is accurate but hard to explain verbally. For an interview, the **fractional position** model is simpler to draw and reason about:
+
+```
+Initial document: "BC"
+  B is assigned position 0.50
+  C is assigned position 0.75
+
+Alice inserts "A" before B:
+  A gets position 0.25  (between 0 and 0.50)
+  Alice's state: A(0.25) → B(0.50) → C(0.75)
+
+Bob inserts "D" after C:
+  D gets position 0.875 (between 0.75 and 1.0)
+  Bob's state:   B(0.50) → C(0.75) → D(0.875)
+
+Merge: both peers receive each other's ops.
+       Sort all characters by position value:
+       A(0.25) → B(0.50) → C(0.75) → D(0.875)
+       Rendered: "ABCD"  ✓  Both clients converge automatically.
+```
+
+No server needed. No transformation function. Positions never conflict because every insert picks a value in the gap between its neighbors. This is the **Logoot / LSEQ** family of CRDTs.
+
+> [!NOTE]
+> **Key Insight:** Fractional indexing = CRDT where position IS the identity. You insert *between* two known positions, never *at* an integer index that can shift. The same idea as the ID-anchor model, just expressed as a number instead of a pointer. Both explain why "insert after id=X" never shifts, where "insert at pos=2" does.
+
+---
+
 #### OT vs CRDT — Comparison
 
 | Dimension | OT | CRDT |
@@ -815,6 +845,68 @@ flowchart TD
 
 **Storage optimization:** Raw operations are retained for 30 days. After 30 days, old operations are compacted — the snapshot becomes the source of truth and individual ops are deleted. Users can still view the version (via snapshot) but cannot replay individual keystrokes.
 
+#### Version Table Schema (Cassandra)
+
+A separate table tracks every named version and auto-snapshot for a document. This is what populates the version history UI ("File → Version History").
+
+```
+Table: document_versions
+
+Partition key:  doc_id          UUID
+Clustering key: version_id      BIGINT   (auto-incrementing, e.g. 10, 10.1, 11)
+
+Columns:
+  snapshot_url  TEXT        -- S3 path to the serialized document binary
+  created_by    UUID        -- user_id who triggered the save (or "system" for auto-save)
+  created_at    TIMESTAMP
+  label         TEXT        -- optional human name, e.g. "Before big rewrite"
+  is_major      BOOLEAN     -- true = user-named; false = auto-save minor version
+```
+
+**Minor vs major versions:**
+- **Minor versions** (is_major=FALSE): created every 10–20 seconds by auto-save during an active editing session. Purely intermediate state.
+- **Major versions** (is_major=TRUE): created by manual "Save version" or by the reconciliation job at session end.
+
+#### Session-End Reconciliation Job
+
+The transcript's most operationally important insight: auto-saving every 10–20 seconds creates *many* intermediate minor versions and retains every op event in the ops DB. Left uncleaned, a busy document accumulates thousands of minor versions and millions of stored ops. The **reconciliation job** (a background worker triggered when the last user leaves a document) collapses all of this:
+
+```
+Trigger: last WebSocket connection for doc_id closes (TTL on Redis canonical copy expires)
+
+Step 1: Fetch the base version (the last major snapshot) from S3
+Step 2: Fetch all operation events since that base version from the ops DB
+Step 3: Re-apply every operation to the base state → produce the final document state
+Step 4: Write this as one new major version (e.g. 10 → 10.1) to S3
+Step 5: Update document_versions table with the new major version row
+Step 6: Send event to Kafka → metadata consumer updates documents.blob_url to new S3 path
+Step 7: DELETE all intermediate minor version rows from document_versions
+Step 8: DELETE all operation events for this session from document_operations
+
+Net result: the session's entire edit history collapses into one committed major version.
+            S3 is clean; ops DB is clean; metadata DB points to the latest canonical file.
+```
+
+```mermaid
+flowchart TD
+    Trigger["Last user disconnects\nRedis TTL expires"]
+    FetchBase["Fetch base major version from S3"]
+    FetchOps["Fetch all ops since base version\nfrom document_operations"]
+    Replay["Re-apply ops to base state\nOT engine produces final doc"]
+    WriteMajor["Write new major version to S3\ne.g. v10 + session ops = v10.1"]
+    UpdateMeta["Kafka event to metadata consumer\nUpdate documents.blob_url"]
+    Cleanup["DELETE minor version rows\nDELETE op events for session"]
+    Done["Document clean - ready for next session"]
+
+    Trigger --> FetchBase --> FetchOps --> Replay --> WriteMajor --> UpdateMeta --> Cleanup --> Done
+```
+
+> [!IMPORTANT]
+> **Why this matters for the interview:** Without this job, every document accumulates unbounded minor versions in S3 and unbounded op events in Cassandra. The reconciliation job is what keeps storage costs linear with the number of *editing sessions*, not with the number of *keystrokes*. It's the same "merge and compact" pattern as LSM-tree compaction — you buffer writes cheaply and pay the merge cost once at session end.
+
+> [!NOTE]
+> **Key Insight:** The reconciliation job is the session boundary. It is what converts the live in-progress state (Redis canonical copy + ops DB events) into durable committed history (a single S3 major version). Without it, Redis TTL just expires and the intermediate work is orphaned.
+
 ---
 
 ### 6.5 Cursor and Presence
@@ -861,6 +953,147 @@ stateDiagram-v2
     Idle --> Offline: WebSocket disconnect
     Offline --> [*]: TTL expires in Redis
 ```
+
+---
+
+### 6.5b Redis Dual Role — Cursors AND Canonical Document State
+
+Redis serves two distinct roles in this system. Section 6.5 above covers cursors and presence. The second role — **canonical live document state** — is equally critical and often missed.
+
+#### The Problem It Solves
+
+When User B joins a document that User A has been editing for 10 minutes, the S3 snapshot is stale (last written 10 minutes ago). The ops DB has 3,000 events since then. Replaying 3,000 ops to reconstruct current state on every new join is too slow (~seconds).
+
+Solution: **the document editor service loads the document from S3 into Redis on first access, then applies every subsequent op to the Redis copy in memory.** The Redis copy is always current. Any new joiner gets the Redis copy instantly — no op replay needed.
+
+#### Redis Canonical Document Schema
+
+```
+Key:   doc:{doc_id}:canonical
+Type:  String (serialized document state — JSON or binary)
+TTL:   Set when last user disconnects (e.g. 30 minutes idle grace)
+
+Populated: on first WebSocket connection for doc_id
+           (load from S3 → deserialize → store in Redis)
+
+Updated:   on every committed op (OT Server applies transformed op to Redis copy)
+
+Evicted:   when TTL expires → triggers reconciliation job
+           (session end → Redis canonical → final S3 version)
+```
+
+#### Session Lifecycle with Redis
+
+```
+1. First user opens document
+   → OT Server: GET doc:{doc_id}:canonical → cache miss
+   → Fetch latest snapshot from S3 → load into Redis
+   → Set TTL = 30 min (refreshed on each op)
+
+2. User edits
+   → Op arrives → OT Server transforms → appends to Cassandra ops log
+   → OT Server applies transformed op to Redis canonical copy
+   → OT Server broadcasts to all connected peers
+
+3. Second user joins mid-session
+   → OT Server: GET doc:{doc_id}:canonical → cache hit (instant)
+   → Return current document state directly from Redis
+   → No S3 fetch, no op replay, no latency spike
+
+4. Auto-save (every 10–20 seconds)
+   → OT Server serializes Redis canonical copy → writes to S3 as minor version
+   → Refreshes TTL on Redis key
+
+5. Last user disconnects
+   → TTL on Redis canonical key expires (or is set short)
+   → Reconciliation job fires: Redis state → ops replay → final major S3 version
+   → Redis key deleted
+```
+
+```mermaid
+graph TD
+    UserA["User A (first join)"]
+    UserB["User B (mid-session join)"]
+    OT["OT Server"]
+    Redis(["Redis\ndoc:{id}:canonical\n(live document state)\n+ cursor:{id} (presence)"])
+    S3[("S3\nSnapshot Store")]
+    OpsLog[("Cassandra\nOps Log")]
+
+    UserA -->|WebSocket op| OT
+    UserB -->|WebSocket op| OT
+    OT -->|cache miss: first access| S3
+    S3 -->|load snapshot| Redis
+    OT -->|apply op to canonical copy| Redis
+    OT -->|append op| OpsLog
+    OT -->|auto-save every 10-20s| S3
+    OT -->|HSET cursor| Redis
+    UserB -->|join: GET canonical| Redis
+```
+
+> [!IMPORTANT]
+> **Redis holds two fundamentally different types of data in this system:**
+> - `doc:{id}:canonical` → the **live document content** (hot, session-scoped, evicted at session end, triggers reconciliation)
+> - `cursor:{id}` → **ephemeral user state** (per-user, 30-second TTL, safe to lose on Redis failover)
+>
+> Losing the canonical copy on Redis failover is recoverable — re-load from S3 + replay ops since last auto-save (at most 10–20 seconds of ops). Losing cursors is a non-event — clients re-send position on next keystroke.
+
+> [!NOTE]
+> **Key Insight:** Redis is not just a cache here — it is the **active working surface** for collaborative editing. The OT engine operates on the Redis copy, not on S3. S3 is the durable checkpoint. Redis is the whiteboard everyone is writing on right now.
+
+---
+
+### 6.6 Document Metadata Schema (PostgreSQL)
+
+The metadata service stores the "what exists" layer — document identity, ownership, permissions, and snapshot pointer. This is relational data with ACID requirements (permission changes must not partially apply; a shared document must appear for both owner and collaborator atomically).
+
+> [!NOTE]
+> **Key Insight:** Metadata DB is PostgreSQL, not Cassandra. Metadata operations (create, rename, share, delete) are low-frequency and relational — permissions require JOIN, quota requires aggregation, ownership transfer requires a transaction. Cassandra is for the ops log (append-only, 5M writes/sec). Metadata writes are orders of magnitude less frequent and need ACID — wrong fit for Cassandra.
+
+```sql
+-- Document identity and state
+CREATE TABLE documents (
+  doc_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title             VARCHAR(255)  NOT NULL DEFAULT 'Untitled document',
+  owner_id          UUID          NOT NULL REFERENCES users(user_id),
+  blob_url          TEXT,                      -- S3 URL of latest snapshot binary
+  current_version   BIGINT        NOT NULL DEFAULT 0,  -- latest committed op version
+  created_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
+  created_by        UUID          NOT NULL REFERENCES users(user_id),
+  last_modified_at  TIMESTAMP     NOT NULL DEFAULT NOW(),
+  last_modified_by  UUID          REFERENCES users(user_id),
+  is_deleted        BOOLEAN       NOT NULL DEFAULT FALSE,
+  deleted_at        TIMESTAMP
+);
+
+-- Sharing and permissions
+CREATE TABLE document_collaborators (
+  doc_id      UUID        NOT NULL REFERENCES documents(doc_id),
+  user_id     UUID        NOT NULL REFERENCES users(user_id),
+  permission  TEXT        NOT NULL CHECK (permission IN ('owner','editor','viewer','commenter')),
+  added_at    TIMESTAMP   NOT NULL DEFAULT NOW(),
+  added_by    UUID        REFERENCES users(user_id),
+  PRIMARY KEY (doc_id, user_id)
+);
+
+-- Indexes
+CREATE INDEX ON documents (owner_id);
+CREATE INDEX ON documents (last_modified_at DESC) WHERE is_deleted = FALSE;
+CREATE INDEX ON document_collaborators (user_id);   -- "show all docs shared with me"
+```
+
+**Operations map to simple SQL:**
+
+| User action | What actually happens |
+|---|---|
+| Create document | `INSERT INTO documents` — metadata row + empty snapshot in S3 |
+| Rename document | `UPDATE documents SET title='...' WHERE doc_id=X` — no bytes moved |
+| Share with user | `INSERT INTO document_collaborators (doc_id, user_id, permission='editor')` |
+| Revoke access | `DELETE FROM document_collaborators WHERE doc_id=X AND user_id=Y` |
+| Delete document | `UPDATE documents SET is_deleted=TRUE, deleted_at=NOW()` (soft delete) |
+| "My Drive" view | `SELECT * FROM documents WHERE owner_id=me AND is_deleted=FALSE` |
+| "Shared with me" | `SELECT d.* FROM documents d JOIN document_collaborators dc ON d.doc_id=dc.doc_id WHERE dc.user_id=me` |
+
+**What `blob_url` and `current_version` track:** Every time the Snapshot Worker compacts N operations into a new snapshot, it updates `blob_url` (new S3 path) and `current_version` (the version number the snapshot represents). When a client opens a document, it fetches the snapshot at `blob_url` via CDN, then requests ops from `current_version + 1` forward from the operations log to apply any uncommitted deltas.
 
 ---
 
@@ -991,7 +1224,9 @@ One-line reason: exactly-once delivery requires 2PC or Saga patterns that add la
 | Operational Transformation (OT) | Concurrent edits produce divergent documents | Requires single central ordering server per document |
 | WebSocket (not HTTP) | Server must push transformed ops to all peers | Sticky routing required; stateful infrastructure |
 | Cassandra for operations log | 5M writes/sec; append-only; partition by doc_id | Eventual consistency on reads (acceptable for log replay) |
+| Redis canonical doc copy (session-scoped) | New joiners get current state instantly; no op replay on join | Recoverable on failover — reload S3 + replay ≤20s of ops |
 | Redis for cursors/presence with TTL | Cursor data is ephemeral; DB writes would be wasteful | Not durable — cursor state lost on Redis failover (acceptable) |
+| Session-end reconciliation job | Collapses unbounded minor versions + op events into one major S3 version | Runs async; small window where intermediate state is in Redis only |
 | S3 + CDN for document snapshots | Fast initial load for large documents; CDN caches globally | Eventual consistency between snapshot and live ops |
 | Optimistic local apply | Users must feel keystrokes are instant | Client must handle rollback if server rejects op (rare) |
 | Kafka for snapshot pipeline | Decouple snapshot creation from OT critical path | Small lag between committed ops and snapshot availability |
@@ -1008,6 +1243,9 @@ Google Docs is a two-path system. The **fast path** optimistically applies every
 - **CRDT merge works by unique IDs, not integer positions** — each character gets a permanent unique identity. An op says "insert after id=X", not "insert at position N". Positions shift; IDs don't. This is why CRDT needs no server to resolve conflicts — the merge is self-describing.
 - **CRDT's hidden cost is tombstoning** — deleted characters cannot be physically removed until every peer confirms the deletion. Heavily-edited documents accumulate invisible tombstones that require periodic compaction. OT has no tombstoning because the server is always the authority — deletion is final immediately.
 - **Cursor data belongs in Redis, not a database** — it is ephemeral, high-frequency, and has a natural TTL. Storing it in PostgreSQL or Cassandra would add write amplification for data that expires in 30 seconds anyway.
+- **Redis serves two roles: canonical doc state AND cursors** — `doc:{id}:canonical` holds the live working document (session-scoped, evicted at session end). `cursor:{id}` holds ephemeral user positions. Losing the canonical copy is recoverable (re-load S3 + replay ≤20s of ops). Losing cursors is a non-event (clients re-send on next keystroke).
+- **The reconciliation job is the session boundary** — when the last user disconnects, the job re-applies all session ops to the base version, writes one final major version to S3, and deletes all intermediate minor versions and op events. Without it, storage grows with every keystroke, not every session.
+- **CRDT fractional indexing = interview-friendly mental model** — characters get fractional positions (B=0.5, C=0.75); insert between two chars by picking a value in the gap. Merge = sort by position value. No server needed. Same convergence guarantee as ID-anchor CRDT, simpler to draw.
 - **Versioning is event sourcing** — the operations log is the event store; snapshots are materialized views. Restore = nearest snapshot + operation replay. This pattern provides both durable history and efficient current-state access.
 
 ---
