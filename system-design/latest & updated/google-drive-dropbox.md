@@ -262,14 +262,14 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    Client["Client App\n(Chunker + Watcher + Upload Manager)"]
+    Client["Client App - Chunker + Watcher + Upload Manager"]
     LB["Load Balancer / API Gateway"]
     US["Upload Service"]
     MS["Metadata Service"]
     NS["Notification Service"]
-    S3[("S3 / Blob Storage")]
-    MetaDB[("Metadata DB\nPostgreSQL)"]
-    Redis[("Redis\nsessions + quota cache)"]
+    S3[("S3 Blob Storage")]
+    MetaDB[("Metadata DB - PostgreSQL")]
+    Redis[("Redis - sessions + quota cache")]
 
     Client -->|HTTPS| LB
     LB --> US
@@ -295,11 +295,11 @@ graph TD
     NS["Notification Service"]
     DS["Dedup Service"]
     QS["Quota Service"]
-    S3[("S3 / Blob Storage\nmulti-AZ)"]
-    CDN["CDN\ndownload acceleration)"]
-    MetaDB[("PostgreSQL\nMetadata + Permissions)"]
-    Redis[("Redis\nQuota cache + sessions)"]
-    MQ[["Message Queue\nKafka or SQS)"]]
+    S3[("S3 Blob Storage - multi-AZ")]
+    CDN["CDN - download acceleration"]
+    MetaDB[("PostgreSQL - Metadata + Permissions")]
+    Redis[("Redis - Quota cache + sessions")]
+    MQ[["Message Queue - Kafka or SQS"]]
 
     Client -->|1. initiate upload| LB
     LB --> US
