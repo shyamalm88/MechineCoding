@@ -592,40 +592,60 @@ Each character carries:
   value: the character itself
 ```
 
-**The Alice/Bob example:**
+**The same Alice/Bob problem — solved with CRDT:**
 
+Recall the problem from the OT section:
 ```
 Document: "BC"   (B has id=1, C has id=2)
 
-Alice inserts "A" before B (anchor: start):
-  op: { id=3, after=start, value="A" }
+Alice inserts "A" at the start:
+  OT op:   { insert, pos=0, char="A" }       ← integer position, shifts on merge
+  CRDT op: { id=3, after=START, value="A" }  ← anchored to START, never shifts
   Alice's state: "ABC"
 
-Bob inserts "D" after C (anchor: id=2):
-  op: { id=4, after=id2, value="D" }
+Bob inserts "D" after "C":
+  OT op:   { insert, pos=2, char="D" }       ← integer position 2, relative to "BC"
+  CRDT op: { id=4, after=id2, value="D" }    ← anchored to C (id=2), never shifts
   Bob's state: "BCD"
-
-Both ops arrive at the other peer.
-No transformation needed — each op says "insert after THIS character (by id)".
-Both peers apply both ops and converge:
-
-  start → A(id=3) → B(id=1) → C(id=2) → D(id=4)
-  Rendered: "ABCD"  ✓  — both peers agree, no server needed.
 ```
 
-**Why this works:** Alice's op doesn't say "insert at position 0." It says "insert after start." Bob's op doesn't say "insert at position 3." It says "insert after id=2 (C)." Integer positions shift when chars are inserted — unique IDs don't.
+**Why OT fails without a server and CRDT doesn't:**
 
-**What happens when two peers insert at the same position concurrently?**
+With OT, when Alice's op arrives at Bob, Bob must *transform* it — "Alice inserted at position 0, so my position 2 must shift to position 3." That transformation requires knowing the commit order, which requires a server.
+
+With CRDT, no transformation is needed:
+- Alice's op says: "put 'A' after START." That's true regardless of what Bob did.
+- Bob's op says: "put 'D' after id=2 (C)." That's true regardless of what Alice did.
+
+Both peers simply apply both ops:
+```
+  START → A(id=3) → B(id=1) → C(id=2) → D(id=4)
+  Rendered: "ABCD"  ✓
+
+Alice applies Bob's op:   START → A(id=3) → B(id=1) → C(id=2) → D(id=4) = "ABCD" ✓
+Bob applies Alice's op:   START → A(id=3) → B(id=1) → C(id=2) → D(id=4) = "ABCD" ✓
+Both converge without any server involvement.
+```
+
+**The key difference in one line:**
+> OT says "insert at position N" — positions shift, so a server must impose order before transforming.
+> CRDT says "insert after character X (by id)" — ids never shift, so any peer can merge in any order.
+
+**What if two peers insert at the same anchor concurrently?**
 
 ```
-Alice types "B" after A (anchor: id=1)   →   "ABC"
-Bob types "X" after A (anchor: id=1)     →   "AXC"
+Document: "AC"  (A has id=1, C has id=2)
 
-Both say "insert after id=1". Tie-break rule: deterministic sort by peer identity.
-Both peers converge to the same order — either "ABXC" or "AXBC" — consistently.
+Alice types "B" after A:  op { id=3, after=id1, value="B" }  →  "ABC"
+Bob   types "X" after A:  op { id=4, after=id1, value="X" }  →  "AXC"
+
+Both ops say "after id=1". Tie-break: sort by peer identity (e.g. alphabetical).
+"alice" < "bob" → Alice's character goes first.
+
+Both peers converge to: "ABXC"  ✓  (consistent, even if arbitrary)
 ```
 
-The result is arbitrary (the tie-break picks a winner) but always consistent. OT has the same limitation — the server's commit order decides. Neither algorithm can read intent.
+The result is always consistent. The tie-break is arbitrary but deterministic — the same rule on every peer produces the same order. OT has the same limitation: the server picks a commit order that's equally arbitrary.
 
 ---
 
