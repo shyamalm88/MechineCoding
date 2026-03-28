@@ -1,7 +1,7 @@
 # Google Calendar — Day View
 
 > **Frontend / Backend Split: 40% Backend · 60% Frontend**
-> Google Calendar Day View is frontend-heavy. The backend is a standard CRUD + WebSocket notification service. The interesting engineering is all in the client: virtual scrolling a 24-hour grid, drag-and-drop with snapping, overlapping event layout, and RRULE expansion. Both sections get full coverage.
+> Google Calendar Day View is frontend-heavy — but the backend is non-trivial. The frontend solves: virtual scrolling a 24-hour grid, drag-and-drop with snapping, overlapping event layout (interval partitioning), and RRULE expansion. The backend solves: ACID event storage, conflict resolution for concurrent edits, and fan-out notifications to shared calendar members. Both sections get full coverage.
 
 ---
 
@@ -207,6 +207,35 @@ sequenceDiagram
     end
 ```
 
+### 6.3 🔄 Complete Lifecycle: Load → Layout → Render → Interact → Sync → Re-render
+
+This is the full end-to-end picture — every phase a request passes through from the moment a user opens the day view to the moment a collaborator sees the update.
+
+1. **Load** — User navigates to a date. Client fires `GET /events?start=&end=`. Event Service queries PostgreSQL, expands RRULE occurrences for this day, returns JSON array.
+2. **Layout** — Client runs the interval partitioning algorithm: sort → group overlapping events → assign columns → compute width fractions. Pure CPU, no network.
+3. **Render** — Virtual scroll activates. Only the visible hour range is rendered as DOM nodes. Events are positioned absolutely: `top = (startMin/1440) * gridH`, `height = (durationMin/1440) * gridH`.
+4. **Interact** — User drags an event. DOM mutation (no React re-render) moves the event at 60fps. On drop: snap to nearest 15-min grid, compute new time, fire `PATCH /events/:id` optimistically.
+5. **Sync** — Event Service writes to PostgreSQL, publishes `calendar.event.updated` to Kafka. Notification Service consumes, looks up WebSocket connections for all `calendarId` subscribers in Redis, pushes the update.
+6. **Re-render** — Every collaborator's client receives the WS push. Client patches its local event array with the change, re-runs layout for the affected time slot, and re-renders the moved event at the new position.
+
+```mermaid
+flowchart TD
+    A["LOAD - GET /events"] --> B["LAYOUT - Interval partitioning\nSort, group, assign columns"]
+    B --> C["RENDER - Virtual scroll\nAbsolute CSS positioning"]
+    C --> D["INTERACT - User drags/edits\nDOM mutation at 60fps"]
+    D --> E["Optimistic update - local state"]
+    E --> F["PATCH /events/:id async"]
+    F --> G{"API success?"}
+    G -->|Yes| H["PostgreSQL write\nKafka publish"]
+    G -->|No| I["Revert optimistic update\nError toast"]
+    H --> J["Notification Service\nWebSocket fan-out"]
+    J --> K["RE-RENDER - Collaborator clients\nPatch local state, re-run layout"]
+    K --> C
+```
+
+> [!IMPORTANT]
+> The cycle is: Load once → Layout locally → Render virtually → Interact optimistically → Sync async → Re-render incrementally. No full page reload at any step. Each phase is independent and can fail gracefully without breaking the others.
+
 ---
 
 ## 7. High-Level Architecture
@@ -286,38 +315,51 @@ graph TD
 
 ## 9. Deep Dives
 
-### 9.1 Overlapping Event Layout Algorithm
+### 9.1 🧠 Layout Algorithm — Interval Partitioning Problem
 
-**Here's the problem we're solving:** Multiple events on the same day can have overlapping time ranges. Rendering them stacked (one behind the other) makes them unreadable. We need a layout algorithm that places overlapping events side-by-side with correct widths so all are visible.
+**Here's the problem we're solving:** Multiple events on the same day can have overlapping time ranges. Rendering them stacked (one behind the other) makes them unreadable. We need an algorithm that places overlapping events side-by-side with correct widths so all are visible simultaneously.
+
+This is a classic **interval partitioning problem** — the same problem as scheduling jobs on the minimum number of machines such that no two overlapping jobs share a machine. The minimum number of machines needed = the maximum number of events overlapping at any single point in time.
 
 **Naive solution:** Render each event at full width. Overlapping events cover each other — user can't see or click the hidden events.
 
-**Chosen solution — Column-based greedy layout:**
+**🧠 Layout Algorithm (Core) — 4 Steps:**
 
-1. Sort events by `start_time` ascending.
-2. Maintain an array of "columns," each tracking the latest `end_time` of events placed in it.
-3. For each event: find the first column where the column's last event ended before this event starts. Place the event in that column. If no column fits, add a new column.
-4. After processing all events in an overlapping group: width of each event = `1 / totalColumns`. Left offset = `columnIndex / totalColumns`.
+**Step 1 — Sort events by start time**
+Sort all events for the day by `start_utc` ascending. This ensures we process events in chronological order and can greedily assign columns.
 
-This runs in O(n log n) (sort) + O(n·c) where c = max concurrent overlaps. For typical calendars (c ≤ 5), this is O(n).
+**Step 2 — Group overlapping events**
+Scan the sorted list. Maintain a running `groupEndTime` = max end time seen so far. If the next event's start < `groupEndTime`, it belongs to the current overlapping group. When `start >= groupEndTime`, the current group is complete — finalize widths and start a new group.
 
-**Trade-off accepted:** This greedy algorithm doesn't always minimize the number of columns (that's NP-hard for general interval graphs). For calendar use cases — where c is small — greedy produces the same result as optimal.
+**Step 3 — Assign columns**
+Within each overlapping group: maintain an array of columns, each tracking the latest `end_time` of the event placed there. For each event, find the first column where `column.endTime <= event.startTime`. Place the event there and update the column's end time. If no column fits, add a new column.
+
+**Step 4 — Calculate width dynamically**
+After all events in a group are assigned: `width = 1 / totalColumns`. `left offset = columnIndex / totalColumns`. A group of 3 overlapping events each renders at 33% width, placed at 0%, 33%, 66% left.
+
+**Complexity:** O(n log n) sort + O(n·c) placement where c = max concurrent overlaps. For typical calendars (c ≤ 5), effectively O(n).
+
+**Trade-off accepted:** The greedy column assignment doesn't always minimize column count for adversarial inputs (that's NP-hard for general interval graphs). For calendar data — where c is small and events are human-scheduled — greedy produces the same result as optimal.
 
 ```mermaid
-flowchart LR
-    A["Sort events by start time"] --> B["For each event"]
-    B --> C{"Any column has\nend time before\nevent start?"}
-    C -->|Yes| D["Place in first\navailable column"]
-    C -->|No| E["Add new column,\nplace event there"]
-    D --> F["Update column end time"]
-    E --> F
-    F --> G{"More events?"}
-    G -->|Yes| B
-    G -->|No| H["Assign width = 1/totalCols\nfor overlapping group"]
+flowchart TD
+    A["1. Sort events by start time"] --> B["2. Scan to group overlapping events"]
+    B --> C["3. For each event in group - find first available column"]
+    C --> D{"Column end time <= event start?"}
+    D -->|Yes| E["Place event in that column"]
+    D -->|No| F["Add new column, place event there"]
+    E --> G["Update column end time"]
+    F --> G
+    G --> H{"More events in group?"}
+    H -->|Yes| C
+    H -->|No| I["4. width = 1/totalCols, left = colIndex/totalCols"]
+    I --> J{"More groups?"}
+    J -->|Yes| B
+    J -->|No| K["Render all events with computed positions"]
 ```
 
 > [!NOTE]
-> **Key Insight:** Event layout is a pure client-side computation. The backend returns raw `start`/`end` times; the client computes positions. This keeps the API simple and lets different clients (web, mobile) implement different visual strategies.
+> **Key Insight:** Event layout is the interval partitioning problem. Minimum columns needed = maximum depth of overlapping events at any point. This is computed entirely client-side in O(n log n) — the backend only returns raw start/end times.
 
 ---
 
@@ -374,6 +416,77 @@ flowchart LR
 
 > [!NOTE]
 > **Key Insight:** Store UTC, render local. The DB never knows about timezones. The client knows everything about display. DST is a display-layer problem.
+
+---
+
+### 9.5 Backend: Consistency, Conflict Resolution & Notification Fan-Out
+
+**Here's the problem we're solving:** The backend has three non-trivial responsibilities that are easy to underestimate: (1) preventing double-booking when two users edit the same event concurrently, (2) ensuring event writes are ACID so attendee lists never get corrupted, and (3) fanning out notifications efficiently when a shared calendar event is modified.
+
+---
+
+**Consistency — Why PostgreSQL, not a NoSQL store:**
+
+Calendar events have relational integrity requirements: an event belongs to a calendar, a calendar has members with roles, an event has attendees. A write that adds an attendee must also check the user's permission level. These multi-table constraints require ACID transactions — not eventual consistency.
+
+At 167K writes/sec, a sharded PostgreSQL cluster (sharded by `user_id`) handles this easily. Each shard owns a user's events. Cross-user queries don't exist — a user only reads their own calendars and explicitly shared ones.
+
+---
+
+**Conflict Resolution — Concurrent edits to a shared event:**
+
+Problem: User A and User B both open the same shared meeting. A changes the title; B changes the time — simultaneously. Both fire `PATCH /events/:id`. The second write wins silently. Neither user knows their collaborator was editing at the same time.
+
+Chosen solution — **optimistic locking with `version` field:**
+
+- Every event row has a `version` integer.
+- `PATCH /events/:id` must include the `version` the client last saw.
+- Event Service: `UPDATE events SET ..., version = version+1 WHERE event_id = :id AND version = :clientVersion`.
+- If rows updated = 0 → version mismatch → return `409 Conflict`.
+- Client receives 409 → fetches latest event state → shows diff to user → user resolves.
+
+For calendar events (unlike Google Docs), last-write-wins is often acceptable — two people rarely edit the same 30-minute meeting simultaneously. Optimistic locking adds safety without the complexity of OT/CRDT.
+
+---
+
+**Notification Fan-Out — Shared calendars with many members:**
+
+Problem: A company-wide "All Hands" calendar has 5,000 members. One edit → must push WebSocket notification to up to 5,000 active connections. Doing this synchronously in the Event Service blocks the write path.
+
+Chosen solution — **Kafka + Notification Service:**
+
+1. Event Service writes to PostgreSQL, then publishes `{ eventId, calendarId, changes }` to Kafka topic `calendar-events`. Write path done — returns 200 to client immediately.
+2. Notification Service (separate process) consumes from Kafka. Looks up `calendarId → [userId, ...]` from Calendar Members table (cached in Redis, TTL = 10min).
+3. For each member: check if they have an active WebSocket connection via `ws-sessions:{userId}` in Redis. If yes, route to the correct WS server node via Redis pub/sub and push the event.
+4. Offline members: skip WS push. On their next day-view load, they'll fetch fresh data from PostgreSQL.
+
+This decouples the write path from notification delivery. A 5,000-member calendar generates 5,000 WS pushes — but that's Notification Service's problem, not Event Service's.
+
+```mermaid
+sequenceDiagram
+    participant UserA
+    participant EventService
+    participant PostgreSQL
+    participant Kafka
+    participant NotifService as Notification Service
+    participant Redis
+    participant UserB
+
+    UserA->>EventService: PATCH /events/:id with version=5
+    EventService->>PostgreSQL: UPDATE WHERE version=5
+    PostgreSQL-->>EventService: 1 row updated, version now 6
+    EventService->>Kafka: Publish calendar.event.updated
+    EventService-->>UserA: 200 OK
+    Kafka->>NotifService: Consume event
+    NotifService->>Redis: Lookup calendarId members
+    Redis-->>NotifService: userId list
+    NotifService->>Redis: Check active WS sessions
+    NotifService->>UserB: WS push - event updated
+    UserB->>UserB: Re-render event
+```
+
+> [!NOTE]
+> **Key Insight:** The backend's job is consistency + fan-out, not layout or rendering. PostgreSQL gives ACID. Optimistic locking resolves concurrent edits. Kafka decouples the write path from the notification path — Event Service never waits for 5,000 WS pushes.
 
 ---
 
