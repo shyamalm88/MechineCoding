@@ -178,5 +178,11 @@
     "title": "Poll Widget",
     "summary": "Poll Widget",
     "path": "src/lld/lld-030-poll-widget"
+  },
+  {
+    "id": "lld-031-file-explorer-dnd",
+    "title": "File Explorer with Drag & Drop",
+    "summary": "Move files and folders via drag and drop with recursive tree rendering",
+    "path": "src/lld/lld-031-file-explorer-dnd"
   }
 ]

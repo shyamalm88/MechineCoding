@@ -2,53 +2,76 @@ import { useState } from "react";
 import { treeData } from "./data";
 import CheckboxTree from "./CheckboxTree";
 import "./styles.css";
-// Sample tree data
 
-
-// Helper to initialize checked state for all nodes
-const getInitialChecked = (nodes) => { // Recursively build checked state
-  let checked = {};
-  nodes.forEach((node) => {
-    checked[node.id] = false; // Set all to false initially
+// ---------------------------------------------------------------------------
+// STATE DESIGN: flat map { [id]: boolean } instead of nested tree state
+// Why flat? O(1) lookup and update per node. No deep cloning needed.
+// { 1: false, 2: false, 3: false, 4: false, 5: false, 6: false }
+// ---------------------------------------------------------------------------
+function getInitialChecked(nodes) {
+  let state = {};
+  for (const node of nodes) {
+    state[node.id] = false;
     if (node.children) {
-      checked = { ...checked, ...getInitialChecked(node.children) }; // Merge child states
+      // Merge child states into the same flat map
+      state = { ...state, ...getInitialChecked(node.children) };
     }
-  });
-  return checked;
+  }
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// DOWNWARD PROPAGATION — check/uncheck a node AND all its descendants
+// Pattern: DFS — set current node, then recurse into children
+// ---------------------------------------------------------------------------
+function setDescendants(node, value, state) {
+  state[node.id] = value;
+  if (node.children) {
+    for (const child of node.children) {
+      setDescendants(child, value, state);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// UPWARD PROPAGATION — after changing a node, update all its ancestors
+// Rule: parent is checked only when ALL its children are checked
+// Pattern: search from root, find the parent of the changed node, update it,
+// then recurse upward until we reach the root
+// ---------------------------------------------------------------------------
+const updateAncestors = (changedNode, nodes, state) => {
+  for (const node of nodes) {
+    if (!node.children) continue;
+
+    if (node.children.some((c) => c.id === changedNode.id)) {
+      // direct assignment — no need for ternary
+      state[node.id] = node.children.every((c) => state[c.id]);
+      updateAncestors(node, treeData, state); // walk upward
+      return; // found parent — stop searching siblings
+    }
+
+    updateAncestors(changedNode, node.children, state); // search deeper
+  }
 };
 
+// ---------------------------------------------------------------------------
+// App — owns the checked state and wires the two propagation functions
+// ---------------------------------------------------------------------------
+export default function App() {
+  const [checked, setChecked] = useState(() => getInitialChecked(treeData));
 
+  function handleCheck(node, value) {
+    // Always work on a shallow copy — never mutate state directly
+    const next = { ...checked };
 
-export default function App() { // Main App component
-  const [checked, setChecked] = useState(getInitialChecked(treeData)); // State for all checkboxes
+    // Step 1: propagate downward (check/uncheck all descendants)
+    setDescendants(node, value, next);
 
-  // Update all descendants
-  const setDescendants = (node, value, checkedState) => {
-    checkedState[node.id] = value;
-    if (node.children) {
-      node.children.forEach((child) => setDescendants(child, value, checkedState));
-    }
-  };
+    // Step 2: propagate upward (recalculate all ancestor states)
+    updateAncestors(node, treeData, next);
 
-  // Update ancestors based on children
-  const updateAncestors = (node, nodes, checkedState) => {
-    for (const parent of nodes) {
-      if (parent.children && parent.children.some((child) => child.id === node.id)) {
-        checkedState[parent.id] = parent.children.every((child) => checkedState[child.id]);
-        updateAncestors(parent, treeData, checkedState);
-      } else if (parent.children) {
-        updateAncestors(node, parent.children, checkedState);
-      }
-    }
-  };
-
-  // Main handler
-  const handleCheck = (node, value) => {
-    const newChecked = { ...checked };
-    setDescendants(node, value, newChecked);
-    updateAncestors(node, treeData, newChecked);
-    setChecked(newChecked);
-  };
+    setChecked(next);
+  }
 
   return (
     <div className="tree-container">

@@ -41,6 +41,7 @@ import CalendarDayView from '../lld/lld-027-calendar-day-view/Solution'
 import KanbanBoard from '../lld/lld-028-kanban-board/Solution'
 import NotificationSystem from '../lld/lld-029-notification-system/Solution'
 import PollWidget from '../lld/lld-030-poll-widget/Solution'
+import FileExplorerDnd from '../lld/lld-031-file-explorer-dnd/Solution'
 
 
 
@@ -88,7 +89,8 @@ const SOLUTION_COMPONENTS = {
   'lld-027-calendar-day-view': CalendarDayView,
   'lld-028-kanban-board': KanbanBoard,
   'lld-029-notification-system': NotificationSystem,
-  'lld-030-poll-widget': PollWidget
+  'lld-030-poll-widget': PollWidget,
+  'lld-031-file-explorer-dnd': FileExplorerDnd
 
 
 
