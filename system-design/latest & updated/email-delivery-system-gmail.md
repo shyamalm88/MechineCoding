@@ -195,6 +195,48 @@ sequenceDiagram
 
 Steps 1–6 same as above. At step 7, recipient domain = `outlook.com` → Orchestrator publishes to `outbound-send-request` topic.
 
+### 6.3 Receive Email (External — Outlook to Gmail)
+
+This is the reverse of 6.2 — Outlook's SMTP server initiates the connection to Gmail's servers.
+
+```mermaid
+sequenceDiagram
+    participant OutlookSMTP as Outlook SMTP Server
+    participant GmailSMTP as Gmail Inbound SMTP Service
+    participant SpamFilter as Spam Filter Service
+    participant K as Kafka inbound-receive
+    participant IC as Inbound Consumer
+    participant MailboxDB as Cassandra Mailbox
+    participant NotifSvc as Notification Service
+
+    OutlookSMTP->>GmailSMTP: TCP connect port 25 + SMTP handshake
+    GmailSMTP->>GmailSMTP: Validate sender domain (SPF/DKIM check)
+    GmailSMTP->>GmailSMTP: Check recipient exists in User DB
+    GmailSMTP->>SpamFilter: Route email content for scoring
+    SpamFilter->>SpamFilter: ML model + rule engine scoring
+    alt Score below spam threshold
+        SpamFilter->>K: Publish to inbound-receive topic (folder=INBOX)
+    else Score above threshold
+        SpamFilter->>K: Publish to inbound-receive topic (folder=SPAM)
+    end
+    GmailSMTP-->>OutlookSMTP: 250 Message accepted
+    K->>IC: Inbound Consumer processes
+    IC->>MailboxDB: Write to mailbox_items (partition = recipient user_id)
+    IC->>NotifSvc: Push notification to recipient
+```
+
+**Key steps:**
+1. Outlook's SMTP server opens TCP connection to Gmail's **Inbound SMTP Service** (port 25 — the publicly exposed MX record for `gmail.com`)
+2. Gmail's Inbound SMTP Service validates: SPF (is this IP authorised to send for outlook.com?), DKIM (is the signature valid?), does the recipient email exist in User DB?
+3. If recipient doesn't exist → `550 No such user here` → Outlook notifies its sender
+4. Email passed to **Spam Filter Service** for scoring (see Deep Dive 9.5)
+5. Based on spam score: published to Kafka `inbound-receive` with `folder = INBOX` or `folder = SPAM`
+6. Inbound Consumer writes to Cassandra mailbox, partitioned by `user_id`
+7. Notification Service pushes to recipient's connected WebSocket or mobile push
+
+> [!NOTE]
+> **Key Insight:** Gmail acknowledges `250 Message accepted` to Outlook's SMTP server **before** the email is fully processed and in the inbox. This is intentional — once we've accepted the message off the wire, it's in our Kafka/DB pipeline and we own the delivery guarantee. The sender's responsibility ends at `250`.
+
 7. **SMTP Relay Worker** consumes from `outbound-send-request`.
 8. DNS/MX lookup: queries MX resolver for `outlook.com` → gets list of Outlook SMTP server addresses with priority order. Result cached in **MX Cache** (TTL = 1 hour) — avoids DNS round-trip on every email.
 9. SMTP Relay Worker opens TCP connection to Outlook SMTP server on **port 25**.
@@ -401,7 +443,110 @@ graph TD
 
 ---
 
-### 9.4 User Registration — Uniqueness at 1.5B Scale
+### 9.4 Spam Filtering Design
+
+**Here's the problem we're solving:** Gmail receives ~3.5M emails/sec from external senders. ~45% of global email is spam. Without filtering, user inboxes are unusable. Filtering must be fast enough to not block the inbound pipeline and accurate enough that legitimate emails don't land in spam.
+
+**Naive solution — keyword blocklist:**
+```
+if email.body contains "free money" → mark as spam
+```
+Fails: spammers trivially evade keyword lists. Recall is low, false-positive rate is high.
+
+**Chosen solution — layered scoring system:**
+
+```mermaid
+flowchart TD
+    Email["Inbound Email"] --> L1["Layer 1: Sender Reputation\n(IP/domain blocklist + reputation score)"]
+    L1 -->|Score > hard threshold| REJECT["Reject immediately\n(don't even score content)"]
+    L1 -->|Continue| L2["Layer 2: Authentication\n(SPF check + DKIM signature verify)"]
+    L2 -->|Fail| PENALISE["Add penalty score"]
+    L2 --> L3["Layer 3: Content Analysis\n(ML model: TF-IDF + neural classifier)"]
+    L3 --> L4["Layer 4: Behavioral Signals\n(user reports, unsubscribes, read rate)"]
+    L4 --> SCORE["Final Score 0.0 - 1.0"]
+    SCORE -->|score < 0.3| INBOX["Route to INBOX"]
+    SCORE -->|0.3 to 0.7| REVIEW["Route to SPAM folder"]
+    SCORE -->|score > 0.7| BLOCK["Block + notify sender"]
+```
+
+**Layer breakdown:**
+
+| Layer | What it checks | Speed | Impact |
+|---|---|---|---|
+| Sender Reputation | IP blocklist, domain reputation score, past abuse reports | < 1ms (Redis lookup) | Blocks ~60% of spam before content is read |
+| Authentication | SPF: is sending IP authorised for this domain? DKIM: is cryptographic signature valid? | < 5ms (DNS cached) | Eliminates spoofed sender domains |
+| Content Analysis | ML classifier (trained on billions of labelled emails); features: TF-IDF, URL reputation, attachment type, link density | 50–100ms | Catches novel spam patterns |
+| Behavioral Signals | How often do recipients mark similar emails as spam? Do users who receive this sender's mail read it or delete unread? | Async (pre-computed daily) | Adapts to user-specific preferences |
+
+**Scoring thresholds:**
+- Score < 0.3 → `INBOX`
+- Score 0.3–0.7 → `SPAM` folder (user can recover)
+- Score > 0.7 → rejected at SMTP layer before `250` is sent (sender gets bounce)
+
+**Why the layered approach:**
+- Layer 1 (sender reputation) eliminates 60% of spam in < 1ms — cheap. Don't spend ML compute on obvious spam.
+- Only emails that pass Layer 1+2 get the expensive ML content scan
+- At 3.5M emails/sec × 100ms ML scan = impossible if applied to all. After Layer 1 filtering, only ~40% need ML = 1.4M/sec — manageable with horizontal scaling of the ML inference fleet
+
+**Trade-off accepted:** Probabilistic scoring means some spam reaches inboxes and some legitimate email lands in spam. No spam filter achieves 100% accuracy. The threshold (0.3/0.7) is tunable — Gmail adjusts per-user based on their "Mark as not spam" actions.
+
+> [!NOTE]
+> **Key Insight:** Spam filtering is a cost optimisation problem as much as an accuracy problem. Layer cheap filters first (IP blocklist = 1ms), expensive filters last (ML = 100ms). Only ~40% of mail needs the ML model after reputation filtering. This is the difference between 1.4M ML inferences/sec and 3.5M.
+
+---
+
+### 9.5 Rate Limiting and Abuse Protection
+
+**Here's the problem we're solving:** A compromised Gmail account or a bulk-sender service can send millions of emails in seconds — spamming recipient inboxes and abusing our SMTP relay infrastructure. Without rate limiting, one bad actor can degrade delivery for all other users.
+
+**Two surfaces to protect:**
+1. **Send rate per user** — prevent a single account from sending bulk spam
+2. **Inbound SMTP rate per source IP** — prevent external servers from flooding our inbound pipeline
+
+**Send rate limiting (per user):**
+
+```
+Redis key: rate:{userId}:{window}
+Type: sliding window counter (token bucket)
+
+Limits (configurable by account tier):
+  - Free account:    500 emails/day, 25 emails/minute
+  - Google Workspace: 2,000 emails/day, 100 emails/minute
+  - API (Gmail API): configurable, with abuse monitoring
+```
+
+Implementation:
+1. Mail Send Service checks Redis rate counter before writing to Outbox Table
+2. `INCR rate:{userId}:{windowBucket}` with `EXPIRE = window_duration`
+3. If counter > limit → `429 Too Many Requests` to client; email not queued
+4. Sliding window: separate counters per minute-bucket, aggregate last 60 buckets for per-hour limit
+
+**Inbound SMTP rate limiting (per source IP):**
+1. Inbound SMTP Service tracks connection count per source IP in Redis
+2. If source IP opens > 100 connections/sec → temporary `421 Service not available, try again later`
+3. If source IP has high spam score (from Sender Reputation layer) → blackhole connections silently
+4. IP reputation updated by Spam Filter Service feedback loop — IPs that consistently send spam get progressively lower connection limits
+
+**Abuse signals that trigger automatic throttling:**
+
+| Signal | Action |
+|---|---|
+| > 1% bounce rate on sent emails | Throttle send rate by 50% |
+| > 0.1% spam reports from recipients | Flag account for review |
+| Sudden 10× spike in send volume | Require re-authentication (2FA) |
+| Email content matches known spam pattern | Block send immediately |
+
+**Dead Letter Queue (DLQ) for undeliverable emails:**
+- Emails that fail all SMTP retry attempts (4 days) → moved to DLQ
+- DLQ worker sends **non-delivery report (NDR)** bounce email to original sender
+- Email is then archived (not deleted) for compliance audit trail
+
+> [!NOTE]
+> **Key Insight:** Rate limiting is a correctness requirement for email, not just a performance guard. An email platform without rate limits becomes a free spam cannon. The sliding window counter in Redis costs < 1ms per send — there is no reason not to check it on every send request.
+
+---
+
+### 9.6 User Registration — Uniqueness at 1.5B Scale
 
 **Here's the problem we're solving:** No two users can register with the same email ID. At 1.5B users, a single PostgreSQL instance can't hold all records or serve 50M autocomplete lookups/sec. How do we enforce global uniqueness while sharding?
 
@@ -512,6 +657,21 @@ graph TD
 
 ---
 
+## Frontend Notes (10% of design)
+
+| Component | Pattern | Why it matters in an interview |
+|---|---|---|
+| Inbox list | Cursor-based pagination; metadata only (no body) | 3.5M emails/sec × full body = 260GB/sec read traffic. Only load body on open. |
+| Virtual scroll | Virtualise DOM — only render visible email rows | A user with 50K emails in inbox = 50K DOM nodes if fully rendered. Browser crashes. |
+| New email notification | WebSocket connection to Notification Service | Long-poll alternative = wasted requests every 15 seconds. WebSocket = server-pushed on new delivery event. |
+| Inbox caching | Cache first 2 pages of inbox in IndexedDB (client) | Gmail opens instantly because the last-seen inbox is stored locally. Background refresh fetches newer emails. |
+| Optimistic send | Mark email as "Sent" in UI immediately on `202 Accepted` | Async pipeline means server can't confirm delivery synchronously. Show optimistic state; handle errors on webhook. |
+| Draft autosave | Debounce 2 seconds after last keystroke → `PATCH /draft/:id` | Without debounce: typing at 60 WPM × autosave per keystroke = ~5 API calls/sec per composer window. |
+| Attachment upload | Direct client → S3 via pre-signed URL; progress bar from S3 multipart upload events | Don't route 25MB files through your API servers — direct S3 upload offloads bandwidth entirely. |
+| Search | Debounce search input 300ms; show skeleton loaders | Elasticsearch at < 500ms feels instant if UI provides loading feedback. Don't block compose on search. |
+
+---
+
 ## Interview Summary
 
 ### Key Decisions
@@ -555,3 +715,6 @@ RELIABLE PATH (optimized for zero email loss)
 - "SMTP is a protocol, not a server. Every mail server speaks it. The MX cache avoids DNS lookup per email — at 3.5M cross-domain emails/sec, that's the difference between functional and overloaded."
 - "Registration must be strongly consistent — email ID as PRIMARY KEY in each DB shard. Consistent hashing guarantees two registrations for the same email ID always land on the same shard. DB constraint handles the race without a global lock."
 - "The validation pipeline runs in parallel, not serially. Each service writes its result to Validation DB independently. The orchestrator checks when all columns are set — no service blocks another."
+- "Spam filtering is layered cheapest-first: IP reputation at 1ms eliminates 60% of spam before the ML model ever sees it. Only ~40% of mail needs the 100ms ML inference — this makes the economics work at 3.5M emails/sec."
+- "Gmail acknowledges `250 Message accepted` to external senders before the email reaches the inbox. Once we own the message off the wire, Kafka + Cassandra guarantee delivery. The sender's responsibility ends at `250`."
+- "Rate limiting is a correctness requirement for email. Without it, one compromised account becomes a spam cannon for the entire platform. A Redis sliding window counter at < 1ms cost per send is the cheapest correctness guarantee in the system."
