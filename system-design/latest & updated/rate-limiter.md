@@ -6,6 +6,8 @@
 
 Design a server-side distributed rate limiter that protects backend services by controlling how many requests any given client can make within a configurable time window.
 
+> **Core problem:** Control request rate without increasing latency, while maintaining accuracy across a distributed system of multiple gateway instances sharing no local state.
+
 **In scope:** Client identification (user ID, IP, API key), configurable rules per client tier, token bucket algorithm, distributed shared state, dynamic rule updates, proper error responses.
 **Out of scope:** Client-side rate limiting (trivially spoofed, not valuable), billing/quota metering, content-based throttling.
 
@@ -67,19 +69,34 @@ Design a server-side distributed rate limiter that protects backend services by 
 
 ## 🧠 Mental Model
 
+**A rate limiter is a distributed counter system that decides whether a request should pass based on time and usage.**
+
+```
+Rate Limiter = time window + counter + decision engine
+```
+
+- **Time window** — defines the measurement period (e.g., 1 minute)
+- **Counter** — tracks how many requests a client has made in that window (stored in Redis, shared across all gateway instances)
+- **Decision engine** — the algorithm (token bucket) that converts counter state into allow/reject
+
+**E2E flow in one line:**
+```
+Client → Gateway → Rate Limiter (Lua script) → Redis → Decision → Service (or 429)
+```
+
 Every user request passes through one gate: the API Gateway. Before routing, the gateway asks one question: *"Is this client allowed?"* That answer lives in shared Redis state, not in the gateway itself.
 
 ```
 Incoming Request
      |
-[API Gateway] ← stores rules in-memory (pushed by etcd)
+[API Gateway] ← rules cached in-memory (pushed by etcd)
      |
-  check: isAllowed(clientId, rule)?
+  isAllowed(clientId, rule)?   ← Lua script (atomic)
      |
-[Redis Cluster] ← token_count + last_refill_ts per client
+[Redis Cluster] ← {token_count, last_refill_ts} per clientId
      |
-  YES → route to microservice
-  NO  → return 429 immediately (fail fast)
+  YES → route to Microservice
+  NO  → 429 immediately (fail fast, never touches microservice)
 ```
 
 **⚡ Core Design Principles**
@@ -251,6 +268,15 @@ graph TD
 > | Token bucket state (count + last_refill) | Redis Cluster (sharded, in-memory) | Sub-ms lookup; shared across all gateway instances |
 > | Rate limit rules | etcd / ZooKeeper + gateway in-memory cache | Rules change rarely; push to in-memory eliminates per-check network round-trip |
 > | Audit log (rejected requests) | Optional: Kafka → S3 | For abuse analysis and debugging; never on the critical path |
+
+### Core Data Model (the simplest mental picture)
+
+```
+key:   user_id  (or ip_address, or api_key)
+value: { count, timestamp }
+```
+
+That's it. Everything else is an optimisation on top of these two fields — the algorithm that decides what `count` means, the sharding that scales it, the atomicity that keeps it correct.
 
 ### Redis Token Bucket (per client)
 
