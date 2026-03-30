@@ -149,7 +149,90 @@ Mailbox DB      Recipient SMTP Server
 
 ## 6. End-to-End Flow
 
-### 6.1 Send Email (Internal — Gmail to Gmail)
+> [!IMPORTANT]
+> **Email is a queue-first system.** Every send operation is asynchronous. The client never waits for delivery — it waits only for acknowledgement that the email has been durably queued. Delivery, validation, and routing happen independently in the background. This is not a performance choice — it is a correctness choice. Without a queue, any crash between "send clicked" and "email delivered" loses the email permanently.
+
+**⚡ Async Architecture Principles (say these out loud):**
+- All email sending goes through Kafka — never direct DB or direct SMTP call
+- At-least-once delivery via Kafka offset commit — consumers can crash and replay
+- Idempotency via `message_id` — consumers deduplicate on re-processing
+- Retry with exponential backoff — SMTP failures retry for up to 4 days before bouncing
+- Dead Letter Queue — emails that exhaust retries are archived, never silently dropped
+
+---
+
+### 6.1 Send Email — Quick Reference (speak this out loud in the interview)
+
+**Internal flow (Gmail → Gmail):**
+
+```
+1. Client clicks Send
+   → POST /emails/send {draftId, recipients}
+   → API Gateway authenticates + routes
+
+2. Mail Send Service fetches draft content from Draft DB
+   → validates recipients exist (User DB lookup)
+   → I chose to separate draft storage from send to keep the send request lightweight
+
+3. Email written to Outbox Table (PENDING)
+   → This is the durability guarantee — crash after this = email survives
+   → I chose the Transactional Outbox Pattern because DB write + Kafka publish
+     cannot be made atomic any other way
+
+4. Outbox Consumer (CDC) detects new row → publishes to Kafka
+   → The queue absorbs burst — 3.5M emails/sec cannot hit storage directly
+
+5. Delivery Orchestrator consumes from Kafka
+   → Fires spam check + policy check + attachment check IN PARALLEL
+   → Each validation service writes result to Validation DB independently
+   → I run these in parallel because sequential = 3 × 200ms = 600ms per email
+
+6. All checks pass → Orchestrator routes by recipient domain
+   → @gmail.com → inbound-send-request topic
+   → @outlook.com → outbound-send-request topic
+
+7. Delivery Consumer picks up inbound event
+   → Copies email to recipient's Mailbox Items table (Cassandra, partitioned by user_id)
+   → Updates Outbox row status = DELIVERED
+   → Triggers push notification
+
+On failure at any step → Kafka consumer retries from last offset
+On SMTP failure (external) → exponential backoff, try next MX record
+After 4 days of failure → Dead Letter Queue → bounce email to sender
+```
+
+**Receive flow (Outlook → Gmail):**
+
+```
+1. Outlook SMTP server opens TCP connection to Gmail Inbound SMTP Service (port 25)
+   → Gmail's MX record points here
+
+2. SMTP handshake
+   → Gmail validates: SPF (is this IP authorised to send for outlook.com?)
+   → Gmail validates: DKIM (is the cryptographic signature valid?)
+   → Gmail checks: does the recipient exist in User DB?
+   → If recipient not found → 550 No such user → Outlook notifies its sender
+
+3. Gmail accepts message off the wire → sends 250 Message accepted
+   → This commits Gmail's responsibility — email is now durably ours
+   → Outlook's responsibility ends here
+
+4. Email published to Kafka inbound-receive topic
+   → Spam Filter Service scores the email (layered: IP reputation → SPF/DKIM → ML model)
+   → Score < 0.3 → folder = INBOX, score > 0.3 → folder = SPAM
+
+5. Inbound Consumer writes to Cassandra mailbox_items
+   → Partition key = recipient user_id → all inbox writes for one user go to one node
+   → Aggregator Service indexes email body + metadata in Elasticsearch for search
+
+6. Notification Service pushes to recipient's WebSocket connection
+   → "New email from alice@outlook.com"
+   → If no active WebSocket → mobile push notification (FCM/APNs)
+```
+
+---
+
+### 6.2 Send Email (Internal — Gmail to Gmail, Sequence Diagram)
 
 1. User clicks **Send**. Client calls `POST /emails/send` with `{ draftId, to: ["bob@gmail.com"], cc: [], bcc: [] }`.
 2. Mail Send Service fetches full email content from Draft DB using `draftId` (body + S3 attachment references).
@@ -191,11 +274,11 @@ sequenceDiagram
     NotifSvc-->>Alice: Email sent confirmation
 ```
 
-### 6.2 Send Email (External — Gmail to Outlook)
+### 6.3 Send Email (External — Gmail to Outlook, Sequence Diagram)
 
 Steps 1–6 same as above. At step 7, recipient domain = `outlook.com` → Orchestrator publishes to `outbound-send-request` topic.
 
-### 6.3 Receive Email (External — Outlook to Gmail)
+### 6.4 Receive Email (External — Outlook to Gmail, Sequence Diagram)
 
 This is the reverse of 6.2 — Outlook's SMTP server initiates the connection to Gmail's servers.
 
@@ -348,6 +431,17 @@ graph TD
 ---
 
 ## 8. Data Model
+
+> [!IMPORTANT]
+> **Gmail uses three separate storage systems — never one.** This is the most important storage design insight and interviewers always probe it:
+>
+> | What | Where | Why |
+> |---|---|---|
+> | **Email bodies + mailbox** | Cassandra (NoSQL) | 3.5M writes/sec — multi-master, partitioned by `user_id`. SQL primary would be first bottleneck. |
+> | **Attachments** | S3 / Blob Storage | Binary files (up to 25MB) never go in a DB. S3 = infinite scale, cheap, CDN-compatible. Emails store only the S3 reference URL. |
+> | **Search index** | Elasticsearch | Full-text search with inverted index. Pre-joined at write time by Aggregator Service. Never query Cassandra for search — it has no full-text capability. |
+>
+> "I chose three separate stores because each has a fundamentally different access pattern. One store trying to do all three would fail at scale."
 
 | Entity | Storage | Key Columns | Why this store |
 |---|---|---|---|
@@ -571,6 +665,11 @@ Implementation:
 ---
 
 ## 10. Bottlenecks & Scaling
+
+**Scale we're designing for (say this explicitly in the interview):**
+- 1.5 billion users. ~300 billion emails/day. 3.5 million emails/sec at peak.
+- 22.5 exabytes total storage. 260 GB/sec of mailbox write throughput.
+- The sharding strategy for this scale: **partition mailbox by `user_id`**. Every inbox query and every inbox write is `WHERE user_id = ?` — so every operation hits exactly one Cassandra partition. No scatter-gather. No cross-shard joins. This is intentional by design, not coincidence.
 
 **What breaks first at 10× scale:**
 
