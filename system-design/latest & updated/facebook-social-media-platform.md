@@ -474,7 +474,89 @@ When a follower opens the app:
 
 ---
 
-### 9.2 — Content Moderation Pipeline
+### 9.2 — Feed Ranking (Facebook Feed is NOT Chronological)
+
+**Here's the problem we're solving:** A user follows 500 people. In the last hour they collectively published 300 posts. We can't show all 300 — we show 50. Which 50? Chronological order is the naive answer. But a post from your best friend from 2 hours ago is more relevant than a brand post from 2 minutes ago. Chronological order is a terrible proxy for relevance.
+
+**Naive solution — sort by timestamp descending:**
+```
+ZREVRANGE user:feed:{userId} 0 49
+```
+Returns the 50 most recent posts. Problem: a viral post from a close friend gets buried below noise from accounts the user barely interacts with. Engagement collapses.
+
+**Chosen solution — two-stage pipeline: candidate generation → ML ranking**
+
+```mermaid
+flowchart TD
+    FC[("Redis Feed Cache\n500 post_id candidates")]
+    CG["Candidate Generator\nfilter by recency + follow strength"]
+    FE["Feature Extractor\npull signals for each candidate post"]
+    ML["ML Ranking Model\npredict P(engagement)"]
+    RS[("Ranked Feed\ntop 50 returned to client")]
+    SI[("Signal Store\nRedis - user behaviour events)")]
+
+    FC --> CG
+    CG --> FE
+    FE --> ML
+    SI --> ML
+    ML --> RS
+```
+
+**Stage 1 — Candidate generation (fast filter, no ML):**
+- Start with ~500 post_ids from Redis Feed Cache (pre-computed by fan-out)
+- Apply lightweight filters: recency (posts > 7 days old dropped), follow strength (posts from users you've interacted with in last 30 days weighted up)
+- Output: ~200 candidate post_ids
+
+**Stage 2 — ML ranking (predict engagement probability):**
+
+The model predicts: *"Given this user and this post, what is P(like), P(comment), P(share), P(click)?"*
+
+Features fed into the model:
+
+| Feature category | Examples |
+|---|---|
+| **Post features** | post age, media type (video/image/text), like count, comment velocity (likes per minute since posted) |
+| **Author features** | poster's relationship to viewer (close friend, page, group), poster's recent engagement rate |
+| **User behaviour signals** | viewer's past interactions with this poster, content types the viewer historically engages with, time of day (mobile morning = short text; evening = video) |
+| **Contextual signals** | device type, network speed (don't rank video #1 on slow connection), session length so far |
+
+Model output: score per candidate post (0.0–1.0 engagement probability). Top 50 by score = the feed.
+
+**Where ranking fits in the overall pipeline:**
+
+```
+Fan-out Consumer writes post_ids to Redis Feed Cache (500 candidates, unranked)
+                              │
+                              ▼
+                   GET /feed request arrives
+                              │
+                              ▼
+             Candidate Generator → 200 candidates
+                              │
+                              ▼
+         Feature Extractor fetches signals (Redis Signal Store)
+                              │
+                              ▼
+               ML Ranking Model scores each candidate
+                              │
+                              ▼
+              Top 50 returned to client (ranked, not chronological)
+```
+
+**Signals are pre-computed, not computed at request time:**
+- User behaviour events (likes, comments, shares, dwells) are streamed to Kafka `analytics-events` topic
+- Signal aggregator writes pre-computed user-author interaction scores to Redis Signal Store
+- At ranking time: Feature Extractor does O(1) Redis lookups, not DB queries
+- **Why:** Fetching raw signals at 29K feed requests/sec × 200 candidates × 10 signals = 58M DB lookups/sec. Impossible without pre-computation.
+
+**Trade-off accepted:** ML ranking adds 20–50ms to feed load time vs pure Redis sorted set read. This is an intentional trade — a relevant feed drives 3× more engagement than a chronological feed. The latency cost is worth it.
+
+> [!NOTE]
+> **Key Insight:** Facebook feed ranking is a candidate generation + ML scoring pipeline, not a sort. Sorting is O(N log N) on every request. Candidate generation narrows to 200, ML scores 200 candidates in parallel — it's O(200) per request regardless of how many posts exist. This is why it can run in < 50ms at scale.
+
+---
+
+### 9.3 — Content Moderation Pipeline
 
 **Here's the problem we're solving:** At 58K posts/sec peak, synchronous content moderation would block the write path. A 500ms AI/ML model call per post × 58K posts/sec = 29,000 concurrent model calls. Synchronous moderation is impossible at this scale.
 
@@ -500,6 +582,16 @@ Fails: Moderator API becomes a bottleneck. Post latency grows to 500ms+. Any mod
 ---
 
 ## 10. Bottlenecks & Scaling
+
+**Scale we're designing for (say these numbers early in the interview — they anchor every decision):**
+- **1B+ registered users, 500M DAU**
+- **5,800 post writes/sec baseline → 58K/sec peak** (10× traffic spike on major events)
+- **1.16M feed writes/sec** — this is the true write load after fan-out amplification (200 followers/user × 5,800 posts/sec)
+- **29K feed read requests/sec** — each returns 50 post IDs → batch hydrated from Cassandra
+- **57K engagement writes/sec** (likes + comments) — Kafka-buffered, eventually consistent
+- **200TB/day media storage** — all media via CDN + S3, never streamed from origin
+
+"The hardest number is the 1.16M feed writes/sec from fan-out. A single Redis node handles ~500K writes/sec. That's why Redis Cluster partitioned by `user_id` is not optional — it's the first thing that breaks at scale."
 
 | Bottleneck | Breaks at | Solution |
 |---|---|---|
@@ -532,6 +624,9 @@ Fails: Moderator API becomes a bottleneck. Post latency grows to 500ms+. Any mod
 | Moderator Service outage | Posts pile up in raw-post topic; nothing passes moderation | Kafka retains unprocessed events; Moderator Service catches up on restart; users see "Post is being reviewed" in UI |
 | S3 outage | Media upload fails | Content Service returns error to user; text post metadata saved; user prompted to retry media upload separately |
 | API Gateway overload | All services unreachable | Rate limiting at gateway; circuit breaker pattern; horizontal scale-out behind LB |
+| **Feed generation fails (Fan-out Consumer down)** | New posts not reaching follower feeds | **Fallback to pull model** — Feed Service detects stale cache (TTL exceeded), switches to on-demand pull from Post Materialization Cache + Cassandra. Slower (500ms vs 200ms) but functional. Fan-out resumes from Kafka offset on recovery. |
+| **Redis Feed Cache miss** | Cache empty (cold start, TTL expired, node restart) | **DB fallback** — Backfill Service pulls from Post Materialization Cache (Redis, warm) → Cassandra PostDB if that also misses. Feed load degrades to 500–800ms. Cache is re-warmed on next fan-out write. |
+| **Kafka fan-out lag** (queue backup during viral post spike) | Follower feeds not updated for seconds to minutes | **Eventual consistency delay** — feeds temporarily stale. Client shows "refresh for new posts" pill when WebSocket signals new content available. Kafka Consumer auto-scales; lag self-resolves. No data loss — events are durably in Kafka log. |
 
 ---
 
@@ -734,6 +829,7 @@ User clicks Like:
 | Hybrid fan-out (push for regular, pull for celebrities) | Avoid 10M write-storm on celebrity post | Celebrity posts may appear seconds later than regular-user posts |
 | Cassandra for posts + comments | 58K writes/sec post ingestion; 57K engagement writes/sec | No ACID guarantees; eventual consistency for like counts |
 | Post Materialization Cache (Redis, 100 posts/user) | Backfill at scroll exhaustion without DB scan | Redis memory cost ~400GB; must be kept warm by Post Materializer Service |
+| ML ranking (candidate gen + model scoring) | Chronological feed drives 3× less engagement than ranked feed | +20–50ms latency per feed request; requires pre-computed signal store in Redis |
 
 ### Fast Path vs Reliable Path
 
@@ -756,3 +852,5 @@ User → API Gateway → Content Service → Kafka(raw-post) [durable] → Moder
 - "Virtual list is not optional on a social feed. 500 loaded posts = 7,500 active DOM nodes = 8fps on Android. With virtualisation: 15 nodes rendered at any time = 60fps. This is the difference between 'it works' and 'it ships'."
 - "Skeleton loading prevents CLS. If image containers don't reserve height before the image loads, content shifts when it arrives. Google measures this as a Core Web Vital. Reserve exact dimensions with aspect-ratio CSS."
 - "Optimistic UI for likes is the right default assumption — 95%+ of requests succeed. Show the update immediately, revert on error. Users perceive zero latency. Waiting for server confirmation is the wrong mental model for engagement actions."
+- "Facebook feed is NOT chronological. It's a two-stage pipeline: candidate generation narrows 500 posts to 200, then an ML model scores each candidate on P(engagement). Chronological is the naive answer — a ranked feed drives 3× more engagement."
+- "ML ranking signals are pre-computed, not fetched at request time. 29K feed requests/sec × 200 candidates × 10 signals = 58M DB lookups/sec if computed live. Pre-compute user-author interaction scores into Redis — request time is O(1) lookups."
