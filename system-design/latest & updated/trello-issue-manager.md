@@ -116,67 +116,11 @@ Every event must be:
   3. Idempotent — safe to replay on reconnect
 ```
 
-### Event-Driven Model
-
-> **Every user action → Event → Broadcast → All clients update UI**
-> NOT: user action → direct DB update → UI
-
-```
-User drags card
-    ↓
-[Optimistic UI] ← card moves instantly in user's browser (0ms)
-    ↓
-POST /cards/42/move  ← event fired to server
-    ↓
-[Board Service] validates + DB write (source of truth)
-    ↓
-Redis PUBLISH board:{boardId} {event: CARD_MOVED, ...}
-    ↓
-ALL WS servers subscribed to board:{boardId} receive event
-    ↓
-Each WS server pushes delta to its connected board members
-    ↓
-All members' UIs update (<200ms end-to-end)
-```
-
-This model is critical: the DB is not the fanout mechanism. Redis Pub/Sub is. The DB write happens first (correctness), then the event is broadcast. No event = no broadcast. No DB write = no event. Order is enforced.
-
 **E2E flow in one line:**
 ```
 User drags card → optimistic UI → POST mutation → DB write →
   Redis PUBLISH board:{id} → WS fan-out → all members update
 ```
-
-```
-User A drags Card-42 from List-1 to List-2
-          |
-    [Optimistic UI] ← card moves immediately in A's browser
-          |
-    POST /cards/42/move {list_id, position}
-          |
-    [Board Service] → PostgreSQL UPDATE (position, list_id)
-          |
-    Redis PUBLISH board:{boardId} {event: CARD_MOVED, card_id, ...}
-          |
-    ┌─────┴──────────────────────┐
-  WS Server 1               WS Server 2
-  (User B connected)         (User C connected)
-          |                       |
-    User B sees               User C sees
-    card move                 card move
-    in <200ms                 in <200ms
-```
-
-### Multi-User Consistency: What if 2 Users Reorder the Same List?
-
-| Scenario | What happens |
-|---|---|
-| User A moves Card-42 to position 2 | DB write succeeds, Redis publishes `CARD_MOVED`, all members see it |
-| User B moves Card-42 to position 5 at the same instant | B's write hits optimistic lock check: `WHERE updated_at = T_old` — if A already committed, B gets 0 rows → 409 |
-| User B's UI | Receives `CARD_MOVED` correction event from Redis (A's version) → reverts optimistic update to server position |
-| End state | All clients converge to A's position. No silent overwrite. No data loss. |
-
-→ **Optimistic UI + optimistic locking + server LWW = eventual consistency with conflict surfacing.** Every client always converges to the server's committed state.
 
 **⚡ Core Design Principles**
 
@@ -188,9 +132,142 @@ User A drags Card-42 from List-1 to List-2
 
 ---
 
-## 4.5 Permissions & Authorization
+## ⚡ Event-Driven Model
 
-> **Who can do what?** This is non-negotiable in a collaborative system — access control must be enforced at the API layer, not just the UI.
+> **This system is reactive, not CRUD.** Every user action produces a named event. That event is stored, broadcast, and applied to all clients. No direct DB-to-UI path exists.
+
+### Event Catalog
+
+| Event | Trigger | Payload |
+|---|---|---|
+| `CARD_CREATED` | User adds a card | `board_id, list_id, card_id, title, position, actor_id` |
+| `CARD_MOVED` | User drags card to new list or position | `board_id, card_id, from_list, to_list, position, actor_id` |
+| `CARD_UPDATED` | User edits title, description, due date, labels, assignees | `board_id, card_id, changed_fields: {field: new_value}, actor_id` |
+| `CARD_DELETED` | User archives a card | `board_id, card_id, actor_id` |
+| `LIST_CREATED` | User adds a list | `board_id, list_id, name, position, actor_id` |
+| `LIST_UPDATED` | User renames or moves a list | `board_id, list_id, changed_fields, actor_id` |
+| `COMMENT_ADDED` | User posts a comment | `board_id, card_id, comment_id, body, mentions[], actor_id` |
+| `MEMBER_ADDED` | Admin invites a user | `board_id, user_id, role, actor_id` |
+| `MEMBER_REMOVED` | Admin removes a user | `board_id, user_id, actor_id` |
+
+Every event carries: `event_id` (UUID, idempotency key), `board_id` (routing key), `actor_id`, `ts` (millisecond timestamp).
+
+### Event Lifecycle
+
+```
+User action (e.g. drag card)
+    ↓
+[Optimistic UI] ← event applied to local state immediately (0ms)
+    ↓
+HTTP POST mutation to Board Service
+    ↓
+Board Service writes to PostgreSQL (source of truth)
+    ↓
+Board Service publishes event to Redis channel board:{boardId}
+    ↓
+All WS servers subscribed to board:{boardId} receive event
+    ↓
+Each WS server pushes event delta to its connected members
+    ↓
+Each client applies event to board state (<200ms end-to-end)
+    ↓
+Async: event also published to Kafka → Activity Service → BigQuery
+```
+
+```
+User A drags Card-42 from List-1 to List-2
+          |
+    [Optimistic UI] ← CARD_MOVED applied locally (0ms)
+          |
+    POST /cards/42/move {list_id, position}
+          |
+    PostgreSQL UPDATE cards SET list_id, position WHERE id=42
+          |
+    Redis PUBLISH board:{boardId}
+      { event: "CARD_MOVED", card_id: "c_42",
+        from_list: "l_1", to_list: "l_2",
+        position: 16384.0, actor_id: "u_A",
+        event_id: "evt_xyz", ts: 1712000000 }
+          |
+    ┌─────┴──────────────────────┐
+  WS Server 1               WS Server 2
+  (User B)                   (User C)
+     ↓                           ↓
+  CARD_MOVED applied         CARD_MOVED applied
+  to local board state       to local board state
+  (< 200ms total)            (< 200ms total)
+```
+
+**Why events, not direct DB sync?**
+- DB is slow (disk I/O) — can't serve as real-time broadcast channel
+- Events decouple mutation from fanout — Board Service doesn't know which WS servers are connected
+- Events are replayable — reconnecting clients can catch up from `last_event_id`
+- Events are the audit log — Activity Service consumes the same stream
+
+---
+
+## 🧠 Consistency Model
+
+> **System uses eventual consistency with the server as the single source of truth. Clients apply optimistic updates locally and reconcile with server state via events.**
+
+| Layer | Consistency model | Mechanism |
+|---|---|---|
+| Card position (ordering) | Eventual → strong on conflict | Optimistic locking (`WHERE updated_at=?`); conflict → 409 → client reverts to server state |
+| Card content (title, description) | Eventual | Last write wins per field; no character-level merge |
+| Board membership (add/remove) | Strong (CP) | DB write + immediate Redis cache invalidation; access revocation is a security event |
+| Activity feed | Eventual, append-only | Kafka consumer lag is acceptable; feed catches up within seconds |
+| Board snapshot (initial load) | Eventual (max 60s stale) | Redis TTL=60s + explicit invalidation on every mutation |
+
+### Conflict Resolution: Two Users Move the Same Card
+
+Three strategies exist — this system uses LWW:
+
+| Strategy | How it works | Verdict |
+|---|---|---|
+| **Last-write-wins (chosen)** | Server serializes writes via optimistic lock. First write commits. Second write sees stale `updated_at` → rejected. Loser's client receives correction event and reverts. | Correct for discrete positional events. Simple. |
+| **Version-based merge** | Each client sends a version vector. Server merges conflicting positions deterministically. | Over-engineered for card position — conflict rate <0.1% |
+| **Server-assigned ordering** | Server ignores client position, assigns its own monotonic sequence. | Breaks optimistic UI — clients can't predict position |
+
+**Chosen:** Last-write-wins with optimistic locking.
+
+```
+User A: POST /cards/42/move { position: 16384, updated_at: T1 }
+User B: POST /cards/42/move { position: 32768, updated_at: T1 }
+                                    ↑ same stale version
+
+DB executes:
+  UPDATE cards SET position=16384, updated_at=NOW()
+  WHERE id=42 AND updated_at=T1   ← User A wins (arrives first)
+  → 1 row affected → 200 OK → Redis PUBLISH CARD_MOVED (position=16384)
+
+  UPDATE cards SET position=32768, updated_at=NOW()
+  WHERE id=42 AND updated_at=T1   ← User B, already updated
+  → 0 rows affected → 409 Conflict
+
+User B's client:
+  → receives CARD_MOVED correction event (position=16384)
+  → reverts optimistic UI: card animates to position 16384
+  → board converges — all members see same state
+```
+
+**Why not pessimistic locking?** `SELECT FOR UPDATE` holds a row lock for the duration of the drag (hundreds of ms). At 100K drags/sec this serialises all concurrent drags globally — instant bottleneck.
+
+---
+
+---
+
+## 4.5 Permissions & Access Control
+
+> **Trello is a private-first system.** Boards are private by default. Access control is enforced at the API layer — the UI cannot be trusted to restrict access. Every mutation checks the caller's role before touching the DB.
+
+### Board Visibility
+
+| Visibility | Who can view | Who can mutate |
+|---|---|---|
+| `private` (default) | Only board members | Only admin/member roles |
+| `public` | Any authenticated user (read-only) | Only board members |
+
+> **Why private-first matters architecturally:** GET /boards/{id} must check membership before returning any data. A public board returns data for any authenticated request; a private board returns 403 if the requester has no `board_members` row.
 
 ### Role Matrix
 
@@ -685,28 +762,35 @@ Every WS server holds all connections. Any mutation broadcasts to all servers. E
 
 ### 9.3 Conflict Resolution — Optimistic Locking for Card Moves
 
-**Problem:** Two users drag the same card simultaneously. Both send `POST /cards/42/move`. Without coordination, the second write silently overwrites the first — the "winner" depends on network race, not user intent.
+> See the full conflict resolution strategy comparison in [🧠 Consistency Model](#-consistency-model) above. Summary here focuses on the implementation mechanics.
 
-**Naive solution — last write wins (no version check):**
-Silent overwrite. No conflict surfaced. One user's move disappears without explanation. Confusing UX.
+**Problem:** Two users drag the same card simultaneously. Both send `POST /cards/42/move`. Without coordination, the second write silently overwrites the first — the "winner" depends on network race, not intent.
 
-**Chosen solution — optimistic locking via `updated_at` timestamp:**
+**Chosen: Last-write-wins via optimistic locking on `updated_at`.**
 
-Client sends its known `updated_at` with every move request:
+Client always sends its last-known `updated_at` with every move request:
 ```sql
-UPDATE cards SET list_id=?, position=?, updated_at=NOW()
-WHERE id=? AND updated_at=?   ← client's last-known timestamp
+UPDATE cards
+SET list_id = $1, position = $2, updated_at = NOW(), updated_by = $3
+WHERE id = $4
+  AND updated_at = $5    ← client's last-known version
 ```
 
-- If 0 rows affected → conflict → return 409 → client reverts optimistic UI
-- If 1 row affected → success → publish to Redis
+| Outcome | What happened | Response |
+|---|---|---|
+| 1 row affected | Write committed, no conflict | 200 OK → Redis PUBLISH CARD_MOVED |
+| 0 rows affected | Another write committed between client's read and this write | 409 Conflict → client reverts optimistic UI |
 
-The winning write publishes a correction event to all members, including the losing client. Every client's optimistic update is reconciled against server truth.
+**Client reconciliation on 409:**
+1. Client receives the correction `CARD_MOVED` event from Redis (the winning version)
+2. Client discards its pending move from the `pendingEvents` Map
+3. Client applies the server's event — card animates to server-correct position (CSS transition, 300ms)
+4. Board state converges across all members
 
-**Why not pessimistic locking?** `SELECT FOR UPDATE` on a card while a user is dragging (hundreds of milliseconds) would hold a row lock for the drag duration. At 100K drags/sec, this serialises all drags globally — instant bottleneck.
+**Why not pessimistic locking?** `SELECT FOR UPDATE` holds a row lock for the entire drag duration (hundreds of ms). At 100K drags/sec this serialises all concurrent drags globally — instant bottleneck.
 
 > [!NOTE]
-> Key Insight: Optimistic locking is the right concurrency control for collaborative boards. Card conflicts are rare (<0.1% of moves). Pessimistic locking would serialise all concurrent drags for a conflict rate that almost never occurs.
+> Key Insight: Optimistic locking is correct because card conflicts are rare (<0.1% of moves). Pessimistic locking punishes the 99.9% of non-conflicting moves to protect against a conflict that almost never occurs. Wrong trade-off.
 
 ---
 
@@ -830,6 +914,19 @@ We're designing for **50M DAU**, **8M concurrent WebSocket connections**, **100K
 
 **Sharding strategy for PostgreSQL:**
 Shard key = `board_id`. All tables include `board_id` as a denormalized shard key. A board's entire data (lists, cards, comments) lives on one shard — no cross-shard joins for any board operation.
+
+### Hot Board Problem
+
+Some boards are **extremely hot** — a company-wide sprint board with 500 members all viewing simultaneously. This breaks the avg 4-member fanout assumption.
+
+| Problem | At 500 members | Solution |
+|---|---|---|
+| Redis Pub/Sub fan-out | 1 PUBLISH → 500 WS pushes per event, all from 1 channel | Acceptable — Redis handles millions of subscribers per channel |
+| PostgreSQL contention | 500 concurrent readers for same board snapshot | Snapshot cache absorbs this — 1 DB read per 60s regardless of reader count |
+| Cache invalidation storm | 200 mutations/sec on a hot board → 200 Redis snapshot invalidations/sec | Apply debounce: batch invalidations within a 500ms window; snapshot rebuilds at most 2/sec per board |
+| WS server hotspot | All 500 members on the same WS server (sticky sessions) | Sticky sessions are per-user, not per-board — 500 users spread across all WS servers naturally |
+
+**Isolated hot board treatment:** Boards exceeding a mutation-rate threshold (>100 mutations/min) are tagged as `hot`. For hot boards: snapshot TTL drops to 10s (trade freshness for cache hit rate); Redis Pub/Sub channel gets dedicated a connection pool priority.
 
 ---
 
@@ -1002,13 +1099,14 @@ Reliable Path (reconnect + catch-up):
 > [!TIP]
 > Say these out loud in the interview:
 
-1. "Trello is a board state management system, not a document editor. Card moves are discrete events — last-write-wins with optimistic locking is the correct conflict model. CRDT and OT are for character-level merges. They'd be massive over-engineering here."
-2. "I use fractional indexing (float64) for card positions. Moving a card is a single-row UPDATE. Integer-based ordering requires renumbering N cards per insert — N fan-out events to all board members. Wrong at 100K moves/sec."
-3. "Real-time fanout uses Redis Pub/Sub, not Kafka. Board mutations must reach all connected members in <200ms. Redis is in-memory sub-millisecond publish. Kafka adds 10–100ms broker latency — too slow for this use case."
-4. "WebSocket over SSE because board clients must send subscribe/unsubscribe messages as users navigate between boards. SSE is read-only. That single requirement forces WebSocket."
-5. "Optimistic UI is the right default — 99%+ of card moves succeed. The user sees instant feedback. On the rare 409 conflict, the card animates back to server position. The latency cost of waiting for server confirmation before rendering would make the board feel broken."
-6. "Every WS server subscribes to the same Redis Pub/Sub channel per board. One Redis PUBLISH fans out to all WS servers simultaneously. This is how a user on WS Server 1 sees a move made by a user on WS Server 3 in <200ms without any server-to-server calls."
-7. "I never route file uploads through API servers. Pre-signed S3 URL means 10M files/day (potentially 20TB) goes directly client-to-S3. My API servers handle metadata only — they'd need 50+ dedicated upload servers otherwise."
-8. "Board open uses a Redis snapshot cache (TTL=60s, explicitly invalidated on mutation). 99% of board opens hit the cache at ~5ms. The 1% cold read pays the DB query cost. Without this, every board open = a multi-table JOIN against a DB handling 100K mutations/sec simultaneously."
-9. "Permissions are enforced at the API layer, not the UI. Every mutation checks the caller's role (admin/member/viewer) against a permission matrix. I cache roles in Redis at TTL=30s to avoid a DB lookup per request at 100K mutations/sec — but I invalidate immediately on member removal because access revocation is a security event, not a UX event."
-10. "This system is NOT a task CRUD app. It is a collaborative state synchronization system — shared state + ordering + real-time sync. The hardest problems are card ordering (fractional index), real-time conflict (optimistic locking + LWW), and fan-out at scale (Redis Pub/Sub). CRUD is trivial. These three are not."
+1. "This system is NOT a task CRUD app. It is a reactive, event-driven collaborative state synchronization system. Every user action produces a named event — CARD_MOVED, CARD_CREATED, CARD_UPDATED. That event is stored, broadcast, and applied to all clients. There is no direct DB-to-UI path."
+2. "My consistency model is: eventual consistency with the server as single source of truth. Clients apply optimistic updates locally for instant feedback, then reconcile against server events. On conflict, server wins — client reverts. Every client always converges."
+3. "Conflict resolution is last-write-wins via optimistic locking on `updated_at`. Client sends its last-known version with every write. If the version is stale (another write already committed), DB returns 0 rows → 409 → client gets the correction event and reverts. No silent overwrite."
+4. "I use fractional indexing (float64) for card positions. Moving a card is a single-row UPDATE. Integer-based ordering requires renumbering N cards per insert — N fan-out events to all board members. Wrong at 100K moves/sec."
+5. "Real-time fanout uses Redis Pub/Sub, not Kafka. Board mutations must reach all connected members in <200ms. Redis is in-memory sub-millisecond publish. Kafka adds 10–100ms broker latency — too slow for this use case."
+6. "WebSocket over SSE because board clients must send subscribe/unsubscribe messages as they navigate between boards. SSE is read-only. That single requirement forces WebSocket."
+7. "Optimistic UI is the right default — 99%+ of card moves succeed. The user sees instant feedback. On the rare 409 conflict, the card animates back to server position. The latency cost of waiting for server confirmation before rendering would make the board feel broken."
+8. "Every WS server subscribes to the same Redis Pub/Sub channel per board. One Redis PUBLISH fans out to all WS servers simultaneously. This is how a user on WS Server 1 sees a move made by a user on WS Server 3 in <200ms without any server-to-server calls."
+9. "Hot boards — boards with 500+ members all active simultaneously — break the avg 4-member fanout assumption. I handle them with debounced snapshot invalidation and tagged priority in Redis, not a completely different architecture."
+10. "Permissions are enforced at the API layer — boards are private by default. Every mutation checks the caller's role (admin/member/viewer) against a permission matrix. Roles are cached in Redis at TTL=30s, but I invalidate immediately on member removal because access revocation is a security event, not a UX event."
+11. "I never route file uploads through API servers. Pre-signed S3 URL means 10M files/day (potentially 20TB) goes directly client-to-S3. My API servers handle metadata only."
