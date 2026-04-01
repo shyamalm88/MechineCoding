@@ -2,15 +2,37 @@
 
 ---
 
+## 🧠 Core Problem
+
+> **Trello is NOT a task CRUD system. It is a real-time collaborative state synchronization system.**
+
+```
+Collaborative system = shared state + ordering + real-time sync
+
+Maintain consistent ordering and state of tasks (cards)
+across multiple users in real time, while supporting
+frequent mutations: drag, reorder, edit — all concurrently.
+```
+
+**Three hard problems that make this non-trivial:**
+
+| Problem | Why hard | Solution |
+|---|---|---|
+| Card ordering | Naive integer index requires renumbering N cards per insert = N fan-out events | Fractional indexing — one UPDATE per move |
+| Real-time conflict | Two users drag same card simultaneously — whose move wins? | Optimistic locking + LWW + client revert |
+| Fanout at scale | 8M open boards × 4 members = 400K WS pushes/sec across N servers | Redis Pub/Sub per-board channel — one PUBLISH fans to all WS servers |
+
+---
+
 ## 1. Problem + Scope
 
 Design a real-time collaborative kanban board system (Trello/Jira-lite) where multiple users can manage boards, lists, and cards simultaneously, with changes propagating to all active collaborators in real time.
 
-> **Core problem:** Synchronize mutable board state — card positions, list order, card content — across multiple concurrent users with low latency, correct ordering, and no lost updates.
+> **Core problem:** Maintain consistent ordering and state of tasks across multiple concurrent users while supporting frequent positional mutations (drag, reorder, edit) with <200ms propagation to all board members.
 
-> **This is NOT a document editor (no OT/CRDT needed).** It is a board state machine. Each mutation (move card, rename, comment) is a discrete event applied to a shared state. The challenge is fanout, ordering, and conflict handling for concurrent positional mutations, not character-level merge.
+> **This is NOT a document editor (no OT/CRDT needed).** It is a board state machine. Each mutation (move card, rename, comment) is a discrete event applied to shared state. The challenge is ordering, fanout, and conflict handling for concurrent positional mutations — not character-level merge.
 
-**In scope:** Boards, Lists, Cards (CRUD + drag-and-drop reorder), real-time multi-user sync, comments, labels, due dates, assignments, activity feed, file attachments, notifications.
+**In scope:** Boards, Lists, Cards (CRUD + drag-and-drop reorder), real-time multi-user sync, comments, labels, due dates, assignments, activity feed, file attachments, notifications, role-based access control.
 **Out of scope:** Gantt charts, advanced reporting/analytics, time-tracking, billing/subscription management.
 
 ---
@@ -44,12 +66,12 @@ Design a real-time collaborative kanban board system (Trello/Jira-lite) where mu
 ## 3. Functional Requirements
 
 - Create / update / delete boards, lists, and cards
-- Drag-and-drop cards within and across lists (reorder)
-- Real-time sync — all board members see mutations within ~200ms
+- **Drag-and-drop cards within and across lists** — the ordering problem: naive integer index requires renumbering N cards per insert. Solved with fractional indexing (float64) — every drag = 1 DB write, not N
+- **Real-time sync** — all board members see mutations within ~200ms, across concurrent users
 - Card details: title, description, labels, due date, assignees, checklist, attachments
 - Comments on cards with @mentions
 - Activity feed per card and per board (audit log)
-- Board member management (invite, role: admin/member/viewer)
+- Board member management (invite, role: admin/member/viewer) — with enforced permissions per role
 - Notifications (mention, due date reminder, card assigned)
 
 ---
@@ -78,28 +100,52 @@ Design a real-time collaborative kanban board system (Trello/Jira-lite) where mu
 
 ## 🧠 Mental Model
 
-**Trello is a real-time collaborative board state management system optimized for low-latency multi-user synchronization.**
+**Trello is a real-time collaborative state synchronization system** — not a task manager. The UI is a kanban board, but the engineering problem is: how do you keep shared mutable state (card positions, card content) consistent across concurrent users in real time?
 
 ```
 Board state = a tree:
   Board
-    └── List[]
-          └── Card[]
-                └── Comment[], Attachment[], Activity[]
+    └── List[]  ← ordered by position (float64)
+          └── Card[]  ← ordered by position (float64) within list
+                └── Comment[], Attachment[], Checklist[], Activity[]
 
-Every user mutation = an event applied to this tree.
+Every user action = an event applied to this tree.
 Every event must be:
   1. Persisted in DB (source of truth)
-  2. Fanned out to all other board members via WebSocket
+  2. Fanned out to all board members via WebSocket
+  3. Idempotent — safe to replay on reconnect
 ```
+
+### Event-Driven Model
+
+> **Every user action → Event → Broadcast → All clients update UI**
+> NOT: user action → direct DB update → UI
+
+```
+User drags card
+    ↓
+[Optimistic UI] ← card moves instantly in user's browser (0ms)
+    ↓
+POST /cards/42/move  ← event fired to server
+    ↓
+[Board Service] validates + DB write (source of truth)
+    ↓
+Redis PUBLISH board:{boardId} {event: CARD_MOVED, ...}
+    ↓
+ALL WS servers subscribed to board:{boardId} receive event
+    ↓
+Each WS server pushes delta to its connected board members
+    ↓
+All members' UIs update (<200ms end-to-end)
+```
+
+This model is critical: the DB is not the fanout mechanism. Redis Pub/Sub is. The DB write happens first (correctness), then the event is broadcast. No event = no broadcast. No DB write = no event. Order is enforced.
 
 **E2E flow in one line:**
 ```
-User drags card → optimistic UI update → POST mutation → DB write →
-  Redis Pub/Sub publish → WS Server fan-out → all members update board
+User drags card → optimistic UI → POST mutation → DB write →
+  Redis PUBLISH board:{id} → WS fan-out → all members update
 ```
-
-The fanout model is **push (fan-out on write)** — small groups (avg 4 other members), so write amplification is minimal. Every mutation is immediately pushed to all active WebSocket connections for that board.
 
 ```
 User A drags Card-42 from List-1 to List-2
@@ -121,6 +167,17 @@ User A drags Card-42 from List-1 to List-2
     in <200ms                 in <200ms
 ```
 
+### Multi-User Consistency: What if 2 Users Reorder the Same List?
+
+| Scenario | What happens |
+|---|---|
+| User A moves Card-42 to position 2 | DB write succeeds, Redis publishes `CARD_MOVED`, all members see it |
+| User B moves Card-42 to position 5 at the same instant | B's write hits optimistic lock check: `WHERE updated_at = T_old` — if A already committed, B gets 0 rows → 409 |
+| User B's UI | Receives `CARD_MOVED` correction event from Redis (A's version) → reverts optimistic update to server position |
+| End state | All clients converge to A's position. No silent overwrite. No data loss. |
+
+→ **Optimistic UI + optimistic locking + server LWW = eventual consistency with conflict surfacing.** Every client always converges to the server's committed state.
+
 **⚡ Core Design Principles**
 
 | Fast Path (optimistic) | Reliable Path (sync) |
@@ -128,6 +185,53 @@ User A drags Card-42 from List-1 to List-2
 | Optimistic UI — card moves instantly in user's browser | DB write before Redis publish — no publish without persistence |
 | WebSocket delta push — only the changed card, not full board | Activity event appended for every mutation (audit trail) |
 | Client reconciles on WS reconnect (full snapshot diff) | Conflict: server LWW wins, client receives correction event |
+
+---
+
+## 4.5 Permissions & Authorization
+
+> **Who can do what?** This is non-negotiable in a collaborative system — access control must be enforced at the API layer, not just the UI.
+
+### Role Matrix
+
+| Action | Admin | Member | Viewer |
+|---|---|---|---|
+| View board (read all lists + cards) | ✅ | ✅ | ✅ |
+| Create card | ✅ | ✅ | ❌ |
+| Edit card (title, description, due date) | ✅ | ✅ | ❌ |
+| Move card (drag-and-drop) | ✅ | ✅ | ❌ |
+| Delete card (archive) | ✅ | ✅ (own cards only) | ❌ |
+| Comment on card | ✅ | ✅ | ❌ |
+| Upload attachment | ✅ | ✅ | ❌ |
+| Create / rename list | ✅ | ✅ | ❌ |
+| Delete list | ✅ | ❌ | ❌ |
+| Invite members | ✅ | ❌ | ❌ |
+| Change member role | ✅ | ❌ | ❌ |
+| Remove member | ✅ | ❌ | ❌ |
+| Delete / archive board | ✅ (board owner only) | ❌ | ❌ |
+| Change board visibility (public/private) | ✅ | ❌ | ❌ |
+
+### How Enforcement Works
+
+```
+Every API request:
+  1. API Gateway validates JWT → extracts user_id
+  2. Board Service looks up board_members for (board_id, user_id)
+     → fetches role (cached in Redis, TTL=30s)
+  3. Middleware checks role against action's required permission
+  4. Permitted → proceed  |  Denied → 403 Forbidden
+
+Board membership changes (remove member, role downgrade):
+  → Invalidate Redis cache entry immediately (strong consistency required)
+  → User loses access on next request (max 30s stale window for TTL,
+     0s for explicit invalidation)
+```
+
+**Why cache the role lookup?** Every single API call and WS event must check permissions. At 100K mutations/sec, a DB lookup per request = bottleneck. Redis role cache with 30s TTL reduces DB load by ~100×.
+
+**Why 30s TTL (not 60s like snapshot)?** Role removal is a security event — a removed member must not see board events. 30s is the acceptable stale window. (For enterprise/compliance boards, this would drop to 0 with direct DB check on every mutation.)
+
+**Public boards:** `visibility=public` boards grant `viewer` role to any authenticated user who requests them. The middleware treats absence of a `board_members` row as `viewer` if `boards.visibility = 'public'`.
 
 ---
 
@@ -868,6 +972,7 @@ ws.onclose = () => {
 | Shard PostgreSQL by board_id | All board data (lists, cards, comments) on one shard — no cross-shard joins | Manual resharding on topology change |
 | @mention notification via Kafka (async) | Comment save must not block on notification delivery | At-least-once; deduped by `comment_id + user_id` idempotency key |
 | Due date reminder via 5-min polling job + Redis lock | Timer queues require cancel/reschedule on every due_date edit | 5-min polling interval is well within 24h tolerance |
+| Role-based permissions cached in Redis (TTL=30s) | Every API call needs a role check — DB lookup per request at 100K/sec would bottleneck | 30s stale window; explicit invalidation on role removal for security |
 
 ### Fast Path vs Reliable Path
 
@@ -905,3 +1010,5 @@ Reliable Path (reconnect + catch-up):
 6. "Every WS server subscribes to the same Redis Pub/Sub channel per board. One Redis PUBLISH fans out to all WS servers simultaneously. This is how a user on WS Server 1 sees a move made by a user on WS Server 3 in <200ms without any server-to-server calls."
 7. "I never route file uploads through API servers. Pre-signed S3 URL means 10M files/day (potentially 20TB) goes directly client-to-S3. My API servers handle metadata only — they'd need 50+ dedicated upload servers otherwise."
 8. "Board open uses a Redis snapshot cache (TTL=60s, explicitly invalidated on mutation). 99% of board opens hit the cache at ~5ms. The 1% cold read pays the DB query cost. Without this, every board open = a multi-table JOIN against a DB handling 100K mutations/sec simultaneously."
+9. "Permissions are enforced at the API layer, not the UI. Every mutation checks the caller's role (admin/member/viewer) against a permission matrix. I cache roles in Redis at TTL=30s to avoid a DB lookup per request at 100K mutations/sec — but I invalidate immediately on member removal because access revocation is a security event, not a UX event."
+10. "This system is NOT a task CRUD app. It is a collaborative state synchronization system — shared state + ordering + real-time sync. The hardest problems are card ordering (fractional index), real-time conflict (optimistic locking + LWW), and fan-out at scale (Redis Pub/Sub). CRUD is trivial. These three are not."
