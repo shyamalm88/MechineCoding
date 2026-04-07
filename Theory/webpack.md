@@ -516,7 +516,57 @@ Works perfectly. The component boundary is normal React — props flow as usual.
 
 ---
 
-### Strategy 2 — Shared Store (Redux / Zustand via shared modules)
+### Strategy 2 — Exposed API / Hook (remote → host)
+
+The **reverse of props**. Instead of the host pushing data down, the remote exposes its own hooks, functions, or store actions — and the host imports and uses them directly. The remote owns the data; the host just pulls from it.
+
+```js
+// cart-app/webpack.config.js — remote exposes its own API surface
+new ModuleFederationPlugin({
+  name: 'cartApp',
+  exposes: {
+    './useCart':   './src/hooks/useCart',    // hook
+    './cartStore': './src/store/cartStore',  // store actions
+  }
+})
+
+// cart-app/src/hooks/useCart.js — remote owns this data
+export function useCart() {
+  const [items, setItems] = useState([]);
+  const addItem   = (item) => setItems(prev => [...prev, item]);
+  const removeItem = (id)  => setItems(prev => prev.filter(i => i.id !== id));
+  return { items, count: items.length, addItem, removeItem };
+}
+```
+
+```js
+// Host imports and uses the remote's hook — host never manages cart state
+import { useCart } from 'cartApp/useCart';
+
+function ShellHeader() {
+  const { count } = useCart(); // remote owns the data, host just reads
+  return <Badge count={count} />;
+}
+
+function ProductPage({ productId }) {
+  const { addItem } = useCart(); // host calls remote's action
+  return <button onClick={() => addItem({ id: productId })}>Add to cart</button>;
+}
+```
+
+**Why this is genuinely different from props:**
+- Data direction is **remote → host** (props is host → remote)
+- Remote is the **source of truth** for this domain — host doesn't even hold the state
+- Works for **cross-remote** too — Remote A can import Remote B's hook with no host involvement
+- Remote team fully owns the API contract; host team just consumes it
+
+**Limitation:** Both apps must share the same React instance (`singleton: true`) for hooks to work. Also, the hook runs in the host's React tree — if the same hook is imported in two places, two separate state instances are created (not one shared cart). Fix: expose a store (Zustand/Redux) instead of a raw hook if shared singleton state is needed.
+
+**Best for:** Feature-team ownership — cart team owns cart state and exposes a clean API; shell team consumes it without caring about implementation.
+
+---
+
+### Strategy 3 — Shared Store (Redux / Zustand via shared modules)
 
 Both host and remote depend on the same state library. You declare it as a **shared singleton** in Module Federation config. Both apps use the exact same store instance at runtime.
 
@@ -547,7 +597,7 @@ function RemoteCart() {
 
 ---
 
-### Strategy 3 — Custom Events (decoupled, cross-framework)
+### Strategy 4 — Custom Events (decoupled, cross-framework)
 
 Host and remote communicate through the browser's native `CustomEvent` API on `window`. Zero coupling — works even if remote is Vue and host is React.
 
@@ -571,7 +621,7 @@ useEffect(() => {
 
 ---
 
-### Strategy 4 — Shared Context (React-specific, elegant)
+### Strategy 5 — Shared Context (React-specific, elegant)
 
 Host exposes a React Context provider as a shared module. Remote consumes it. Both use the same React instance (enforced by `singleton: true`) so context propagates normally.
 
@@ -599,26 +649,30 @@ const { user } = useContext(UserContext);
 
 ### Which Pattern When?
 
-| Pattern | Use when | Avoid when |
-|---|---|---|
-| Props | Remote is a dumb display component | Remote needs to initiate data changes upward |
-| Shared store | Remote is deeply integrated, needs to read/write global state | Teams are separate and shouldn't share state contracts |
-| Custom events | Cross-framework, loosely coupled, different teams | You need synchronous read of current state |
-| Shared context | React-only, tree-wide data (auth, theme) | Remote is not React |
+| # | Pattern | Direction | Use when | Avoid when |
+|---|---|---|---|---|
+| 1 | Props | host → remote | Remote is a display component | Remote needs to push data back up |
+| 2 | Exposed API / Hook | remote → host | Remote owns the domain (cart, auth) | Hook creates two instances — use store instead |
+| 3 | Shared Store | bidirectional | Deep integration, remote needs read+write | Teams shouldn't share state contracts |
+| 4 | Custom Events | any direction | Cross-framework, loosely coupled teams | You need synchronous read of current state |
+| 5 | Shared Context | any direction | React-only, tree-wide data (auth, theme) | Remote is not React |
 
 ```mermaid
 flowchart TD
     H["🏠 Host App"]
+    R["📦 Remote App"]
 
-    H -->|"props"| P["Remote Component\nreceives data as\nnormal React props"]
-    H -->|"shared store\nsingleton:true"| S["Remote Component\nreads/writes same\nZustand/Redux store"]
-    H -->|"CustomEvent\non window"| E["Remote Component\nlistens via\nwindow.addEventListener"]
-    H -->|"shared Context\nsingleton React"| C["Remote Component\nuseContext — same\nfiber tree"]
+    H -->|"1 · props\nhost → remote"| P["Remote Component\nreceives props\nfrom host"]
+    R -->|"2 · exposed hook/API\nremote → host"| A["Host imports\nuseCart · cartStore\nRemote owns the data"]
+    H <-->|"3 · shared store\nbidirectional"| S["Zustand / Redux\nsingleton instance\nboth read + write"]
+    H <-->|"4 · CustomEvent\nany direction"| E["window.dispatchEvent\nzero coupling\ncross-framework"]
+    H <-->|"5 · shared context\nany direction"| C["React.createContext\nexposed by host\nsame fiber tree"]
 
     P --> T1["✅ Simple\n❌ One-way only"]
-    S --> T2["✅ Read + Write\n❌ Teams must share contract"]
-    E --> T3["✅ Cross-framework\n❌ Misses past events"]
-    C --> T4["✅ Tree-wide\n❌ React only"]
+    A --> T2["✅ Remote owns domain\n❌ Two hook instances\nif not singleton store"]
+    S --> T3["✅ Read + Write\n❌ Shared contract\nbetween teams"]
+    E --> T4["✅ Cross-framework\n❌ Misses past events"]
+    C --> T5["✅ Tree-wide\n❌ React only"]
 ```
 
 ---
@@ -846,7 +900,7 @@ module: {
 
 6. "MF deliberately uses `window` as a shared registry — `window.headerApp` is the container. This is the one place webpack intentionally pollutes global scope, because there's no other communication channel between separately deployed builds at runtime."
 
-7. "Passing data host-to-remote: four patterns — props (dumb components), shared store singleton (deep integration), custom events on window (cross-framework, decoupled), shared React context (tree-wide data like auth/theme). Choice depends on coupling tolerance between teams."
+7. "Data passing in MF has five patterns. Props (host → remote) and Exposed API/Hook (remote → host) are the two direct module patterns — mirror images of each other. Then Shared Store (bidirectional, deep integration), Custom Events (decoupled, cross-framework), and Shared Context (React tree-wide). The key insight with Exposed API: the remote owns the domain data and exposes a clean hook or store — the host just consumes it without holding any of that state itself."
 
 8. "Source maps in production should be `hidden-source-map` — the `.map` file is generated and uploaded to an error tracker like Sentry, but never linked in the bundle. Users can't read your source. Your engineers can debug stack traces."
 
