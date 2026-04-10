@@ -1,10 +1,18 @@
 Array.prototype.myFlat = function (depth = 1) {
-  return this.reduce((acc, item) => {
+  const result = [];
+
+  for (let i = 0; i < this.length; i++) {
+    if (!(i in this)) continue; // handle sparse arrays
+
+    const item = this[i];
+
     if (Array.isArray(item) && depth > 0) {
-      acc.push(...item.myFlat(depth - 1));
+      const flattened = item.myFlat(depth - 1);
+      result.push(...flattened);
     } else {
-      acc.push(item);
+      result.push(item);
     }
-    return acc;
-  }, []);
+  }
+
+  return result;
 };

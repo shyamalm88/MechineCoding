@@ -8,6 +8,8 @@ Array.prototype.myMap = function (callback, context) {
 
   for (let i = 0; i < length; i++) {
     // Sparse array check: Only map if the index actually exists
+    // const arr = [1, , 3]; // index 1 is empty
+    // console.log(arr.length); // 3
     if (i in this) {
       newArray[i] = callback.call(context, this[i], i, this);
     }

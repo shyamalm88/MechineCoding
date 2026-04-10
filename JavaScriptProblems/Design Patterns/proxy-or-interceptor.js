@@ -26,4 +26,12 @@ const userProxy = new Proxy(user, {
 
 // Usage
 console.log(userProxy.name); // Logs "Getting name" -> "John"
-userProxy.age = "Old"; // Error: Age must be a number!
+console.log(userProxy.email); // Not in target -> "Not Found"
+
+userProxy.age = 31; // Setting age to 31
+
+try {
+  userProxy.age = "Old"; // Error: Age must be a number!
+} catch (e) {
+  console.error(e.message); // "Age must be a number!"
+}

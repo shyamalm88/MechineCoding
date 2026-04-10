@@ -33,7 +33,7 @@ function createStore(reducer, initialState) {
 
   function dispatch(action) {
     state = reducer(state, action);
-    listeners.forEach((l) => l());
+    listeners.forEach((listener) => listener());
   }
 
   function subscribe(listener) {
