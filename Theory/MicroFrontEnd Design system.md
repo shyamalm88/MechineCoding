@@ -10,17 +10,21 @@ Micro-frontends apply **microservice thinking to the frontend** — decompose a 
 
 **The organizational problem they solve:**
 
-```
-Monolith frontend:
-  Team Chat   ──┐
-  Team Calendar ──┼──→  one giant repo → one release train → blocked by each other
-  Team Search ──┘
+```mermaid
+graph LR
+    subgraph mono["Monolith — one release train"]
+        TC["Team Chat"] --> M["One giant repo"]
+        TCA["Team Calendar"] --> M
+        TS["Team Search"] --> M
+        M -->|"blocked by each other"| D["Deploy together"]
+    end
 
-Micro-frontend:
-  Team Chat     → chat.example.com/remoteEntry.js    → deploy independently
-  Team Calendar → calendar.example.com/remoteEntry.js → deploy independently
-  Team Search   → search.example.com/remoteEntry.js  → deploy independently
-  Shell         → orchestrates, provides auth + nav
+    subgraph mfe["Micro-Frontend — independent deploys"]
+        TC2["Team Chat"] -->|deploy independently| RC["chat.example.com/remoteEntry.js"]
+        TCA2["Team Calendar"] -->|deploy independently| RCA["calendar.example.com/remoteEntry.js"]
+        TS2["Team Search"] -->|deploy independently| RS["search.example.com/remoteEntry.js"]
+        SH["Shell (auth + nav)"] --> RC & RCA & RS
+    end
 ```
 
 > Micro-frontends are an **organizational solution** first, technical solution second. If you have one team, you probably don't need them.
@@ -85,16 +89,25 @@ Shell: import ChatWidget from '@company/chat-widget'
 
 Server assembles the page from fragments owned by different services before sending HTML to browser.
 
-```
-Browser: GET /dashboard
-  ↓
-Nginx / Composition Layer:
-  → GET chat-service.internal/fragment
-  → GET calendar-service.internal/fragment
-  → GET search-service.internal/fragment
-  → Assembles into one HTML response
-  ↓
-Browser receives complete HTML
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant N as Nginx / Composition Layer
+    participant CS as chat-service
+    participant CAS as calendar-service
+    participant SS as search-service
+
+    B->>N: GET /dashboard
+    par Parallel fragment requests
+        N->>CS: GET /fragment
+        N->>CAS: GET /fragment
+        N->>SS: GET /fragment
+    end
+    CS-->>N: Chat HTML fragment
+    CAS-->>N: Calendar HTML fragment
+    SS-->>N: Search HTML fragment
+    N->>N: Assemble into one HTML response
+    N-->>B: Complete HTML
 ```
 
 | ✅ Pros | ❌ Cons |
@@ -541,17 +554,21 @@ remotes: {
 
 ### Blue-Green Deployment
 
-```
-chat.example.com/remoteEntry.js
-  → points to BLUE (current stable)
+```mermaid
+flowchart TD
+    START["CDN: remoteEntry.js → BLUE (stable)"]
+    SMOKE{"Smoke tests pass?"}
+    SWITCH["CDN switches pointer to GREEN"]
+    GREEN["remoteEntry.js → GREEN (new version)"]
+    NEW["New sessions → GREEN"]
+    OLD["In-progress sessions finish on BLUE (graceful)"]
+    RB["Rollback: pointer stays on BLUE"]
 
-CDN switches pointer to GREEN after smoke tests pass:
-chat.example.com/remoteEntry.js
-  → now points to GREEN (new version)
-
-Shell fetches remoteEntry.js on each user session start
-→ all new sessions automatically get GREEN
-→ in-progress sessions finish on BLUE (graceful)
+    START --> SMOKE
+    SMOKE -->|"✅ pass"| SWITCH --> GREEN
+    SMOKE -->|"❌ fail"| RB
+    GREEN --> NEW
+    GREEN --> OLD
 ```
 
 ### Rollback Strategy
@@ -707,15 +724,21 @@ Every remote adds a network waterfall. Mitigate aggressively.
 
 ### The waterfall problem
 
-```
-Without optimization:
-  Load Shell (200ms)
-    → User clicks Chat
-    → fetch remoteEntry.js (50ms RTT)
-    → fetch chat.chunk.js (100ms)
-    → parse + execute (50ms)
-    → render (16ms)
-  Time to interactive for Chat: 416ms extra
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant SH as Shell
+    participant CDN as Remote CDN
+
+    Note over SH: Shell bundle loaded (200ms)
+    U->>SH: Clicks Chat link
+    SH->>CDN: fetch remoteEntry.js
+    CDN-->>SH: module map (50ms RTT)
+    SH->>CDN: fetch chat.chunk.js
+    CDN-->>SH: Chat bundle (100ms)
+    Note over SH: parse + execute (50ms)
+    Note over SH: render (16ms)
+    Note over U,CDN: Total extra time to interactive: ~416ms
 ```
 
 ### Mitigation strategies
