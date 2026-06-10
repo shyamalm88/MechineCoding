@@ -10,9 +10,31 @@
       "Bash(cat:*)",
       "Bash(ls \"/Volumes/Personal/MechineCoding/system-design/latest & updated/\")",
       "Bash(git -C /Volumes/Personal/MechineCoding show HEAD:system-design/zomato-food-delivery.md)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(ls /Volumes/Personal/MechineCoding/graphify-out/ 2>/dev/null || mkdir -p /Volumes/Personal/MechineCoding/graphify-out/)",
+      "Bash(python3 -c \"import json; d = json.load\\(open\\('/Volumes/Personal/MechineCoding/graphify-out/.graphify_chunk_03.json'\\)\\); print\\(f'nodes: {len\\(d[\\\\\"nodes\\\\\"]\\)}, edges: {len\\(d[\\\\\"edges\\\\\"]\\)}, hyperedges: {len\\(d[\\\\\"hyperedges\\\\\"]\\)}'\\)\")",
+      "Bash(claude plugin *)",
+      "Bash(claude plugins *)",
+      "Bash(cat /Users/arghyamajumder/.claude/plugins/known_marketplaces.json)",
+      "Read(//Users/arghyamajumder/.claude/plugins/**)",
+      "Bash(ls /Users/arghyamajumder/.claude/plugins/marketplaces/)",
+      "Read(//Users/arghyamajumder/.claude/plugins/marketplaces/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(\"/Users/arghyamajumder/Library/Application Support/Claude/claude-code/2.1.119/claude.app/Contents/MacOS/claude\" --help)",
+      "Bash(\"/Users/arghyamajumder/Library/Application Support/Claude/claude-code/2.1.119/claude.app/Contents/MacOS/claude\" plugin marketplace add --help)",
+      "Bash(\"/Users/arghyamajumder/Library/Application Support/Claude/claude-code/2.1.119/claude.app/Contents/MacOS/claude\" plugin marketplace add \"https://github.com/anthropics/claude-plugins-public.git\" --scope user)",
+      "Bash(\"/Users/arghyamajumder/Library/Application Support/Claude/claude-code/2.1.119/claude.app/Contents/MacOS/claude\" plugin install \"code-review@claude-plugins-official\")",
+      "Bash(\"/Users/arghyamajumder/Library/Application Support/Claude/claude-code/2.1.119/claude.app/Contents/MacOS/claude\" plugin install \"skill-creator@claude-plugins-official\")",
+      "Bash(\"/Users/arghyamajumder/Library/Application Support/Claude/claude-code/2.1.119/claude.app/Contents/MacOS/claude\" plugin list)",
+      "Bash(open /Volumes/Personal/MechineCoding/DSA/sliding-window/notes.html)",
+      "Bash(shasum -a 1 *.js)",
+      "Bash(git -C /Volumes/Personal/MechineCoding remote -v)",
+      "Bash(git -C /Volumes/Personal/MechineCoding rev-parse --abbrev-ref HEAD)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "/Volumes/Personal/MechineCoding/graphify-out"
+    ]
   }
 }

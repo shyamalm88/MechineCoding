@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sliding Window - Pattern Notes</title>
+  <link rel="stylesheet" href="../notes-style.css" />
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <a class="back-link" href="../notes-index.html">&larr; All Topics</a>
+      <h2>Sliding Window</h2>
+      <ul class="toc">
+        <li><a href="#spot">1. How to Spot</a></li>
+        <li><a href="#template">2. Core Template</a></li>
+        <li><a href="#tricks">3. Tricks &amp; Twists</a></li>
+        <li><a href="#pitfalls">4. Pitfalls</a></li>
+        <li><a href="#problems">5. Problems</a></li>
+      </ul>
+    </nav>
+
+    <main class="content">
+      <h1>Sliding Window</h1>
+
+      <section id="spot">
+        <h2>1. How to Spot This Pattern</h2>
+
+        <div class="flowchart">
+          <div class="flow-step">
+            <div class="flow-q">1. Is it about a CONTIGUOUS subarray / substring?</div>
+            <div class="flow-a"><span class="no">No</span> &rarr; not sliding window (think subsets, DP, backtracking). &nbsp; <span class="yes">Yes</span> &rarr; continue.</div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-q">2. Is the window's value MONOTONIC as it grows/shrinks (no negatives)?</div>
+            <div class="flow-a"><span class="no">No</span> &rarr; sliding window breaks (think Kadane's / DP). &nbsp; <span class="yes">Yes</span> &rarr; continue.</div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-q">3. Is the window SIZE given (k, or len(pattern))?</div>
+            <div class="flow-a"><span class="yes">Yes</span> &rarr; <strong>Fixed-size</strong> window: slide it, compute per position. &nbsp; <span class="no">No</span> &rarr; <strong>Variable-size</strong>, continue.</div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-q">4. Are you asked for LONGEST or SHORTEST/MINIMUM?</div>
+            <div class="flow-a"><strong>Longest</strong> &rarr; shrink WHILE INVALID, update AFTER the while. &nbsp; <strong>Shortest/Minimum</strong> &rarr; shrink WHILE VALID, update INSIDE the while.</div>
+          </div>
+        </div>
+
+        <details class="reveal">
+          <summary>
+            <span><span class="tag tag-signal">Signal</span><br />What "shape" of problem screams sliding window?</span>
+          </summary>
+          <div class="reveal-body">
+            <p>
+              The problem talks about a <strong>contiguous</strong> subarray / substring /
+              run of consecutive elements - not "any subset". Order and adjacency matter.
+            </p>
+          </div>
+        </details>
+
+        <details class="reveal">
+          <summary>
+            <span><span class="tag tag-signal">Signal</span><br />What must be true about the window's "value" as it grows/shrinks?</span>
+          </summary>
+          <div class="reveal-body">
+            <p>
+              <strong>Monotonic window condition</strong> - usually because values are
+              non-negative (lengths, counts, positive sums):
+            </p>
+            <ul>
+              <li>Expanding the window (move <code>right</code>) only ever makes the tracked value <em>go up</em> / the constraint <em>tighter</em>.</li>
+              <li>Shrinking the window (move <code>left</code>) only ever makes it <em>go down</em> / <em>looser</em>.</li>
+            </ul>
+            <p>
+              If adding an element could make things "better" or "worse" unpredictably
+              (e.g. negative numbers in a sum), the left pointer can't be trusted to move
+              only forward - sliding window breaks down (think Kadane's / DP instead).
+            </p>
+          </div>
+        </details>
+      </section>
+
+      <section id="template">
+        <h2>2. Core Idea &amp; Template</h2>
+
+        <p>
+          Two pointers, asymmetric roles: <code>right</code> drives a <code>for</code> loop and
+          always <strong>expands</strong> (add <code>arr[right]</code> to window state).
+          <code>left</code> moves inside a <code>while</code> loop and <strong>shrinks</strong>
+          (remove <code>arr[left]</code> from window state).
+        </p>
+
+        <div class="tabs">
+          <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="longest">Longest-type</button>
+            <button class="tab-btn" data-tab="shortest">Shortest / Minimum-type</button>
+          </div>
+
+          <div class="tab-panel active" data-panel="longest">
+            <p>Shrink <strong>WHILE INVALID</strong>, update <strong>AFTER</strong> the <code>while</code>.</p>
+            <pre><code>let left = 0, maxLen = 0;
+
+for (let right = 0; right &lt; arr.length; right++) {
+  // expand: add arr[right] to window state
+
+  while (/* window invalid */) {
+    // shrink: remove arr[left] from window state
+    left++;
+  }
+
+  // window is guaranteed valid here
+  maxLen = Math.max(maxLen, right - left + 1);
+}</code></pre>
+          </div>
+
+          <div class="tab-panel" data-panel="shortest">
+            <p>Shrink <strong>WHILE VALID</strong>, update <strong>INSIDE</strong> the <code>while</code>.</p>
+            <pre><code>let left = 0, minLen = Infinity;
+
+for (let right = 0; right &lt; arr.length; right++) {
+  // expand: add arr[right] to window state
+
+  while (/* window still valid */) {
+    minLen = Math.min(minLen, right - left + 1);
+    // shrink: remove arr[left] from window state
+    left++;
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <blockquote>
+          <strong>Mnemonic:</strong> "Longest waits for the dust to settle, then measures.
+          Shortest measures on the way down."
+        </blockquote>
+      </section>
+
+      <section id="tricks">
+        <h2>3. Tricks &amp; Twists</h2>
+
+        <h3>Fixed-size vs Variable-size window</h3>
+
+        <div class="tabs">
+          <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="fixed">Fixed-size</button>
+            <button class="tab-btn" data-tab="variable">Variable-size</button>
+          </div>
+
+          <div class="tab-panel active" data-panel="fixed">
+            <p>
+              The window length is a <strong>known number</strong> (given <code>k</code>, or
+              derived like <code>len(pattern)</code>). You slide that exact-size window
+              across and compute something at every position.
+            </p>
+            <p><strong>Trigger words:</strong> "window of size k", "every contiguous subarray of size k", "anagram / permutation of p" (size = len(p)).</p>
+            <p><strong>Examples:</strong></p>
+            <ul>
+              <li><code>findAllAnagramsInAString</code></li>
+              <li><code>permutationInString</code></li>
+              <li><code>slidingWindowMaximum</code></li>
+              <li><code>slidingWindowMedian</code></li>
+            </ul>
+          </div>
+
+          <div class="tab-panel" data-panel="variable">
+            <p>
+              The size is <strong>not given</strong>; it's part of the answer. Expand right
+              to grow, shrink left when a condition is violated/satisfied.
+            </p>
+            <p><strong>Trigger words:</strong> "longest / shortest / minimum / maximum length ... such that", "smallest substring containing...".</p>
+            <p><strong>Examples:</strong></p>
+            <ul>
+              <li><code>LongestSubStringWithoutRepeatingCharacter</code></li>
+              <li><code>minimumSizeSubarraySum</code></li>
+              <li><code>minimumWindowSubstring</code></li>
+              <li><code>longestRepeatingCharacterReplacement</code></li>
+              <li><code>fruitsIntoBaskets</code></li>
+              <li><code>maxConsecutiveOnesIII</code></li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>Counting "exactly K" windows</h3>
+        <div class="note-card">
+          <span class="tag tag-trick">Trick</span>
+          <p>
+            Trigger words: <strong>"count subarrays/substrings with EXACTLY K ..."</strong>
+            (e.g. exactly K distinct integers, exactly K odd numbers, sum exactly S).
+          </p>
+          <p>
+            Counting "exactly K" directly is awkward because validity isn't a simple
+            grow/shrink boundary - many sub-windows can independently satisfy it. The fix:
+          </p>
+          <blockquote>
+            <code>countExactly(K) = countAtMost(K) - countAtMost(K - 1)</code>
+          </blockquote>
+          <p>
+            <code>countAtMost(K)</code> is a normal variable-size window: for each
+            <code>right</code>, shrink left while the window has <em>more than K</em> of the
+            tracked thing, then add <code>(right - left + 1)</code> to the count - that's
+            the number of valid subarrays ending at <code>right</code>.
+          </p>
+          <pre><code>function countAtMost(arr, k) {
+  let left = 0, count = 0;
+  const window = new Map(); // or a counter, depending on "thing" tracked
+
+  for (let right = 0; right &lt; arr.length; right++) {
+    // expand: add arr[right] to window state
+
+    while (/* window has more than k of the tracked thing */) {
+      // shrink: remove arr[left] from window state
+      left++;
+    }
+
+    count += right - left + 1; // all subarrays ending at right are valid
+  }
+  return count;
+}
+
+const countExactly = (arr, k) => countAtMost(arr, k) - countAtMost(arr, k - 1);</code></pre>
+          <p><strong>Examples (not in this folder yet):</strong> "Subarrays with K Different Integers" (LC 992), "Count Number of Nice Subarrays" (LC 1248), "Binary Subarrays With Sum" (LC 930).</p>
+        </div>
+      </section>
+
+      <section id="pitfalls">
+        <h2>4. Common Pitfalls</h2>
+
+        <div class="note-card">
+          <span class="tag tag-pitfall">Pitfall</span>
+          <p>
+            Updating the result in the wrong place relative to the <code>while</code> loop:
+            for <strong>longest</strong>, update <em>after</em> the while (window just became valid);
+            for <strong>shortest/minimum</strong>, update <em>inside</em> the while (window is still valid).
+            Swapping these gives wrong/missed answers.
+          </p>
+        </div>
+      </section>
+
+      <section id="problems">
+        <h2>5. Problems in this folder</h2>
+        <p>Click a problem to reveal its mind-map story for instant revision.</p>
+
+        <details class="reveal" data-file="LongestSubStringWithoutRepeatingCharacter.js" data-hash="b660756acff39b64a00f1d16fbd66fea8bbc1a7e">
+          <summary><span><span class="tag tag-story">Story</span><br />LongestSubStringWithoutRepeatingCharacter</span></summary>
+          <div class="reveal-body">
+            <p>
+              A bouncer lets guests into a room (a <code>Set</code>) one at a time. The
+              moment a duplicate guest tries to enter, the bouncer kicks people out from
+              the door (<code>left</code>) until that guest's earlier copy leaves. Record
+              the biggest room size ever seen.
+            </p>
+            <p><strong>Family:</strong> Variable-size, Longest-type (shrink while invalid, update after).</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/LongestSubStringWithoutRepeatingCharacter.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="findAllAnagramsInAString.js" data-hash="b31691a39e3d64a0a9d786099b06d1f8ab1adede">
+          <summary><span><span class="tag tag-story">Story</span><br />findAllAnagramsInAString</span></summary>
+          <div class="reveal-body">
+            <p>
+              Carry a shopping list (<code>need</code>) of letters from <code>p</code>.
+              Slide a window of size <code>len(p)</code> across <code>s</code>, ticking
+              an item off (<code>formed</code>) the moment its count exactly matches the
+              list. Whenever the <em>whole list</em> is ticked off, you found an anagram
+              start - record it and keep sliding.
+            </p>
+            <p><strong>Family:</strong> Fixed-size, "checklist" (need/formed) trick - same trick reused (with shrinking) in <code>minimumWindowSubstring</code>.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/findAllAnagramsInAString.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="fruitsIntoBaskets.js" data-hash="b7862b146c1905aaec94a86061a731f79efc0788">
+          <summary><span><span class="tag tag-story">Story</span><br />fruitsIntoBaskets</span></summary>
+          <div class="reveal-body">
+            <p>
+              Two baskets = at most 2 fruit types in the window. Walk the trees, dropping
+              fruit into a map. The instant a 3rd type shows up, shrink from the left -
+              tossing fruit back - until only 2 types remain. Track the biggest haul.
+            </p>
+            <p><strong>Family:</strong> Variable-size, Longest-type, "at most K distinct" (here K=2) - same shape as "longest substring with at most K distinct characters".</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/fruitsIntoBaskets.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="longestRepeatingCharacterReplacement.js" data-hash="fe975d610c8a460af08ba08b5381759ce623ddc6">
+          <summary><span><span class="tag tag-story">Story</span><br />longestRepeatingCharacterReplacement</span></summary>
+          <div class="reveal-body">
+            <p>
+              In any window, only the <strong>most-common letter</strong> stays free;
+              every other letter costs one "paint can" to repaint into it. If
+              <code>(window size - count of most frequent) &gt; k</code>, you've run out
+              of paint - shrink from the left.
+            </p>
+            <p><strong>Family:</strong> Variable-size, Longest-type, "at most K replacements/cost" - sibling of <code>maxConsecutiveOnesIII</code> (same template, different "cost").</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/longestRepeatingCharacterReplacement.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="maxConsecutiveOnesIII.js" data-hash="50254be56c044c3ed241bd1ebdf48253048f7c6c">
+          <summary><span><span class="tag tag-story">Story</span><br />maxConsecutiveOnesIII</span></summary>
+          <div class="reveal-body">
+            <p>
+              Same "paint can" idea, simpler: the window is a flip budget of K zeros.
+              Count zeros as you expand; the moment <code>zeros &gt; k</code>, shrink
+              from the left until you're back within budget.
+            </p>
+            <p><strong>Family:</strong> Variable-size, Longest-type, "at most K bad elements" - sibling of <code>longestRepeatingCharacterReplacement</code>.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/maxConsecutiveOnesIII.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="maximumPointsFromCards.js" data-hash="6219f231445e946c294d41a048fdcd92a2af5a8c">
+          <summary><span><span class="tag tag-story">Story</span><br />maximumPointsFromCards</span></summary>
+          <div class="reveal-body">
+            <p>
+              You can't easily slide from both ends, so flip the problem inside-out:
+              whatever you <em>don't</em> take forms one contiguous block of size
+              <code>(n - k)</code> in the middle. Find that block's <strong>minimum</strong>
+              sum with an ordinary fixed-size slide, then <code>total - min</code> is your answer.
+            </p>
+            <p><strong>Family:</strong> "Reverse" sliding window - fixed size derived from the input (<code>n - k</code>), not given directly.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/maximumPointsFromCards.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="minimumSizeSubarraySum.js" data-hash="af0375a8adcd3b22874323e070fc9409fbf23380">
+          <summary><span><span class="tag tag-story">Story</span><br />minimumSizeSubarraySum</span></summary>
+          <div class="reveal-body">
+            <p>
+              Grow the window until the sum finally crosses the target - valid! Now
+              greedily shrink from the left, recording the size at every step, until the
+              sum drops below target again. Repeat until <code>right</code> runs out.
+            </p>
+            <p><strong>Family:</strong> Variable-size, Shortest-type - the canonical "shrink while valid, measure on the way down" template.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/minimumSizeSubarraySum.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="minimumWindowSubstring.js" data-hash="d5d460a1c58845a4b64964a7315bd3d04527833e">
+          <summary><span><span class="tag tag-story">Story</span><br />minimumWindowSubstring</span></summary>
+          <div class="reveal-body">
+            <p>
+              Same checklist trick (<code>need</code> / <code>formed</code>) as
+              "find all anagrams", but now the window size is variable and we're
+              minimizing: expand right collecting letters until the checklist is fully
+              ticked off, then shrink left - recording the smallest fully-ticked window -
+              until a letter falls short again.
+            </p>
+            <p><strong>Family:</strong> Variable-size, Shortest-type + checklist family - combines <code>findAllAnagramsInAString</code>'s trick with the "shrink while valid" template.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/minimumWindowSubstring.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="permutationInString.js" data-hash="47ed1bac160b216f9e36e6a2a5c31fc2f6f0712c">
+          <summary><span><span class="tag tag-story">Story</span><br />permutationInString</span></summary>
+          <div class="reveal-body">
+            <p>
+              Same family as "find all anagrams", but boolean: slide a window of size
+              <code>len(s1)</code> across <code>s2</code> comparing frequency maps
+              directly. The moment the window's letter-counts exactly equal
+              <code>s1</code>'s, return true.
+            </p>
+            <p><strong>Family:</strong> Fixed-size, frequency-map-equality - sibling of <code>findAllAnagramsInAString</code> (same idea, simpler comparison).</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/permutationInString.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="slidingWindowMaximum.js" data-hash="4a3e558c45ee28740158f45db363b15370ebbc82">
+          <summary><span><span class="tag tag-story">Story</span><br />slidingWindowMaximum</span></summary>
+          <div class="reveal-body">
+            <p>
+              Keep a leaderboard (a deque of indices) sorted by value, highest at the
+              front. A new challenger arrives? Eliminate every weaker challenger waiting
+              behind it from the back - they can never win again. The front is always
+              today's champion, unless they've aged out of the window (popped from the front).
+            </p>
+            <p><strong>Family:</strong> Fixed-size + monotonic deque - a different "window state" structure than a frequency map, used when you need O(1) max/min per window.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/slidingWindowMaximum.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+
+        <details class="reveal" data-file="slidingWindowMedian.js" data-hash="be86851aa8d43f34f4c890ca4477010a62674d61">
+          <summary><span><span class="tag tag-story">Story</span><br />slidingWindowMedian</span></summary>
+          <div class="reveal-body">
+            <p>
+              Split the window into two balanced piles: a max-heap for the smaller half,
+              a min-heap for the larger half, kept within 1 of each other in size. The
+              median lives right at the seam between the piles. Removing an old element
+              doesn't rebuild the heaps - it's just marked "delayed" and quietly swept
+              away once it bubbles to the top.
+            </p>
+            <p><strong>Family:</strong> Fixed-size + two-heaps + lazy deletion - the "window state" upgrade for sliding window max when you need the <em>median</em>, not just the max.</p>
+            <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/slidingWindowMedian.js" target="_blank">Open solution file &rarr;</a></p>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <script src="../notes-script.js"></script>
+</body>
+</html>

@@ -1,0 +1,642 @@
+{
+  ".claude": null,
+  ".git": null,
+  ".gitignore": null,
+  "DSA": {
+    "Arrays&Hashset": {
+      "findAllDuplicatesInArray.js": null,
+      "gasStationProblem.js": null,
+      "longestConsecutive.js": null,
+      "maxProductSubArray.js": null,
+      "maximumSubArray.js": null,
+      "nextPermutation.js": null,
+      "productExceptSelf.js": null,
+      "rotateArrayKTimes.js": null,
+      "sortOddAscAndEvenDesc.js": null,
+      "subArraySumEqualsK.js": null,
+      "topKFrequentElement.js": null
+    },
+    "BinarySearch": {
+      "SearchInTimeStamp.js": null,
+      "findMinimumInRotatedSortedArray.js": null,
+      "findPeakElement.js": null,
+      "firstAndLastPositionOfElement.js": null,
+      "searchInRotatedSortedArray.js": null
+    },
+    "DP": {
+      "IMP": {
+        "coinChangeII.js": null,
+        "decodeWays.js": null,
+        "jumpGameII.js": null,
+        "longestCommonSubSequence.js": null,
+        "longestIncreasingSubsequence.js": null,
+        "minimumPathSum.js": null,
+        "partialEqualSubsetSum.js": null,
+        "wordBreak.js": null
+      },
+      "VVIMP": {
+        "burstBaloons.js": null,
+        "distinctSubsequence.js": null,
+        "editDistance.js": null,
+        "findTargetSumWays.js": null,
+        "houseRobberIII.js": null,
+        "longestPalindromicSubstring.js": null,
+        "maximalSquare.js": null,
+        "palindromicSubstrings.js": null
+      },
+      "core": {
+        "climbingStairs.js": null,
+        "coinChange.js": null,
+        "houseRobber1.js": null,
+        "houseRobberII.js": null,
+        "jumpGame.js": null,
+        "uniqueuePath.js": null
+      },
+      "maximumProductSubarray.js": null,
+      "optional": {}
+    },
+    "FAANG_DSA_Sheet.csv": null,
+    "FAANG_DSA_Tracker.csv": null,
+    "Frontend_DSA_Tracker.csv": null,
+    "Graph": {
+      "IMP": {
+        "AccountsMerge.js": null,
+        "Smallest-bridge.js": null,
+        "cheapestFlightsWithinKStops.js": null,
+        "minimumGeneticMutation.js": null,
+        "networkDelayTime.js": null,
+        "pacificAtlantic.js": null,
+        "shortestPathWithAlternateColors.js": null,
+        "shortestPathWithObstacleElimination.js": null,
+        "slidingPuzzle.js": null,
+        "wordLadder.js": null
+      },
+      "Optional": {
+        "busRoute.js": null,
+        "minimumCostToReachDestinationInTime.js": null
+      },
+      "README.md": null,
+      "VVIMP": {
+        "SwimInRisingWater.js": null,
+        "allienDirectory.js": null,
+        "isBipartite.js": null,
+        "minimumCostToMakeAValidPath.js": null,
+        "motherVertexDirectedGraph.js": null,
+        "pathWithMinimumEffort.js": null,
+        "reconstructItinerary.js": null,
+        "shortestPathVisitingAllNodes.js": null,
+        "shortestPathWithTeleport.js": null,
+        "wordLadderII.js": null,
+        "workerShiftSplitter.js": null
+      },
+      "core": {
+        "01Matrix.js": null,
+        "cloneGraph.js": null,
+        "connectedComponent.js": null,
+        "courseSchedule.js": null,
+        "courseScheduleII.js": null,
+        "graphValidTree.js": null,
+        "maxAreaOfIsland.js": null,
+        "maxProbability.js": null,
+        "numberOfIslands.js": null,
+        "numberOfProvinces.js": null,
+        "openLock.js": null,
+        "redundantConnections.js": null,
+        "rottenOranges.js": null,
+        "shortestDistanceFromAllBuilding.js": null,
+        "wallsAndGates.js": null
+      }
+    },
+    "Heap": {
+      "findKthLargest.js": null,
+      "heapSort.js": null,
+      "heapify.js": null,
+      "priorityQueue.js": null,
+      "topKFrequentElements.js": null
+    },
+    "README.md": null,
+    "Stack": {
+      "astroidCollision.js": null,
+      "dailyTemperatures.js": null,
+      "maximumFrequencyStack.js": null,
+      "minStack.js": null,
+      "nextGreaterElement.js": null,
+      "reversePolishNotation.js": null,
+      "sortStack.js": null,
+      "stackUsing2Queus.js": null,
+      "validParenthesis.js": null
+    },
+    "String": {
+      "LongestPalindromicSubstring.js": null,
+      "checkValidString.js": null,
+      "encode-decode.js": null,
+      "groupAnagrams.js": null,
+      "groupStrings.js": null,
+      "longestCommonPrefix.js": null,
+      "minimumRemoveToValidParenthesis.js": null,
+      "palindromicSubStrings.js": null,
+      "validAnagram.js": null,
+      "validPalindrome.js": null
+    },
+    "Two-Pointer": {
+      "3Sum.js": null,
+      "containerWithMostWater.js": null,
+      "mergeSortedArray.js": null,
+      "moveZeros.js": null,
+      "removeDuplicatesII.js": null,
+      "sortColors.js": null,
+      "squaresOfSortedArray.js": null,
+      "trappingRainWater.js": null,
+      "validPalindromeII.js": null
+    },
+    "dsa-preparation-list.csv": null,
+    "google-2025": {
+      "TreeEditDistance.js": null,
+      "areaOfOverlap.js": null,
+      "bestPathWithCongestion.js": null,
+      "canReachAllUsers.js": null,
+      "canRecieveAllMessage.js": null,
+      "findCyclesInTarjan.js": null,
+      "jobScheduling.js": null,
+      "logSlidingWindow.js": null,
+      "maxOverlapWeight.js": null,
+      "maxWeightedSchedule.js": null,
+      "minAreaFreeRect.js": null,
+      "minWindowSubsequence.js": null,
+      "numberOfIsland2.js": null,
+      "numberOfIsland3d.js": null,
+      "resolveByPriority.js": null,
+      "shortestPath01BFS.js": null,
+      "shortestPathWithCosts.js": null,
+      "shortestPathWithPowerUp.js": null,
+      "shortestPathWithRepairs.js": null,
+      "shortestPathWithTeleportation.js": null,
+      "slidingWindowMedian.js": null,
+      "snapShotVersioning.js": null,
+      "youtubeDataStructure.js": null
+    },
+    "intervals": {
+      "insertInterval.js": null,
+      "mergeIntervals.js": null,
+      "minimumMeetingRoomsRequired.js": null,
+      "nonOverlappingIntervals.js": null
+    },
+    "matrix": {
+      "WordSearch.js": null,
+      "diagonalTraverse.js": null,
+      "floodFill.js": null,
+      "largestRectangleInHistogram.js": null,
+      "rangeSum2D.js": null,
+      "rotateImage.js": null,
+      "searchIn2DMatrix.js": null,
+      "searchIn2DMatrixII.js": null,
+      "setMatrix0.js": null,
+      "shortestBridge.js": null,
+      "shortestPathBinaryMatrix.js": null,
+      "spiralMatrix.js": null,
+      "surroundedRegions.js": null
+    },
+    "recursion & backtracking": {
+      "IMP": {
+        "combinationSum.js": null,
+        "combinationSumII.js": null,
+        "generateParenthesis.js": null,
+        "palindromePartitioning.js": null,
+        "subsetsII.js": null
+      },
+      "VVIMP": {
+        "nqueens.js": null,
+        "sodukuSolver.js": null,
+        "wordBreak.js": null,
+        "wordBreakII.js": null,
+        "wordSearch.js": null
+      },
+      "core": {
+        "combinations.js": null,
+        "letterCombinationsOfaPhoneNumber.js": null,
+        "permutations.js": null,
+        "pow.js": null,
+        "subsets.js": null
+      }
+    },
+    "sliding-window": {
+      "LongestSubStringWithoutRepeatingCharacter.js": null,
+      "findAllAnagramsInAString.js": null,
+      "longestRepeatingCharacterReplacement.js": null,
+      "minimumWindowSubstring.js": null,
+      "permutationInString.js": null,
+      "slidingWindowMaximum.js": null,
+      "slidingWindowMedian.js": null
+    },
+    "tree": {
+      "IMP": {
+        "SearchBST.js": null,
+        "binaryTreeMaximumPathSum.js": null,
+        "countGoodNodes.js": null,
+        "kthSmallestInBST.js": null,
+        "levelOrderTraversal.js": null,
+        "lowestCommonAncestor.js": null,
+        "pathSumII.js": null,
+        "pathSumIII.js": null,
+        "rightSideView.js": null,
+        "subtreeOfAnotherTree.js": null,
+        "validBST.js": null
+      },
+      "VVIMP": {
+        "constructATree.js": null,
+        "maxSubTreeSum.js": null,
+        "rangeModule.js": null,
+        "serializeDeserialize.js": null,
+        "treeToList.js": null,
+        "zigzag.js": null
+      },
+      "core": {
+        "balancedBinaryTree.js": null,
+        "diameterOfBinaryTree.js": null,
+        "invertTree.js": null,
+        "isValidTree.js": null,
+        "maxDepthOfBinaryTree.js": null,
+        "sameTree.js": null,
+        "symmetricTree.js": null
+      }
+    }
+  },
+  "JavaScriptProblems": {
+    "Array": {
+      "array.filterr.js": null,
+      "array.find.js": null,
+      "array.flat.js": null,
+      "array.foreach.js": null,
+      "array.map.js": null,
+      "array.reduce.js": null
+    },
+    "Design Patterns": {
+      "factory.js": null,
+      "observer.js": null,
+      "proxy-or-interceptor.js": null,
+      "pub-sub.js": null,
+      "singleton.js": null
+    },
+    "WhatIsTheOutput": {
+      "README.md": null,
+      "async-await-output.js": null,
+      "closure-output.js": null,
+      "coercion-output.js": null,
+      "destructuring-spread-output.js": null,
+      "generators-iterators-output.js": null,
+      "hoisting-output.js": null,
+      "promiseOutput-1.js": null,
+      "prototype-output.js": null,
+      "scope-execution-context-output.js": null,
+      "this-binding-output.js": null,
+      "typeof-instanceof-output.js": null
+    },
+    "call,apply,bind": {
+      "apply.js": null,
+      "bind.js": null,
+      "call.js": null
+    },
+    "company-asked-important": {
+      "blog-api-client-atlassian.js": null
+    },
+    "memoization": {
+      "memoization.js": null,
+      "memoizationAsync.js": null,
+      "memoizationWeakMap.js": null
+    },
+    "promise-async-problems": {
+      "Core": {
+        "customSetInterval.js": null,
+        "customSetTimeout.js": null,
+        "executorWithConcurrencyLimit.js": null,
+        "firstSuccessPromise.js": null,
+        "lastSettledPromise.js": null,
+        "latestOnlyExecutor.js": null,
+        "mergePromise.js": null,
+        "promiseRejectTimer.js": null,
+        "promiseRetry.js": null,
+        "promisify.js": null
+      },
+      "execution": {
+        "asyncQueue.js": null,
+        "asyncWaterfall.js": null,
+        "deadLineAwareExecution.js": null,
+        "dynamicConcurrencyExecutor.js": null,
+        "executeInParallel.js": null,
+        "executeInSeries.js": null,
+        "executeWithLimit.js": null,
+        "mapAsyncLimit.js": null,
+        "promiseCoalescing.js": null,
+        "queueWithBackPressure.js": null
+      },
+      "orchastration": {
+        "asyncRollBackWorkflow.js": null,
+        "composeAsync.js": null,
+        "composeAsyncWithCancel.js": null,
+        "executeAsyncWithDependecies.js": null,
+        "partialFailureHandling.js": null,
+        "schedulerAsyncWithDependecyConcurrencyPriority.js": null
+      },
+      "reliability": {
+        "circuitBreaker.js": null,
+        "deadlinePropogation.js": null,
+        "promiseWithTimeout.js": null,
+        "retryWithBackoff.js": null,
+        "retryWithCancel.js": null
+      },
+      "scheduler": {
+        "asyncSchedulerEngine.js": null,
+        "cancelableAsyncTask.js": null,
+        "priorityExecutor.js": null,
+        "priorityExecutorConcurrent.js": null,
+        "runInIdle.js": null
+      }
+    },
+    "promise-polyfills": {
+      "abortablePromiseAll.js": null,
+      "promise.all.polyfill.js": null,
+      "promise.allSettled.js": null,
+      "promise.any.js": null,
+      "promise.race.js": null,
+      "promisePolyfill.js": null
+    },
+    "specific systems": {
+      "LRUCacheSearchSuggestion.js": null,
+      "LRUWithTTL.js": null,
+      "LRUcache.js": null,
+      "UberClassicMethodChaining.js": null,
+      "batchApiDispatcher.js": null,
+      "createStore.js": null,
+      "customUseEffect.js": null,
+      "eventEmitter.js": null,
+      "filteringDeepObject.js": null,
+      "lazyChain.js": null,
+      "leakyBucket.js": null,
+      "notificationSystem.js": null,
+      "observable.js": null,
+      "priorityQueue.js": null,
+      "rateLimiter.js": null,
+      "tokenBucket.js": null,
+      "trie.js": null,
+      "virtualDOMTreeDiff.js": null
+    },
+    "utility": {
+      "analyticsSDK.js": null,
+      "compose.js": null,
+      "curryFunction.js": null,
+      "debounce.js": null,
+      "debounceWithLeadingAndTrainling.js": null,
+      "deepClone.js": null,
+      "deepEqual.js": null,
+      "flattenObjDotNotation.js": null,
+      "pipe.js": null,
+      "pipeAsync.js": null,
+      "throttle.js": null,
+      "throttleWithLeadingAndTrailing.js": null
+    }
+  },
+  "README.md": null,
+  "Theory": {
+    "MicroFrontEnd Design system.md": null,
+    "Yotube1000cuts.md": null,
+    "assets.md": null,
+    "browser-document-execution.md": null,
+    "browser-internals.md": null,
+    "cache.md": null,
+    "core-web-vitals.md": null,
+    "cors-security.md": null,
+    "graphql.md": null,
+    "hydration.md": null,
+    "javascript-core.md": null,
+    "javascript-sdk.md": null,
+    "monorepo.md": null,
+    "network.md": null,
+    "observability.md": null,
+    "optimistic-updates.md": null,
+    "react-performance.md": null,
+    "rendering-spectrum.md": null,
+    "security.md": null,
+    "state-machines.md": null,
+    "state-management.md": null,
+    "v8-internals.md": null,
+    "web-performance.md": null,
+    "webpack.md": null
+  },
+  "practice": {
+    "HOW-TO-ADD-LLD.md": null,
+    "README.md": null,
+    "index.html": null,
+    "node_modules": {},
+    "package-lock.json": null,
+    "package.json": null,
+    "src": {
+      "App.jsx": null,
+      "components": {
+        "CodeBlock.jsx": null,
+        "Detail.jsx": null,
+        "MarkdownView.jsx": null,
+        "Sidebar.jsx": null
+      },
+      "lld": {
+        "index.json": null,
+        "lld-001-holy-grail": {
+          "Solution.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-002-transfer-list": {
+          "Solution.jsx": null,
+          "problem.md": null
+        },
+        "lld-003-progress-bars-iv": {
+          "README.md": null,
+          "Solution.jsx": null,
+          "problem.md": null,
+          "progressBar.jsx": null
+        },
+        "lld-004-grid-lights": {
+          "Solution.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-005-wordle": {
+          "EXPLANATION.md": null,
+          "QUICK_REFERENCE.md": null,
+          "SimplifiedWordle.jsx": null,
+          "Solution.jsx": null,
+          "VISUAL_GUIDE.md": null,
+          "problem.md": null
+        },
+        "lld-006-typeahead": {
+          "Solution.jsx": null,
+          "problem.md": null,
+          "useDebounce.jsx": null
+        },
+        "lld-007-file-explorer": {
+          "Folder.jsx": null,
+          "Solution.jsx": null,
+          "data.jsx": null,
+          "problem.md": null
+        },
+        "lld-008-nested-comments": {
+          "CommentItems.jsx": null,
+          "CommentsHelper.jsx": null,
+          "CommentsSection.jsx": null,
+          "Solution.jsx": null,
+          "data.js": null,
+          "problem.md": null
+        },
+        "lld-009-traffic-light": {
+          "Solution.jsx": null,
+          "TrafficLight.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-010-promise-progress": {
+          "Solution.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-011-infinite-scroll": {
+          "Solution.jsx": null,
+          "problem.md": null
+        },
+        "lld-012-star-rating": {
+          "Solution.jsx": null,
+          "StarRating.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-013-circle-collide": {
+          "Solution.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-014-carousel": {
+          "Solution.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-015-virtual-list": {
+          "Solution.jsx": null,
+          "VirtualList.jsx": null,
+          "problem.md": null
+        },
+        "lld-016-modal": {
+          "Modal.jsx": null,
+          "Solution.jsx": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-017-grid-selection": {
+          "Solution.jsx": null,
+          "problem.md": null
+        },
+        "lld-018-checkbox-hierarchy": {
+          "CheckboxTree.jsx": null,
+          "Solution.jsx": null,
+          "data.js": null,
+          "problem.md": null,
+          "styles.css": null
+        },
+        "lld-019-search-highlighter": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-020-connect-4": {
+          "Solution.jsx": null
+        },
+        "lld-021-data-table": {
+          "Solution.jsx": null
+        },
+        "lld-022-tic-tac-toe-dynamic": {
+          "Solution.jsx": null
+        },
+        "lld-023-snake-ladder": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-024-chess-board-knight-shortest-path": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-025-chess-board-rook-shortest-path": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-026-token-bucket": {
+          "Solution.jsx": null
+        },
+        "lld-027-calendar-day-view": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-028-kanban-board": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-029-notification-system": {
+          "Solution.jsx": null,
+          "styles.css": null
+        },
+        "lld-030-poll-widget": {
+          "Solution.jsx": null
+        },
+        "lld-031-file-explorer-dnd": {
+          "FileExplorer.jsx": null,
+          "Solution.jsx": null,
+          "data.js": null,
+          "problem.md": null,
+          "styles.css": null,
+          "treeUtils.js": null
+        }
+      },
+      "main.jsx": null,
+      "styles.css": null
+    },
+    "vite.config.js": null
+  },
+  "reactHooks": {
+    "useCllickOutside.js": null,
+    "useDebounceCallback.js": null,
+    "useIntersectionObserver.js": null,
+    "usePrev.js": null,
+    "useQuery.js": null,
+    "useThrottle.js": null
+  },
+  "structure.json": null,
+  "system-design": {
+    "autocomplete-typeahead.md": null,
+    "bookmyshow-ticket-booking.md": null,
+    "ecommerce-marketplace-amazon.md": null,
+    "instagram-photo-feed.md": null,
+    "latest & updated": {
+      "autocomplete-typeahead.md": null,
+      "chat-app-whatsapp-web.md": null,
+      "config-driven-shopping-cart-homepage.md": null,
+      "email-delivery-system-gmail.md": null,
+      "facebook-social-media-platform.md": null,
+      "google-calendar-day-view.md": null,
+      "google-docs.md": null,
+      "google-drive-dropbox.md": null,
+      "leetcode-online-judge.md": null,
+      "notification-system.md": null,
+      "payment-gateway-stripe.md": null,
+      "rate-limiter.md": null,
+      "ride-booking-uber-rapido.md": null,
+      "stock-broker-platform-zerodha-groww.md": null,
+      "top-k-leaderboard.md": null,
+      "trello-issue-manager.md": null,
+      "video-streaming-youtube.md": null,
+      "zomato-food-delivery.md": null
+    },
+    "news-feed-facebook-twitter.md": null,
+    "photo-grid-google-photos.md": null,
+    "real-time-collaborative-system.md": null,
+    "travel-booking-airbnb-makemytrip.md": null,
+    "uber-eats-restaurant-listing.md": null,
+    "video-conference-zoom.md": null,
+    "video-stream-platform.md": null,
+    "video-streaming-youtube.md": null
+  }
+}
