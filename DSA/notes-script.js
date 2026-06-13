@@ -20,6 +20,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // --- Problem flashcards (click chip -> show story panel) ---
+  document.querySelectorAll(".flashcards").forEach((flashcards) => {
+    const chips = flashcards.querySelectorAll(".flashcard-chip");
+    const panels = flashcards.querySelectorAll(".story-panel");
+
+    chips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        chips.forEach((c) => c.classList.remove("active"));
+        panels.forEach((p) => p.classList.remove("active"));
+
+        chip.classList.add("active");
+        const target = flashcards.querySelector(`#${chip.dataset.target}`);
+        if (target) target.classList.add("active");
+      });
+    });
+  });
+
   // --- Sidebar active-section highlighting ---
   const sections = document.querySelectorAll("main section[id]");
   const navLinks = document.querySelectorAll(".sidebar .toc a");

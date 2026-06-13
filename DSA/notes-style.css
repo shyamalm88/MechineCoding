@@ -290,6 +290,93 @@ pre code {
   padding: 0;
 }
 
+/* ---------- Problem flashcards (two-pane) ---------- */
+
+.flashcards {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+}
+
+.flashcard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 280px;
+  flex-shrink: 0;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.flashcard-chip {
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.flashcard-chip:hover {
+  background: var(--surface-hover);
+}
+.flashcard-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.flashcard-story {
+  flex: 1;
+  position: sticky;
+  top: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.4rem;
+  min-height: 220px;
+}
+
+.story-panel {
+  display: none;
+}
+.story-panel.active {
+  display: block;
+}
+.story-panel h3 {
+  margin-top: 0.5rem;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+.story-panel > *:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 800px) {
+  .flashcards {
+    flex-direction: column;
+  }
+  .flashcard-list {
+    width: 100%;
+    max-height: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .flashcard-chip {
+    width: auto;
+  }
+  .flashcard-story {
+    position: static;
+    width: 100%;
+  }
+}
+
 /* ---------- Decision flowchart ---------- */
 
 .flowchart {

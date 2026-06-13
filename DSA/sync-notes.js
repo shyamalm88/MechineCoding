@@ -6,11 +6,11 @@
  * with the actual .js solution files in that folder.
  *
  * For every DSA/<Topic>/ folder that already has a notes.html:
- *   - NEW    .js file with no story card  -> a placeholder story card is
- *            appended to the "Problems in this folder" section.
- *   - STALE  story card whose stored hash no longer matches the file's
+ *   - NEW    .js file with no flashcard -> a placeholder chip + story panel
+ *            are appended to the "Problems in this folder" flashcards.
+ *   - STALE  story panel whose stored hash no longer matches the file's
  *            current content -> reported only (story may need a rewrite).
- *   - ORPHAN story card whose .js file no longer exists -> reported only.
+ *   - ORPHAN story panel whose .js file no longer exists -> reported only.
  *
  * Run: node DSA/sync-notes.js
  */
@@ -40,20 +40,40 @@ function findJsFiles(dir, baseDir = dir) {
   return results;
 }
 
-function placeholderCard(topicName, relPath, hash) {
+// Finds the index of the </div> that closes the <div ...> starting at openIndex.
+function findMatchingClose(html, openIndex) {
+  const tagRegex = /<div\b[^>]*>|<\/div>/g;
+  tagRegex.lastIndex = openIndex;
+  let depth = 0;
+  let m;
+  while ((m = tagRegex.exec(html))) {
+    if (m[0].startsWith("</")) {
+      depth--;
+      if (depth === 0) return m.index;
+    } else {
+      depth++;
+    }
+  }
+  return -1;
+}
+
+function placeholderChip(relPath) {
+  const name = path.basename(relPath, ".js");
+  return `            <button class="flashcard-chip" data-target="story-${name}">${name}</button>\n`;
+}
+
+function placeholderPanel(topicName, relPath, hash) {
   const name = path.basename(relPath, ".js");
   const repoPath = [topicName, ...relPath.split(path.sep)]
     .map(encodeURIComponent)
     .join("/");
   const href = `${GITHUB_BASE}/${repoPath}`;
-  return `
-        <details class="reveal" data-file="${relPath}" data-hash="${hash}">
-          <summary><span><span class="tag tag-story">Story</span><br />${name}</span></summary>
-          <div class="reveal-body">
-            <p><em>Mind-map story: not written yet.</em></p>
-            <p><a href="${href}" target="_blank">Open solution file &rarr;</a></p>
-          </div>
-        </details>
+  return `            <div class="story-panel" id="story-${name}" data-file="${relPath}" data-hash="${hash}">
+              <span class="tag tag-story">Story</span>
+              <h3>${name}</h3>
+              <p><em>Mind-map story: not written yet.</em></p>
+              <p><a href="${href}" target="_blank">Open solution file &rarr;</a></p>
+            </div>
 `;
 }
 
@@ -64,20 +84,22 @@ function syncTopic(topicName, topicDir) {
   let html = fs.readFileSync(notesPath, "utf8");
   const jsFiles = findJsFiles(topicDir).sort();
 
-  const detailsRegex = /<details class="reveal" data-file="([^"]+)" data-hash="([^"]*)">/g;
+  const panelRegex = /<div class="story-panel[^"]*" id="[^"]*" data-file="([^"]+)" data-hash="([^"]*)">/g;
   const existing = new Map();
   let m;
-  while ((m = detailsRegex.exec(html))) {
+  while ((m = panelRegex.exec(html))) {
     existing.set(m[1], m[2]);
   }
 
-  let newCards = "";
+  let newChips = "";
+  let newPanels = "";
   for (const relPath of jsFiles) {
     const hash = sha1(fs.readFileSync(path.join(topicDir, relPath)));
 
     if (!existing.has(relPath)) {
-      console.log(`  NEW     ${topicName}/${relPath} -> added placeholder story card`);
-      newCards += placeholderCard(topicName, relPath, hash);
+      console.log(`  NEW     ${topicName}/${relPath} -> added placeholder flashcard`);
+      newChips += placeholderChip(relPath);
+      newPanels += placeholderPanel(topicName, relPath, hash);
     } else if (existing.get(relPath) !== hash) {
       console.log(`  STALE   ${topicName}/${relPath} -> solution changed since story was written`);
     }
@@ -89,14 +111,24 @@ function syncTopic(topicName, topicDir) {
     }
   }
 
-  if (newCards) {
-    const sectionStart = html.indexOf('<section id="problems">');
-    if (sectionStart === -1) {
-      console.log(`  WARN    ${topicName}/notes.html has no <section id="problems"> - skipped insert`);
+  if (newChips) {
+    const listStart = html.indexOf('<div class="flashcard-list">');
+    const storyStart = html.indexOf('<div class="flashcard-story">');
+    if (listStart === -1 || storyStart === -1) {
+      console.log(`  WARN    ${topicName}/notes.html has no flashcards section - skipped insert`);
       return;
     }
-    const sectionEnd = html.indexOf("</section>", sectionStart);
-    html = html.slice(0, sectionEnd) + newCards + html.slice(sectionEnd);
+    const listClose = findMatchingClose(html, listStart);
+    const storyClose = findMatchingClose(html, storyStart);
+
+    // Insert at the later index first so the earlier index stays valid.
+    if (storyClose > listClose) {
+      html = html.slice(0, storyClose) + newPanels + html.slice(storyClose);
+      html = html.slice(0, listClose) + newChips + html.slice(listClose);
+    } else {
+      html = html.slice(0, listClose) + newChips + html.slice(listClose);
+      html = html.slice(0, storyClose) + newPanels + html.slice(storyClose);
+    }
     fs.writeFileSync(notesPath, html);
   }
 }

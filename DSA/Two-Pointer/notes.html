@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Two Pointers - Pattern Notes</title>
+  <link rel="stylesheet" href="../notes-style.css" />
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <a class="back-link" href="../notes-index.html">&larr; All Topics</a>
+      <h2>Two Pointers</h2>
+      <ul class="toc">
+        <li><a href="#spot">1. How to Spot</a></li>
+        <li><a href="#template">2. Core Template</a></li>
+        <li><a href="#tricks">3. Tricks &amp; Twists</a></li>
+        <li><a href="#pitfalls">4. Pitfalls</a></li>
+        <li><a href="#problems">5. Problems</a></li>
+      </ul>
+    </nav>
+
+    <main class="content">
+      <h1>Two Pointers</h1>
+
+      <section id="spot">
+        <h2>1. How to Spot This Pattern</h2>
+
+        <div class="flowchart">
+          <div class="flow-step">
+            <div class="flow-q">1. Is the array/string SORTED (or can it be sorted without losing what you need)?</div>
+            <div class="flow-a"><span class="no">No</span> &rarr; check steps 3-4 below (linked list / in-place signals). &nbsp; <span class="yes">Yes</span> &rarr; continue.</div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-q">2. Are you looking for a PAIR / TRIPLET / GROUP whose SUM, DIFFERENCE, or MIN/MAX COMPARISON hits a target?</div>
+            <div class="flow-a"><span class="yes">Yes</span> &rarr; <strong>Converging (opposite-direction)</strong> pointers: <code>left</code> at 0, <code>right</code> at n-1, move based on the comparison. &nbsp; <span class="no">No</span> &rarr; continue.</div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-q">3. Is it a LINKED LIST, or do you need to find a CYCLE / MIDDLE / Nth-node-from-the-end?</div>
+            <div class="flow-a"><span class="yes">Yes</span> &rarr; <strong>Fast/Slow</strong> pointers (Floyd's): <code>slow</code> moves 1 step, <code>fast</code> moves 2. &nbsp; <span class="no">No</span> &rarr; continue.</div>
+          </div>
+          <div class="flow-step">
+            <div class="flow-q">4. Rearranging an array IN-PLACE (dedupe, partition into groups, merge into empty space)?</div>
+            <div class="flow-a"><span class="yes">Yes</span> &rarr; <strong>Same-direction read/write</strong> pointers, or a <strong>3-pointer partition</strong> (Dutch flag). &nbsp; <span class="no">No</span> &rarr; probably not two-pointer - think hash maps or sliding window.</div>
+          </div>
+        </div>
+
+        <details class="reveal">
+          <summary>
+            <span><span class="tag tag-signal">Signal</span><br />What's the single biggest giveaway for CONVERGING (opposite-direction) pointers?</span>
+          </summary>
+          <div class="reveal-body">
+            <p>
+              A <strong>sorted array/string</strong> + "find a pair (or fixed-size group)
+              whose sum/difference/comparison hits a target". Sorting turns SEARCH into
+              DIRECTIONAL MOVEMENT:
+            </p>
+            <ul>
+              <li>If the current pair's value is <strong>too small</strong>, only moving <code>left</code> right can increase it - every value left of <code>left</code> is even smaller.</li>
+              <li>If it's <strong>too big</strong>, only moving <code>right</code> left can decrease it - every value right of <code>right</code> is even bigger.</li>
+            </ul>
+            <p>
+              Each move provably eliminates an entire row or column of impossible pairs -
+              that's the O(N) speedup over checking every pair.
+            </p>
+          </div>
+        </details>
+
+        <details class="reveal">
+          <summary>
+            <span><span class="tag tag-signal">Signal</span><br />What's the giveaway for SAME-DIRECTION (fast/slow) pointers?</span>
+          </summary>
+          <div class="reveal-body">
+            <p>
+              Two flavors - both "two pointers moving the same way, at different
+              rates/roles":
+            </p>
+            <ul>
+              <li><strong>Linked list:</strong> "detect a cycle", "find the middle", "Nth node from the end" &rarr; <code>fast</code> moves at 2x speed (or starts N nodes ahead).</li>
+              <li><strong>Array, in-place:</strong> "remove/move/dedupe/partition without extra space" &rarr; <code>slow</code> = next write position, <code>fast</code> = scanner.</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <section id="template">
+        <h2>2. Core Idea &amp; Template</h2>
+
+        <p>
+          Two-pointer problems split into a few families based on how the pointers move
+          relative to each other: <strong>converging</strong> (start at opposite ends,
+          move toward each other), <strong>fast/slow</strong> (race at different speeds),
+          and <strong>same-direction</strong> (both start near the beginning, one runs
+          ahead reading while the other writes).
+        </p>
+
+        <div class="tabs">
+          <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="converging">Converging</button>
+            <button class="tab-btn" data-tab="fastslow">Fast/Slow (Linked List)</button>
+            <button class="tab-btn" data-tab="samedir">Same-Direction (In-Place)</button>
+            <button class="tab-btn" data-tab="threeptr">Three-Pointer (Partition)</button>
+          </div>
+
+          <div class="tab-panel active" data-panel="converging">
+            <p>Move the pointer that CAN'T possibly be part of a better answer.</p>
+            <pre><code>let left = 0, right = arr.length - 1;
+
+while (left &lt; right) {
+  const result = combine(arr[left], arr[right]);
+
+  if (result === target) {
+    // record / return - then move both inward
+    left++;
+    right--;
+  } else if (result &lt; target) {
+    left++;  // need a bigger result
+  } else {
+    right--; // need a smaller result
+  }
+}</code></pre>
+          </div>
+
+          <div class="tab-panel" data-panel="fastslow">
+            <p><code>fast</code> moves 2 steps, <code>slow</code> moves 1 - if there's a cycle, they're guaranteed to meet inside it.</p>
+            <pre><code>let slow = head, fast = head;
+
+while (fast &amp;&amp; fast.next) {
+  slow = slow.next;
+  fast = fast.next.next;
+
+  if (slow === fast) {
+    // cycle found - phase 2: reset one pointer to head,
+    // walk both 1 step at a time to find the cycle start
+  }
+}</code></pre>
+          </div>
+
+          <div class="tab-panel" data-panel="samedir">
+            <p><code>slow</code> = next write position, <code>fast</code> = scanner that decides what's worth keeping.</p>
+            <pre><code>let slow = 0;
+
+for (let fast = 0; fast &lt; arr.length; fast++) {
+  if (/* arr[fast] should be kept */) {
+    [arr[slow], arr[fast]] = [arr[fast], arr[slow]]; // or arr[slow] = arr[fast]
+    slow++;
+  }
+}
+// arr[0..slow-1] is the result; slow is the new length</code></pre>
+          </div>
+
+          <div class="tab-panel" data-panel="threeptr">
+            <p>Dutch National Flag: partition into three buckets in one pass.</p>
+            <pre><code>let low = 0, mid = 0, high = arr.length - 1;
+
+while (mid &lt;= high) {
+  if (arr[mid] === A) {
+    [arr[low], arr[mid]] = [arr[mid], arr[low]];
+    low++; mid++;
+  } else if (arr[mid] === B) {
+    mid++;
+  } else { // arr[mid] === C
+    [arr[mid], arr[high]] = [arr[high], arr[mid]];
+    high--; // don't advance mid - swapped-in value is unchecked
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <blockquote>
+          <strong>Mnemonic:</strong> "Sorted + pair/triplet sum target &rarr; pointers
+          converge from both ends. Linked list + cycle/middle &rarr; pointers race at
+          different speeds. In-place rewrite &rarr; one pointer reads, one writes (or
+          three pointers partition into buckets)."
+        </blockquote>
+      </section>
+
+      <section id="tricks">
+        <h2>3. Tricks &amp; Twists</h2>
+
+        <h3>k-Sum: reduce to two pointers</h3>
+        <div class="note-card">
+          <span class="tag tag-trick">Trick</span>
+          <p>
+            Trigger words: <strong>"...triplet/quadruplet that sums to..."</strong>,
+            "find all unique combinations of k numbers that sum to target".
+          </p>
+          <p>
+            Sort first - then fix the first <code>(k - 2)</code> numbers with nested loops,
+            and converge two pointers on the remaining pair (the base "two sum on a sorted
+            array" case). Skip duplicates at <strong>every level</strong> - every fixed
+            index AND both pointers - to avoid duplicate results.
+          </p>
+          <p><strong>Examples in this folder:</strong> <code>3Sum</code> &rarr; <code>3SumClosest</code> &rarr; <code>4Sum</code>, each one rung higher on the same ladder.</p>
+        </div>
+
+        <h3>Fill from the back</h3>
+        <div class="note-card">
+          <span class="tag tag-trick">Trick</span>
+          <p>
+            Trigger words: <strong>"merge into nums1 which has extra space at the
+            end"</strong>, "array is sorted by value but you need it sorted by something
+            else (e.g. squares)".
+          </p>
+          <p>
+            When the destination has empty space at the end - or the final order is
+            determined by comparing values from BOTH ends - iterate backward with
+            multiple pointers, placing the largest remaining candidate into the last open
+            slot. This avoids both an O(N log N) re-sort and overwriting data you still
+            need.
+          </p>
+          <p><strong>Examples in this folder:</strong> <code>mergeSortedArray</code>, <code>squaresOfSortedArray</code>.</p>
+        </div>
+
+        <h3>Greedy extremes pairing</h3>
+        <div class="note-card">
+          <span class="tag tag-trick">Trick</span>
+          <p>
+            Trigger words: <strong>"minimum number of boats/groups/pairs"</strong>, "each
+            group has at most 2 ... with a capacity limit".
+          </p>
+          <p>
+            Sort, then repeatedly try to pair the current SMALLEST remaining item with the
+            current LARGEST. If they fit together, both are consumed; if not, the largest
+            must go alone - nothing smaller could have helped it fit either. The largest
+            always "uses up" one unit of capacity per iteration.
+          </p>
+          <p><strong>Example in this folder:</strong> <code>boatsToSavePeople</code>.</p>
+        </div>
+
+        <h3>One mismatch, branch into two</h3>
+        <div class="note-card">
+          <span class="tag tag-trick">Trick</span>
+          <p>
+            Trigger words: <strong>"after deleting AT MOST ONE character/element"</strong>,
+            "can become valid by removing one item".
+          </p>
+          <p>
+            Run the normal converging check until the FIRST violation. At that point,
+            don't give up - branch into two sub-checks, each skipping ONE side of the
+            mismatch (<code>left+1..right</code>, or <code>left..right-1</code>). If
+            either branch passes cleanly, the answer is true.
+          </p>
+          <p><strong>Example in this folder:</strong> <code>validPalindromeII</code>.</p>
+        </div>
+      </section>
+
+      <section id="pitfalls">
+        <h2>4. Common Pitfalls</h2>
+
+        <div class="note-card">
+          <span class="tag tag-pitfall">Pitfall</span>
+          <p>
+            <code>while (left &lt; right)</code> vs <code>&lt;=</code>: for a converging
+            search over a PAIR, always use <code>&lt;</code> - <code>&lt;=</code> lets a
+            pointer pair with itself. But fill-from-the-back merges
+            (<code>mergeSortedArray</code>, <code>squaresOfSortedArray</code>) loop on
+            REMAINING ELEMENTS (<code>p2 &gt;= 0</code>, <code>left &lt;= right</code>),
+            not pointer-vs-pointer - read each problem's loop condition, don't copy-paste blindly.
+          </p>
+        </div>
+
+        <div class="note-card">
+          <span class="tag tag-pitfall">Pitfall</span>
+          <p>
+            k-Sum: forgetting to skip duplicates at <strong>every level</strong> (every
+            fixed index, AND both <code>left</code>/<code>right</code>) &rarr; duplicate
+            triplets/quadruplets in the output, even though every individual value found
+            is correct.
+          </p>
+        </div>
+
+        <div class="note-card">
+          <span class="tag tag-pitfall">Pitfall</span>
+          <p>
+            Dutch National Flag (<code>sortColors</code>): incrementing <code>mid</code>
+            after swapping with <code>high</code> - the value swapped IN from
+            <code>high</code> hasn't been inspected yet and could itself need another
+            swap. Only <code>low</code>-swaps are safe to pair with <code>mid++</code>.
+          </p>
+        </div>
+
+        <div class="note-card">
+          <span class="tag tag-pitfall">Pitfall</span>
+          <p>
+            Fast/slow on linked lists: checking only <code>fast</code> for null before
+            doing <code>fast.next.next</code> crashes on odd-length lists, right when
+            <code>fast</code> lands on the last node. Always check
+            <code>fast &amp;&amp; fast.next</code> together in the loop condition.
+          </p>
+        </div>
+      </section>
+
+      <section id="problems">
+        <h2>5. Problems in this folder</h2>
+        <p>Click a problem to reveal its mind-map story for instant revision.</p>
+
+        <div class="flashcards">
+          <div class="flashcard-list">
+            <button class="flashcard-chip active" data-target="story-twoSumII">twoSumII</button>
+            <button class="flashcard-chip" data-target="story-3Sum">3Sum</button>
+            <button class="flashcard-chip" data-target="story-3SumClosest">3SumClosest</button>
+            <button class="flashcard-chip" data-target="story-4Sum">4Sum</button>
+            <button class="flashcard-chip" data-target="story-containerWithMostWater">containerWithMostWater</button>
+            <button class="flashcard-chip" data-target="story-trappingRainWater">trappingRainWater</button>
+            <button class="flashcard-chip" data-target="story-boatsToSavePeople">boatsToSavePeople</button>
+            <button class="flashcard-chip" data-target="story-squaresOfSortedArray">squaresOfSortedArray</button>
+            <button class="flashcard-chip" data-target="story-validPalindromeII">validPalindromeII</button>
+            <button class="flashcard-chip" data-target="story-moveZeros">moveZeros</button>
+            <button class="flashcard-chip" data-target="story-removeDuplicatesII">removeDuplicatesII</button>
+            <button class="flashcard-chip" data-target="story-sortColors">sortColors</button>
+            <button class="flashcard-chip" data-target="story-mergeSortedArray">mergeSortedArray</button>
+            <button class="flashcard-chip" data-target="story-backspaceStringCompare">backspaceStringCompare</button>
+            <button class="flashcard-chip" data-target="story-partitionLabels">partitionLabels</button>
+            <button class="flashcard-chip" data-target="story-linkedListCycleII">linkedListCycleII</button>
+          </div>
+
+          <div class="flashcard-story">
+            <div class="story-panel active" id="story-twoSumII" data-file="twoSumII.js" data-hash="19fd97c943c75123cccc3db17deed1d2ad146e4f">
+              <span class="tag tag-story">Story</span>
+              <h3>twoSumII</h3>
+              <p>
+                Sorted array, looking for a pair that sums to target. Start with one
+                pointer at each end - the smallest and largest possible values. If the
+                pair sums too small, the only way to get bigger is to move
+                <code>left</code> right (swap in a bigger "small" number). If it sums too
+                big, move <code>right</code> left. Each move provably eliminates an entire
+                row/column of impossible pairs - that's why two pointers beats checking
+                every pair.
+              </p>
+              <p><strong>Family:</strong> The canonical converging two-pointer template - the base case every other pair/triplet/quadruplet problem reduces down to.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/twoSumII.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-3Sum" data-file="3Sum.js" data-hash="30ebf5e41aa6bcc7b2fe72e45e1e3df53812ed38">
+              <span class="tag tag-story">Story</span>
+              <h3>3Sum</h3>
+              <p>
+                Same target-sum hunt as <code>twoSumII</code>, but now for a TRIPLET that
+                sums to 0. Fix one number with a loop (<code>i</code>) - the remaining two
+                numbers must sum to <code>-nums[i]</code>, exactly <code>twoSumII</code> on
+                the rest of the array. Sort first so duplicates sit next to each other and
+                can be skipped at all three levels (<code>i</code>, <code>left</code>,
+                <code>right</code>) to avoid duplicate triplets.
+              </p>
+              <p><strong>Family:</strong> k-Sum reduction, step 1: 3Sum = fix one + twoSumII on the remainder. <code>3SumClosest</code> and <code>4Sum</code> extend this same ladder.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/3Sum.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-3SumClosest" data-file="3SumClosest.js" data-hash="23db05b895cf3f974b63c79a88a7639a98f585a4">
+              <span class="tag tag-story">Story</span>
+              <h3>3SumClosest</h3>
+              <p>
+                Same skeleton as <code>3Sum</code> - sort, fix <code>i</code>, converge
+                <code>left</code>/<code>right</code> - but instead of hunting for an exact
+                sum of 0, you're hunting for the sum CLOSEST to an arbitrary target. Track
+                the best (smallest <code>|sum - target|</code>) seen so far; move
+                <code>left</code> right when the sum is too small, <code>right</code> left
+                when too big, and short-circuit the moment you hit an exact match (can't
+                get any closer).
+              </p>
+              <p><strong>Family:</strong> k-Sum reduction, same family as 3Sum - swaps "find exact 0" for "minimize distance to target"; sort, converge, and the outer fixed index all stay identical.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/3SumClosest.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-4Sum" data-file="4Sum.js" data-hash="7e8c8ecc94c741219594af497f17218dfdeed61b">
+              <span class="tag tag-story">Story</span>
+              <h3>4Sum</h3>
+              <p>
+                One rung higher on the same ladder: fix TWO numbers with nested loops
+                (<code>i</code>, <code>j</code>), then converge <code>left</code>/<code>right</code>
+                on the remaining pair - the same <code>twoSumII</code> core, just called
+                from one level deeper. Skip duplicates at all FOUR levels (<code>i</code>,
+                <code>j</code>, <code>left</code>, <code>right</code>) to avoid duplicate
+                quadruplets.
+              </p>
+              <p><strong>Family:</strong> k-Sum reduction, step 2: 4Sum = fix two + twoSumII on the remainder. The pattern generalizes - kSum = fix (k-2) numbers with nested loops, then twoSumII on what's left.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/4Sum.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-containerWithMostWater" data-file="containerWithMostWater.js" data-hash="bbb2913f111aabfe425fd47d5776a5e7de19ce05">
+              <span class="tag tag-story">Story</span>
+              <h3>containerWithMostWater</h3>
+              <p>
+                Two walls, water level capped by the SHORTER one. Start with the widest
+                possible container (both ends). At each step,
+                <code>area = min(height[left], height[right]) * width</code>. The wall
+                that's currently shorter is the bottleneck - moving it MIGHT find
+                something taller and increase the area. Moving the TALLER wall can only
+                shrink the width while the height cap stays the same (still limited by the
+                short wall) - so it can never help. Always step the shorter wall inward.
+              </p>
+              <p><strong>Family:</strong> Converging pointers with a GREEDY ELIMINATION move rule based on which side is the current bottleneck - not a sum comparison. <code>trappingRainWater</code> extends this same "shorter side is the bottleneck" idea to compute trapped water at every position.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/containerWithMostWater.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-trappingRainWater" data-file="trappingRainWater.js" data-hash="52e3b266fd73aa3b0bb9fcefa93ff5027b4ddb5e">
+              <span class="tag tag-story">Story</span>
+              <h3>trappingRainWater</h3>
+              <p>
+                Extends <code>containerWithMostWater</code>'s bottleneck idea: instead of
+                one area, sum up trapped water at EVERY index. Track running
+                <code>leftMax</code>/<code>rightMax</code> as you converge. Whichever side
+                is currently shorter (<code>height[left] &lt; height[right]</code>) is
+                GUARANTEED to have its water level capped by its OWN running max - because
+                the other side's max is provably even taller. Process that side: either
+                it's a new max (no water on a peak) or <code>water = runningMax - height[i]</code>.
+              </p>
+              <p><strong>Family:</strong> Converging pointers + "shorter side is bounded by its own max" - the direct generalization of containerWithMostWater from "one container's area" to "water trapped above every bar".</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/trappingRainWater.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-boatsToSavePeople" data-file="boatsToSavePeople.js" data-hash="ad7b18b143e1c6e17c5cabb19bd492c65c6d5b04">
+              <span class="tag tag-story">Story</span>
+              <h3>boatsToSavePeople</h3>
+              <p>
+                Sort by weight, then greedily pair the HEAVIEST remaining person with the
+                LIGHTEST. The heaviest person is going on a boat no matter what - the only
+                question is whether anyone can join them, and the lightest person is their
+                best (and easiest-to-check) chance of fitting. If they fit together, both
+                leave; either way, the heaviest always consumes one boat.
+              </p>
+              <p><strong>Family:</strong> Greedy converging pointers - "pair the extremes" - sort first so the two pointers represent "currently lightest unassigned" and "currently heaviest unassigned".</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/boatsToSavePeople.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-squaresOfSortedArray" data-file="squaresOfSortedArray.js" data-hash="6ea79e713548d34e71680ad4b710a6d6543b5914">
+              <span class="tag tag-story">Story</span>
+              <h3>squaresOfSortedArray</h3>
+              <p>
+                The array is sorted by VALUE, but squaring un-sorts it - the biggest
+                squares come from whichever end has the largest ABSOLUTE value (very
+                negative or very positive). Compare <code>|nums[left]|</code> vs
+                <code>|nums[right]|</code>; the bigger one's square is the LARGEST
+                remaining square overall, so it goes into the LAST open slot of the
+                result, working backward.
+              </p>
+              <p><strong>Family:</strong> Fill-from-the-back - converging pointers compare a derived quantity (absolute value) and place the winner into a result array built from the end inward. <code>mergeSortedArray</code> uses the same back-to-front fill, comparing raw values instead.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/squaresOfSortedArray.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-validPalindromeII" data-file="validPalindromeII.js" data-hash="feaee2e885d4778a1ab334cafbf38feebba16b06">
+              <span class="tag tag-story">Story</span>
+              <h3>validPalindromeII</h3>
+              <p>
+                Standard converging palindrome check - until the FIRST mismatch. You're
+                allowed to delete exactly ONE character, so don't give up: branch into two
+                sub-checks - "is <code>s[left+1..right]</code> a palindrome?" OR "is
+                <code>s[left..right-1]</code> a palindrome?" (skip one side or the other).
+                If either branch is a clean palindrome, the answer is true.
+              </p>
+              <p><strong>Family:</strong> Converging pointers + "one allowed exception, branch both ways" - useful whenever a problem says "...after removing/changing AT MOST ONE element".</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/validPalindromeII.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-moveZeros" data-file="moveZeros.js" data-hash="94a6440a64da54e20c41969b261bb87d66c77cdd">
+              <span class="tag tag-story">Story</span>
+              <h3>moveZeros</h3>
+              <p>
+                <code>slow</code> marks the next position where a non-zero value belongs;
+                <code>fast</code> scans every element. Whenever <code>fast</code> finds a
+                non-zero, swap it into <code>slow</code>'s slot and advance
+                <code>slow</code>. Zeros never get explicitly "moved" - they just get
+                swapped further and further right as non-zeros leapfrog past them,
+                naturally settling at the end.
+              </p>
+              <p><strong>Family:</strong> Same-direction read/write pointers - <code>slow</code> = write head, <code>fast</code> = scanner. <code>removeDuplicatesII</code> and <code>sortColors</code> are the same idea with a different "should I keep this?" rule.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/moveZeros.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-removeDuplicatesII" data-file="removeDuplicatesII.js" data-hash="4ab5d1756d51eb4e6c62ff39e367ef8be22601bd">
+              <span class="tag tag-story">Story</span>
+              <h3>removeDuplicatesII</h3>
+              <p>
+                <code>insertIndex</code> is the write head - it only ever points at valid,
+                deduplicated output. For each <code>i</code>, the question is: "would
+                writing <code>nums[i]</code> make THREE in a row?" Check
+                <code>nums[i] !== nums[insertIndex - 2]</code> - if the value 2 slots back
+                in the OUTPUT differs, this value hasn't appeared twice yet in the result,
+                so it's safe to write.
+              </p>
+              <p><strong>Family:</strong> Same-direction read/write pointers - the "keep at most 2 of each" rule is just a comparison against a fixed offset behind the write pointer. <code>moveZeros</code> is the simplest version of this family (keep rule = non-zero); this adds a "lookback" condition.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/removeDuplicatesII.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-sortColors" data-file="sortColors.js" data-hash="899b8709080b896d4052f9d4514517028cf05cd9">
+              <span class="tag tag-story">Story</span>
+              <h3>sortColors</h3>
+              <p>
+                Three pointers partition the array into <code>[0s | 1s | 2s]</code> in one
+                pass - the Dutch National Flag. <code>low</code>/<code>high</code> are the
+                boundaries of the known-0 and known-2 regions; <code>mid</code> is the
+                cursor. A 0 swaps to the front and BOTH <code>low</code> and
+                <code>mid</code> advance (the swapped-in value is already known-good - it
+                was either a processed 1 or the old <code>low</code>). A 2 swaps to the
+                back, but <code>high</code> only shrinks - <code>mid</code> STAYS, because
+                the value swapped in from <code>high</code> is unknown and must still be
+                inspected. A 1 is already home; just advance <code>mid</code>.
+              </p>
+              <p><strong>Family:</strong> Three-pointer in-place partition - the natural extension of <code>moveZeros</code>'/<code>removeDuplicatesII</code>'s read/write idea to THREE buckets instead of two, with the extra twist that one pointer (<code>high</code>) moves toward <code>mid</code> instead of away from it.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/sortColors.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-mergeSortedArray" data-file="mergeSortedArray.js" data-hash="638ea0acd94bfa4e0b30c0c40abfdf83220913ae">
+              <span class="tag tag-story">Story</span>
+              <h3>mergeSortedArray</h3>
+              <p>
+                <code>nums1</code> has empty space at the END - exactly enough for the
+                merged result. Three pointers: <code>p1</code>/<code>p2</code> scan the
+                valid tails of <code>nums1</code>/<code>nums2</code> from the back,
+                <code>p</code> writes from the back of <code>nums1</code>. At each step,
+                whichever tail is currently LARGER gets copied into the last open slot -
+                guaranteeing the result ends up sorted without ever overwriting a
+                <code>nums1</code> value you still need to compare.
+              </p>
+              <p><strong>Family:</strong> Fill-from-the-back - same idea as <code>squaresOfSortedArray</code> (place the current "winner" into the last open slot, walk pointers inward/backward), but merging two separate arrays instead of re-deriving order from one.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/mergeSortedArray.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-backspaceStringCompare" data-file="backspaceStringCompare.js" data-hash="e9cd80350e75919d6da40fe2ab13e88356ff9cb3">
+              <span class="tag tag-story">Story</span>
+              <h3>backspaceStringCompare</h3>
+              <p>
+                Backspaces only ever delete characters to their LEFT, so the only safe
+                direction to compare is RIGHT TO LEFT. Two pointers start at the END of
+                each string. <code>getNext</code> walks a pointer leftward, counting
+                pending <code>#</code> as "skip the next real character". Once both
+                pointers land on a real (non-skipped) character, compare them - a mismatch
+                (or one string running out before the other) means false.
+              </p>
+              <p><strong>Family:</strong> Converging-from-the-end pointers on TWO sequences - instead of meeting in the middle, both walk leftward in lockstep, each pre-processing its own "skip list" as it goes.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/backspaceStringCompare.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-partitionLabels" data-file="partitionLabels.js" data-hash="acb6e9084ecb718fdb3726a1802ed853ccaefb1f">
+              <span class="tag tag-story">Story</span>
+              <h3>partitionLabels</h3>
+              <p>
+                Not a classic two-pointer search - but the SAME "expand a window, then
+                cut" shape as sliding window. Precompute each character's LAST occurrence.
+                Walk left to right, growing <code>end = max(end, lastIndex[char])</code>.
+                The instant <code>i === end</code>, every character seen so far is
+                GUARANTEED to not reappear later (its last occurrence is already inside
+                the window) - cut here and start a new partition.
+              </p>
+              <p><strong>Family:</strong> Greedy window-extension via a "last occurrence" map - distinct from converging/fast-slow two-pointer, but answers a similar "where can I safely cut this sequence" question. Worth knowing alongside true two-pointer patterns because it's commonly grouped with them.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/partitionLabels.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-linkedListCycleII" data-file="linkedListCycleII.js" data-hash="2d1871acc01dce09f0ff22e787e227457ab97b9b">
+              <span class="tag tag-story">Story</span>
+              <h3>linkedListCycleII</h3>
+              <p>
+                Floyd's Tortoise and Hare. <code>slow</code> moves 1 step, <code>fast</code>
+                moves 2. If the list has NO cycle, <code>fast</code> simply runs off the
+                end (<code>fast.next</code> becomes null) first. If there IS a cycle,
+                <code>fast</code> laps <code>slow</code> and they MEET inside the loop. The
+                meeting point isn't the cycle start - but a bit of math
+                (<code>a = c</code>, where <code>a</code> = head&rarr;cycle-start and
+                <code>c</code> = meeting-point&rarr;cycle-start) shows that resetting one
+                pointer to <code>head</code> and walking BOTH 1 step at a time makes them
+                meet exactly at the cycle's start.
+              </p>
+              <p><strong>Family:</strong> Fast/slow pointers on a LINKED LIST - the only sub-pattern in this folder where the pointers race at DIFFERENT SPEEDS rather than converging or scanning together. The same 1x/2x trick also finds the middle of a list (LC 876) and detects whether a cycle exists at all (LC 141).</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/Two-Pointer/linkedListCycleII.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../notes-script.js"></script>
+</body>
+</html>
