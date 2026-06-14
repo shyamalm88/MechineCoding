@@ -57,24 +57,15 @@ const trappingRainWater = (height) => {
     // Logic: Water level is determined by the shorter of the two walls (left vs right).
     // We process the side with the smaller height because we know its water level is bounded.
     if (height[left] < height[right]) {
-      // Left side is the bottleneck
-      if (height[left] >= leftMax) {
-        // New max height found, update it (cannot trap water on top of a peak)
-        leftMax = height[left];
-      } else {
-        // Current height is less than leftMax.
-        // Since height[left] < height[right], we are guaranteed that rightMax > leftMax.
-        // Therefore, we can safely trap water up to leftMax level.
-        totalWater += leftMax - height[left];
-      }
+      // Left side is the bottleneck. Update the running max first, then add
+      // water up to that max - if height[left] IS the new max, this adds 0.
+      leftMax = Math.max(leftMax, height[left]);
+      totalWater += leftMax - height[left];
       left++;
     } else {
       // Mirror logic for the Right side
-      if (height[right] >= rightMax) {
-        rightMax = height[right];
-      } else {
-        totalWater += rightMax - height[right];
-      }
+      rightMax = Math.max(rightMax, height[right]);
+      totalWater += rightMax - height[right];
       right--;
     }
   }

@@ -165,3 +165,15 @@ function longestPalindromeSubseq(s) {
 
   return dp[0][n - 1];
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Longest Palindromic Subsequence Tests ===\n");
+
+console.log("Test 1:", longestPalindromeSubseq("bbbab")); // Expected: 4 ("bbbb")
+console.log("Test 2:", longestPalindromeSubseq("cbbd")); // Expected: 2 ("bb")
+console.log("Test 3:", longestPalindromeSubseq("a")); // Expected: 1 ("a")
+console.log("Test 4:", longestPalindromeSubseq("abcde")); // Expected: 1 (no repeats)
+
+module.exports = { longestPalindromeSubseq };

@@ -63,6 +63,22 @@ const merge = (nums1, m, nums2, n) => {
   }
 };
 
+/// Another version
+
+const mergeSimple = (nums1, m, nums2, n) => {
+  const merged = [];
+  let i = 0,
+    j = 0;
+
+  while (i < m && j < n) {
+    merged.push(nums1[i] <= nums2[j] ? nums1[i++] : nums2[j++]); // i++ or j++ because minimizing the code, otherwise if else.
+  }
+  while (i < m) merged.push(nums1[i++]);
+  while (j < n) merged.push(nums2[j++]);
+
+  return merged;
+};
+
 console.log("=== Merge Sorted Array Tests ===\n");
 const t1_nums1 = [1, 2, 3, 0, 0, 0];
 merge(t1_nums1, 3, [2, 5, 6], 3);

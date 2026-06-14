@@ -173,3 +173,17 @@ function minMutation(startGene, endGene, bank) {
 
   return -1;
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Minimum Genetic Mutation Tests ===\n");
+
+console.log("Test 1:", minMutation("AACCGGTT", "AACCGGTA", ["AACCGGTA"])); // Expected: 1
+console.log(
+  "Test 2:",
+  minMutation("AACCGGTT", "AAACGGTA", ["AACCGGTA", "AACCGCTA", "AAACGGTA"])
+); // Expected: 2
+console.log("Test 3:", minMutation("AACCGGTT", "AACCGGTA", [])); // Expected: -1 (endGene not in bank)
+
+module.exports = { minMutation };

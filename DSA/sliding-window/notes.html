@@ -172,8 +172,8 @@ for (let right = 0; right &lt; arr.length; right++) {
               <li><code>minimumSizeSubarraySum</code></li>
               <li><code>minimumWindowSubstring</code></li>
               <li><code>longestRepeatingCharacterReplacement</code></li>
-              <li><code>fruitsIntoBaskets</code></li>
               <li><code>maxConsecutiveOnesIII</code></li>
+              <li><code>shortestSubarrayWithSumAtLeastK</code></li>
             </ul>
           </div>
         </div>
@@ -242,7 +242,6 @@ const countExactly = (arr, k) => countAtMost(arr, k) - countAtMost(arr, k - 1);<
           <div class="flashcard-list">
             <button class="flashcard-chip active" data-target="story-LongestSubStringWithoutRepeatingCharacter">LongestSubStringWithoutRepeatingCharacter</button>
             <button class="flashcard-chip" data-target="story-findAllAnagramsInAString">findAllAnagramsInAString</button>
-            <button class="flashcard-chip" data-target="story-fruitsIntoBaskets">fruitsIntoBaskets</button>
             <button class="flashcard-chip" data-target="story-longestRepeatingCharacterReplacement">longestRepeatingCharacterReplacement</button>
             <button class="flashcard-chip" data-target="story-maxConsecutiveOnesIII">maxConsecutiveOnesIII</button>
             <button class="flashcard-chip" data-target="story-maximumPointsFromCards">maximumPointsFromCards</button>
@@ -253,6 +252,7 @@ const countExactly = (arr, k) => countAtMost(arr, k) - countAtMost(arr, k - 1);<
             <button class="flashcard-chip" data-target="story-slidingWindowMedian">slidingWindowMedian</button>
             <button class="flashcard-chip" data-target="story-longestSubstringWithKDistinctCharacters">longestSubstringWithKDistinctCharacters</button>
             <button class="flashcard-chip" data-target="story-subarraysWithKDistinctIntegers">subarraysWithKDistinctIntegers</button>
+            <button class="flashcard-chip" data-target="story-shortestSubarrayWithSumAtLeastK">shortestSubarrayWithSumAtLeastK</button>
           </div>
 
           <div class="flashcard-story">
@@ -281,18 +281,6 @@ const countExactly = (arr, k) => countAtMost(arr, k) - countAtMost(arr, k - 1);<
               </p>
               <p><strong>Family:</strong> Fixed-size, "checklist" (need/formed) trick - same trick reused (with shrinking) in <code>minimumWindowSubstring</code>.</p>
               <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/findAllAnagramsInAString.js" target="_blank">Open solution file &rarr;</a></p>
-            </div>
-
-            <div class="story-panel" id="story-fruitsIntoBaskets" data-file="fruitsIntoBaskets.js" data-hash="b7862b146c1905aaec94a86061a731f79efc0788">
-              <span class="tag tag-story">Story</span>
-              <h3>fruitsIntoBaskets</h3>
-              <p>
-                Two baskets = at most 2 fruit types in the window. Walk the trees, dropping
-                fruit into a map. The instant a 3rd type shows up, shrink from the left -
-                tossing fruit back - until only 2 types remain. Track the biggest haul.
-              </p>
-              <p><strong>Family:</strong> Variable-size, Longest-type, "at most K distinct" (here K=2) - <code>longestSubstringWithKDistinctCharacters</code> is the same template with general <code>K</code>.</p>
-              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/fruitsIntoBaskets.js" target="_blank">Open solution file &rarr;</a></p>
             </div>
 
             <div class="story-panel" id="story-longestRepeatingCharacterReplacement" data-file="longestRepeatingCharacterReplacement.js" data-hash="fe975d610c8a460af08ba08b5381759ce623ddc6">
@@ -403,12 +391,12 @@ const countExactly = (arr, k) => countAtMost(arr, k) - countAtMost(arr, k - 1);<
               <span class="tag tag-story">Story</span>
               <h3>longestSubstringWithKDistinctCharacters</h3>
               <p>
-                The general form of "fruits into baskets" - instead of 2 baskets you now have
-                <code>K</code> baskets. Walk the string, dropping each char into a map. The
-                instant a <code>(K+1)</code>th type shows up, shrink from the left until only
-                <code>K</code> types remain. Track the biggest window seen.
+                Generalize "at most 2 distinct" to "at most <code>K</code> distinct". Walk the
+                string, dropping each char into a map. The instant a <code>(K+1)</code>th type
+                shows up, shrink from the left until only <code>K</code> types remain. Track
+                the biggest window seen.
               </p>
-              <p><strong>Family:</strong> Variable-size, Longest-type, "at most K distinct" - <code>fruitsIntoBaskets</code> is just this with <code>K=2</code> hard-coded.</p>
+              <p><strong>Family:</strong> Variable-size, Longest-type, "at most K distinct" - the general template behind problems like "Fruit Into Baskets" (LC 904, K=2 hard-coded).</p>
               <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/longestSubstringWithKDistinctCharacters.js" target="_blank">Open solution file &rarr;</a></p>
             </div>
 
@@ -424,6 +412,21 @@ const countExactly = (arr, k) => countAtMost(arr, k) - countAtMost(arr, k - 1);<
               </p>
               <p><strong>Family:</strong> The "exactly K = atMost(K) - atMost(K-1)" counting trick - reuses the same "at most K distinct" window as <code>longestSubstringWithKDistinctCharacters</code>, just counting instead of measuring length.</p>
               <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/subarraysWithKDistinctIntegers.js" target="_blank">Open solution file &rarr;</a></p>
+            </div>
+
+            <div class="story-panel" id="story-shortestSubarrayWithSumAtLeastK" data-file="shortestSubarrayWithSumAtLeastK.js" data-hash="f1e6f740e9a6132b2d0c90a8131621415aadf006">
+              <span class="tag tag-story">Story</span>
+              <h3>shortestSubarrayWithSumAtLeastK</h3>
+              <p>
+                Negative numbers break the normal "grow then shrink" window, because the sum
+                stops moving in one direction. Switch to prefix sums: you need the shortest
+                gap <code>(j - i)</code> where <code>prefix[j] - prefix[i] &gt;= k</code>.
+                Keep a deque of indices with strictly increasing prefix sums. Whenever the
+                front satisfies that inequality, record the length and pop it - it's now
+                useless to everyone after <code>j</code> too.
+              </p>
+              <p><strong>Family:</strong> Prefix-sum + monotonic deque - the "negative numbers allowed" upgrade of <code>minimumSizeSubarraySum</code>.</p>
+              <p><a href="https://github.com/shyamalm88/MechineCoding/blob/master/DSA/sliding-window/shortestSubarrayWithSumAtLeastK.js" target="_blank">Open solution file &rarr;</a></p>
             </div>
           </div>
         </div>

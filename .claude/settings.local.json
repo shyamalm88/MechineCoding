@@ -29,7 +29,11 @@
       "Bash(open /Volumes/Personal/MechineCoding/DSA/sliding-window/notes.html)",
       "Bash(shasum -a 1 *.js)",
       "Bash(git -C /Volumes/Personal/MechineCoding remote -v)",
-      "Bash(git -C /Volumes/Personal/MechineCoding rev-parse --abbrev-ref HEAD)"
+      "Bash(git -C /Volumes/Personal/MechineCoding rev-parse --abbrev-ref HEAD)",
+      "WebFetch(domain:medium.datadriveninvestor.com)",
+      "Bash(git rm *)",
+      "Bash(git mv *)",
+      "Bash(git add *)"
     ],
     "deny": [],
     "ask": [],
