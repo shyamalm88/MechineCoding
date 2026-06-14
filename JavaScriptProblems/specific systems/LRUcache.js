@@ -8,13 +8,14 @@ class LRUcache {
     if (!this.cache.has(key)) return -1;
     const value = this.cache.get(key);
     this.cache.delete(key);
-    this.cache.set(key, value);
+    this.cache.set(key, value); // move to MRU position
+    return value;
   }
 
   set(key, value) {
     if (this.cache.has(key)) {
       this.cache.delete(key);
-    } else if (this.cache.size > this.limit) {
+    } else if (this.cache.size >= this.limit) {
       const lruKey = this.cache.keys().next().value;
       this.cache.delete(lruKey);
     }

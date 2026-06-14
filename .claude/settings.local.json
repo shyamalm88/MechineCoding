@@ -33,7 +33,11 @@
       "WebFetch(domain:medium.datadriveninvestor.com)",
       "Bash(git rm *)",
       "Bash(git mv *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(find ./intervals -name \"*.js\")",
+      "Bash(find . -iname \"*meetingRoom*\" -o -iname \"*topKFrequentWord*\" -o -iname \"*skyline*\" -o -iname \"*reorganizeString*\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"EXIT: $?\")"
     ],
     "deny": [],
     "ask": [],
