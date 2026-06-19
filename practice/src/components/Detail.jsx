@@ -42,6 +42,11 @@ import KanbanBoard from '../lld/lld-028-kanban-board/Solution'
 import NotificationSystem from '../lld/lld-029-notification-system/Solution'
 import PollWidget from '../lld/lld-030-poll-widget/Solution'
 import FileExplorerDnd from '../lld/lld-031-file-explorer-dnd/Solution'
+import OtpInput from '../lld/lld-032-otp-input/Solution'
+import Tabs from '../lld/lld-033-tabs/Solution'
+import StepperWizard from '../lld/lld-034-stepper-wizard/Solution'
+import DrawingBoard from '../lld/lld-035-drawing-board/Solution'
+import SeatPicker from '../lld/lld-036-seat-picker/Solution'
 
 
 
@@ -90,7 +95,12 @@ const SOLUTION_COMPONENTS = {
   'lld-028-kanban-board': KanbanBoard,
   'lld-029-notification-system': NotificationSystem,
   'lld-030-poll-widget': PollWidget,
-  'lld-031-file-explorer-dnd': FileExplorerDnd
+  'lld-031-file-explorer-dnd': FileExplorerDnd,
+  'lld-032-otp-input': OtpInput,
+  'lld-033-tabs': Tabs,
+  'lld-034-stepper-wizard': StepperWizard,
+  'lld-035-drawing-board': DrawingBoard,
+  'lld-036-seat-picker': SeatPicker
 
 
 

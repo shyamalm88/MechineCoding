@@ -184,5 +184,35 @@
     "title": "File Explorer with Drag & Drop",
     "summary": "Move files and folders via drag and drop with recursive tree rendering",
     "path": "src/lld/lld-031-file-explorer-dnd"
+  },
+  {
+    "id": "lld-032-otp-input",
+    "title": "OTP Input",
+    "summary": "6-box OTP input with auto-focus, backspace navigation, and paste support",
+    "path": "src/lld/lld-032-otp-input"
+  },
+  {
+    "id": "lld-033-tabs",
+    "title": "Tabs",
+    "summary": "Accessible tabs with keyboard navigation, roving tabIndex, and lazy rendering",
+    "path": "src/lld/lld-033-tabs"
+  },
+  {
+    "id": "lld-034-stepper-wizard",
+    "title": "Stepper Wizard",
+    "summary": "Multi-step checkout form with progress indicator and per-step validation",
+    "path": "src/lld/lld-034-stepper-wizard"
+  },
+  {
+    "id": "lld-035-drawing-board",
+    "title": "Drawing Board",
+    "summary": "Canvas freehand drawing with pen, eraser, color picker, and brush size",
+    "path": "src/lld/lld-035-drawing-board"
+  },
+  {
+    "id": "lld-036-seat-picker",
+    "title": "Seat Picker",
+    "summary": "Bus seat selection grid with available, selected, and booked states",
+    "path": "src/lld/lld-036-seat-picker"
   }
 ]
