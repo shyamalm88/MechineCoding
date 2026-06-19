@@ -1,101 +1,61 @@
 // Filtering Deep Objects
+// filterDeep(obj, predicate) — recursively keep only key-value pairs where predicate(key, value) returns true.
+// Prunes resulting empty objects/arrays so the output is always clean.
 
-/**
- * Filters a deeply nested object based on a predicate function.
- * Recursively traverses and filters nested objects/arrays.
- *
- * @param {Object} obj - The object to filter
- * @param {Function} predicate - (key, value) => boolean - return true to keep
- * @returns {Object} - Filtered object
- */
 function filterDeep(obj, predicate) {
   if (Array.isArray(obj)) {
     return obj
       .map((item) => filterDeep(item, predicate))
-      .filter((item) => item !== undefined && item !== null);
+      .filter((item) => item != null);
   }
 
-  if (typeof obj === "object" && obj !== null) {
+  if (obj && typeof obj === "object") {
     const result = {};
 
-    for (const key in obj) {
-      if (!obj.hasOwnProperty(key)) continue;
-
-      const value = obj[key];
-
-      // Check if this key-value should be kept
+    for (const [key, value] of Object.entries(obj)) {
       if (!predicate(key, value)) continue;
 
-      // Recursively filter nested objects/arrays
       if (typeof value === "object" && value !== null) {
         const filtered = filterDeep(value, predicate);
-        // Only include if not empty
-        if (
-          Array.isArray(filtered) ? filtered.length > 0 :
-          Object.keys(filtered).length > 0
-        ) {
-          result[key] = filtered;
-        }
+        if (filtered !== null) result[key] = filtered;
       } else {
         result[key] = value;
       }
     }
 
-    return result;
+    return Object.keys(result).length ? result : null;
   }
 
   return obj;
 }
 
-/**
- * Filter by key names - removes specified keys at any depth
- */
-function filterByKeys(obj, keysToRemove) {
-  const keysSet = new Set(keysToRemove);
-  return filterDeep(obj, (key) => !keysSet.has(key));
+function size(v) {
+  return Array.isArray(v) ? v.length : Object.keys(v).length;
 }
 
-/**
- * Keep only specified keys at any depth
- */
-function keepOnlyKeys(obj, keysToKeep) {
-  const keysSet = new Set(keysToKeep);
-  return filterDeep(obj, (key, value) => {
-    // Always traverse into objects/arrays
-    if (typeof value === "object" && value !== null) return true;
-    return keysSet.has(key);
-  });
-}
+// --- Common usage patterns (thin wrappers to show intent) ---
 
-/**
- * Filter by value type - removes values of certain types
- */
-function filterByType(obj, typesToRemove) {
-  return filterDeep(obj, (key, value) => {
-    if (typesToRemove.includes("null") && value === null) return false;
-    if (typesToRemove.includes("undefined") && value === undefined) return false;
-    if (typesToRemove.includes("empty") && value === "") return false;
-    return !typesToRemove.includes(typeof value);
-  });
-}
+const filterByKeys = (obj, keysToRemove) => {
+  const drop = new Set(keysToRemove);
+  return filterDeep(obj, (k) => !drop.has(k));
+};
 
-/**
- * Filter out null/undefined values at any depth
- */
-function filterNullish(obj) {
-  return filterDeep(obj, (key, value) => value != null);
-}
+const keepOnlyKeys = (obj, keysToKeep) => {
+  const keep = new Set(keysToKeep);
+  // must return true for objects so we can traverse into them
+  return filterDeep(
+    obj,
+    (k, v) => (v !== null && typeof v === "object") || keep.has(k),
+  );
+};
 
-/**
- * Filter out falsy values at any depth
- */
-function filterFalsy(obj) {
-  return filterDeep(obj, (key, value) => {
-    // Keep objects/arrays to traverse them
-    if (typeof value === "object" && value !== null) return true;
-    return Boolean(value);
-  });
-}
+const filterNullish = (obj) => filterDeep(obj, (k, v) => v != null);
+
+const filterFalsy = (obj) =>
+  filterDeep(
+    obj,
+    (k, v) => (v !== null && typeof v === "object") || Boolean(v),
+  );
 
 // ========== TESTS ==========
 
@@ -142,5 +102,11 @@ console.log("\n5. Custom predicate - remove keys starting with 'is':");
 const filtered = filterDeep(user, (key) => !key.startsWith("is"));
 console.log(JSON.stringify(filtered, null, 2));
 
-console.log("\n6. Filter by type - remove strings:");
-console.log(JSON.stringify(filterByType(user, ["string"]), null, 2));
+console.log("\n6. Remove string values:");
+console.log(
+  JSON.stringify(
+    filterDeep(user, (k, v) => typeof v !== "string"),
+    null,
+    2,
+  ),
+);
