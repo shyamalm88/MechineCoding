@@ -1,0 +1,148 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666666;
+  --border: #e0e0e0;
+  --accent: #2563eb;
+  --code-bg: #f5f5f5;
+  --sidebar-bg: #fafafa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --fg: #e8e8e8;
+    --muted: #9a9a9a;
+    --border: #2a2d33;
+    --accent: #6ea8fe;
+    --code-bg: #1e2126;
+    --sidebar-bg: #191b1f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+}
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+  align-items: flex-start;
+}
+
+nav.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  padding: 1rem 0.75rem;
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+
+nav.sidebar h2.brand {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem 0.25rem;
+}
+
+nav.sidebar details {
+  margin-bottom: 0.5rem;
+}
+
+nav.sidebar summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.4rem 0.25rem;
+  border-radius: 4px;
+}
+
+nav.sidebar summary:hover {
+  background: var(--code-bg);
+}
+
+nav.sidebar ul {
+  list-style: none;
+  margin: 0.25rem 0 0 0;
+  padding: 0;
+}
+
+nav.sidebar li a {
+  display: block;
+  padding: 0.35rem 0.5rem 0.35rem 1rem;
+  color: var(--fg);
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.92rem;
+}
+
+nav.sidebar li a:hover {
+  background: var(--code-bg);
+}
+
+nav.sidebar li a[aria-current="page"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+main {
+  flex: 1;
+  min-width: 0;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2rem 2.5rem 4rem;
+}
+
+main h1 { font-size: 1.8rem; margin-top: 0; }
+main h2 { font-size: 1.35rem; margin-top: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+
+section.lesson { margin-bottom: 2rem; }
+section.lesson + section.lesson { border-top: 1px solid var(--border); padding-top: 1rem; }
+
+img { max-width: 100%; height: auto; display: block; margin: 1rem auto; background: #fff; }
+
+/* Quiz option labels ("A)", "B)"...) render as a lone <h6> sibling right
+   before their answer <div> in Google's markup, with no shared class to
+   hook a normal selector onto. :has() lets us group the label inline with
+   its answer instead of the label appearing as a disconnected heading.
+   Needs a modern browser (Safari 15.4+ / Chrome 105+ / Firefox 121+). */
+span:has(> h6) {
+  display: inline-block;
+  margin-right: 0.5em;
+}
+span:has(> h6) h6 {
+  display: inline;
+  font-size: 1em;
+  font-weight: 700;
+}
+span:has(> h6) + div {
+  display: inline;
+}
+span:has(> h6) + div p {
+  display: inline;
+  margin: 0;
+}
+
+pre, code {
+  background: var(--code-bg);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+code { padding: 0.15em 0.4em; font-size: 0.9em; }
+pre { padding: 1rem; overflow-x: auto; }
+pre code { padding: 0; background: none; }
+
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+
+a { color: var(--accent); }
+blockquote { border-left: 3px solid var(--accent); margin: 1rem 0; padding: 0.25rem 1rem; color: var(--muted); }

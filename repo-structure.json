@@ -1,0 +1,2193 @@
+{
+  "type": "directory",
+  "children": [
+    {
+      "type": "directory",
+      "children": [
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "findDuplicateNumber.js",
+                  "type": "file"
+                },
+                {
+                  "name": "gasStationProblem.js",
+                  "type": "file"
+                },
+                {
+                  "name": "majorityElementII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "nextPermutation.js",
+                  "type": "file"
+                },
+                {
+                  "name": "singleNumberII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "subarraySumsDivisibleByK.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "firstMissingPositive.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maxProductSubArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maximumSumCircularSubarray.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "contiguousArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findAllDuplicatesInArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "longestConsecutive.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maximumSubArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "productExceptSelf.js",
+                  "type": "file"
+                },
+                {
+                  "name": "rotateArrayKTimes.js",
+                  "type": "file"
+                },
+                {
+                  "name": "subArraySumEqualsK.js",
+                  "type": "file"
+                },
+                {
+                  "name": "topKFrequentElement.js",
+                  "type": "file"
+                },
+                {
+                  "name": "twoSum.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "Arrays&Hashset"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "capacityToShipPackages.js",
+                  "type": "file"
+                },
+                {
+                  "name": "kokoEatingBananas.js",
+                  "type": "file"
+                },
+                {
+                  "name": "searchInRotatedSortedArrayII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "singleElementInSortedArray.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "medianOfTwoSortedArrays.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "SearchInTimeStamp.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findKClosestElements.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findMinimumInRotatedSortedArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findPeakElement.js",
+                  "type": "file"
+                },
+                {
+                  "name": "firstAndLastPositionOfElement.js",
+                  "type": "file"
+                },
+                {
+                  "name": "searchInRotatedSortedArray.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "BinarySearch"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "bestTimeToBuySellStockII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "coinChangeII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "combinationSumIV.js",
+                  "type": "file"
+                },
+                {
+                  "name": "decodeWays.js",
+                  "type": "file"
+                },
+                {
+                  "name": "jumpGameII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "longestCommonSubSequence.js",
+                  "type": "file"
+                },
+                {
+                  "name": "longestIncreasingSubsequence.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maximumProfitInJobScheduling.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumPathSum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "partialEqualSubsetSum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "triangle.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wordBreak.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "bestTimeToBuySellIII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "bestTimeToBuySellWithCooldown.js",
+                  "type": "file"
+                },
+                {
+                  "name": "bestTimeToBuySellWithFee.js",
+                  "type": "file"
+                },
+                {
+                  "name": "burstBaloons.js",
+                  "type": "file"
+                },
+                {
+                  "name": "distinctSubsequence.js",
+                  "type": "file"
+                },
+                {
+                  "name": "editDistance.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findTargetSumWays.js",
+                  "type": "file"
+                },
+                {
+                  "name": "longestPalindromicSubsequence.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maximalSquare.js",
+                  "type": "file"
+                },
+                {
+                  "name": "onesAndZeroes.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "bestTimeToBuyAndSellStock.js",
+                  "type": "file"
+                },
+                {
+                  "name": "climbingStairs.js",
+                  "type": "file"
+                },
+                {
+                  "name": "coinChange.js",
+                  "type": "file"
+                },
+                {
+                  "name": "houseRobber1.js",
+                  "type": "file"
+                },
+                {
+                  "name": "houseRobberII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "jumpGame.js",
+                  "type": "file"
+                },
+                {
+                  "name": "uniqueuePath.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            },
+            {
+              "type": "directory",
+              "children": [],
+              "name": "optional"
+            }
+          ],
+          "name": "DP"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "AccountsMerge.js",
+                  "type": "file"
+                },
+                {
+                  "name": "cheapestFlightsWithinKStops.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumGeneticMutation.js",
+                  "type": "file"
+                },
+                {
+                  "name": "networkDelayTime.js",
+                  "type": "file"
+                },
+                {
+                  "name": "pacificAtlantic.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathWithAlternateColors.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathWithObstacleElimination.js",
+                  "type": "file"
+                },
+                {
+                  "name": "slidingPuzzle.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wordLadder.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "busRoute.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumCostToReachDestinationInTime.js",
+                  "type": "file"
+                }
+              ],
+              "name": "Optional"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "SwimInRisingWater.js",
+                  "type": "file"
+                },
+                {
+                  "name": "allienDirectory.js",
+                  "type": "file"
+                },
+                {
+                  "name": "criticalConnections.js",
+                  "type": "file"
+                },
+                {
+                  "name": "isBipartite.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumCostToMakeAValidPath.js",
+                  "type": "file"
+                },
+                {
+                  "name": "pathWithMinimumEffort.js",
+                  "type": "file"
+                },
+                {
+                  "name": "reconstructItinerary.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathVisitingAllNodes.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wordLadderII.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "01Matrix.js",
+                  "type": "file"
+                },
+                {
+                  "name": "cloneGraph.js",
+                  "type": "file"
+                },
+                {
+                  "name": "connectedComponent.js",
+                  "type": "file"
+                },
+                {
+                  "name": "courseSchedule.js",
+                  "type": "file"
+                },
+                {
+                  "name": "courseScheduleII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "graphValidTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maxAreaOfIsland.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maxProbability.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minCostToConnectAllPoints.js",
+                  "type": "file"
+                },
+                {
+                  "name": "numberOfIslands.js",
+                  "type": "file"
+                },
+                {
+                  "name": "numberOfProvinces.js",
+                  "type": "file"
+                },
+                {
+                  "name": "openLock.js",
+                  "type": "file"
+                },
+                {
+                  "name": "redundantConnections.js",
+                  "type": "file"
+                },
+                {
+                  "name": "rottenOranges.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestDistanceFromAllBuilding.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wallsAndGates.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            },
+            {
+              "name": "README.md",
+              "type": "file"
+            }
+          ],
+          "name": "Graph"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "taskScheduler.js",
+                  "type": "file"
+                },
+                {
+                  "name": "topKFrequentWords.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "findMedianFromDataStream.js",
+                  "type": "file"
+                },
+                {
+                  "name": "mergeKSortedLists.js",
+                  "type": "file"
+                },
+                {
+                  "name": "theSkylineProblem.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "findKthLargest.js",
+                  "type": "file"
+                },
+                {
+                  "name": "heapSort.js",
+                  "type": "file"
+                },
+                {
+                  "name": "kClosestPointsToOrigin.js",
+                  "type": "file"
+                },
+                {
+                  "name": "kthLargestInStream.js",
+                  "type": "file"
+                },
+                {
+                  "name": "priorityQueue.js",
+                  "type": "file"
+                },
+                {
+                  "name": "topKFrequentElements.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "Heap"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "basicCalculatorII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "carFleet.js",
+                  "type": "file"
+                },
+                {
+                  "name": "decodeString.js",
+                  "type": "file"
+                },
+                {
+                  "name": "removeKDigits.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "largestRectangleInHistogram.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maximumFrequencyStack.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "astroidCollision.js",
+                  "type": "file"
+                },
+                {
+                  "name": "dailyTemperatures.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minStack.js",
+                  "type": "file"
+                },
+                {
+                  "name": "nextGreaterElement.js",
+                  "type": "file"
+                },
+                {
+                  "name": "reversePolishNotation.js",
+                  "type": "file"
+                },
+                {
+                  "name": "simplifyPath.js",
+                  "type": "file"
+                },
+                {
+                  "name": "validParenthesis.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "Stack"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "LongestPalindromicSubstring.js",
+                  "type": "file"
+                },
+                {
+                  "name": "checkValidString.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumRemoveToValidParenthesis.js",
+                  "type": "file"
+                },
+                {
+                  "name": "palindromicSubStrings.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "longestValidParentheses.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "atoi.js",
+                  "type": "file"
+                },
+                {
+                  "name": "encode-decode.js",
+                  "type": "file"
+                },
+                {
+                  "name": "groupAnagrams.js",
+                  "type": "file"
+                },
+                {
+                  "name": "groupStrings.js",
+                  "type": "file"
+                },
+                {
+                  "name": "longestCommonPrefix.js",
+                  "type": "file"
+                },
+                {
+                  "name": "validAnagram.js",
+                  "type": "file"
+                },
+                {
+                  "name": "validPalindrome.js",
+                  "type": "file"
+                },
+                {
+                  "name": "zigzagConversion.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "String"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "4Sum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "linkedListCycleII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "partitionLabels.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "trappingRainWater.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "3Sum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "3SumClosest.js",
+                  "type": "file"
+                },
+                {
+                  "name": "backspaceStringCompare.js",
+                  "type": "file"
+                },
+                {
+                  "name": "boatsToSavePeople.js",
+                  "type": "file"
+                },
+                {
+                  "name": "containerWithMostWater.js",
+                  "type": "file"
+                },
+                {
+                  "name": "mergeSortedArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "moveZeros.js",
+                  "type": "file"
+                },
+                {
+                  "name": "removeDuplicatesII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "sortColors.js",
+                  "type": "file"
+                },
+                {
+                  "name": "squaresOfSortedArray.js",
+                  "type": "file"
+                },
+                {
+                  "name": "twoSumII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "validPalindromeII.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            },
+            {
+              "name": "notes.html",
+              "type": "file"
+            }
+          ],
+          "name": "Two-Pointer"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "bestPathWithCongestion.js",
+                  "type": "file"
+                },
+                {
+                  "name": "logSlidingWindow.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maxOverlapWeight.js",
+                  "type": "file"
+                },
+                {
+                  "name": "resolveByPriority.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathWithPowerUp.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathWithRepairs.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathWithTeleportation.js",
+                  "type": "file"
+                },
+                {
+                  "name": "youtubeDataStructure.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "TreeEditDistance.js",
+                  "type": "file"
+                },
+                {
+                  "name": "areaOfOverlap.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findCyclesInTarjan.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minAreaFreeRect.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minWindowSubsequence.js",
+                  "type": "file"
+                },
+                {
+                  "name": "slidingWindowMedian.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "numberOfIsland2.js",
+                  "type": "file"
+                },
+                {
+                  "name": "numberOfIsland3d.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPath01BFS.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathWithCosts.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "google-2025"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "minimumArrowsToBurstBalloons.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumMeetingRoomsRequired.js",
+                  "type": "file"
+                },
+                {
+                  "name": "nonOverlappingIntervals.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "rangeModule.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "insertInterval.js",
+                  "type": "file"
+                },
+                {
+                  "name": "intervalListIntersections.js",
+                  "type": "file"
+                },
+                {
+                  "name": "meetingRoomsI.js",
+                  "type": "file"
+                },
+                {
+                  "name": "mergeIntervals.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "intervals"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "gameOfLife.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestBridge.js",
+                  "type": "file"
+                },
+                {
+                  "name": "surroundedRegions.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "kthSmallestElementInSortedMatrix.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "diagonalTraverse.js",
+                  "type": "file"
+                },
+                {
+                  "name": "floodFill.js",
+                  "type": "file"
+                },
+                {
+                  "name": "rangeSum2D.js",
+                  "type": "file"
+                },
+                {
+                  "name": "rotateImage.js",
+                  "type": "file"
+                },
+                {
+                  "name": "searchIn2DMatrix.js",
+                  "type": "file"
+                },
+                {
+                  "name": "searchIn2DMatrixII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "setMatrix0.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestPathBinaryMatrix.js",
+                  "type": "file"
+                },
+                {
+                  "name": "spiralMatrix.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "matrix"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "designCircularQueue.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "firstUniqueNumber.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "implementQueueUsingStacks.js",
+                  "type": "file"
+                },
+                {
+                  "name": "movingAverageFromDataStream.js",
+                  "type": "file"
+                },
+                {
+                  "name": "numberOfRecentCalls.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "queue"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "combinationSum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "combinationSumII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "generateParenthesis.js",
+                  "type": "file"
+                },
+                {
+                  "name": "palindromePartitioning.js",
+                  "type": "file"
+                },
+                {
+                  "name": "permutationsII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "subsetsII.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "nqueens.js",
+                  "type": "file"
+                },
+                {
+                  "name": "partitionToKEqualSumSubsets.js",
+                  "type": "file"
+                },
+                {
+                  "name": "sodukuSolver.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wordBreak.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wordBreakII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "wordSearch.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "combinations.js",
+                  "type": "file"
+                },
+                {
+                  "name": "letterCombinationsOfaPhoneNumber.js",
+                  "type": "file"
+                },
+                {
+                  "name": "permutations.js",
+                  "type": "file"
+                },
+                {
+                  "name": "pow.js",
+                  "type": "file"
+                },
+                {
+                  "name": "subsets.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "recursion & backtracking"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "longestSubstringWithKDistinctCharacters.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maximumPointsFromCards.js",
+                  "type": "file"
+                },
+                {
+                  "name": "subarraysWithKDistinctIntegers.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "minimumWindowSubstring.js",
+                  "type": "file"
+                },
+                {
+                  "name": "shortestSubarrayWithSumAtLeastK.js",
+                  "type": "file"
+                },
+                {
+                  "name": "slidingWindowMaximum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "slidingWindowMedian.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "LongestSubStringWithoutRepeatingCharacter.js",
+                  "type": "file"
+                },
+                {
+                  "name": "findAllAnagramsInAString.js",
+                  "type": "file"
+                },
+                {
+                  "name": "longestRepeatingCharacterReplacement.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maxConsecutiveOnesIII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "minimumSizeSubarraySum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "permutationInString.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            },
+            {
+              "name": "notes.html",
+              "type": "file"
+            }
+          ],
+          "name": "sliding-window"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "SearchBST.js",
+                  "type": "file"
+                },
+                {
+                  "name": "binaryTreeMaximumPathSum.js",
+                  "type": "file"
+                },
+                {
+                  "name": "countGoodNodes.js",
+                  "type": "file"
+                },
+                {
+                  "name": "kthSmallestInBST.js",
+                  "type": "file"
+                },
+                {
+                  "name": "levelOrderTraversal.js",
+                  "type": "file"
+                },
+                {
+                  "name": "lowestCommonAncestor.js",
+                  "type": "file"
+                },
+                {
+                  "name": "pathSumII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "pathSumIII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "rightSideView.js",
+                  "type": "file"
+                },
+                {
+                  "name": "subtreeOfAnotherTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "validBST.js",
+                  "type": "file"
+                },
+                {
+                  "name": "verticalOrderTraversal.js",
+                  "type": "file"
+                }
+              ],
+              "name": "IMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "constructATree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "houseRobberIII.js",
+                  "type": "file"
+                },
+                {
+                  "name": "serializeDeserialize.js",
+                  "type": "file"
+                },
+                {
+                  "name": "treeToList.js",
+                  "type": "file"
+                },
+                {
+                  "name": "zigzag.js",
+                  "type": "file"
+                }
+              ],
+              "name": "VVIMP"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "balancedBinaryTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "diameterOfBinaryTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "invertTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "maxDepthOfBinaryTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "sameTree.js",
+                  "type": "file"
+                },
+                {
+                  "name": "symmetricTree.js",
+                  "type": "file"
+                }
+              ],
+              "name": "core"
+            }
+          ],
+          "name": "tree"
+        },
+        {
+          "name": "FAANG_DSA_Sheet.csv",
+          "type": "file"
+        },
+        {
+          "name": "FAANG_DSA_Tracker.csv",
+          "type": "file"
+        },
+        {
+          "name": "Frontend_DSA_Tracker.csv",
+          "type": "file"
+        },
+        {
+          "name": "README.md",
+          "type": "file"
+        },
+        {
+          "name": "dsa-preparation-list.csv",
+          "type": "file"
+        },
+        {
+          "name": "notes-index.html",
+          "type": "file"
+        },
+        {
+          "name": "notes-script.js",
+          "type": "file"
+        },
+        {
+          "name": "notes-style.css",
+          "type": "file"
+        },
+        {
+          "name": "sync-notes.js",
+          "type": "file"
+        }
+      ],
+      "name": "DSA"
+    },
+    {
+      "type": "directory",
+      "children": [
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "array.filterr.js",
+              "type": "file"
+            },
+            {
+              "name": "array.find.js",
+              "type": "file"
+            },
+            {
+              "name": "array.flat.js",
+              "type": "file"
+            },
+            {
+              "name": "array.foreach.js",
+              "type": "file"
+            },
+            {
+              "name": "array.map.js",
+              "type": "file"
+            },
+            {
+              "name": "array.reduce.js",
+              "type": "file"
+            }
+          ],
+          "name": "Array"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "command.js",
+              "type": "file"
+            },
+            {
+              "name": "factory.js",
+              "type": "file"
+            },
+            {
+              "name": "observer.js",
+              "type": "file"
+            },
+            {
+              "name": "proxy-or-interceptor.js",
+              "type": "file"
+            },
+            {
+              "name": "pub-sub.js",
+              "type": "file"
+            },
+            {
+              "name": "singleton.js",
+              "type": "file"
+            }
+          ],
+          "name": "Design Patterns"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "README.md",
+              "type": "file"
+            },
+            {
+              "name": "array-object-quirks-output.js",
+              "type": "file"
+            },
+            {
+              "name": "async-await-output.js",
+              "type": "file"
+            },
+            {
+              "name": "class-output.js",
+              "type": "file"
+            },
+            {
+              "name": "closure-output.js",
+              "type": "file"
+            },
+            {
+              "name": "coercion-output.js",
+              "type": "file"
+            },
+            {
+              "name": "destructuring-spread-output.js",
+              "type": "file"
+            },
+            {
+              "name": "generators-iterators-output.js",
+              "type": "file"
+            },
+            {
+              "name": "hoisting-output.js",
+              "type": "file"
+            },
+            {
+              "name": "optional-chaining-nullish-output.js",
+              "type": "file"
+            },
+            {
+              "name": "promiseOutput-1.js",
+              "type": "file"
+            },
+            {
+              "name": "prototype-output.js",
+              "type": "file"
+            },
+            {
+              "name": "scope-execution-context-output.js",
+              "type": "file"
+            },
+            {
+              "name": "this-binding-output.js",
+              "type": "file"
+            },
+            {
+              "name": "typeof-instanceof-output.js",
+              "type": "file"
+            }
+          ],
+          "name": "WhatIsTheOutput"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "apply.js",
+              "type": "file"
+            },
+            {
+              "name": "bind.js",
+              "type": "file"
+            },
+            {
+              "name": "call.js",
+              "type": "file"
+            }
+          ],
+          "name": "call,apply,bind"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "blog-api-client-atlassian.js",
+              "type": "file"
+            }
+          ],
+          "name": "company-asked-important"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "memoization.js",
+              "type": "file"
+            },
+            {
+              "name": "memoizationAsync.js",
+              "type": "file"
+            },
+            {
+              "name": "memoizationWeakMap.js",
+              "type": "file"
+            }
+          ],
+          "name": "memoization"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "customSetInterval.js",
+                  "type": "file"
+                },
+                {
+                  "name": "customSetTimeout.js",
+                  "type": "file"
+                },
+                {
+                  "name": "executorWithConcurrencyLimit.js",
+                  "type": "file"
+                },
+                {
+                  "name": "firstSuccessPromise.js",
+                  "type": "file"
+                },
+                {
+                  "name": "lastSettledPromise.js",
+                  "type": "file"
+                },
+                {
+                  "name": "latestOnlyExecutor.js",
+                  "type": "file"
+                },
+                {
+                  "name": "mergePromise.js",
+                  "type": "file"
+                },
+                {
+                  "name": "promiseRejectTimer.js",
+                  "type": "file"
+                },
+                {
+                  "name": "promiseRetry.js",
+                  "type": "file"
+                },
+                {
+                  "name": "promisify.js",
+                  "type": "file"
+                }
+              ],
+              "name": "Core"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "asyncQueue.js",
+                  "type": "file"
+                },
+                {
+                  "name": "asyncWaterfall.js",
+                  "type": "file"
+                },
+                {
+                  "name": "deadLineAwareExecution.js",
+                  "type": "file"
+                },
+                {
+                  "name": "dynamicConcurrencyExecutor.js",
+                  "type": "file"
+                },
+                {
+                  "name": "executeInParallel.js",
+                  "type": "file"
+                },
+                {
+                  "name": "executeInSeries.js",
+                  "type": "file"
+                },
+                {
+                  "name": "executeWithLimit.js",
+                  "type": "file"
+                },
+                {
+                  "name": "mapAsyncLimit.js",
+                  "type": "file"
+                },
+                {
+                  "name": "promiseCoalescing.js",
+                  "type": "file"
+                },
+                {
+                  "name": "queueWithBackPressure.js",
+                  "type": "file"
+                }
+              ],
+              "name": "execution"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "asyncRollBackWorkflow.js",
+                  "type": "file"
+                },
+                {
+                  "name": "composeAsync.js",
+                  "type": "file"
+                },
+                {
+                  "name": "composeAsyncWithCancel.js",
+                  "type": "file"
+                },
+                {
+                  "name": "executeAsyncWithDependecies.js",
+                  "type": "file"
+                },
+                {
+                  "name": "partialFailureHandling.js",
+                  "type": "file"
+                },
+                {
+                  "name": "schedulerAsyncWithDependecyConcurrencyPriority.js",
+                  "type": "file"
+                }
+              ],
+              "name": "orchastration"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "circuitBreaker.js",
+                  "type": "file"
+                },
+                {
+                  "name": "deadlinePropogation.js",
+                  "type": "file"
+                },
+                {
+                  "name": "promiseWithTimeout.js",
+                  "type": "file"
+                },
+                {
+                  "name": "retryWithBackoff.js",
+                  "type": "file"
+                },
+                {
+                  "name": "retryWithCancel.js",
+                  "type": "file"
+                }
+              ],
+              "name": "reliability"
+            },
+            {
+              "type": "directory",
+              "children": [
+                {
+                  "name": "asyncSchedulerEngine.js",
+                  "type": "file"
+                },
+                {
+                  "name": "cancelableAsyncTask.js",
+                  "type": "file"
+                },
+                {
+                  "name": "priorityExecutor.js",
+                  "type": "file"
+                },
+                {
+                  "name": "priorityExecutorConcurrent.js",
+                  "type": "file"
+                },
+                {
+                  "name": "runInIdle.js",
+                  "type": "file"
+                }
+              ],
+              "name": "scheduler"
+            }
+          ],
+          "name": "promise-async-problems"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "abortablePromiseAll.js",
+              "type": "file"
+            },
+            {
+              "name": "promise.all.polyfill.js",
+              "type": "file"
+            },
+            {
+              "name": "promise.allSettled.js",
+              "type": "file"
+            },
+            {
+              "name": "promise.any.js",
+              "type": "file"
+            },
+            {
+              "name": "promise.finally.polyfill.js",
+              "type": "file"
+            },
+            {
+              "name": "promise.race.js",
+              "type": "file"
+            },
+            {
+              "name": "promisePolyfill.js",
+              "type": "file"
+            }
+          ],
+          "name": "promise-polyfills"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "LFUCache.js",
+              "type": "file"
+            },
+            {
+              "name": "LRUCacheSearchSuggestion.js",
+              "type": "file"
+            },
+            {
+              "name": "LRUWithTTL.js",
+              "type": "file"
+            },
+            {
+              "name": "LRUcache.js",
+              "type": "file"
+            },
+            {
+              "name": "UberClassicMethodChaining.js",
+              "type": "file"
+            },
+            {
+              "name": "batchApiDispatcher.js",
+              "type": "file"
+            },
+            {
+              "name": "createStore.js",
+              "type": "file"
+            },
+            {
+              "name": "customUseEffect.js",
+              "type": "file"
+            },
+            {
+              "name": "eventEmitter.js",
+              "type": "file"
+            },
+            {
+              "name": "filteringDeepObject.js",
+              "type": "file"
+            },
+            {
+              "name": "lazyChain.js",
+              "type": "file"
+            },
+            {
+              "name": "leakyBucket.js",
+              "type": "file"
+            },
+            {
+              "name": "notificationSystem.js",
+              "type": "file"
+            },
+            {
+              "name": "observable.js",
+              "type": "file"
+            },
+            {
+              "name": "priorityQueue.js",
+              "type": "file"
+            },
+            {
+              "name": "rateLimiter.js",
+              "type": "file"
+            },
+            {
+              "name": "tokenBucket.js",
+              "type": "file"
+            },
+            {
+              "name": "trie.js",
+              "type": "file"
+            },
+            {
+              "name": "typeaheadSearchWithCancellation.js",
+              "type": "file"
+            },
+            {
+              "name": "virtualDOMTreeDiff.js",
+              "type": "file"
+            }
+          ],
+          "name": "specific systems"
+        },
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "analyticsSDK.js",
+              "type": "file"
+            },
+            {
+              "name": "chunk.js",
+              "type": "file"
+            },
+            {
+              "name": "compose.js",
+              "type": "file"
+            },
+            {
+              "name": "curryFunction.js",
+              "type": "file"
+            },
+            {
+              "name": "debounce.js",
+              "type": "file"
+            },
+            {
+              "name": "debounceWithLeadingAndTrainling.js",
+              "type": "file"
+            },
+            {
+              "name": "deepClone.js",
+              "type": "file"
+            },
+            {
+              "name": "deepEqual.js",
+              "type": "file"
+            },
+            {
+              "name": "flattenObjDotNotation.js",
+              "type": "file"
+            },
+            {
+              "name": "groupBy.js",
+              "type": "file"
+            },
+            {
+              "name": "once.js",
+              "type": "file"
+            },
+            {
+              "name": "pipe.js",
+              "type": "file"
+            },
+            {
+              "name": "pipeAsync.js",
+              "type": "file"
+            },
+            {
+              "name": "throttle.js",
+              "type": "file"
+            },
+            {
+              "name": "throttleWithLeadingAndTrailing.js",
+              "type": "file"
+            }
+          ],
+          "name": "utility"
+        }
+      ],
+      "name": "JavaScriptProblems"
+    },
+    {
+      "type": "directory",
+      "children": [
+        {
+          "name": "MicroFrontEnd Design system.md",
+          "type": "file"
+        },
+        {
+          "name": "Yotube1000cuts.md",
+          "type": "file"
+        },
+        {
+          "name": "assets.md",
+          "type": "file"
+        },
+        {
+          "name": "browser-document-execution.md",
+          "type": "file"
+        },
+        {
+          "name": "browser-internals.md",
+          "type": "file"
+        },
+        {
+          "name": "cache.md",
+          "type": "file"
+        },
+        {
+          "name": "core-web-vitals.md",
+          "type": "file"
+        },
+        {
+          "name": "cors-security.md",
+          "type": "file"
+        },
+        {
+          "name": "graphql.md",
+          "type": "file"
+        },
+        {
+          "name": "hydration.md",
+          "type": "file"
+        },
+        {
+          "name": "javascript-core.md",
+          "type": "file"
+        },
+        {
+          "name": "javascript-sdk.md",
+          "type": "file"
+        },
+        {
+          "name": "monorepo.md",
+          "type": "file"
+        },
+        {
+          "name": "network.md",
+          "type": "file"
+        },
+        {
+          "name": "observability.md",
+          "type": "file"
+        },
+        {
+          "name": "optimistic-updates.md",
+          "type": "file"
+        },
+        {
+          "name": "react-performance.md",
+          "type": "file"
+        },
+        {
+          "name": "rendering-spectrum.md",
+          "type": "file"
+        },
+        {
+          "name": "security.md",
+          "type": "file"
+        },
+        {
+          "name": "state-machines.md",
+          "type": "file"
+        },
+        {
+          "name": "state-management.md",
+          "type": "file"
+        },
+        {
+          "name": "v8-internals.md",
+          "type": "file"
+        },
+        {
+          "name": "web-performance.md",
+          "type": "file"
+        },
+        {
+          "name": "webpack.md",
+          "type": "file"
+        }
+      ],
+      "name": "Theory"
+    },
+    {
+      "type": "directory",
+      "children": [
+        {
+          "type": "directory",
+          "children": [
+            {
+              "name": "autocomplete-typeahead.md",
+              "type": "file"
+            },
+            {
+              "name": "chat-app-whatsapp-web.md",
+              "type": "file"
+            },
+            {
+              "name": "config-driven-shopping-cart-homepage.md",
+              "type": "file"
+            },
+            {
+              "name": "email-delivery-system-gmail.md",
+              "type": "file"
+            },
+            {
+              "name": "facebook-social-media-platform.md",
+              "type": "file"
+            },
+            {
+              "name": "google-calendar-day-view.md",
+              "type": "file"
+            },
+            {
+              "name": "google-docs.md",
+              "type": "file"
+            },
+            {
+              "name": "google-drive-dropbox.md",
+              "type": "file"
+            },
+            {
+              "name": "leetcode-online-judge.md",
+              "type": "file"
+            },
+            {
+              "name": "notification-system.md",
+              "type": "file"
+            },
+            {
+              "name": "payment-gateway-stripe.md",
+              "type": "file"
+            },
+            {
+              "name": "rate-limiter.md",
+              "type": "file"
+            },
+            {
+              "name": "ride-booking-uber-rapido.md",
+              "type": "file"
+            },
+            {
+              "name": "stock-broker-platform-zerodha-groww.md",
+              "type": "file"
+            },
+            {
+              "name": "top-k-leaderboard.md",
+              "type": "file"
+            },
+            {
+              "name": "trello-issue-manager.md",
+              "type": "file"
+            },
+            {
+              "name": "video-streaming-youtube.md",
+              "type": "file"
+            },
+            {
+              "name": "zomato-food-delivery.md",
+              "type": "file"
+            }
+          ],
+          "name": "latest & updated"
+        },
+        {
+          "name": ".DS_Store",
+          "type": "file"
+        },
+        {
+          "name": "SystemDesignQuestions.md",
+          "type": "file"
+        },
+        {
+          "name": "autocomplete-typeahead.md",
+          "type": "file"
+        },
+        {
+          "name": "bookmyshow-ticket-booking.md",
+          "type": "file"
+        },
+        {
+          "name": "ecommerce-marketplace-amazon.md",
+          "type": "file"
+        },
+        {
+          "name": "instagram-photo-feed.md",
+          "type": "file"
+        },
+        {
+          "name": "news-feed-facebook-twitter.md",
+          "type": "file"
+        },
+        {
+          "name": "photo-grid-google-photos.md",
+          "type": "file"
+        },
+        {
+          "name": "real-time-collaborative-system.md",
+          "type": "file"
+        },
+        {
+          "name": "travel-booking-airbnb-makemytrip.md",
+          "type": "file"
+        },
+        {
+          "name": "uber-eats-restaurant-listing.md",
+          "type": "file"
+        },
+        {
+          "name": "video-conference-zoom.md",
+          "type": "file"
+        },
+        {
+          "name": "video-stream-platform.md",
+          "type": "file"
+        },
+        {
+          "name": "video-streaming-youtube.md",
+          "type": "file"
+        }
+      ],
+      "name": "system-design"
+    }
+  ],
+  "name": "MechineCoding"
+}

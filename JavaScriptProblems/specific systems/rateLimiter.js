@@ -83,3 +83,36 @@ class RateLimiter {
     }
   }
 }
+
+// ---- Real-life usage: protecting a login API from brute-force attempts ----
+// Real Express route would look like:
+//
+//   const limiter = new RateLimiter({ capacity: 5, refillRate: 5 / 60 }); // 5 attempts/min
+//
+//   app.post("/login", (req, res) => {
+//     if (!limiter.allow(req.ip)) {
+//       return res.status(429).send("Too many attempts, try again later");
+//     }
+//     // ... verify username/password
+//   });
+//
+// Simulated below (no refill, so capacity is a hard cap) so it's runnable with plain `node`:
+const limiter = new RateLimiter({ capacity: 3, refillRate: 0 }); // 3 login attempts allowed
+
+function handleLoginRequest(ip) {
+  if (!limiter.allow(ip)) {
+    console.log(`[${ip}] 429 Too Many Requests - blocked`);
+    return;
+  }
+  console.log(`[${ip}] 200 OK - checking credentials`);
+}
+
+// Attacker script hammering the login endpoint from the same IP:
+for (let i = 1; i <= 5; i++) {
+  handleLoginRequest("203.0.113.42");
+}
+// -> first 3 attempts pass through to the credential check,
+//    the last 2 are rejected before ever touching the database.
+
+// A different IP is unaffected - it has its own bucket:
+handleLoginRequest("198.51.100.7"); // 200 OK

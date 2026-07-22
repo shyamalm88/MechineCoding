@@ -9,10 +9,7 @@
 Promise.prototype.myFinally = function (onFinally) {
   return this.then(
     (value) => Promise.resolve(onFinally()).then(() => value),
-    (reason) =>
-      Promise.resolve(onFinally()).then(() => {
-        throw reason;
-      }),
+    (reason) => Promise.resolve(onFinally()).then(() => Promise.reject(reason)),
   );
 };
 

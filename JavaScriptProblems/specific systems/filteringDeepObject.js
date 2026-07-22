@@ -29,10 +29,6 @@ function filterDeep(obj, predicate) {
   return obj;
 }
 
-function size(v) {
-  return Array.isArray(v) ? v.length : Object.keys(v).length;
-}
-
 // --- Common usage patterns (thin wrappers to show intent) ---
 
 const filterByKeys = (obj, keysToRemove) => {

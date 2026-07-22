@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>29. Design a Proximity Service - Yelp — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html" aria-current="page">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>29. Design a Proximity Service - Yelp</h1><section class="lesson"><h2>System Design: Yelp</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: Yelp</h1></div><div><div><div><p>Learn about the requirements of a proximity service like Yelp.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#What-is-Yelp?">What is Yelp?</a></li><li><a href="#How-will-we-design-Yelp?">How will we design Yelp?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>What is Yelp?<a href="#What-is-Yelp?"><span>#</span></a></h2>
+<p><strong>Yelp</strong> is a one-stop platform for consumers to discover, connect, and transact with local businesses. With it, users can join a waitlist, make a reservation, schedule an appointment, or purchase goods easily. Yelp also provides information, photos, and reviews about local businesses.</p>
+<p>The user provides the name of a place or its GPS location, and the system finds places that are nearby. The user can also upload their opinions on this platform in the form of text, pictures, or ratings for a place they visited. Other location-based services include Foursquare and Google Nearby.</p>
+<p>Services based on <strong>proximity servers</strong> are helpful in finding nearby attractions such as restaurants, theaters, or recreational sites. Designing such a system is challenging because we have to efficiently find all the possible places in a given radius with minimum latency. This means that we have to narrow down all the locations in the world, which could be in the billions, and only pinpoint the relevant ones.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>The user can search for a specific place near them</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>A user enters “cafe” as their input</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>A user wants to search for cafes around Seattle</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The proximity server will search for the places in a given radius, keeping user&#x27;s location as centre point</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The proximity server will identify possible places that fit the user’s input</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>How will we design Yelp?<a href="#How-will-we-design-Yelp?"><span>#</span></a></h2>
+<p>Here is the breakdown of Yelp’s design:</p>
+<ol>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4552284171665408"><strong>Requirements</strong></a>: In this lesson, we define the requirements and estimate the required servers, storage, and bandwidth of our system.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5027439944400896"><strong>Design</strong></a>:In this lesson, we define the API design, the database schema, the components of our system, and the workflow of Yelp.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5518783229198336"><strong>Design considerations</strong></a>: In this lesson, we dive deep into the design of the Yelp system.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/6678825089368064"><strong>Quiz</strong></a>: In this lesson, we take a quiz to test our knowledge of Yelp design.</li>
+</ol>
+<p>Let’s start our design by defining its requirements.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Requirements of Yelp’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Requirements of Yelp’s Design</h1></div><div><div><div><p>Learn about the requirements for a proximity service like Yelp.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#Resource-estimation">Resource estimation</a><ul><li><a href="#Number-of-servers-estimation">Number of servers estimation</a></li><li><a href="#Storage-estimation">Storage estimation</a></li><li><a href="#Bandwidth-estimation">Bandwidth estimation</a></li></ul></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>Let’s identify the requirements of our system.</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<p>The functional requirements of our systems are below:</p>
+<ul>
+<li>
+<p><strong>User accounts</strong>: Users will have accounts where they’re able to perform different functionalities like log in, log out, add, delete, and update places’ information.</p>
+<blockquote>
+<p><strong>Note:</strong> There can be two types of users: business owners who can add their places on the platform and other users who can search, view, and give a rating to a place.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>Search</strong>: The users should be able to search for nearby places or places of interest based on their GPS location (longitude, latitude) and/or the name of a place.</p>
+</li>
+<li>
+<p><strong>Feedback</strong>: The users should be able to add a review about a place. The review can consist of images, text, and a rating.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-2-fig-1.svg" alt="Functional requirements"></div></div></div><div><span>Functional requirements</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<p>The non-functional requirements of our systems are:</p>
+<ul>
+<li>
+<p><strong>High availability</strong>: The system should be highly available to the users.</p>
+</li>
+<li>
+<p><strong>Scalability</strong>: The system should be able to scale up and down, depending on the number of requests. The number of requests can vary depending on the time and number of days. For example, there are usually more searches made at lunchtime than at midnight. Similarly, during tourist season, our system will receive more requests as compared to in other months of the year.</p>
+</li>
+<li>
+<p><strong>Consistency</strong>: The system should be consistent for the users. All the users should have a consistent view of the data regarding places, reviews, and images.</p>
+</li>
+<li>
+<p><strong>Performance</strong>: Upon searching, the system should respond with suggestions with minimal latency.</p>
+</li>
+</ul>
+<h2>Resource estimation<a href="#Resource-estimation"><span>#</span></a></h2>
+<p>Let’s assume that we have:</p>
+<ul>
+<li>A total of 178 million unique users.</li>
+<li>60 million daily active users.</li>
+<li>500 million places.</li>
+</ul>
+<span> 
+</span><h3>Number of servers estimation<a href="#Number-of-servers-estimation"><span>#</span></a></h3>
+<p>We need to handle concurrent requests coming from 60 million daily active users. As we did in our discussion in the <a href="https://www.google.com/collection/page/10370001/4941429335392256/5711642666467328">back-of-the-envelope</a> lessons, we assume an RPS of 8,000.</p>
+<p><span><span><span><math><semantics><mrow><mfrac><mrow><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>d</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>y</mi><mtext> </mtext><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mtext> </mtext><mi>u</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow><mrow><mi>R</mi><mi>P</mi><mi>S</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>a</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mn>60</mn><mtext> </mtext><mi>m</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi></mrow><mn>8000</mn></mfrac><mo>=</mo><mn>7500</mn><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mtext> </mtext></mrow><annotation>\frac{Number\ of\ daily\ active\ users}{RPS\ of\ a\ server} = \frac{60\  million}{8000} = 7500\ servers\
+</annotation></semantics></math></span><span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span>RPS</span><span> </span><span>o</span><span>f</span><span> </span><span>a</span><span> </span><span>ser</span><span>v</span><span>er</span></span></span><span><span></span><span></span></span><span><span></span><span><span>N</span><span>u</span><span>mb</span><span>er</span><span> </span><span>o</span><span>f</span><span> </span><span>d</span><span>ai</span><span>l</span><span>y</span><span> </span><span>a</span><span>c</span><span>t</span><span>i</span><span>v</span><span>e</span><span> </span><span>u</span><span>sers</span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>=</span><span></span></span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span>8000</span></span></span><span><span></span><span></span></span><span><span></span><span><span>60</span><span> </span><span>mi</span><span>ll</span><span>i</span><span>o</span><span>n</span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>=</span><span></span></span><span><span></span><span>7500</span><span> </span><span>ser</span><span>v</span><span>ers</span><span> </span></span></span></span></span></p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Estimating the Number of Servers</h4><span><table><tbody><tr><td><span> Number of Daily Active Users (in Millions)</span></td><td><span>60</span></td></tr><tr><td><span>RPS of a Server</span></td><td><span>8000</span></td></tr><tr><td><span>Number of Servers Required</span></td><td><span>f</span><span>7500</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-2-fig-2.svg" alt="The number of servers required for Yelp"></div></div></div><div><span>The number of servers required for Yelp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Storage estimation<a href="#Storage-estimation"><span>#</span></a></h3>
+<p>Let’s calculate the storage we need for our data. Let’s make the following assumptions:</p>
+<ul>
+<li>
+<p>We have a total of 500 million places.</p>
+</li>
+<li>
+<p>For each place, we need 1,296 Bytes of storage.</p>
+</li>
+<li>
+<p>We have one photo attached to each place, so we have 500 million photos.</p>
+</li>
+<li>
+<p>For each photo, we need 280 Bytes of storage. Here, we consider the row size of the photo entity in the table, which contains a link to the actual photo in the blob store.</p>
+</li>
+<li>
+<p>At least 1 million reviews of different places are added daily.</p>
+</li>
+<li>
+<p>For each review, we need 537 Bytes of storage.</p>
+</li>
+<li>
+<p>We have a total of 178 million users.</p>
+</li>
+<li>
+<p>For each user, we need 264 Bytes of storage.</p>
+</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> The Bytes used for each place, photo, review, and user are based on the database schema that we’ll discuss in the next lesson.</p>
+</blockquote>
+
+<p>The following calculater computes the total storage we need:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Estimating Storage Requirements</h4><span><table><tbody><tr><td><span>Type of information</span></td><td><span>Size Required by an Entity (in Bytes)</span></td><td><span>Count (in Millions)</span></td><td><span>Total Size (in GBs)</span></td></tr><tr><td><span>Place</span></td><td><span>1296</span></td><td><span>500</span></td><td><span>f</span><span>648</span></td></tr><tr><td><span>Photo</span></td><td><span>280</span></td><td><span>500</span></td><td><span>f</span><span>140</span></td></tr><tr><td><span>Review</span></td><td><span>537</span></td><td><span>1</span></td><td><span>f</span><span>0.54</span></td></tr><tr><td><span>User</span></td><td><span>264</span></td><td><span>178</span></td><td><span>f</span><span>46.99</span></td></tr><tr><td><span>Total Storage Required</span></td><td><span></span></td><td><span></span></td><td><span>f</span><span>835.53</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-2-fig-3.svg" alt="The total amount of storage required by Yelp"></div></div></div><div><span>The total amount of storage required by Yelp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Bandwidth estimation<a href="#Bandwidth-estimation"><span>#</span></a></h3>
+<p>To estimate the bandwidth requirements for Yelp, we categorize the bandwidth calculation of incoming and outgoing traffic.</p>
+<p>For incoming traffic, let’s assume the following:</p>
+<ul>
+<li>On average, five places are added every day.</li>
+<li>For each place, we take up 1,296 Bytes.</li>
+<li>A photo of size 3 MB is also attached with each place. This is the size of the photo that we save in the blob store.</li>
+<li>One million reviews of different places are added every day.</li>
+<li>Each review, takes up 537 Bytes.</li>
+</ul>
+
+<p>We divide the total size of information per day by 86,400 to convert it into per second bandwidth.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Estimating Incoming Bandwidth Requirements</h4><span><table><tbody><tr><td><span> Average Number of Places Added Daily</span></td><td><span>5</span></td></tr><tr><td><span> Storage Needed for Each Place (Bytes)</span></td><td><span>1296</span></td></tr><tr><td><span>Size of Photo (in MBs)</span></td><td><span>3</span></td></tr><tr><td><span> Total Size of Place Information (Bytes)</span></td><td><span>f</span><span>15006480</span></td></tr><tr><td><span> Average Number of Reviews Added Daily (in Millions)</span></td><td><span>1</span></td></tr><tr><td><span> Storage Needed for Each Review (Bytes)</span></td><td><span>537</span></td></tr><tr><td><span> Total Size of Reviews (Bytes)</span></td><td><span>f</span><span>537000000</span></td></tr><tr><td><span>Total Incoming Bandwidth (KBps)</span></td><td><span>f</span><span>6.39</span></td></tr><tr><td><span> Total Incoming Bandwidth (Kbps)</span></td><td><span>f</span><span>51.12</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>For outgoing traffic, let’s assume the following:</p>
+<ul>
+<li>A single search returns 20 places on average.</li>
+<li>Each place has a single photo attached to it that has an average size of 3 MB.</li>
+<li>Every returned entry contains the place and photo information.</li>
+</ul>
+<p>Considering that there are 60 million active daily users, we come to the following estimations:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Estimating Outgoing Bandwidth Requirements</h4><span><table><tbody><tr><td><span> Average Number of Places Returned on Each Search Request</span></td><td><span>20</span></td></tr><tr><td><span> Size of Place (in Bytes)</span></td><td><span>1296</span></td></tr><tr><td><span> Size of Photo (in MB)</span></td><td><span>3</span></td></tr><tr><td><span> Total Size of Place Information (Bytes)</span></td><td><span>f</span><span>60025920</span></td></tr><tr><td><span> Outgoing Bandwidth Required for a Single Request (Kbps)</span></td><td><span>f</span><span>0.69</span></td></tr><tr><td><span> Outgoing Bandwidth Required for a Single Request (KBps)</span></td><td><span>f</span><span>5.52</span></td></tr><tr><td><span> Daily Active Users (in Millions)</span></td><td><span>60</span></td></tr><tr><td><span>Total Outgoing Bandwidth Required (Kbps)</span></td><td><span>f</span><span>331200000</span></td></tr><tr><td><span> Total Outgoing Bandwidth Required (Gbps)</span></td><td><span>f</span><span>331.2</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We need a total of approximately <span><span><math><semantics><mrow><mn>51</mn><mtext> </mtext><mi>K</mi><mi>b</mi><mi>p</mi><mi>s</mi></mrow><annotation>51\ Kbps</annotation></semantics></math></span><span><span><span></span><span>51</span><span> </span><span>K</span><span>b</span><span>p</span><span>s</span></span></span></span> of incoming traffic and approximately <span><span><math><semantics><mrow><mn>331</mn><mtext> </mtext><mi>G</mi><mi>b</mi><mi>p</mi><mi>s</mi></mrow><annotation>331\ Gbps</annotation></semantics></math></span><span><span><span></span><span>331</span><span> </span><span>G</span><span>b</span><span>p</span><span>s</span></span></span></span> of outgoing, assuming that the uploaded content is not compressed.</p>
+<p>Total bandwidth requirements = <span><span><math><semantics><mrow><mn>51</mn><mtext> </mtext><mi>K</mi><mi>b</mi><mi>p</mi><mi>s</mi><mo>+</mo><mn>331</mn><mtext> </mtext><mi>G</mi><mi>b</mi><mi>p</mi><mi>s</mi><mo>≈</mo><mn>331</mn><mtext> </mtext><mi>G</mi><mi>b</mi><mi>p</mi><mi>s</mi></mrow><annotation>51\ Kbps + 331\ Gbps \approx 331\ Gbps</annotation></semantics></math></span><span><span><span></span><span>51</span><span> </span><span>K</span><span>b</span><span>p</span><span>s</span><span></span><span>+</span><span></span></span><span><span></span><span>331</span><span> </span><span>G</span><span>b</span><span>p</span><span>s</span><span></span><span>≈</span><span></span></span><span><span></span><span>331</span><span> </span><span>G</span><span>b</span><span>p</span><span>s</span></span></span></span>.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-2-fig-4.svg" alt="The total bandwidth required by Yelp"></div></div></div><div><span>The total bandwidth required by Yelp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>The design process of Yelp utilizes many building blocks that have already been discussed in the initial chapters of the course. We’ll consider the following concepts while designing Yelp:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-2-fig-5.svg" alt="Building blocks in the high-level design of Yelp"></div></div></div><div><span>Building blocks in the high-level design of Yelp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5053577315221504"><strong>Caching</strong></a>: We’ll use the cache to store information about popular places.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4521972679049216"><strong>Load balancer</strong></a>: We’ll use the load balancer to manage the large amount of requests.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4862646238576640"><strong>Blob storage</strong></a>: We’ll store images in the blob storage.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872"><strong>Database</strong></a>: We’ll store information about places and users in the database.</li>
+</ul>
+<p>We’ll also rely on <a href="https://www.google.com/collection/page/10370001/4941429335392256/5138720050642944"><strong>Google Maps</strong></a> to understand the feature of searching for places within a particular radius.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design of Yelp</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of Yelp</h1></div><div><div><div><p>Learn to fulfill the design requirements of the Yelp system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#API-design">API design</a><ul><li><a href="#Search">Search</a></li><li><a href="#Add-a-place">Add a place</a></li><li><a href="#Add-a-review">Add a review</a></li></ul></li><li><a href="#Storage-schema">Storage schema</a></li><li><a href="#Design">Design</a><ul><li><a href="#Components">Components</a></li><li><a href="#Workflow">Workflow</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>We identified the requirements and calculated the estimations for our Yelp system in the previous lesson. In this lesson, we discuss the API design, go through the storage schema, and then dive into the details of the system’s building blocks and additional components.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>API design<a href="#API-design"><span>#</span></a></h2>
+<p>Let’s discuss the API design for Yelp.</p>
+<h3>Search<a href="#Search"><span>#</span></a></h3>
+<p>We need to implement the <code>search</code> function. The API call for searching based on categories like “cafes” will be:</p>
+<pre><code><span><span>search(category, user_location, radius)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>category</code></p></div></div></td><td><div></div><div><div><p>This is the type of search the user makes—for example, a search for restaurants, cinemas, cafes, and so on.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>user_location</code></p></div></div></td><td><div></div><div><div><p>This contains the location of the user who’s searching with Yelp.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>radius</code></p></div></div></td><td><div></div><div><div><p>This is the specified radius where the user is trying to find the required category.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>This process returns a JSON object that contains a list of all the possible items in the specified category that also fall within the specified radius. Each entry has a place name, address, category, rating, and thumbnail.</p>
+<p>The API call for searching based on the name of a place like “Burger Hut” will be:</p>
+<pre><code><span><span>search(name_of_place, user_location, radius)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>name_of_place</code></p></div></div></td><td><div></div><div><div><p>This contains the name of the place that the user wants to search for.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>This process returns a JSON object that contains information of the specified place.</p>
+<h3>Add a place<a href="#Add-a-place"><span>#</span></a></h3>
+<p>The API call for adding a place is below:</p>
+<pre><code><span><span>add_place(name_of_place, description_of_place, cat</span><span>egory, latitude, longitude, photo}</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>name_of_place</code></p></div></div></td><td><div></div><div><div><p>This contains the name of the place, for example, &quot;Burger Hut&quot;.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>description_of_place</code></p></div></div></td><td><div></div><div><div><p>This contains a description of the place. For example, &quot;Burger Hut sells the yummiest burgers&quot;.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>category</code></p></div></div></td><td><div></div><div><div><p>This specifies the category of the place—for example, &quot;cafe&quot;.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>latitude</code></p></div></div></td><td><div></div><div><div><p>This tells us the latitude of the place.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>longitude</code></p></div></div></td><td><div></div><div><div><p>This tells us the longitude of the place.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>photo</code></p></div></div></td><td><div></div><div><div><p>This contains photos of the place. There can be a single or multiple photos.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>This process returns a response saying that a place has been added, or an appropriate error if it fails to add a place.</p>
+<h3>Add a review<a href="#Add-a-review"><span>#</span></a></h3>
+<p>The API call for adding a place is below:</p>
+<pre><code><span><span>add_review(place_ID, user_ID, review_description, </span><span>rating)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>place_ID</code></p></div></div></td><td><div></div><div><div><p>This contains the ID of the place whose review is added.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>user_ID</code></p></div></div></td><td><div></div><div><div><p>This contains the ID of the user who adds the review.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>review_description</code></p></div></div></td><td><div></div><div><div><p>This contains the review of the place—for example, &quot;the food and ambiance were superb&quot;.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>rating</code></p></div></div></td><td><div></div><div><div><p>This contains the rating of the place—for example, 4 out of 5.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>This process returns a response that a review has been added, or an appropriate error if it fails to add a review.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Storage schema<a href="#Storage-schema"><span>#</span></a></h2>
+<p>Let’s define the storage schema for our system. A few of the tables we might need are “Place,” “Photos,” “Reviews,” and “Users.”</p>
+<p>Let’s define the columns of the “Place” table:</p>
+<ul>
+<li>
+<p><strong>Place_ID</strong>: We use the sequencer to generate an 8 Bytes (64 bits) unique ID for a place.</p>
+<blockquote>
+<p><strong>Note:</strong> We generate IDs using the unique ID generator.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>Name_of_Place</strong>: This is a string that contains the name of the place. We use 256 Bytes for it.</p>
+</li>
+<li>
+<p><strong>Description_of_Place</strong>: This holds a description of the place. We use 1,000 Bytes for it.</p>
+</li>
+<li>
+<p><strong>Category</strong>: This specifies the type of place like restaurants, cinemas, bookshops, and so on (8 Bytes).</p>
+</li>
+<li>
+<p><strong>Latitude</strong>: This stores the latitude of the location (8 Bytes).</p>
+</li>
+<li>
+<p><strong>Longitude</strong>: This stores the longitude of the location (8 Bytes).</p>
+</li>
+<li>
+<p><strong>Photos</strong>: This contains the foreign key (8 Bytes) of another table “Photos,” which contains all the photos related to a particular place.</p>
+</li>
+<li>
+<p><strong>Rating</strong>: This stores the rating of the place. It shows how many stars a place gets out of five. The rating is calculated based on the reviews it gets from the users.</p>
+</li>
+</ul>
+<p>The columns mentioned above are the most important ones in the table. We can add more columns like “menu,” “address,” “opening and closing hours,” and so on. Therefore, keeping in mind the essential columns, the size of one row of our table will be:</p>
+<pre><code><span><span>Size = 8 + 256 + 1000 + 8 + 8 + 8 + 8 = 1296 bytes</span><span> </span></span><br></code></pre>
+<p>Now let’s define the “Photos” table:</p>
+<ul>
+<li>
+<p><strong>Photo_ID</strong>: We use the sequencer to generate a unique ID for a photo (8 Bytes or 64 bits).</p>
+</li>
+<li>
+<p><strong>Place_ID</strong>: We use the foreign key (8 Bytes) from the “Place” table to identify which photo belongs to which place.</p>
+</li>
+</ul>
+
+<ul>
+<li><strong>Photo_path</strong>: We store the photos in blob storage and save the photo’s path (256 Bytes) in this column.</li>
+</ul>
+<pre><code><span><span>Size = 8 + 8 + 8 + 256 = 280 bytes </span></span><br></code></pre>
+<p>We need another table called “Reviews” to store the reviews, ratings, and photos of a place.</p>
+<ul>
+<li>
+<p><strong>Review_ID</strong>: We use the sequencer to generate a unique ID of 8 Bytes (64 bits) for a review.</p>
+</li>
+<li>
+<p><strong>Place_ID</strong>: The foreign key (8 Bytes) from the “Place” table to determine which place the rating belongs to.</p>
+</li>
+<li>
+<p><strong>User_ID</strong>: The foreign key (8 Bytes) from the “Users” table to identify which review belongs to which user.</p>
+</li>
+<li>
+<p><strong>Review_description</strong>: This holds a description of the review. We use 512 Bytes for it.</p>
+</li>
+<li>
+<p><strong>Rating</strong>: This stores how many stars a place gets out of five (1 Byte).</p>
+</li>
+</ul>
+<pre><code><span><span>Size = 8 + 8 + 8 + 512 + 1 = 537 bytes </span></span><br></code></pre>
+<p>We use the “Users” table to store user information.</p>
+<ul>
+<li>
+<p><strong>User_ID</strong>: We use the sequencer to generate a unique ID for a user (8 Bytes).</p>
+</li>
+<li>
+<p><strong>User_name</strong>: This is a string that contains the user’s name. We use 256 Bytes for it.</p>
+</li>
+</ul>
+<pre><code><span><span>Size = 8 + 256 = 264 bytes </span></span><br></code></pre>
+<blockquote>
+<p><strong>Note:</strong> The <code>INT</code> in the following schema contains an 8-Byte ID that we generate using the unique ID generator.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-3-fig-1.svg" alt="Storage schema"></div></div></div><div><span>Storage schema</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Design<a href="#Design"><span>#</span></a></h2>
+<p>Now we’ll discuss the individual building blocks and components used in the design of Yelp and how they work together to complete various functional requirements.</p>
+<h3>Components<a href="#Components"><span>#</span></a></h3>
+<p>These are the components of our system:</p>
+<ul>
+<li>
+<p><strong>Segments producer</strong>: This component is responsible for communicating with the third-party world map data services (for example, Google Maps). It takes up that data and divides the world into smaller regions called segments. The segment producer helps us narrow down the number of places to be searched.</p>
+</li>
+<li>
+<p><strong>QuadTree servers</strong>: These are a set of servers that have trees that contain the places in the segments. A QuadTree server finds a list of places based on the given radius and the user’s provided location and returns that list to the user. This component mainly aids the search functionality.</p>
+</li>
+<li>
+<p><strong>Aggregators</strong>: The QuadTrees accumulate all the places and send them to the aggregators. Then, the aggregators aggregate the results and return the search result to the user.</p>
+</li>
+<li>
+<p><strong>Read servers</strong>: We use a set of read servers that we use to handle all the read requests. Since we have more read requests, it’s efficient to separate these requests from the write requests. Each read server directs the search requests to the QuadTrees’ servers and returns the results to the user.</p>
+</li>
+<li>
+<p><strong>Write server</strong>: We use a set of write servers to handle all the write requests. Each write server handles the write requests of the user and updates the storage accordingly. Examples for write requests include adding a place, writing a comment, rating a place, and so on.</p>
+</li>
+<li>
+<p><strong>Storage</strong>: We’ll use two types of storage to fulfill our diverse needs.</p>
+<ul>
+<li>
+<p><strong>SQL database</strong>: Our system will have different tables like “Users,” “Place,” “Reviews,” “Photos,” and others as described below. The data in these tables is inherently relational and structured. We need to perform queries like places a user visited, reviews they added, or view all the reviews of a specific place. It’s easy to perform such queries in a SQL-based database. We also want all users to have a consistent view of the data, and SQL-based databases are better suited for such use cases. We’ll use reliable and scalable databases, as is discussed in the <a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872">Database</a> building block.</p>
+</li>
+<li>
+<p><strong>Key-value stores</strong>: We’ll need to fetch the places in a segment efficiently. For that, we store the list of places against a segment ID in a key-value store to minimize searching time. We also save the QuadTree information in the key-value store, by storing the QuadTree data against a unique ID.</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Load balancer</strong>: A load balancer distributes users’ incoming requests to all the servers uniformly.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-3-fig-2.svg" alt="Yelp design"></div></div></div><div><span>Yelp design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Workflow<a href="#Workflow"><span>#</span></a></h3>
+<p>The user puts in a search request. We find all the relevant places in the given radius, while considering the user’s location (latitude, longitude).</p>
+<p>We explain the detailed workflow of our system in terms of the required functionalities below:</p>
+<p><strong>Searching a place</strong>: The load balancers route read requests to the read servers upon receiving them. The read servers direct them to the QuadTree servers to find all the places that fall within the given radius. The QuadTree servers then send the results to the aggregators to refine them and send them to the user.</p>
+<p><strong>Adding a place or feedback</strong>: The load balancers route the write requests to the write servers upon receiving them. Depending on the provided content, meaning the place information or review, the write servers add an entry in the relational database and put all the related images in the blob storage.</p>
+<p><strong>Making segments</strong>:  The segment’s producer splits the world map taken from the third-party map service into smaller segments. The places inside each segment are stored in a key-value store. Even though this is a one-time job, this process is repeated periodically for newer segments and places. Since the probability of new places being added is low, we update our segments every month.</p>
+<p>We’ve discussed the design of Yelp, its API design, and the relevant storage schema. In the next lesson, we’ll talk about the design considerations.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design Considerations of Yelp</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design Considerations of Yelp</h1></div><div><div><div><p>Learn about the different design aspects of the Yelp system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Searching">Searching</a><ul><li><a href="#Improve-data-fetching">Improve data fetching</a></li><li><a href="#Search-using-segments">Search using segments</a></li></ul></li><li><a href="#Dynamic-segments">Dynamic segments</a><ul><li><a href="#Search-using-a-QuadTree">Search using a QuadTree</a></li><li><a href="#Storage-space-estimation-for-QuadTrees">Storage space estimation for QuadTrees</a></li><li><a href="#Data-partitioning">Data partitioning</a></li><li><a href="#Ensure-availability">Ensure availability</a></li><li><a href="#Insert-a-new-place">Insert a new place</a></li><li><a href="#Rank-popular-places">Rank popular places</a></li></ul></li><li><a href="#Finalized-design">Finalized design</a></li><li><a href="#Evaluation">Evaluation</a></li><li><a href="#Summary">Summary</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Introduction<a href="#Introduction"><span>#</span></a></h2>
+<p>We discussed the design, building blocks, components, and the entire workflow of our system in the previous lesson, which brought up a number of interesting questions that now need answering. For example, what approach do we use to find the places, or how do we rank places based on their popularity? This lesson addresses important design concerns like the ones we just mentioned. The table given below summarizes the goals of this lesson.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div>Summary of the Lesson</div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Section/Sub-section</strong></p></div></div></td><td><div></div><div><div><p><strong>Purpose</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><strong>Searching</strong></p></div></div></td><td><div></div><div><div><p>This process divides the world into segments to optimize the search, so that all nearby sites in a given location and radius can be identified.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Storing Indexes</p></div></div></td><td><div></div><div><div><p>We index the places to improve query performance and estimate the storage required for all of the indexes.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Searching Using Segments</p></div></div></td><td><div></div><div><div><p>We search all the desired places by combining the segments.</p></div></div></td></tr><tr><td><div></div><div><div><p><strong>Dynamic Segments</strong></p></div></div></td><td><div></div><div><div><p>We solve the static segment limitations using dynamic segments.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Searching Using a QuadTree</p></div></div></td><td><div></div><div><div><p>We explore the searching functionality using a QuadTree.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Space Estimations for a QuadTree</p></div></div></td><td><div></div><div><div><p>We estimate the storage required for a QuadTree.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Data Partitioning</p></div></div></td><td><div></div><div><div><p>We look into the options we can use to partition data.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Ensuring Availability</p></div></div></td><td><div></div><div><div><p>We look into how we’ll ensure the availability of the system.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Inserting a New Place</p></div></div></td><td><div></div><div><div><p>We look into how we’ll insert the place in a QuadTree.</p></div></div></td></tr><tr><td><div></div><div><div><p>   Ranking Popular Places</p></div></div></td><td><div></div><div><div><p>We rank the places of the system.</p></div></div></td></tr><tr><td><div></div><div><div><p><strong>Evaluation</strong></p></div></div></td><td><div></div><div><div><p>We evaluate how our system fulfills the non-functional requirements.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Searching<a href="#Searching"><span>#</span></a></h2>
+<p>From Google Maps, we were able to connect segments and meet the scalability challenge to process a large graph efficiently. The graph of the world had numerous nodes and vertices, and traversing them was time-consuming. Therefore, we divided the whole world into smaller segments/subgraphs to process and query them simultaneously. The segmentation helps us improve the scalability of the system.</p>
+<p>Each segment will be of the size <span><span><math><semantics><mrow><mn>5</mn><mo>×</mo><mn>5</mn><mtext> </mtext><mi>m</mi><mi>i</mi><mi>l</mi><mi>e</mi><mi>s</mi></mrow><annotation>5 \times 5 \ miles</annotation></semantics></math></span><span><span><span></span><span>5</span><span></span><span>×</span><span></span></span><span><span></span><span>5</span><span> </span><span>mi</span><span>l</span><span>es</span></span></span></span> and will contain a list of places that exist within it. We only search a few segments to locate destinations that are close by. We can use a given location and defined radius to find all the nearby segments and identify sites that are close.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-4-fig-1.svg" alt="Partitioning the globe into small segments, where each segment has four coordinates (lat, long) and all segments hold the coordinates of different places"></div></div></div><div><span>Partitioning the globe into small segments, where each segment has four coordinates (lat, long) and all segments hold the coordinates of different places</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>How will we find nearby places if we create a table for storing all places?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 2</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We can store all the places in a table and uniquely identify a segment by having a <code>segment_ID</code>. We can index each segment in the database. Now, we have limited the number of segments we need to search, so the query will be optimized and return results quickly.</p>
+<h3>Improve data fetching<a href="#Improve-data-fetching"><span>#</span></a></h3>
+
+<p>We use a key-value store for quick access to places in the segments. The key is the <code>segment_ID</code>, while the <code>value</code> contains the list of places in that segment. Let’s estimate how much space we need to store the indexes.</p>
+<blockquote>
+<p>We can usually store a few MBs in the value of the key-value store. If we assume that each segment has 500 places then it will take up <span><span><math><semantics><mrow><mn>500</mn><mo>×</mo><mn>1296</mn><mtext> </mtext><mi>B</mi><mi>y</mi><mi>t</mi><mi>e</mi><mi>s</mi><mo>=</mo><mn>0.648</mn><mi>M</mi><mi>B</mi></mrow><annotation>500 \times 1296 \ Bytes = 0.648MB</annotation></semantics></math></span><span><span><span></span><span>500</span><span></span><span>×</span><span></span></span><span><span></span><span>1296</span><span> </span><span>B</span><span>y</span><span>t</span><span>es</span><span></span><span>=</span><span></span></span><span><span></span><span>0.648</span><span>MB</span></span></span></span>, and we can easily store it as a value.</p>
+</blockquote>
+<p>The total area of the earth is around 200 million square miles, and the land surface area is about 60 million square miles. If we consider our radius to be ten miles, then we’ll have 6 million segments. An 8-Byte identifier will identify each segment.</p>
+<p>Let’s calculate how much memory we need.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4></h4><span><table><tbody><tr><td><span>Total Area of the Earth (Million Square Miles)</span></td><td><span>60</span></td></tr><tr><td><span>Search Radius (Miles)</span></td><td><span>10</span></td></tr><tr><td><span>Number of Segments (Millions)</span></td><td><span>f</span><span>6</span></td></tr><tr><td><span>Segment_ID (Bytes)</span></td><td><span>8</span></td></tr><tr><td><span>Place_ID (Bytes)</span></td><td><span>8</span></td></tr><tr><td><span>Number of Places (Millions)</span></td><td><span>500</span></td></tr><tr><td><span>Total Space (TB)</span></td><td><span>f</span><span>4.048</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Search using segments<a href="#Search-using-segments"><span>#</span></a></h3>
+<p>A user may select a radius for searching places that aren’t present in a single segment. So, we need to combine multiple segments by <a href="https://www.google.com/collection/page/10370001/4941429335392256/6659265711833088#Connecting-two-segments">connecting the segments</a> to find locations within the specified radius—say, five miles.</p>
+<p>First, we constrain the number of segments. This reduces the graph size and makes the searching process optimizable. Then, we identify all the relevant locations, compute the distance from the searching point, and show it to the user.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-4-fig-2.svg" alt="Searching for locations using segments"></div></div></div><div><span>Searching for locations using segments</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Can you identify a problem with the current approach?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Dynamic segments<a href="#Dynamic-segments"><span>#</span></a></h2>
+<p>We solve the problem of uneven distribution of places in a segment by dynamically sizing the segments. We do this by focusing on the number of places. We split a segment into four more segments if the number of places reaches a certain limit. We assume 500 places as our limit. While using this approach, we need to decide on the following questions:</p>
+<ol>
+<li>How will we map the segments?</li>
+<li>How will we connect to other segments?</li>
+</ol>
+<p>We use a <span><span>QuadTree</span></span> to manage our segments. Each node contains the information of a segment. If the number of places exceeds 500, then we split that segment into four more child nodes and divide the places between them. In this way, the leaf nodes will be those segments that can’t be broken down any further. Each leaf node will have a list of places in it too.</p>
+<h3>Search using a QuadTree<a href="#Search-using-a-QuadTree"><span>#</span></a></h3>
+<p>We start searching from the root node and continue to visit the nodes to find our desired segment. We check every node to see if it has more child nodes. If a node has no more children, then we stop our search because that node is the required one. We also connect each child node with its neighboring nodes with a doubly-linked list. All the child nodes of all the parents nodes are connected through the doubly-linked list. This list allows us to find the neighboring segments when we can move forward and backward as per our requirement. After identifying the segments, we have the required <code>PlaceID</code> values of the places and we can search our database to find more details on them.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Is there an alternative approach to find the neighboring segments?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The following slides show how the process of searching for a place works. If a node has the places we need, we stop there. Otherwise, we explore more nodes until we reach our search radius. After finding the node, we query the database for information related to the places and return the desired ones.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>All the leaf nodes in the QuadTree are linked, just like in a doubly-linked list</span></div></div><div><span><strong>1</strong> of 4</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>We searched for a cafe and found the required number cafes—say, 20—in the same leaf node, so do not need to iterate any other nodes</span></div></div><div><span><strong>1</strong> of 4</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>We searched for a cafe but only found, say, six cafes in a leaf node</span></div></div><div><span><strong>1</strong> of 4</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The leaf node will explore its neighboring nodes to find more cafes</span></div></div><div><span><strong>1</strong> of 4</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Storage space estimation for QuadTrees<a href="#Storage-space-estimation-for-QuadTrees"><span>#</span></a></h3>
+<p>Let’s calculate the storage we need for keeping QuadTrees:</p>
+<ul>
+<li>
+<p>We store the <code>PlaceID</code>, <code>Latitude</code>, and <code>Longitude</code> for each place in the node. Each of these values is of the size 8 Bytes. For 500 million places, we need the following amount of storage for all places:</p>
+<ul>
+<li><span><span><math><semantics><mrow><mo>(</mo><mn>8</mn><mo>+</mo><mn>8</mn><mo>+</mo><mn>8</mn><mo>)</mo><mo>×</mo><mn>1</mn><msup><mn>0</mn><mn>6</mn></msup><mo>×</mo><mn>500</mn><mo>=</mo><mn>12</mn><mi>G</mi><mi>B</mi></mrow><annotation>(8+8+8)\times10^6 \times 500 = 12GB</annotation></semantics></math></span><span><span><span></span><span>(</span><span>8</span><span></span><span>+</span><span></span></span><span><span></span><span>8</span><span></span><span>+</span><span></span></span><span><span></span><span>8</span><span>)</span><span></span><span>×</span><span></span></span><span><span></span><span>1</span><span><span>0</span><span><span><span><span><span><span></span><span><span>6</span></span></span></span></span></span></span></span><span></span><span>×</span><span></span></span><span><span></span><span>500</span><span></span><span>=</span><span></span></span><span><span></span><span>12</span><span>GB</span></span></span></span></li>
+</ul>
+</li>
+<li>
+<p>We’ll have 500 places in a single node. So, for 500 million places, we’ll need <span><span><math><semantics><mrow><mfrac><mrow><mn>500</mn><mi>M</mi></mrow><mn>500</mn></mfrac><mo>=</mo><mn>1</mn><mi>M</mi></mrow><annotation>\frac{500M}{500} = 1 M</annotation></semantics></math></span><span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span><span>500</span></span></span></span><span><span></span><span></span></span><span><span></span><span><span><span>500</span><span>M</span></span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>=</span><span></span></span><span><span></span><span>1</span><span>M</span></span></span></span> leaf nodes.</p>
+</li>
+<li>
+<p>The QuadTree with 1 million leaf nodes has approximately <span><span>1/3rd of the leaf nodes of the internal nodes</span></span> (all the nodes up the leaf level), and each internal node has four pointers to its child nodes. If we’ll assume 8 Bytes for each pointer, then we’ll need <span><span><math><semantics><mrow><mn>1</mn><mi>M</mi><mo>∗</mo><mn>1</mn><mi>/</mi><mn>3</mn><mo>∗</mo><mn>4</mn><mo>∗</mo><mn>8</mn><mo>=</mo><mn>10.67</mn><mi>M</mi><mi>B</mi></mrow><annotation>1M * 1/3 * 4 * 8 = 10.67 MB</annotation></semantics></math></span><span><span><span></span><span>1</span><span>M</span><span></span><span>∗</span><span></span></span><span><span></span><span>1/3</span><span></span><span>∗</span><span></span></span><span><span></span><span>4</span><span></span><span>∗</span><span></span></span><span><span></span><span>8</span><span></span><span>=</span><span></span></span><span><span></span><span>10.67</span><span>MB</span></span></span></span> of space for the internal nodes.</p>
+</li>
+<li>
+<p>We can get the total space needed to store all the internal nodes by adding <span><span><math><semantics><mrow><mn>12</mn><mi>G</mi><mi>B</mi></mrow><annotation>12GB</annotation></semantics></math></span><span><span><span></span><span>12</span><span>GB</span></span></span></span> and <span><span><math><semantics><mrow><mn>10.67</mn><mi>M</mi><mi>B</mi></mrow><annotation>10.67MB</annotation></semantics></math></span><span><span><span></span><span>10.67</span><span>MB</span></span></span></span>, that is, <span><span><math><semantics><mrow><mn>12.01</mn><mi>G</mi><mi>B</mi></mrow><annotation>12.01GB</annotation></semantics></math></span><span><span><span></span><span>12.01</span><span>GB</span></span></span></span> approximately.</p>
+</li>
+</ul>
+<p>We can easily store a QuadTree on a server.</p>
+<p>Let’s try the following calculator to calculate the storage needed for a QuadTree:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4></h4><span><table><tbody><tr><td><span>PlaceID, Latitude, and Longitude (Bytes)</span></td><td><span>24</span></td></tr><tr><td><span>Total Number of Places (Millions)</span></td><td><span>500</span></td></tr><tr><td><span>Total Space Needed to Store All Places (GB)</span></td><td><span>f</span><span>12</span></td></tr><tr><td><span>Limit of Places for Each Segment</span></td><td><span>500</span></td></tr><tr><td><span>Number of Segments (Millions)</span></td><td><span>f</span><span>1</span></td></tr><tr><td><span>Number of Pointers to Hold Children Pointers</span></td><td><span>4</span></td></tr><tr><td><span>Size of Each Pointer (Bytes)</span></td><td><span>8</span></td></tr><tr><td><span>Total Space to Store All Internal Nodes (MB)</span></td><td><span>f</span><span>10.67</span></td></tr><tr><td><span>Total Space to Store QuadTrees (GB)</span></td><td><span>f</span><span>12.01</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Data partitioning<a href="#Data-partitioning"><span>#</span></a></h3>
+<p>Keeping 20% growth per year in mind, the number of places will increase. We can partition data on the following basis:</p>
+<ol>
+<li>
+<p><strong>Regions</strong>: We can split our places into regions on the basis of zip codes. This way, all the places that belong to a specific region are stored on a single node. We store information on the region along with the place, so that we can query on the basis of regions too. We can use the user’s region to find the places in that specific region.</p>
+<p>This data partitioning comes with a few challenges. For example, if a region becomes popular during tourist season, it can affect the performance of our system.  We might have numerous queries on the server that might result in slow responsiveness to user queries.</p>
+</li>
+<li>
+<p><strong><code>PlaceID</code></strong>: We can partition data on the basis of <code>PlaceID</code> instead of the region to avoid the query overload in popular seasons or rush hours. We can use a key-value store to store the places. In this case, the key is the <code>PlaceID</code> and the value contains the server in which that place is stored. This will make the process of fetching places more efficient.</p>
+</li>
+</ol>
+<p>So, we’ll opt for partitioning on the basis of places. Moreover, we’ll also use caches for popular places. The cache will have information about that particular place.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Ensure availability<a href="#Ensure-availability"><span>#</span></a></h3>
+<p>Consider a scenario where multiple people in the same radius place a search request. If we have a single QuadTree, it’ll affect the availability of the users. So, we can’t rely on a single QuadTree. To cater to this problem, we replicate our QuadTrees on multiple servers to ensure availability. This allows us to distribute the read traffic and decrease the response time. QuadTrees are built on a server, so we can use the server ID as a key to identify the server on which the QuadTree is present. The value is the list of places that the QuadTree holds. The key-value store eases the rebuilding of the QuadTree in case we lose it.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>How will the leader-follower approach help us in replication?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Insert a new place<a href="#Insert-a-new-place"><span>#</span></a></h3>
+<p>We insert a new place into the database as well as in our QuadTree. We find the segment of the new place if the Quadtree is distributed on different servers, and then we add it to that segment. We split the segment if required and update the QuadTree accordingly.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Rank popular places<a href="#Rank-popular-places"><span>#</span></a></h3>
+<p>We need a service, a <strong>rating calculator</strong>, which calculates the overall rating of a service. We can store the rating of a place in the database and also in the QuadTree, along with the ID, latitude, and longitude of the place. The QuadTree returns the top 50 or 100 popular places within the given radius. The <strong>aggregator service</strong> determines the actual top places and returns them to the user.</p>
+<blockquote>
+<p><strong>Note:</strong> We don’t expect the rating to be updated within hours, as such frequent changes in QuadTrees or databases can be expensive. We update them once a day, when the load is minimal.</p>
+</blockquote>
+<h2>Finalized design<a href="#Finalized-design"><span>#</span></a></h2>
+<p>We added a few new components to our design. We introduced caches to store popular places. This allows us to fetch the places much faster. Moreover, we also added a rating calculator that sorts the places based on their ratings. This will enhance user experience, since the places with a good rating will be displayed first.</p>
+<p>The updated design of our system is shown below:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-proximity-service-yelp/lesson-4-fig-3.svg" alt="Updated Yelp design"></div></div></div><div><span>Updated Yelp design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Evaluation<a href="#Evaluation"><span>#</span></a></h2>
+<p>Let’s see how our system design fulfills our requirements.</p>
+<ul>
+<li><strong>Availability</strong>:  We partitioned the data into smaller segments instead of having to deal with a huge dataset consisting of all the places on the world map. This made our system highly available. We also replicated the QuadTrees data using key-value stores to ensure availability.</li>
+<li><strong>Scalability</strong>: We split the whole world into smaller dynamic segments. This allows us to search for a place within a specific radius and shorten our search area. We then used QuadTrees in which each child node holds a single segment. Upon adding or removing a place, we can restructure our QuadTrees. So, we were able to make our system scalable.</li>
+<li><strong>Performance</strong>: We reduced the latency by using caches. We cached all the famous and popular places, so request time was minimized.</li>
+<li><strong>Consistency</strong>: The users have a consistent view of the data regarding places, reviews, and photos because we used reliable and fault-tolerant databases like key-value stores and relational databases.</li>
+</ul>
+<h2>Summary<a href="#Summary"><span>#</span></a></h2>
+<p>The proximity-based servers allow the user to search for a specific place or places nearby. The map data of the world is huge and dividing it into segments and finding the specific segment was a challenge in itself. So, we used QuadTrees to optimize our search and provided the user with a list of places with minimum latency.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Quiz on Yelp&#x27;s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Quiz on Yelp&#x27;s Design</h1></div><div><div><div><p>Let&#x27;s test our understanding of the design of a proximity server.</p></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Quiz</p>
+</span></span></div></div><div><div><div><div><div>1</div><div></div></div><div><div><span><span><p><strong>(Select all that apply.)</strong> Which requirement will not be fulfilled if we don’t constrain the number of segments to reduce the graph size?</p>
+</span></span></div></div></div><div><div><div><div></div></div><span><h6>A)</h6></span><div><div><span><span><p>Availability</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>B)</h6></span><div><div><span><span><p>Consistency</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>C)</h6></span><div><div><span><span><p>Scalability</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>D)</h6></span><div><div><span><span><p>Reliability</p>
+</span></span></div></div></div></div></div><div><div></div><div><span>Question 1 of 4<span>0 attempted</span></span></div><div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>22. Distributed Logging — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html" aria-current="page">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>22. Distributed Logging</h1><section class="lesson"><h2>System Design: Distributed Logging</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: Distributed Logging</h1></div><div><div><div><p>Let&#x27;s understand the basics of designing a distributed logging system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Logging">Logging</a></li><li><a href="#Need-for-logging">Need for logging</a></li><li><a href="#How-will-we-design-a-distributed-logging-system?">How will we design a distributed logging system?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Logging<a href="#Logging"><span>#</span></a></h2></div><div><div><div><div><p>A <strong>log file</strong> records details of events occurring in a software application. The details may consist of microservices, transactions, service actions, or anything helpful to debug the flow of an event in the system. Logging is crucial to monitor the application’s flow.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-1-fig-1.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Need for logging<a href="#Need-for-logging"><span>#</span></a></h2>
+<p>Logging is essential in understanding the flow of an event in a distributed system. It seems like a tedious task, but upon facing a failure or a security breach, logging helps pinpoint when and how the system failed or was compromised. It can also aid in finding out the root cause of the failure or breach. It decreases the <span><span>meantime to repair</span></span> a system.</p>
+<p>Why don’t we simply print out our statements to understand the application flow? It’s possible but not ideal. Simple print statements have no way of tracking the severity of the message. The output of print functions usually goes to the terminal, while our need could be to persist such data on a local or remote store. Moreover, we can have millions of print statements, so it’s better to structure and store them properly.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-1-fig-2.svg" alt="Issues with using print statements as an alternative to logging"></div></div></div><div><span>Issues with using print statements as an alternative to logging</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Concurrent activity by a service running on many nodes might need causality information to stitch together a correct flow of events properly. We must be careful while dealing with causality in a distributed system. We use a logging service to appropriately manage the diagnostic and exploratory data of our distributed software.</p>
+<p>Logging allows us to understand our code, locate unforeseen errors, fix the identified errors, and visualize the application’s performance. This way, we are aware of how production works, and we know how processes are running in the system.</p>
+<p>Log analysis helps us with the following scenarios:</p>
+<ul>
+<li>To troubleshoot applications, nodes, or network issues.</li>
+<li>To adhere to internal security policies, external regulations, and compliance.</li>
+<li>To recognize and respond to data breaches and other security problems.</li>
+<li>To comprehend users’ actions for input to a recommender system.</li>
+</ul>
+<h2>How will we design a distributed logging system?<a href="#How-will-we-design-a-distributed-logging-system?"><span>#</span></a></h2>
+<p>We have divided the distributed logging system design into the following two lessons:</p>
+<ol>
+<li>
+<p><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5621964999229440">Introduction</a></strong>: We’ll discuss how logging works at a distributed level. We’ll also show how we can restrict the huge size of a log file, and structure them. This lesson will guide us about the requirements we should consider while logging information about a system.</p>
+</li>
+<li>
+<p><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4835612456124416">Design</a></strong>: In this lesson, we’ll define the requirements, API design, and detailed design of our distributed logging system.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Introduction to Distributed Logging</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Introduction to Distributed Logging</h1></div><div><div><div><p>Learn about why we need logging in a distributed system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Logging-in-a-distributed-system">Logging in a distributed system</a></li><li><a href="#Restrain-the-log-size">Restrain the log size</a><ul><li><a href="#Use-sampling">Use sampling</a></li><li><a href="#Use-categorization">Use categorization</a></li></ul></li><li><a href="#Structure-the-logs">Structure the logs</a></li><li><a href="#Points-to-consider-while-logging">Points to consider while logging</a><ul><li><a href="#Vulnerability-in-logging-infrastructure">Vulnerability in logging infrastructure</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Logging in a distributed system<a href="#Logging-in-a-distributed-system"><span>#</span></a></h2>
+<p>In today’s world, an increasing number of designs are moving to microservice architecture instead of monolithic architecture. In microservice architecture, logs of each microservice are accumulated in the respective machine. If we want to know about a certain event that was processed by several microservices, it is difficult to go into every node, figure out the flow, and view error messages. But, it becomes handy if we can trace the log for any particular flow from end to end.</p><span>
+ </span>
+<p>Moreover, it is also not necessary that a microservice is deployed on only one node. It can be deployed on thousands of nodes. Consider the following example, where hundreds of microservices are interdependent, and failure of one service can result in failures of other services. And if we do not have logs, we might not determine the root cause of failure. This emphasizes the need for logging.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>Microservices in a distributed systems</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Another service that was dependent on the previous service also failed because of it</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Another service that was dependent on the previous service also failed because of it</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Similarly, other dependent services also fail</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Similarly, other dependent services also fail</span></div></div><div><span><strong>1</strong> of 6</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Restrain the log size<a href="#Restrain-the-log-size"><span>#</span></a></h2>
+<p>The number of logs increases over time. At a time, perhaps hundreds of concurrent messages need to be logged. But the question is, are they all important enough to be logged? To solve this, logs have to be structured. We need to decide what to log into the system on the application or logging level.</p>
+<h3>Use sampling<a href="#Use-sampling"><span>#</span></a></h3>
+<p>We’ll determine which messages we should log into the system in this approach. Consider a situation where we have lots of messages from the same set of events. For example, there are people commenting on a post, where Person X commented on Person Y’s post, then Person Z commented on Person Y’s post, and so on. Instead of logging all the information, we can use a <strong>sampler service</strong> that only logs a smaller set of messages from a larger chunk. This way, we can decide on the most important messages to be logged.</p>
+<blockquote>
+<p><strong>Note:</strong> For large systems like Facebook, where billions of events happen per second, it is not viable to log them all. An appropriate sampling threshold and strategy are necessary to selectively pick a representative data set.</p>
+</blockquote>
+<p>We can also categorize the types of messages and apply a filter that identifies the important messages and only logs them to the system.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>What is a scenario where the sampling approach will not work?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Use categorization<a href="#Use-categorization"><span>#</span></a></h3>
+<p>Let’s look into the logging support provided by various programming languages. For example, there’s log4j and logging in Python. The following severity levels are commonly used in logging:</p>
+<ul>
+<li><code>DEBUG</code></li>
+<li><code>INFO</code></li>
+<li><code>WARNING</code></li>
+<li><code>ERROR</code></li>
+<li><code>FATAL/CRITICAL</code></li>
+</ul>
+<p>Usually, the production logs are set to print messages with the severity of <code>WARNING</code> and above. But for more detailed flow, the severity levels can be set to <code>DEBUG</code> and <code>INFO</code> levels too.</p>
+<p>Click on the “Run” button to see the execution of an example that uses Python’s logging library to print logs.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div></div><div><div><div><div><div></div><div></div><div><div><div></div><div>1</div></div><div><div>2</div></div><div><div>3</div></div><div><div></div><div>4</div></div><div><div></div><div>5</div></div><div><div>6</div></div><div><div></div><div>7</div></div><div><div>8</div></div><div><div></div><div>9</div></div><div><div>10</div></div><div><div></div><div>11</div></div><div><div>12</div></div><div><div></div><div>13</div></div><div><div>14</div></div><div><div></div><div>15</div></div><div><div>16</div></div><div><div>17</div></div></div></div><div><div><div><div><div></div></div><div></div><div></div><div></div><div><div></div></div><div><div></div><div></div></div><div><div></div></div><div><div></div><div></div></div><div><div></div></div><div><div></div><div></div></div><div><div></div></div><div><div></div><div></div></div><div><div></div></div><div><div></div><div></div></div><div><div></div></div><div><div></div><div></div></div><div><div></div><div></div></div></div><div></div><div></div><div><div><span><span>import</span><span> logging </span><span>as</span><span> log</span></span></div><div><span><span># set the logging level to DEBUG</span></span></div><div><span><span>log.basicConfig</span><span>(</span><span>level=log.DEBUG</span><span>)</span></span></div><div><span><span>for</span><span> i </span><span>in</span><span> </span><span>range</span><span>(</span><span>6</span><span>):</span></span></div><div><span><span>    </span><span>if</span><span> i == </span><span>0</span><span>:</span></span></div><div><span><span>        log.debug</span><span>(</span><span>&quot;Debug level&quot;</span><span>)</span></span></div><div><span><span>    </span><span>elif</span><span> i == </span><span>1</span><span>:</span></span></div><div><span><span>        log.info</span><span>(</span><span>&quot;Info level&quot;</span><span>)</span></span></div><div><span><span>    </span><span>elif</span><span> i == </span><span>2</span><span>:</span></span></div><div><span><span>        log.warning</span><span>(</span><span>&quot;Warning level&quot;</span><span>)</span></span></div><div><span><span>    </span><span>elif</span><span> i == </span><span>3</span><span>:</span></span></div><div><span><span>        log.error</span><span>(</span><span>&quot;Error level&quot;</span><span>)</span></span></div><div><span><span>    </span><span>elif</span><span> i == </span><span>4</span><span>:</span></span></div><div><span><span>        log.critical</span><span>(</span><span>&quot;Critical level&quot;</span><span>)</span></span></div><div><span><span>    </span><span>elif</span><span> i == </span><span>5</span><span>:</span></span></div><div><span><span>        </span><span>print</span><span>(</span><span>&quot;Uncomment the following to view a system generate</span><span>d error:&quot;</span><span>)</span></span></div><div><span><span>        </span><span>#print(3/0)</span></span></div></div><div></div><div><div>i</div></div></div><div><div></div></div><canvas></canvas><div><div></div></div></div><div></div><textarea>import logging as log
+# set the logging level to DEBUG
+log.basicConfig(level=log.DEBUG)
+for i in range(6):
+    if i == 0:
+        log.debug(&quot;Debug level&quot;)
+    elif i == 1:
+        log.info(&quot;Info level&quot;)
+    elif i == 2:
+        log.warning(&quot;Warning level&quot;)
+</textarea><div></div><div><div><div></div></div><div></div></div><div><div></div><canvas></canvas><canvas></canvas><div><div></div></div></div></div><div><div><input><div>Enter to Rename, Shift+Enter to Preview</div></div></div><div></div></div></div><div><div></div></div></div><span><div><div></div></div></span></div><div><div><div><div></div><div><div></div><div></div></div></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p>The output will be similar to:</p>
+<pre><code><span><span>DEBUG:root:Debug level</span></span><br><span><span>INFO:root:Info level</span></span><br><span><span>WARNING:root:Warning level</span></span><br><span><span>ERROR:root:Error level</span></span><br><span><span>CRITICAL:root:Critical level</span></span><br></code></pre>
+</blockquote>
+<p>Let’s uncomment <strong>line 17</strong> to view a system-generated error over the division of an integer by zero. Python itself logs the error to the console:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Structure the logs<a href="#Structure-the-logs"><span>#</span></a></h2>
+<p>Applications have the liberty to choose the structure of their log data. For example, an application is free to write to log as binary or text data, but it is often helpful to enforce some structure on the logs. The first benefit of structured logs is better interoperability between log writers and readers. Second, the structure can make the job of a log processing system easier.</p>
+<blockquote>
+<p><strong>Note:</strong> The structuring of logs is a dense topic in itself. We refer the interested learners to the PhD thesis by Ryan Braud titled &quot;<span><span>Query-based debugging of distributed systems</span></span>.”</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Points to consider while logging<a href="#Points-to-consider-while-logging"><span>#</span></a></h2>
+<p>We should be careful while logging. The logging information should only contain the relevant information and not breach security concerns. For secure data, we should log encrypted data. We should consider the following few points while logging:</p>
+<ul>
+<li>Avoid logging personally identifiable information (PII), such as names, addresses, emails, and so on.</li>
+<li>Avoid logging sensitive information like credit card numbers, passwords, and so on.</li>
+<li>Avoid excessive information. Logging all information is unnecessary. It only takes up more space and affects performance. Logging, being an I/O-heavy operation, has its performance penalties.</li>
+<li>The logging mechanism should be secure and not vulnerable because logs contain the application’s flow, and an insecure logging mechanism is vulnerable to hackers.</li>
+</ul>
+<h3>Vulnerability in logging infrastructure<a href="#Vulnerability-in-logging-infrastructure"><span>#</span></a></h3>
+<p>A <strong>zero-day vulnerability</strong> in Log4j, a famous logging framework for Java, has been identified recently. Log4j has contained the hidden vulnerability, Log4Shell (CVE-2021-44228), since 2013. Apache gave the highest available score, a CVSS severity rating of 10, to Log4Shell. The exploit is simple to execute and affects hundreds of millions of devices. Security experts are convinced that this vulnerability can allow devastating cyberattacks internationally because it can enable attackers to run malicious code and take control of the machine.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design of a Distributed Logging Service</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of a Distributed Logging Service</h1></div><div><div><div><p>Learn how to design a distributed logging service.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li><li><a href="#API-design">API design</a></li><li><a href="#Initial-design">Initial design</a></li><li><a href="#Logging-at-various-levels">Logging at various levels</a><ul><li><a href="#In-a-server">In a server</a></li><li><a href="#At-datacenter-level">At datacenter level</a></li></ul></li><li><a href="#Conclusion">Conclusion</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>We’ll design the distributed logging system now. Our logging system should log all activities or messages (we’ll not incorporate sampling ability into our design).</p>
+<h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>Let’s list the requirements for designing a distributed logging system:</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<p>The functional requirements of our system are as follows:</p>
+<ul>
+<li>
+<p><strong>Writing logs</strong>: The services of the distributed system must be able to write into the logging system.</p>
+</li>
+<li>
+<p><strong>Searchable logs</strong>: It should be effortless for a system to find logs. Similarly,  the application’s flow from end-to-end should also be effortless.</p>
+</li>
+<li>
+<p><strong>Storing logging</strong>: The logs should reside in distributed storage for easy access.</p>
+</li>
+<li>
+<p><strong>Centralized logging visualizer</strong>: The system should provide a unified view of globally separated services.</p>
+</li>
+</ul>
+<h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<p>The non-functional requirements of our system are as follows:</p>
+<ul>
+<li>
+<p><strong>Low latency</strong>:  Logging is an I/O-intensive operation that is often much slower than CPU operations. We need to design the system so that logging is not on an application’s critical path. </p>
+</li>
+<li>
+<p><strong>Scalability:</strong> We want our logging system to be scalable. It should be able to handle the increasing amounts of logs over time and a growing number of concurrent users.</p>
+</li>
+<li>
+<p><strong>Availability:</strong> The logging system should be highly available to log the data.</p>
+</li>
+</ul>
+<h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>The design of a distributed logging system will utilize the following building blocks:</p>
+<ul>
+<li><strong><a href="https://www.google.com/pageeditor/10370001/4941429335392256/4996814243889152">Pub-sub system</a></strong>: We’ll use a pub-sub- system to handle the huge size of logs.</li>
+<li><strong><a href="https://www.google.com/pageeditor/10370001/4941429335392256/5400897294696448">Distributed search</a></strong>: We’ll use distributed search to query the logs efficiently.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-3-fig-1.svg" alt="Building blocks we will use"></div></div></div><div><span>Building blocks we will use</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>API design<a href="#API-design"><span>#</span></a></h2>
+<p>The API design for this problem is given below:</p>
+<p><strong>Write a message</strong></p>
+<p>The API call to perform writing should look like this:</p>
+<pre><code><span><span>write(unique_ID, message_to_be_logged)</span></span><br></code></pre>
+
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>unique_ID</code></p></div></div></td><td><div></div><div><div><p>It is a numeric ID containing <code>application-id</code>, <code>service-id,</code> and a time stamp.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>message_to_be_logged</code></p></div></div></td><td><div></div><div><div><p>It is the log message stored against a unique key.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p><strong>Search log</strong></p>
+<p>The API call to search data should look like this:</p>
+<pre><code><span><span>searching(keyword)</span></span><br></code></pre>
+<p>This call returns a list of logs that contain the keyword.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>keyword</code></p></div></div></td><td><div></div><div><div><p>It is used for finding the logs containing the <code>keyword</code>.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Initial design<a href="#Initial-design"><span>#</span></a></h2>
+<p>In a distributed system, clients across the globe generate events by requesting services from different serving nodes. The nodes generate logs while handling each of the requests. These logs are accumulated on the respective nodes.</p>
+<p>In addition to the building blocks, let’s list the major components of our system:</p>
+<ul>
+<li>
+<p><strong>Log accumulator</strong>: An agent that collects logs from each node and dumps them into storage. So, if we want to know about a particular event, we don’t need to visit each node, and we can fetch them from our storage.</p>
+</li>
+<li>
+<p><strong>Storage</strong>: The logs need to be stored somewhere after accumulation. We’ll choose blob storage to save our logs.</p>
+</li>
+<li>
+<p><strong>Log indexer</strong>: The growing number of log files affects the searching ability. The log indexer will use the distributed search to search efficiently.</p>
+</li>
+<li>
+<p><strong>Visualizer</strong>: The visualizer is used to provide a unified view of all the logs.</p>
+</li>
+</ul>
+<p>The design for this method looks like this:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-3-fig-2.svg" alt="Initial design"></div></div></div><div><span>Initial design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>There are millions of servers in a distributed system, and using a single log accumulator severely affects scalability. Let’s learn how we’ll scale our system.</p>
+<h2>Logging at various levels<a href="#Logging-at-various-levels"><span>#</span></a></h2>
+<p>Let’s explore how the logging system works at various levels.</p>
+<h3>In a server<a href="#In-a-server"><span>#</span></a></h3>
+<p>In this section, we’ll learn how various services belonging to different apps will log in to a server.</p>
+<p>Let’s consider a situation where we have multiple different applications on a server, such as App 1, App 2, and so on. Each application has various microservices running as well. For example, an e-commerce application can have services like authenticating users, fetching carts, and more running at the same time. Every service produces logs. We use an ID with <code>application-id</code>, <code>service-id</code>, and its time stamp to uniquely identify various services of multiple applications. Time stamps can help us to determine the causality of events.</p>
+<p>Each service will push its data to the <strong>log accumulator</strong> service. It is responsible for these actions:</p>
+<ul>
+<li>Receiving the logs.</li>
+<li>Storing the logs locally.</li>
+<li>Pushing the logs to a <a href="https://www.google.com/collection/page/10370001/4941429335392256/4996814243889152">pub-sub system</a>.</li>
+</ul>
+<p>We use the pub-sub system to cater to our scalability issue. Now, each server has its log accumulator (or multiple accumulators) push the data to pub-sub. The pub-sub system is capable of managing a huge amount of logs.</p>
+<p>To fulfill another requirement of low latency, we don’t want the logging to affect the performance of other processes, so we send the logs asynchronously via a low-priority thread. By doing this, our system does not interfere with the performance of others and ensures availability.</p>
+
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>Multiple applications running on a server, and each application has various microservices</span></div></div><div><span><strong>1</strong> of 3</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Each service produces logs and sends them to the log accumulator</span></div></div><div><span><strong>1</strong> of 3</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Log accumulator pushes logs to a pub-sub system</span></div></div><div><span><strong>1</strong> of 3</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>3 of 3
+We should be mindful that data can be lost in the process of logging huge amounts of messages. There is a trade-off between user-perceived latency and the guarantee that log data persists. For lower latency, log services often keep data in RAM and persist them asynchronously. Additionally, we can minimize data loss by adding redundant log accumulators to handle growing concurrent users.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>How does logging change when we host our service on a multi-tenant cloud (like AWS) versus when an organization has exclusive control of the infrastructure (like Facebook), specifically in terms of logs?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> For applications like banking and financial apps, the logs must be very secure so hackers cannot steal the data. The common practice is to encrypt the data and log. In this way, no one can decrypt the encrypted information using the data from logs.</p>
+</blockquote>
+<h3>At datacenter level<a href="#At-datacenter-level"><span>#</span></a></h3>
+<p>All servers in a data center push the logs to a pub-sub system. Since we use a horizontally-scalable pub-sub system, it is possible to manage huge amounts of logs. We may use multiple instances of the pub-sub per data center. It makes our system scalable, and we can avoid bottlenecks. Then, the pub-sub system pushes the data to the blob storage.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-3-fig-3.svg" alt="Log accumulator sending data to the pub-sub system"></div></div></div><div><span>Log accumulator sending data to the pub-sub system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The data does not reside in pub-sub forever and gets deleted after a few days before being stored in archival storage. However, we can utilize the data while it is available in the pub-sub system. The following services will work on the pub-sub data:</p>
+<ul>
+<li>
+<p><strong>Filterer</strong>: It identifies the application and stores the logs in the blob storage reserved for that application since we do not want to mix logs of two different applications.</p>
+</li>
+<li>
+<p><strong>Error aggregator</strong>: It is critical to identify an error as quickly as possible. We use a service that picks up the error messages from the pub-sub system and informs the respective client. It saves us the trouble of searching the logs.</p>
+</li>
+<li>
+<p><strong>Alert aggregator</strong>: Alerts are also crucial. So, it is important to be aware of them early.  This service identifies the alerts and notifies the appropriate stakeholders if a fatal error is encountered, or sends a message to a monitoring tool.</p>
+</li>
+</ul>
+<p>The updated design is given below:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-3-fig-4.svg" alt="Adding a filterer, error aggregator, and alert aggregator"></div></div></div><div><span>Adding a filterer, error aggregator, and alert aggregator</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Do we store the logs for a lifetime?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In our design, we have identified another component called the <strong>expiration checker</strong>. It is responsible for these tasks:</p>
+<ul>
+<li>Verifying the logs that have to be deleted.
+Verifying the logs to store in <span><span>cold storage</span></span>.</li>
+</ul>
+<p>Moreover, our components log indexer and visualizer work on the blob storage to provide a good searching experience to the end user. We can see the final design of the logging service below:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-logging/lesson-3-fig-5.svg" alt="Logging service design"></div></div></div><div><span>Logging service design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>We learned earlier that a simple user-level API call to a large service might involve hundreds of internal microservices and thousands of nodes. How can we stitch together logs end-to-end for one request with causality intact?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> Windows Azure Storage System (WAS) uses an extensive logging infrastructure in its development. It stores the logs in local disks, and given a large number of logs, they do not push the logs to the distributed storage. Instead, they use a grep-like utility that works as a distributed search. This way, they have a unified view of globally distributed logs data.</p>
+</blockquote>
+<p>There can be various ways to design a distributed logging service, but it solely depends on the requirements of our application.</p>
+<h2>Conclusion<a href="#Conclusion"><span>#</span></a></h2>
+<ul>
+<li>We learned how logging is crucial in understanding the flow of events in a distributed system. It helps to reduce the mean time to repair (MTTR) by steering us toward the root causes of issues.</li>
+</ul>
+
+<ul>
+<li>Logging is an I/O-intensive operation that is time-consuming and slow. It is essential to handle it carefully and not affect the critical path of other services’ execution.</li>
+<li>Logging is essential for monitoring because the data fetched from logs helps monitor the health of an application. (Alert and error aggregators serve this purpose.)</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

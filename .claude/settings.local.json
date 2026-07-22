@@ -37,7 +37,14 @@
       "Bash(find ./intervals -name \"*.js\")",
       "Bash(find . -iname \"*meetingRoom*\" -o -iname \"*topKFrequentWord*\" -o -iname \"*skyline*\" -o -iname \"*reorganizeString*\")",
       "Bash(echo \"exit: $?\")",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(mkdir -p \"/private/tmp/claude-501/-Volumes-Personal-MechineCoding/831e2696-920d-45bf-afb6-258bbe2a02bb/scratchpad\")",
+      "Bash(find \"/Users/arghyamajumder/Downloads/Grokking Modern System Design Interview for Engineers & Managers\" -maxdepth 3 | head -200)",
+      "Read(//Users/arghyamajumder/Downloads/Grokking Modern System Design Interview for Engineers & Managers/**)",
+      "Bash(gh repo *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git reset *)",
+      "Bash(python3 -m unittest tests.test_extractor -v)"
     ],
     "deny": [],
     "ask": [],

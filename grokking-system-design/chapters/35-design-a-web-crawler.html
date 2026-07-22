@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>35. Design a Web Crawler — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html" aria-current="page">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>35. Design a Web Crawler</h1><section class="lesson"><h2>System Design: Web Crawler</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: Web Crawler</h1></div><div><div><div><p>Learn about the web crawler service.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Introduction">Introduction</a><ul><li><a href="#Additional-benefits">Additional benefits</a></li></ul></li><li><a href="#How-will-we-design-a-Web-crawler?">How will we design a Web crawler?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Introduction<a href="#Introduction"><span>#</span></a></h2>
+<p>A <strong>web crawler</strong> is an Internet bot that systematically <span><span>scours</span></span> the world wide web (WWW) for content, starting its operation from a pool of <span><span>seed URLs</span></span>. This process of acquiring content from the WWW is called <strong>crawling</strong>. It further saves the crawled content in the data stores. The process of efficiently saving data for subsequent use is called <strong>storing</strong>.</p>
+<p>This is the first step that’s performed by search engines; the stored data is used for indexing and ranking purposes. This specific design problem is limited to web crawlers and doesn’t include explanations of the later stages of indexing and ranking in the search engines.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-1-fig-1.svg" alt="An overview of the web crawler system"></div></div></div><div><span>An overview of the web crawler system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Additional benefits<a href="#Additional-benefits"><span>#</span></a></h3>
+<p>The additional utilities of a web crawler are as follows:</p>
+<ul>
+<li>
+<p><strong>Web pages testing</strong>: We use web crawlers to check the validity of the links and structures of web pages.</p>
+</li>
+<li>
+<p><strong>Web page monitoring</strong>: We use web crawlers to monitor the content or structure updates on web pages.</p>
+</li>
+<li>
+<p><strong>Site mirroring</strong>: Web crawlers are an effective way to <span><span>mirror</span></span> popular websites.</p>
+</li>
+<li>
+<p><strong>Copyright infringement check</strong>: Web crawlers fetch content and check for copyright infringement issues.</p>
+</li>
+</ul>
+<p>In this chapter, we’ll design a web crawler and evaluate how it fulfills the functional and non-functional requirements.</p>
+<p>The output of the crawling process is the data that’s the input for the subsequent processing phases—data cleaning, indexing, page relevance using algorithms like page ranks, and analytics. To learn about some of these subsequent stages, refer to our chapter on <a href="https://www.google.com/collection/page/10370001/4941429335392256/5400897294696448">distributed search</a>.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>How will we design a Web crawler?<a href="#How-will-we-design-a-Web-crawler?"><span>#</span></a></h2>
+<p>This chapter consists of four lessons that encompass the overall design of the web crawler system:</p>
+<ol>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/6454882160082944"><strong>Requirements</strong>:</a> This lesson enlists the functional and non-functional requirements of the system and estimates calculations for various system parameters.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/6632099624255488"><strong>Design</strong>:</a> This lesson analyzes a bottom-up approach for a web-crawling service. We get a detailed overview of all the individual components leading to a combined operational mechanism to meet the requirements.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5983505204379648"><strong>Improvements</strong>:</a> This lesson provides all the design improvements required to counter shortcomings, especially the crawler traps. These crawler traps include links with query parameters, internal links redirection, links holding infinite calendar pages, links for dynamic content generation, and links containing cyclic directories.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/6142975511363584"><strong>Evaluation</strong>:</a> This lesson provides an in-depth evaluation of our design choices to check if they meet all the standards and requirements we expect from our design.</li>
+</ol>
+<p>Let’s begin with defining the requirements of a web crawler.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Requirements of a Web Crawler&#x27;s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Requirements of a Web Crawler&#x27;s Design</h1></div><div><div><div><p>Learn about the design requirements of a web crawler.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#Resource-estimation">Resource estimation</a><ul><li><a href="#Storage-estimation">Storage estimation</a></li><li><a href="#Traversal-time">Traversal time</a></li><li><a href="#Number-of-servers-estimation-for-multi-worker-architecture">Number of servers estimation for multi-worker architecture</a></li><li><a href="#Bandwidth-estimation">Bandwidth estimation</a></li></ul></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>Let’s highlight the functional and non-functional requirements of a web crawler.</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<p>These are the functionalities a user must be able to perform:</p>
+<ul>
+<li><strong>Crawling</strong>: The system should scour the WWW, spanning from a queue of seed URLs provided initially by the system administrator.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>Where do we get these seed URLs from?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 3</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><strong>Storing</strong>: The system should be able to extract and store the content of a URL in a blob store. This makes that URL and its content processable by the search engines for indexing and ranking purposes.</p>
+</li>
+<li>
+<p><strong>Scheduling</strong>: Since crawling is a process that’s repeated, the system should have regular scheduling to update its blob stores’ records.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<ul>
+<li>
+<p><strong>Scalability</strong>: The system should inherently be distributed and multithreaded, because it has to fetch hundreds of millions of web documents.</p>
+</li>
+<li>
+<p><strong>Extensibility</strong>: Currently, our design supports HTTP(S) communication protocol and text files storage facilities. For augmented functionality, it should also be extensible for different network communication protocols, able to add multiple modules to process, and store various file formats.</p>
+</li>
+<li>
+<p><strong>Consistency</strong>: Since our system involves multiple crawling workers, having data consistency among all of them is necessary.</p>
+</li>
+<li>
+<p><strong>Performance</strong>: The system should be smart enough to limit its crawling to a domain, either by time spent or by the count of the visited URLs of that domain. This process is called <strong>self-throttling</strong>. The URLs crawled per second and the throughput of the content crawled should be optimal.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><strong>Improved user interface—customized scheduling</strong>: Besides the default recrawling, which is a functional requirement, the system should also support the functionality to perform non-routine customized crawling on the system administrator’s demands.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-2-fig-1.svg" alt="The non-functional requirements of the web crawler system"></div></div></div><div><span>The non-functional requirements of the web crawler system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Resource estimation<a href="#Resource-estimation"><span>#</span></a></h2>
+<p>We need to estimate various resource requirements for our design.</p>
+<p><strong>Assumptions</strong></p>
+<p>These are the assumptions we’ll use when estimating our resource requirements:</p>
+<ul>
+<li>There are a total of 5 billion web pages.</li>
+<li>The text content per webpage is <span><span>2070 KB</span></span>.</li>
+<li>The <span><span>metadata</span></span> for one web page is 500 Bytes.</li>
+</ul>
+<h3>Storage estimation<a href="#Storage-estimation"><span>#</span></a></h3>
+<p>The collective storage required to store the textual content of 5 billion web pages is:
+<span><span><math><semantics><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mtext> </mtext><mi>s</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>a</mi><mi>g</mi><mi>e</mi><mtext> </mtext><mi>p</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>c</mi><mi>r</mi><mi>a</mi><mi>w</mi><mi>l</mi><mo>=</mo><mn>5</mn><mtext> </mtext><mi>B</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mo>(</mo><mn>2070</mn><mtext> </mtext><mi>K</mi><mi>B</mi><mo>+</mo><mn>500</mn><mi>B</mi><mo>)</mo><mo>=</mo><mn>10.35</mn><mi>P</mi><mi>B</mi></mrow><annotation>Total\ storage\ per\ crawl = 5\ Billion  \times (2070\ KB + 500B) = 10.35 PB</annotation></semantics></math></span><span><span><span></span><span>T</span><span>o</span><span>t</span><span>a</span><span>l</span><span> </span><span>s</span><span>t</span><span>or</span><span>a</span><span>g</span><span>e</span><span> </span><span>p</span><span>er</span><span> </span><span>cr</span><span>a</span><span>wl</span><span></span><span>=</span><span></span></span><span><span></span><span>5</span><span> </span><span>B</span><span>i</span><span>ll</span><span>i</span><span>o</span><span>n</span><span></span><span>×</span><span></span></span><span><span></span><span>(</span><span>2070</span><span> </span><span>K</span><span>B</span><span></span><span>+</span><span></span></span><span><span></span><span>500</span><span>B</span><span>)</span><span></span><span>=</span><span></span></span><span><span></span><span>10.35</span><span>PB</span></span></span></span></p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-2-fig-2.svg" alt="The total storage required by the web crawler system"></div></div></div><div><span>The total storage required by the web crawler system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Traversal time<a href="#Traversal-time"><span>#</span></a></h3>
+<p>Since the traversal time is just as important as the storage requirements, let’s calculate the approximate time for one-time crawling. Assuming that the average HTTP traversal per webpage is <span><span>60 ms</span></span>, the time to traverse all 5 billion pages will be:</p>
+<p><span><span><math><semantics><mrow><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mtext> </mtext><mi>t</mi><mi>r</mi><mi>a</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mi>a</mi><mi>l</mi><mtext> </mtext><mi>t</mi><mi>i</mi><mi>m</mi><mi>e</mi><mo>=</mo><mn>5</mn><mtext> </mtext><mi>B</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>×</mo><mn>60</mn><mtext> </mtext><mi>m</mi><mi>s</mi><mo>=</mo><mn>0.3</mn><mtext> </mtext><mi>B</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>d</mi><mi>s</mi><mo>=</mo></mrow><annotation>Total\ traversal\ time = 5\ Billion \times 60\ ms = 0.3\ Billion\ seconds =</annotation></semantics></math></span><span><span><span></span><span>T</span><span>o</span><span>t</span><span>a</span><span>l</span><span> </span><span>t</span><span>r</span><span>a</span><span>v</span><span>ers</span><span>a</span><span>l</span><span> </span><span>t</span><span>im</span><span>e</span><span></span><span>=</span><span></span></span><span><span></span><span>5</span><span> </span><span>B</span><span>i</span><span>ll</span><span>i</span><span>o</span><span>n</span><span></span><span>×</span><span></span></span><span><span></span><span>60</span><span> </span><span>m</span><span>s</span><span></span><span>=</span><span></span></span><span><span></span><span>0.3</span><span> </span><span>B</span><span>i</span><span>ll</span><span>i</span><span>o</span><span>n</span><span> </span><span>seco</span><span>n</span><span>d</span><span>s</span><span></span><span>=</span></span></span></span> <span><span><math><semantics><mrow><mn>9.5</mn><mtext> </mtext><mi>y</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>s</mi></mrow><annotation>9.5\ years</annotation></semantics></math></span><span><span><span></span><span>9.5</span><span> </span><span>ye</span><span>a</span><span>rs</span></span></span></span></p>
+
+<p>It’ll take approximately 9.5 years to traverse the whole Internet while using one instance of crawling, but we want to achieve our goal in one day. We can accomplish this by designing our system to support multi-worker architecture and divide the tasks among multiple workers running on different servers.</p>
+<h3>Number of servers estimation for multi-worker architecture<a href="#Number-of-servers-estimation-for-multi-worker-architecture"><span>#</span></a></h3>
+<p>Let’s calculate the number of servers required to finish crawling in one day. Assume that there is only one worker per server.</p>
+<p><span><span><math><semantics><mrow><mi>N</mi><mi>o</mi><mi>.</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>d</mi><mi>a</mi><mi>y</mi><mi>s</mi><mtext> </mtext><mi>r</mi><mi>e</mi><mi>q</mi><mi>u</mi><mi>i</mi><mi>r</mi><mi>e</mi><mi>d</mi><mtext> </mtext><mi>b</mi><mi>y</mi><mtext> </mtext><mn>1</mn><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>t</mi><mi>o</mi><mtext> </mtext><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>e</mi><mtext> </mtext><mi>t</mi><mi>h</mi><mi>e</mi><mtext> </mtext><mi>t</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo>=</mo><mn>9.5</mn><mtext> </mtext><mi>y</mi><mi>e</mi><mi>a</mi><mi>r</mi><mi>s</mi><mo>×</mo><mn>365</mn><mtext> </mtext><mi>d</mi><mi>a</mi><mi>y</mi><mi>s</mi><mo>≈</mo><mn>3468</mn><mtext> </mtext><mi>d</mi><mi>a</mi><mi>y</mi><mi>s</mi></mrow><annotation>No.\ of\ days\ required\ by\ 1\ server\ to\ complete\ the\ task = 9.5\ years \times 365\ days \approx 3468 \ days</annotation></semantics></math></span><span><span><span></span><span>N</span><span>o</span><span>.</span><span> </span><span>o</span><span>f</span><span> </span><span>d</span><span>a</span><span>ys</span><span> </span><span>re</span><span>q</span><span>u</span><span>i</span><span>re</span><span>d</span><span> </span><span>b</span><span>y</span><span> </span><span>1</span><span> </span><span>ser</span><span>v</span><span>er</span><span> </span><span>t</span><span>o</span><span> </span><span>co</span><span>m</span><span>pl</span><span>e</span><span>t</span><span>e</span><span> </span><span>t</span><span>h</span><span>e</span><span> </span><span>t</span><span>a</span><span>s</span><span>k</span><span></span><span>=</span><span></span></span><span><span></span><span>9.5</span><span> </span><span>ye</span><span>a</span><span>rs</span><span></span><span>×</span><span></span></span><span><span></span><span>365</span><span> </span><span>d</span><span>a</span><span>ys</span><span></span><span>≈</span><span></span></span><span><span></span><span>3468</span><span> </span><span>d</span><span>a</span><span>ys</span></span></span></span></p>
+<p>One server takes 3,468 days to complete the task.</p>
+<p>How many servers would we need to complete this same task in one day?</p>
+<p>We would need 3,468 servers to complete the same task in just one day.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-2-fig-3.svg" alt="The number of servers required for the web crawler system"></div></div></div><div><span>The number of servers required for the web crawler system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Bandwidth estimation<a href="#Bandwidth-estimation"><span>#</span></a></h3>
+<p>Since we want to process 10.35PB of data per day the total bandwidth required would be:</p>
+<p><span><span><math><semantics><mrow><mfrac><mrow><mn>10.35</mn><mi>P</mi><mi>B</mi></mrow><mrow><mn>86400</mn><mi>s</mi><mi>e</mi><mi>c</mi></mrow></mfrac><mo>≈</mo><mn>120</mn><mi>G</mi><mi>B</mi><mi>/</mi><mi>s</mi><mi>e</mi><mi>c</mi><mo>≈</mo><mn>960</mn><mi>G</mi><mi>b</mi><mi>/</mi><mi>s</mi><mi>e</mi><mi>c</mi></mrow><annotation>\frac{10.35PB}{86400 sec} \approx 120 GB/sec \approx 960 Gb/sec</annotation></semantics></math></span><span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span><span>86400</span><span>sec</span></span></span></span><span><span></span><span></span></span><span><span></span><span><span><span>10.35</span><span>PB</span></span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>≈</span><span></span></span><span><span></span><span>120</span><span>GB</span><span>/</span><span>sec</span><span></span><span>≈</span><span></span></span><span><span></span><span>960</span><span>G</span><span>b</span><span>/</span><span>sec</span></span></span></span></p>
+<p><span><span><math><semantics><mrow><mn>960</mn><mi>G</mi><mi>b</mi><mi>/</mi><mi>s</mi><mi>e</mi><mi>c</mi></mrow><annotation>960Gb/sec</annotation></semantics></math></span><span><span><span></span><span>960</span><span>G</span><span>b</span><span>/</span><span>sec</span></span></span></span> is the total required bandwidth. Now, assume that the task is distributed equally among <span><span><math><semantics><mrow><mn>3468</mn><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow><annotation>3468 \ servers</annotation></semantics></math></span><span><span><span></span><span>3468</span><span> </span><span>ser</span><span>v</span><span>ers</span></span></span></span> to accomplish the task in one day. Thus, the per server bandwidth would be:</p>
+<p><span><span><math><semantics><mrow><mfrac><mrow><mn>960</mn><mi>G</mi><mi>b</mi><mi>/</mi><mi>s</mi><mi>e</mi><mi>c</mi></mrow><mrow><mn>3468</mn><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi></mrow></mfrac><mo>≈</mo><mn>277</mn><mi>M</mi><mi>b</mi><mi>/</mi><mi>s</mi><mi>e</mi><mi>c</mi><mtext> </mtext><mi>p</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi></mrow><annotation>\frac{960Gb/sec}{3468\ server} \approx 277 Mb/sec\ per\ server</annotation></semantics></math></span><span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span><span>3468</span><span><span> </span></span><span>ser</span><span>v</span><span>er</span></span></span></span><span><span></span><span></span></span><span><span></span><span><span><span>960</span><span>G</span><span>b</span><span>/</span><span>sec</span></span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>≈</span><span></span></span><span><span></span><span>277</span><span>M</span><span>b</span><span>/</span><span>sec</span><span> </span><span>p</span><span>er</span><span> </span><span>ser</span><span>v</span><span>er</span></span></span></span></p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-2-fig-4.svg" alt="The total bandwidth required for the web crawler system"></div></div></div><div><span>The total bandwidth required for the web crawler system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Let&#x27;s play around with the initial assumptions and see how the estimates change in the following calculator:</p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Estimates Calculator for the Web Crawler</h4><span><table><tbody><tr><td><span>Number of Webpages</span></td><td><span>5</span></td><td><span>Billion</span></td></tr><tr><td><span>Text Content per Webpage</span></td><td><span>2070</span></td><td><span>KB</span></td></tr><tr><td><span>Metadata per Webpage</span></td><td><span>500</span></td><td><span>Bytes</span></td></tr><tr><td><span>Total Storage</span></td><td><span>f</span><span>10.35</span></td><td><span>PB</span></td></tr><tr><td><span>Total Traversal Time on One Server</span></td><td><span>f</span><span>9.5</span></td><td><span>Years</span></td></tr><tr><td><span>Servers Required to Perform Traversal in One Day</span></td><td><span>f</span><span>3468</span></td><td><span>Servers</span></td></tr><tr><td><span>Bandwidth Estimate</span></td><td><span>f</span><span>958.33</span></td><td><span>Gb/sec</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>Here is the list of the main building blocks we’ll use in our design:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-2-fig-5.svg" alt="Building blocks in high-level design"></div></div></div><div><span>Building blocks in high-level design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><a href="https://www.google.com/collection/page/10370001/4941429335392256/6152021643624448"><strong>Scheduler</strong></a> is used to schedule crawling events on the URLs that are stored in its database.</p>
+</li>
+<li>
+<p><a href="https://www.google.com/collection/page/10370001/4941429335392256/5728619204182016"><strong>DNS</strong></a> is needed to get the IP address resolution of the web pages.</p>
+</li>
+<li>
+<p><a href="https://www.google.com/collection/page/10370001/4941429335392256/5053577315221504"><strong>Cache</strong></a> is utilized in storing fetched documents for quick access by all the processing modules.</p>
+</li>
+<li>
+<p><a href="https://www.google.com/collection/page/10370001/4941429335392256/4862646238576640"><strong>Blob store</strong></a>’s main application is to store the crawled content.</p>
+</li>
+</ul>
+<p>Besides these basic building blocks, our design includes some additional components as well:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>The <strong>HTML fetcher</strong> establishes a network communication connection between the crawler and the web hosts.</li>
+<li>The <strong>service host</strong> manages the crawling operation among the workers.</li>
+<li>The <strong>extractor</strong> extracts the embedded URLs and the document from the web page.</li>
+<li>The <strong>duplicate eliminator</strong> performs dedup testing on the incoming URLs and the documents.</li>
+</ul>
+</div></div></div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-2-fig-6.svg" alt="The components in a high-level design"></div></div></div><div><span>The components in a high-level design</span></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In the next lesson, we’ll focus on the high-level and detailed design of a web crawler.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design of a Web Crawler</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of a Web Crawler</h1></div><div><div><div><p>Get an overview of the building blocks and components of the web crawler system, and learn about the interaction that takes place between them during the design process of a web crawler.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Design">Design</a><ul><li><a href="#Components">Components</a></li><li><a href="#Workflow">Workflow</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Design<a href="#Design"><span>#</span></a></h2>
+<p>This lesson describes the building blocks and the additional components involved in the design and workflow of the web crawling process with respect to its requirements.</p>
+<h3>Components<a href="#Components"><span>#</span></a></h3>
+<p>Here are the details of the building blocks and the components needed for our design:</p>
+<ul>
+<li>
+<p><strong>Scheduler</strong>: This is one of the key building blocks that schedules URLs for crawling. It’s composed of two units: a priority queue and a relational database.</p>
+<ol>
+<li>
+<p><strong>A priority queue (URL frontier)</strong>: The queue hosts URLs that are made ready for crawling based on the two properties associated with each entry: <span><span>priority</span></span> and <span><span>updates frequency</span></span>.</p>
+</li>
+<li>
+<p><strong>Relational database</strong>:  It stores all the URLs along with the two associated parameters mentioned above. The database gets populated by new requests from the following two input streams:</p>
+</li>
+</ol>
+<ul>
+<li>The user’s <em>added URLs</em>, which include seed and runtime added URLs.</li>
+<li>The crawler’s <em>extracted URLs</em>.</li>
+</ul>
+</li>
+</ul><span>
+ </span><span> </span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>Can we estimate the size of the priority queue? What are the pros and cons of a centralized and distributed priority queue.</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 2</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><strong>DNS resolver</strong>: The web crawler needs a DNS resolver to map hostnames to IP addresses for HTML content fetching. Since DNS lookup is a time-consuming process, a better approach is to create a customized DNS resolver and cache frequently-used IP addresses within their time-to-live because they’re bound to change after their time-to-live.</p>
+</li>
+<li>
+<p><strong>HTML fetcher</strong>: The HTML fetcher initiates communication with the server that’s hosting the URL(s). It downloads the file content based on the underlying communication protocol. We focus mainly on the <em>HTTP protocol</em> for textual content, but the <em>HTML fetcher</em> is easily extendable to other communication protocols, as is mentioned in the section on the non-functional requirements of the web crawler.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h6>Question </h6><div><div><span><span><p>How does the crawler handle URLs with variable priorities?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><strong>Service host</strong>: This component acts as the brain of the crawler and is composed of worker instances. For simplicity, we will refer to this whole component or a single worker as a crawler. There are three main tasks that this service host/crawler performs:</p>
+<ol>
+<li>It handles the multi-worker architecture of the crawling operation. Based on the availability, each worker communicates with the URL frontier to dequeue the next available URL for crawling.</li>
+<li>Each worker is responsible for acquiring the DNS resolutions of the incoming URLs from the DNS resolver.</li>
+<li>Each worker acts as a gateway between the scheduler and the HTML fetcher by sending the necessary DNS resolution information to the HTML fetcher for communication initiation.</li>
+</ol>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-3-fig-1.svg" alt="Service host interaction with other components"></div></div></div><div><span>Service host interaction with other components</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><strong>Extractor</strong>: Once the HTML fetcher gets the web page, the next step is to extract two things from the webpage: URLs and the content. The extractor sends the extracted URLs directly and the content with the <strong>document input stream (DIS)</strong> to the duplicate eliminator. DIS is a cache that’s used to store the extracted document, so that other components can access and process it. Over here, we can use Redis as our cache choice because of its advanced data structure functionality.</p>
+<p>Once it’s verified that the duplicates are absent in the data stores, the extractor sends the URLs to the task scheduler that contains the URL frontier and stores the content in blob storage for indexing purposes.</p>
+</li>
+<li>
+<p><strong>Duplicate eliminator</strong>: Since the web is all interconnected, the probability of two different URLs referring to the same web page or different URLs referring to various web pages having the same content is evident. The crawler needs a component to perform a dedup test to eliminate the risk of exploiting resources by storing and processing the same content twice. The duplicate eliminator calculates the checksum value of each extracted URL and compares it against the URLs checksum data store. If found, it discards the extracted URL. Otherwise, it adds a new entry to the database with the calculated checksum value.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-3-fig-2.svg" alt="Dedup testing in action"></div></div></div><div><span>Dedup testing in action</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The duplicate eliminator repeats the same process with the extracted content and adds the new webpage’s checksum value in the document checksum data store for future matchings.</p>
+<p>Our proposed design for the duplicate eliminator can be made robust against these two issues:</p>
+<ol>
+<li>By using URL redirection, the new URL can pass through the URL dedup test. But, the second stage of the document dedup wouldn’t allow content duplication in the blob storage.</li>
+<li>By changing just one Byte in a document, the checksum of the modified document is going to come out different than the original one.</li>
+</ol>
+<ul>
+<li><strong>Blob store</strong>: Since a web crawler is the backbone of a search engine, storing and indexing the fetched content and relevant metadata is immensely important. The design needs to have a distributed storage, such as a blob store, because we need to store large volumes of unstructured data.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The following illustration shows the pictorial representation of the overall web crawler design:</p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-3-fig-3.svg" alt="The overall web crawler design"></div></div></div><div><span>The overall web crawler design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Workflow<a href="#Workflow"><span>#</span></a></h3>
+<ol>
+<li>
+<p><strong>Assignment to a worker</strong>: The crawler (service host) initiates the process by loading a URL from the URL frontier’s priority queue and assigns it to the available worker.</p>
+</li>
+<li>
+<p><strong>DNS resolution</strong>: The worker sends the incoming URL for DNS resolution. Before resolving the URL, the DNS resolver checks the cache and returns the requested IP address if it’s found. Otherwise, it determines the IP address, sends it back to the worker instance of the crawler, and stores the result in the cache.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Can we use DFS instead of BFS?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ol>
+<li>
+<p><strong>Communication initiation by the HTML fetcher</strong>: The worker forwards the URL and the associated IP address to the HTML fetcher, which initiates the communication between the crawler and the host server.</p>
+</li>
+<li>
+<p><strong>Content extraction</strong>: Once the worker establishes the communication, it extracts the URLs and the HTML document from the web page and places the document in a cache for other components to process it.</p>
+</li>
+<li>
+<p><strong>Dedup testing</strong>: The worker sends the extracted URLs and the document for dedup testing to the duplicate eliminator. The duplicate eliminator calculates and compares the checksum of both the URL and the document with the checksum values that have already been stored.</p>
+<p>The duplicate eliminator discards the incoming request in case of a match. If there’s no match, it places the newly-calculated checksum values in the respective data stores and gives the go-ahead to the extractor to store the content.</p>
+</li>
+<li>
+<p><strong>Content storing</strong>: The extractor sends the newly-discovered URLs to the scheduler, which stores them in the database and sets the values for the priority and recrawl frequency variables.</p>
+<p>The extractor also writes the required portions of the newly discovered document—currently in the DIS—into the database.</p>
+</li>
+<li>
+<p><strong>Recrawling</strong>: Once a cycle is complete, the crawler goes back to the first point and repeats the same process until the URL frontier queue is empty.</p>
+<p>The URLs stored in the scheduler’s database have priority and periodicity assigned to them. Enqueuing new URLs into the URL frontier depends on these two factors.</p>
+</li>
+</ol>
+<blockquote>
+<p><strong>Note:</strong> Because of multiple instances of each service and microservices architecture, our design can make use of client-side load balancing (see <a href="https://www.google.com/collection/page/10370001/4941429335392256/5379128533975040">Client-side Load Balancer for Twitter</a>).</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The following slideshow gives a detailed overview of the web crawler workflow:</p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>Assignment to a worker</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>DNS resolution</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>DNS resolution</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Content extraction</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>De-dup testing</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>How frequently does the crawler need to re-crawl?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In the next lesson, we’ll explore some shortcomings in our design and their potential workarounds.</p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design Improvements of a Web Crawler</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design Improvements of a Web Crawler</h1></div><div><div><div><p>Identify the web crawler&#x27;s design shortcomings and challenges, and make improvements accordingly.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Introduction">Introduction</a></li><li><a href="#Design-improvements">Design improvements</a></li><li><a href="#Crawler-traps">Crawler traps</a><ul><li><a href="#Classification">Classification</a></li><li><a href="#Identification">Identification</a></li><li><a href="#Solution">Solution</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Introduction<a href="#Introduction"><span>#</span></a></h2>
+<p>This lesson gives us a detailed rundown of the improvements that are required to enhance the functionality, performance, and security of our web crawler design. We have divided this lesson into two sections:</p>
+<ol>
+<li>Functionality and performance enhancement design improvements—extensibility and multi-worker architecture.</li>
+<li>Security-enhancement design improvements—crawler traps.</li>
+</ol>
+<p>Let’s dive into these sections.</p>
+<h2>Design improvements<a href="#Design-improvements"><span>#</span></a></h2>
+<p>Our current design is simplistic and has some inherent shortcomings and challenges. Let’s highlight them one by one and make some adjustments to our design along the way.</p>
+<ul>
+<li>
+<p><strong>Shortcoming</strong>: Currently, our design supports the HTTP protocol and only extracts textual content. This leads to the question of how we can extend our crawler to facilitate multiple communication protocols and extract various types of files.</p>
+<p><strong>Adjustment</strong>: Since we have two separate components for serving communication handling and extracting, HTML Fetcher and Extractor, let’s discuss their modifications one by one.</p>
+<ol>
+<li><strong>HTML Fetcher</strong>: We have only discussed the HTTP module in this component so far because of the widely-used HTTP URLs scheme. We can easily extend our design to incorporate other communication protocols like File Transfer Protocol (FTP). The workflow will then have an intermediary step where the crawler invokes the concerned communication module based on the URL’s scheme. The subsequent steps will remain the same.</li>
+<li><strong>Extractor</strong>: Currently, we only extract the textual content from the downloaded document placed in the Document Input Stream (DIS). This document contains other file types as well, for example, images and videos. If we wish to extract other content from the stored document, we need to add new modules with functionalities to process those media types. Since we use a blob store for content storage, storing the newly-extracted content comprising text, images, and videos won’t be a problem. </li>
+</ol>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-4-fig-1.svg" alt="The extensibility of the HTML fetcher and extractor"></div></div></div><div><span>The extensibility of the HTML fetcher and extractor</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><strong>Shortcoming</strong>: The current design doesn’t explain how the multi-worker concept integrates into this system.</p>
+<p><strong>Adjustment</strong>: Every worker needs a URL to work on from the priority queue. Different websites require different times for workers to finish crawling, so each worker will dequeue a new URL upon its availability. </p>
+  
+<p>There are several ways to achieve this multi-worker architecture for our system. Some of them are as follows:</p>
+<ol>
+<li>
+<p><strong>Domain level log</strong>: The crawler assigns one whole domain to a worker. All the URLs branching out of the initial URL are the responsibility of the same crawler. We ensure this by caching the hash of the hostname against the worker ID for guaranteed future assignment to the same worker. This also helps us avoid any redundant crawling of that domain’s web pages by any worker.</p>
+<p>This approach is best-suited for achieving <strong>reverse URL indexing</strong>, which involves traversing the web address directories in a reversed order. It ensures the storage efficiency of the URL storing process for later use and prevents extensive repetitive string matching processes for duplication testing.</p>
+</li>
+<li>
+<p><strong>Range division</strong>: The range of URLs given to each crawler; the crawler distributes a range of URLs from the priority queue among workers to avoid clashes. Like the previous approach, the crawler must hash the range associated with each worker.</p>
+</li>
+<li>
+<p><strong>Per URL crawling</strong>: Queue all the URLs; a worker takes a URL and enqueues the subsequently found URLs into the priority queue. Those new URLs are readily available to crawl through for other workers. To avoid enqueuing multiple similar links that direct to the same web page, we calculate the checksum of the canonicalized URL.</p>
+</li>
+</ol>
+</li>
+</ul>
+
+<h2>Crawler traps<a href="#Crawler-traps"><span>#</span></a></h2>
+<p>A <strong>crawler trap</strong> is a URL or a set of URLs that cause indefinite crawler resource exhaustion. This section dedicates itself to the classification, identification, and prevention of crawler traps.</p>
+<h3>Classification<a href="#Classification"><span>#</span></a></h3>
+<p>There can be many classification schemes for crawler traps, but let’s classify them based on the URL scheme.</p>
+<p>Mostly, web crawler traps are the result of poor website structuring, such as:</p>
+<ul>
+<li><strong>URLs with query parameters</strong>: These query parameters can hold an immense amount of values, all while generating a large number of useless web pages for a single domain: <code>HTTP://www.abc.com?query</code>.</li>
+<li><strong>URLs with internal links</strong>: These links redirect in the same domain and can create an infinite cycle of redirection between the web pages of a single domain, making the crawler crawl the same content over and over again.</li>
+<li><strong>URLs with infinite calendar pages</strong>: These have never-ending combinations of web pages based on the varying date values, and can create a large number of pointless web pages for a single domain.</li>
+<li><strong>URLs for the dynamic content generation</strong>: These are query-based and can generate a massive number of web pages based on the dynamic content resulting from these queries. Such URLs might become a never-ending crawl on a single domain.</li>
+<li><strong>URLs with repeated/cyclic directories</strong>: They form an indefinite loop of redirections. For example, <code>HTTP://www.abc.com/first/second/first/second/...</code>.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-4-fig-2.svg" alt="Classification of web crawler traps"></div></div></div><div><span>Classification of web crawler traps</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Mostly, the crawler traps are unintended because of the poor structuring of the website. Interestingly, crawler traps can also be placed intentionally to dynamically generate an endless series of web pages with the pure purpose of exhausting a crawler’s bandwidth. These traps severely impact the <span><span>throughput</span></span> of a crawler and hamper its performance.</p>
+<p>These crawler traps might be detrimental to the crawler, but they also seriously affect the website’s SEO ranking.</p>
+<h3>Identification<a href="#Identification"><span>#</span></a></h3>
+<p>It’s essential to categorize the crawling traps to correctly identify them and think of design adjustments accordingly.</p>
+<p>There are mainly two layers to the process of identifying a crawler trap:</p>
+<ol>
+<li>
+<p><strong>Analyzing the URL scheme</strong>: The URLs with a poor URL structure, for example, those with cyclic directories: <code>HTTP://www.abc.com/first/second/first/second/...</code> will create crawler traps. Hence, filtering such URLs beforehand will rescue our crawler resources.</p>
+</li>
+<li>
+<p><strong>Analyzing the total number of web pages against a domain</strong>: An impossibly large number of web pages against a domain in the URL frontier is a strong indicator of a crawler trap. So, limiting the crawl at such a domain will be of utmost importance.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-4-fig-3.svg" alt="The identification process of web crawler traps"></div></div></div><div><span>The identification process of web crawler traps</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Solution<a href="#Solution"><span>#</span></a></h3>
+<p>Our design lacks details on the responsible crawling mechanism to avoid crawler traps for the identifications described above.</p>
+<p>Crawling is a resource and time-consuming task, and it’s of extreme importance to efficiently avoid crawler traps in order to achieve timely and helpful crawling. Once the crawler starts communicating with the server for downloading the web page content, there are multiple factors that it needs to take into consideration,  mainly at the HTML-fetcher level. Let’s go over these factors individually.</p>
+<ol>
+<li>
+<p>The crawler must implement an application-layer logic to counter the crawler traps. This logic might be based on the observed number of web pages exceeding a specified threshold.</p>
+<p>The crawler must be intelligent enough to limit its crawling at a specific domain after a finite amount of time or web page visits. A crawler should smartly exit a web page and store that URL as a no-go area for future traversals to ensure performance effectiveness.</p>
+</li>
+<li>
+<p>When initiating communication with the web server, the crawler needs to fetch a file named <code>robots.txt</code>. This file contains the dos and don’ts for a crawler listed by the web masters. Adhering to this document is an integral part of the crawling process. It also allows the crawler to access certain domain-specified web pages prioritized for crawling, without limiting its access to specific web pages.</p>
+<p>Another essential component of this document is the revisit frequency instructions for the crawler. A popular website might demand a frequent revisit, contrary to a website that rarely updates its content. This standard of websites communicating with the web crawlers is called the <strong>Robots Exclusion Protocol</strong>. This protocol prevents the crawlers from unnecessarily spending crawling resources on uncrawlable web pages.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-4-fig-4.svg" alt="The robots exclusion protocol"></div></div></div><div><span>The robots exclusion protocol</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p>The <code>robots.txt</code> file doesn’t protect crawlers from malicious or intended crawler traps. The other explained mechanisms must handle those traps.</p>
+</blockquote>
+<ol>
+<li>Since each domain has a limited incoming and outgoing bandwidth allocation, the crawler needs to be polite enough to limit its crawling at a specific domain. Instead of having a static crawl speed for every domain, a better approach is to adjust the crawl speed based on a domain’s <strong>Time to First Byte</strong> (<strong>TTFB</strong>) value. The higher the TTFB value, the slower the server. And so, crawling that domain too fast might lead to more time-out requests and incomplete crawling.</li>
+</ol>
+<p>These modifications in the design will ensure a crawler capable of avoiding crawler traps and hence optimizing resources’ usage.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Evaluation of  Web Crawler&#x27;s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Evaluation of  Web Crawler&#x27;s Design</h1></div><div><div><div><p>Evaluate the proposed design of the web crawler system based on the fulfillment of its non-functional requirements.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Reviewing-design-requirements">Reviewing design requirements</a><ul><li><a href="#Scalability">Scalability</a></li><li><a href="#Extensibility-and-modularity">Extensibility and modularity</a></li><li><a href="#Consistency">Consistency</a></li><li><a href="#Performance">Performance</a></li><li><a href="#Scheduling">Scheduling</a></li></ul></li><li><a href="#Conclusion">Conclusion</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Reviewing design requirements<a href="#Reviewing-design-requirements"><span>#</span></a></h2>
+<p>Let’s evaluate how our design meets the non-functional requirements of the proposed system.</p>
+<h3>Scalability<a href="#Scalability"><span>#</span></a></h3>
+<p>Our design states that scaling our system horizontally is vital. Therefore, the proposed design incorporates the following design choices to meet the scalability requirements:</p>
+<ul>
+<li>
+<p>The system is scalable to handle the ever-increasing number of URLs. It includes all the required resources, including schedulers, web crawler workers, HTML fetchers, extractors, and blob stores, which are added/removed on demand.</p>
+</li>
+<li>
+<p>In the case of a distributed URL frontier, the system utilizes consistent hashing to distribute the hostnames among various crawling workers, where each worker is running on a server. With this, adding or removing a crawler server isn’t a problem.</p>
+</li>
+</ul>
+<h3>Extensibility and modularity<a href="#Extensibility-and-modularity"><span>#</span></a></h3>
+<p>So far, our design is only focusing on a particular type of communication protocol: HTTP. But according to our non-functional requirements, our system’s design should facilitate the inclusion of other network communication protocols like FTP.</p>
+<p>To achieve this extensibility, we only need to add additional modules for the newly required communication protocols in the HTML fetcher. The respective modules will then be responsible for making and maintaining the required communications with the host servers.</p>
+<p>Along the same lines, we expect our design to extend its functionality for other <span><span>MIME</span></span> types as well. The modular approach for different MIME schemes facilitates this requirement. The worker will call the associated MIME’s processing module to extract the content from the document stored in the DIS.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-a-web-crawler/lesson-5-fig-1.svg" alt="The requirements met by our web crawler"></div></div></div><div><span>The requirements met by our web crawler</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Consistency<a href="#Consistency"><span>#</span></a></h3>
+<p>Our system consists of several crawling workers. Data consistency among crawled content is crucial. So, to avoid data inconsistency and crawl duplication, our system computes the checksums of URLs and documents and compares them with the existing checksums of the URLs and documents in the <em>URL</em> and <em>document checksum</em> data stores, respectively.</p>
+<p>Apart from deduplication, to ensure the data consistency by fault-tolerance conditions, all the servers can checkpoint their states to a backup service, such as Amazon S3 or an offline disk, regularly.</p>
+<h3>Performance<a href="#Performance"><span>#</span></a></h3>
+<p>Our web crawler’s performance depends on the following factors:</p>
+<ul>
+<li>
+<p><strong>URLs crawled per second</strong>: We can improve this factor by adding new workers to the system.</p>
+</li>
+<li>
+<p><strong>Utilizing blob storage for content storing</strong>: This ensures higher throughput for the massive amount of unstructured data. It also indicates a fast retrieval of the stored content, because a single blob can support up to 500 requests per second.</p>
+</li>
+</ul>
+
+<ul>
+<li>
+<p><strong>Efficient implementation of the <code>robots.txt</code> file guideline</strong>: We can implement this performance factor by having an application-layer logic of setting the highest precedence of <code>robots.txt</code> guidelines while crawling.</p>
+</li>
+<li>
+<p><strong>Self-throttling</strong>: We can have various application-level checks to ensure that our web crawler doesn’t hamper the performance of the website host servers by exhausting their resources.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div>Fulfilling Non-functional requirements</div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Requirement</strong></p></div></div></td><td><div></div><div><div><p><strong>Techniques</strong></p></div></div></td></tr><tr><td><div></div><div><div><p>Scalability</p></div></div></td><td><div></div><div><div><ul><li>Addition/removal of different servers based on the increase/decrease in load</li><li><span>Consistent hashing to manage server&#x27;s addition and removal</span></li><li>Regular backup of the servers in Amazon S3 backup service to achieve fault tolerance</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Extensibility and Modularity</p></div></div></td><td><div></div><div><div><ul><li>Addition of a newer communication protocol module in the HTML fetcher</li><li>Addition of new MIME schemes while processing the downloaded document in DIS</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Consistency</p></div></div></td><td><div></div><div><div><ul><li>Calculation and comparison of checksums of URLs and Documents in the respective datastores</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Performance</p></div></div></td><td><div></div><div><div><ul><li>Increasing the number of workers performing the crawl</li><li>Blob stores for storing the content</li><li>High priority to robots.txt file guidelines while crawling</li><li>Self-throttle at a domain while crawling</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Scheduling</p></div></div></td><td><div></div><div><div><ul><li>Pre-defined default recrawl frequency, or</li><li>Separate queues and their associated frequencies for various priority URLs</li></ul></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Scheduling<a href="#Scheduling"><span>#</span></a></h3>
+<p>As was established previously, we may need to recrawl URLs on various frequencies. These frequencies are determined by the application of the URL.We can determine the frequency of recrawl in two different ways:</p>
+<ol>
+<li>
+<p>We can assign a default or a specific recrawling frequency to each URL. This assignment depends on the application of the URL defining the priority. A default frequency is assigned to the standard-priority URLs and a higher recrawl frequency is given to the higher-priority URLs.</p>
+<p>Based on each URL’s associated recrawl frequency, we can decide to enqueue URLs in the priority queue from the scheduler’s database. The priority defines the place of a URL in the queue.</p>
+</li>
+<li>
+<p>The second method is to have separate queues for various priority URLs, use URLs from high-priority queues first, and subsequently move to the lower-priority URLs.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Conclusion<a href="#Conclusion"><span>#</span></a></h2><p>The web crawler system entails a multi-worker design that uses a microservices architecture. Besides achieving the basic crawling functionality, our design provides insights into the potential shortcomings and challenges associated with our design and further rectifies them with appropriate design modifications. The noteworthy features of our design are as follows:</p><ol><li>Identification and design modification for crawler traps</li><li>Extensibility of HTML fetching and content extraction modules</li></ol></div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

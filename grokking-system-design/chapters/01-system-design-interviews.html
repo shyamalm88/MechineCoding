@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1. System Design Interviews — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html" aria-current="page">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>1. System Design Interviews</h1><section class="lesson"><h2>What Is a System Design Interview?</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>What Is a System Design Interview?</h1></div><div><div><div><p>Learn about system design interviews (SDIs) and how to strategically approach them.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#How-are-SDIs-different-from-other-interviews?">How are SDIs different from other interviews?</a></li><li><a href="#How-do-we-tackle-a-design-question?">How do we tackle a design question?</a><ul><li><a href="#Present-the-high-level-design">Present the high-level design</a></li></ul></li><li><a href="#Possible-questions-for-every-SDI">Possible questions for every SDI</a><ul><li><a href="#The-design-evolution-of-Google">The design evolution of Google</a></li><li><a href="#Design-challenges">Design challenges</a></li><li><a href="#The-responsibility-of-the-designer">The responsibility of the designer</a></li></ul></li><li><a href="#Who-gets-a-system-design-interview?">Who gets a system design interview?</a></li><li><a href="#Theory-and-practice">Theory and practice</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>Our system design course is equally useful for people already working and those preparing for interviews. In this chapter, we highlight the different aspects of a system design interview (SDI) and some helpful tips for those who are preparing for an upcoming interview. We encourage learners to read this chapter even if they aren’t preparing for an interview because some of the topics covered in this chapter can be applied broadly.</p>
+<h2>How are SDIs different from other interviews?<a href="#How-are-SDIs-different-from-other-interviews?"><span>#</span></a></h2>
+<p>Just like with any other interview, we need to approach the systems design interviews strategically. SDIs are different from coding interviews. There’s rarely any coding required in this interview.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-1-fig-1.svg" alt="Other interviews versus a systems design interview"></div></div></div><div><span>Other interviews versus a systems design interview</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>An SDI takes place at a much higher level of abstraction. We figure out the requirements and map them on to the computational components and the high-level communication protocols that connect these subsystems.</p>
+<p>The final answer doesn’t matter. What matters is the process and the journey that a good applicant takes the interviewer through.</p>
+<blockquote>
+<p><strong>Note:</strong> As compared to coding problems in interviews, system design is more aligned with the tasks we’ll complete on our jobs.</p>
+</blockquote>
+<h2>How do we tackle a design question?<a href="#How-do-we-tackle-a-design-question?"><span>#</span></a></h2>
+<p>Design questions are open ended, and they’re intentionally vague to start with. Such vagueness mimics the reality of modern day business.</p>
+<p>Interviewers often ask about a well-known problem,—for example, designing WhatsApp. Now, a real WhatsApp application has numerous features, and including all of them as requirements for our WhatApp clone might not be a wise idea due to the following reasons:</p>
+<ul>
+<li>First, we’ll have limited time during the interview.</li>
+<li>Second, working with some core functionalities of the system should be enough to exhibit our problem-solving skills.</li>
+</ul>
+<p>We can tell the interviewer that there are many other things that a real WhatsApp does that we don’t intend to include in our design. If the interviewer has any objections, we can change our plan of action accordingly.</p>
+<p>Here are some best practices that we should follow during a system design interview:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-1-fig-2.svg" alt="Best practices for system design interview"></div></div></div><div><span>Best practices for system design interview</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p>An applicant should ask the right questions to solidify the requirements.</p>
+</li>
+<li>
+<p>Applicants also need to scope the problem so that they’re able to make a good attempt at solving it within the limited time frame of the interview. SDIs are usually about 35 to 40 minutes long.</p>
+</li>
+<li>
+<p>Communication with the interviewer is critical. It’s not a good idea to silently work on the design. Instead, we should engage with the interviewer to ensure that they understand our thought process.</p>
+</li>
+</ul>
+<h3>Present the high-level design<a href="#Present-the-high-level-design"><span>#</span></a></h3>
+<p>At a high level, components could be frontend, load balancers, caches, data processing, and so on. The system design tells us how these components fit together.</p>
+<p>An architectural design often represents components as boxes. The arrows between these boxes represent who talks to whom and how the boxes or components fit together collectively.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-1-fig-3.svg" alt="A sample design"></div></div></div><div><span>A sample design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We can draw a diagram like the one shown above for the given problem and present it to the interviewer.</p>
+<h2>Possible questions for every SDI<a href="#Possible-questions-for-every-SDI"><span>#</span></a></h2>
+<p>SDIs often include questions related to how a design might evolve over time as some aspect of the system increases by some order of magnitude—for example, the number of users, the number of queries per second, and so on. It’s commonly believed in the systems community that when some aspect of the system increases by a factor of ten or more, the same design might not hold and might require change.</p>
+<p>Designing and operating a bigger system requires careful thinking because designs often don’t linearly scale with increasing demands on the system.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Another question in an SDI might be related to why we don’t design a system that’s already capable of handling more work than necessary or predicted.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>The design evolution of Google<a href="#The-design-evolution-of-Google"><span>#</span></a></h3>
+<p>The design of the early version of Google Search may seem simplistic today, but it was quite sophisticated for its time. It also kept costs down, which was necessary for a startup like Google to stay afloat. The upshot is that whatever we do as designers have implications for the business and its customers. We need to meet or exceed customer needs by efficiently utilizing resources.</p>
+<h3>Design challenges<a href="#Design-challenges"><span>#</span></a></h3>
+<p>Things will change, and things will break over time because of the following:</p>
+<ul>
+<li>There’s no single correct approach or solution to a design problem.</li>
+<li>A lot is predicated on the assumptions we make.</li>
+</ul>
+<h3>The responsibility of the designer<a href="#The-responsibility-of-the-designer"><span>#</span></a></h3>
+<p>As designers, we need to provide fault tolerance at the design level because almost all modern systems use off-the-shelf components, and there are millions of such components. So, something will always be breaking down, and we need to hide this undesirable reality from our customers.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Who gets a system design interview?<a href="#Who-gets-a-system-design-interview?"><span>#</span></a></h2>
+<p>Traditionally, mid-to-senior level candidates with more than two years of experience get at least one system design interview. For more senior applicants, two or three system design interviews are common.</p>
+<p>Recently, large companies have also put forth system design questions to some junior candidates. It’s never too early to learn system design to grow or even expedite our careers.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Theory and practice<a href="#Theory-and-practice"><span>#</span></a></h2>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><p>Most of the theory of system design comes from the domain of distributed systems. Getting a refresher on these concepts is highly recommended. Google has an excellent <a href="https://www.google.com/courses/distributed-systems-practitioners">course on distributed systems</a> that we can use to refresh our knowledge of distributed systems concepts.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-1-fig-4.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Distributed systems give us guideposts for mature software principles. These include the following:</p>
+<ul>
+<li>Robustness (the ability to maintain operations during a crisis)</li>
+<li>Scalability</li>
+<li>Availability</li>
+<li>Performance</li>
+<li>Extensibility</li>
+<li>Resiliency (the ability to return to normal operations over an acceptable period of time post disruption)</li>
+</ul>
+<p>Such terminology also acts as a lingua franca between the interviewer and candidate.</p>
+<p>As an example, we might say that we need to make a trade-off between availability and consistency when network components fail because the CAP theorem indicates that we can’t have both under network partitions. Such common language helps with communication and shows that we’re well versed in both theory and practice.</p>
+<blockquote>
+<p><strong>Remember:</strong> It’s a candidate’s job to exhibit their skills to the interviewer.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>How to Prepare for Success</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>How to Prepare for Success</h1></div><div><div><div><p>Get an overview of some interview preparation guidelines and materials.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#This-course">This course</a></li><li><a href="#Technical-blogs">Technical blogs</a></li><li><a href="#Ask-why-a-system-works">Ask why a system works</a><ul><li><a href="#The-right-direction">The right direction</a></li></ul></li><li><a href="#Mock-interviews">Mock interviews</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><p>Substantial preparation is necessary to increase our odds of getting the job we apply for.</p>
+<p>Depending on a candidate’s seniority and proficiency, different candidates need different times for interview preparation.</p>
+<p>For an average candidate, three to four months might be required to prepare for a system design interview.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-2-fig-1.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>This course<a href="#This-course"><span>#</span></a></h2>
+<p>This course helps readers learn or brush up on their system design skills. We’ve carefully curated some traditional and fresh design problems to cover the substantial depth and breadth of the system design.</p>
+<p>The following activities might expedite the preparation and add variety and further depth to a candidate’s knowledge.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Technical blogs<a href="#Technical-blogs"><span>#</span></a></h2>
+<p>Many companies regularly publish the technical details of their significant work in the form of technical blogs.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-2-fig-2.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Why are companies eager to share the technical details of their work?</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> There’s a fine line between what can be held back by a company due to a competitive edge and what can be made public.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We can study these blogs to get insight into what challenges or problems the company faced and what changes they made in the design to cope with these challenges.</p>
+<blockquote>
+<p><strong>Note:</strong> Staying informed about these innovations is important for professionals, and it’s even more crucial for an applicant.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Some important technical blogs are <a href="https://engineering.fb.com/">Engineering at Meta</a>, <a href="https://research.fb.com/">Meta Research</a>, <a href="https://aws.amazon.com/blogs/architecture/">AWS Architecture Blog</a>, <a href="https://www.amazon.science/blog">Amazon Science Blog</a>, <a href="https://netflixtechblog.com/">Netflix TechBlog</a>, <a href="https://research.google/">Google Research</a>, <a href="https://quoraengineering.quora.com/">Engineering at Quora</a>, <a href="https://eng.uber.com/">Uber Engineering Blog</a>, <a href="https://databricks.com/blog/category/engineering">Databricks Blog</a>, <a href="https://medium.com/@Pinterest_Engineering">Pinterest Engineering</a>, <a href="https://medium.com/blackrock-engineering">BlackRock Engineering</a>, <a href="https://eng.lyft.com/">Lyft Engineering</a>, and <a href="https://engineering.salesforce.com/">Salesforce Engineering</a>.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> We should always take non-<span><span>peer-reviewed</span></span> material with a grain of salt. Think about what blogs say critically and with technical acumen to decide if what they say makes sense or not. If it doesn’t make sense, that could be an excellent opportunity to discuss the issue with peers.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Ask why a system works<a href="#Ask-why-a-system-works"><span>#</span></a></h2>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>By asking themselves the right questions,  candidates can think through dense and ambiguous situations.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>Learn how popular applications work at a high level—for example, Instagram, Twitter, and so on.</li>
+<li>Start to understand and ask why some component was used instead of another—for example, Firebase versus SQL.</li>
+<li>Build serious side projects. Start with a simple product and then improve and refine it.</li>
+<li>Build a system from scratch, and get familiar with all the processes and details of its construction.</li>
+</ul>
+<p>We can clone a popular application without tutorials.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-2-fig-3.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h3>The right direction<a href="#The-right-direction"><span>#</span></a></h3></div><div><div><div><div><p>System design deals with components at a higher level, and we need to avoid going into the trenches.</p>
+<blockquote>
+<p>We should focus less on mechanics and more on trade-offs.</p>
+</blockquote>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-2-fig-4.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>For example, discussing whether to use Room library instead of raw SQLite isn’t helpful because Room library is a mere wrapper around SQLite. A better discussion might be about using traditional databases like MySQL or using NoSQL stores like MongoDB. This second discussion will help us pinpoint trade-offs between the two.</p>
+<p>We should start with high-level stuff because the low-level details will automatically come up.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Mock interviews<a href="#Mock-interviews"><span>#</span></a></h2>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><p><strong>Mock interviews</strong> are a great way to prepare for system design interviews. They involve pairing up with a friend and allowing them to ask questions. If it’s not possible to use a friend, another strategy is to record ourselves and play the role of both interviewer and interviewee. With this approach, we can critique ourselves or ask a knowledgeable friend for feedback.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-2-fig-5.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> Since no mock interview can fully mimic an actual interview, it’s a good idea to take real interviews in companies. Once we’ve been through an interview or two, we’ll be better able to evaluate what went right and what didn’t.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>How to Perform Well</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>How to Perform Well</h1></div><div><div><div><p>Learn some helpful tips on how to perform during a system design interview.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#What-to-do-during-the-interview">What to do during the interview</a><ul><li><a href="#Strategize,-then-divide-and-conquer">Strategize, then divide and conquer</a><ul><li><a href="#Ask-refining-questions">Ask refining questions</a></li><li><a href="#Handle-data">Handle data</a></li><li><a href="#Discuss-the-components">Discuss the components</a></li><li><a href="#Discuss-trade-offs">Discuss trade-offs</a></li></ul></li></ul></li><li><a href="#What-not-to-do-in-an-interview">What not to do in an interview</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>What to do during the interview<a href="#What-to-do-during-the-interview"><span>#</span></a></h2>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><p>We stress that a candidate should make an effort to avoid looking unoriginal. The interviewer has probably asked the same question to many candidates. Reproducing a run-of-the-mill design might not impress the interviewer.</p>
+<p>At the same time, an interview can be a stressful situation. Having a plan to attack the problem might be a good strategy. Depending on the candidate, there can be multiple strategies to attack a design problem. We suggest the following technique.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-1.svg" alt="The dos of a system design interview"></div></div></div><div><span>The dos of a system design interview</span></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Strategize, then divide and conquer<a href="#Strategize,-then-divide-and-conquer"><span>#</span></a></h3>
+<p>We recommend including the following activities somewhere in the interview:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-2.svg" alt="Activities to include in the interview"></div></div></div><div><span>Activities to include in the interview</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Ask refining questions<a href="#Ask-refining-questions"><span>#</span></a></h4></div><div><div><div><div><p>We need to understand the design problem and its requirements. To do this, we can put on our product manager hat and prioritize the main features by asking the interviewer refining questions. The idea is to go on a journey with the interviewer about why our design is good. These interviews are designed to gauge if we’re able to logically derive a system out of vague requirements.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-3.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We should ensure that we’re solving the right problem. Often, it helps to divide the requirements into two groups:</p>
+<ul>
+<li>Requirements that the clients need directly—for example, the ability to send messages in near real-time to friends.</li>
+<li>Requirements that are needed indirectly—for example, messaging service performance shouldn’t degrade with increasing user load.</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> Professionals call these functional and nonfunctional requirements.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h4>Handle data<a href="#Handle-data"><span>#</span></a></h4>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><p>We need to identify and understand data and its characteristics in order to look for appropriate data storage systems and data processing components for the system design.</p>
+<p>Some important questions to ask ourselves when searching for the right systems and components include the following:</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-4.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>What’s the size of the data right now?</li>
+<li>At what rate is the data expected to grow over time?</li>
+<li>How will the data be consumed by other subsystems or end users?</li>
+<li>Is the data read-heavy or write-heavy?</li>
+<li>Do we need strict consistency of data, or will eventual consistency work?</li>
+<li>What’s the durability target of the data?</li>
+<li>What privacy and regulatory requirements do we require for storing or transmitting user data?</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h4>Discuss the components<a href="#Discuss-the-components"><span>#</span></a></h4>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-5.svg" alt="Components"></div></div></div><div><span>Components</span></div></div></div><div><div><div><p>At some level, our job might be perceived as figuring out which components we’ll use, where they’ll be placed, and how they’ll interact with each other.</p>
+<p>An example could be the type of database—will a conventional database  work, or should we use a NoSQL database?</p>
+</div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>There might be cases where we have strong arguments to use NoSQL databases, but our interviewer may insist that we use a traditional database. What should we do in such a case?</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> We often abstract away the details of the components as boxes and use arrows to show the interactions between them. It might help to define the user-facing APIs at a high level to further understand system data and interaction requirements.</p>
+</blockquote>
+<p>Front-end components, load balancers, caches, databases, firewalls, and CDNs are just some examples of system components.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Discuss trade-offs<a href="#Discuss-trade-offs"><span>#</span></a></h4></div><div><div><div><div><p>Remember that there’s no one correct answer to a design problem. If we give the same problem to two different groups, they might come up with different designs.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-6.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>These are some of the reasons why such diversity exists in design solutions:</p>
+<ul>
+<li>Different components have different pros and cons. We’ll need to carefully weigh what works for us.</li>
+<li>Different choices have different costs in terms of money and technical complexity. We need to efficiently utilize our resources.</li>
+<li>Every design has its weaknesses. As designers, we should be aware of all of them, and we should have a follow-up plan to tackle them.</li>
+</ul>
+<p>We should point out weaknesses in our design to our interviewer and explain why we haven’t tackled them yet. An example could be that our current design can’t handle ten times more load, but we don’t expect our system to reach that level anytime soon. We have a monitoring system to keep a very close eye on load growth over time so that a new design can be implemented in time. This is an example where we intentionally had a weakness to reduce system cost.</p>
+<p>Something is always failing in a big system. We need to integrate fault tolerance and security into our design.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>What not to do in an interview<a href="#What-not-to-do-in-an-interview"><span>#</span></a></h2>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><p>Here are a few things that we should avoid doing in a system design interview:</p>
+<ul>
+<li>Don’t write code in a system design interview.</li>
+<li>Don’t start building without a plan.</li>
+<li>Don’t work in silence.</li>
+<li>Don’t describe numbers without reason. We have to frame it.</li>
+<li>If we don’t know something, we don’t paper over it, and we don’t pretend to know it.</li>
+</ul>
+</div></div></div><div><div><div><div><div><img src="../diagrams/system-design-interviews/lesson-3-fig-7.svg" alt="The don&#x27;ts of a system design interview"></div></div></div><div><span>The don&#x27;ts of a system design interview</span></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> If an interviewer asks us to design a system we haven’t heard of, we should just be honest and tell them so. The interviewer will either explain it to us or they might change the question.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

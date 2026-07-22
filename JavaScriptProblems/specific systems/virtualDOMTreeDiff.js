@@ -25,7 +25,7 @@ function diff(oldNode, newNode) {
 const oldTree = {
   type: "div",
   children: [
-    { type: "p",    children: ["Hello"] },
+    { type: "p", children: ["Hello"] },
     { type: "span", children: ["World"] },
   ],
 };
@@ -33,8 +33,8 @@ const oldTree = {
 const newTree = {
   type: "div",
   children: [
-    { type: "p",    children: ["Hello!"] }, // text changed
-    { type: "h1",   children: ["World"] },  // type changed
+    { type: "p", children: ["Hello!"] }, // text changed
+    { type: "h1", children: ["World"] }, // type changed
   ],
 };
 

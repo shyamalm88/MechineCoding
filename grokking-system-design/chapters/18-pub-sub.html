@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>18. Pub-sub — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html" aria-current="page">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>18. Pub-sub</h1><section class="lesson"><h2>System Design: The Pub-sub Abstraction</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: The Pub-sub Abstraction</h1></div><div><div><div><p>Get introduced to the basics of designing a pub-sub system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#What-is-a-pub-sub-system?">What is a pub-sub system?</a></li><li><a href="#Motivation">Motivation</a></li><li><a href="#How-do-we-design-a-pub-sub-system?">How do we design a pub-sub system?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>What is a pub-sub system?<a href="#What-is-a-pub-sub-system?"><span>#</span></a></h2>
+<p><strong>Publish-subscribe messaging</strong>, often known as <strong>pub-sub messaging</strong>, is an asynchronous service-to-service communication method that’s popular in serverless and microservices architectures. Messages can be sent asynchronously to different subsystems of a system using the pub-sub system. All the services subscribed to the pub-sub model receive the message that’s pushed into the system.</p>
+<p>For example, when Cristiano Ronaldo, a famous athlete, posts on Instagram or shares a tweet, all of his followers are updated. Here, Cristiano Ronaldo is the publisher, his post or tweet is the message, and all of his followers are subscribers.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-1-fig-1.svg" alt="The pub-sub system"></div></div></div><div><span>The pub-sub system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Motivation<a href="#Motivation"><span>#</span></a></h2>
+<p>The hardware infrastructure of distributed systems consists of millions of machines. Using a pub-sub system to communicate asynchronously increases scalability. Producers and consumers are disconnected and operate independently, thereby allowing us to scale and develop them separately. The decoupling between components, producers and consumers, allows greater scalability because adding or removing any component doesn’t affect the other components.</p>
+<h2>How do we design a pub-sub system?<a href="#How-do-we-design-a-pub-sub-system?"><span>#</span></a></h2>
+<p>We have divided the pub-sub system design into the following lessons:</p>
+<ol>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5155663642099712"><strong>Introduction</strong></a>: In this lesson, we learn about the use cases of the pub-sub system, define its requirements, and design the API for it.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5367894619193344"><strong>Design</strong></a>: In this lesson, we discuss two designs of the pub-sub system, one with messaging queues and the other with a broker.</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Introduction to Pub-sub</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Introduction to Pub-sub</h1></div><div><div><div><p>Learn about the use cases of the pub-sub system, how to define its requirements, and design the API for it.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Use-cases-of-pub-sub">Use cases of pub-sub</a></li><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#API-Design">API Design</a></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>Pub-sub messaging offers asynchronous communication. Let’s explore the use cases where it is beneficial to have a pub-sub system.</p>
+<h2>Use cases of pub-sub<a href="#Use-cases-of-pub-sub"><span>#</span></a></h2>
+<p>A few use cases of pub-sub are listed below:</p>
+<ul>
+<li>
+<p><strong>Improved performance</strong>: The pub-sub system enables push-based distribution, alleviating the need for message recipients to check for new information and changes regularly. It encourages faster response times and lowers the delivery latency.</p>
+</li>
+<li>
+<p><strong>Handling ingestion</strong>: The pub-sub helps in handling <span><span>log ingestion</span></span>. The user-interaction data can help us figure out useful analyses about the behavior of users. We can ingest a large amount of data to the pub-sub system, so much so that it can deliver the data to any analytical system to understand the behavior patterns of users. Moreover, we can also log the details of the event that’s happening while completing a request from the user. Large services like Meta use a pub-sub system called Scribe to know exactly who needs what data, and remove or archive processed or unwanted data. Doing this is necessary to manage an enormous amount of data.</p>
+</li>
+<li>
+<p><strong>Real-time monitoring</strong>: Raw or processed messages of an application or system can be provided to multiple applications to monitor a system in real time.</p>
+</li>
+<li>
+<p><strong>Replicating data</strong>: The pub-sub system can be used to distribute changes. For example, in a leader-follower protocol, the leader sends the changes to its followers via a pub-sub system. It allows followers to update their data asynchronously. The distributed caches can also refresh themselves by receiving the modifications asynchronously. Along the same lines, applications like WhatsApp that allow multiple views of the same conversation—for example, on a mobile phone and a computer’s browser—can elegantly work using a pub-sub, where multiple views can act either as a publisher or a subscriber.</p>
+</li>
+</ul>
+
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-2-fig-1.svg" alt="Motivation and use cases of the pub-sub system"></div></div></div><div><span>Motivation and use cases of the pub-sub system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>What are the similarities and differences between a pub-sub system and queues?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 2</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>We aim to design a pub-sub system that has the following requirements.</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<p>Let’s specify the functional requirements of a pub-sub system:</p>
+<ul>
+<li>
+<p><strong>Create a <span><span>topic</span></span></strong>: The producer should be able to create a topic.</p>
+</li>
+<li>
+<p><strong>Write messages</strong>: Producers should be able to write messages to the topic.</p>
+</li>
+<li>
+<p><strong>Subscription</strong>: Consumers should be able to subscribe to the topic to receive messages.</p>
+</li>
+<li>
+<p><strong>Read messages</strong>: The consumer should be able to read messages from the topic.</p>
+</li>
+<li>
+<p><strong>Specify retention time</strong>: The consumers should be able to specify the retention time after which the message should be deleted from the system.</p>
+</li>
+<li>
+<p><strong>Delete messages</strong>: A message should be deleted from the topic or system after a certain retention period as defined by the user of the system.</p>
+</li>
+</ul>
+<h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<p>We consider the following non-functional requirements when designing a pub-sub system:</p>
+<ul>
+<li>
+<p><strong>Scalable</strong>: The system should scale with an increasing number of topics and increasing writing (by producers) and reading (by consumers) load.</p>
+</li>
+<li>
+<p><strong>Available</strong>: The system should be highly available, so that producers can add their data and consumers can read data from it anytime.</p>
+</li>
+<li>
+<p><strong>Durability</strong>: The system should be durable. Messages accepted from producers must not be lost and should be delivered to the intended subscribers.</p>
+</li>
+<li>
+<p><strong>Fault tolerance</strong>: Our system should be able to operate in the event of failures.</p>
+</li>
+<li>
+<p><strong>Concurrent</strong>: The system should handle concurrency issues where reading and writing are performed simultaneously.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>API Design<a href="#API-Design"><span>#</span></a></h2>
+<p>We’ll exclude some parameters from the functions below, such as the producer or consumer’s identifier. Let’s assume that this information is available from the underlying connection context. The API design for this problem is as follows:</p>
+<p><strong>Create a topic</strong></p>
+<p>The API call to create a topic should look like this:</p>
+<pre><code><span><span>create(topic_ID, topic_name)</span></span><br></code></pre>
+<p>This function returns an acknowledgment if it successfully creates a topic, or an error if it fails to do so.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>topic_ID</code></p></div></div></td><td><div></div><div><div><p>It uniquely identifies the topic.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>topic_name</code></p></div></div></td><td><div></div><div><div><p>It contains the name of the topic. </p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p><strong>Write a message</strong></p>
+<p>The API call to write into the pub-sub system should look like this:</p>
+<pre><code><span><span>write(topic_ID, message)</span></span><br></code></pre>
+<p>The API call will write a <code>message</code> into a topic with an ID of <code>topic_ID</code>. Each message can have a maximum size of 1 MB. This function will return an acknowledgment if it successfully places the data in the systems, or an appropriate error if it fails.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>message</code></p></div></div></td><td><div></div><div><div><p>The message to be written in the system.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p><strong>Read a message</strong></p>
+<p>The API call to read data from the system should look like this:</p>
+<pre><code><span><span>read(topic_ID)</span></span><br></code></pre>
+<p>The topic is found using <code>topic_ID</code>, and the call will return an object containing the message to the caller.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>topic_ID</code></p></div></div></td><td><div></div><div><div><p>It is the ID of the topic against which the message will be read.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p><strong>Subscribe to a topic</strong></p>
+<p>The API call to subscribe to a topic from the system should look like this:</p>
+<pre><code><span><span>subscribe(topic_ID)</span></span><br></code></pre>
+<p>The function adds the consumer as a subscriber to the topic that has the <code>topic_ID</code>.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>topic_ID</code></p></div></div></td><td><div></div><div><div><p>The ID of the topic to which the consumer will be subscribed.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p><strong>Unsubscribe from a topic</strong></p>
+<p>The API call to unsubscribe from a topic from the system should look like this:</p>
+<pre><code><span><span>unsubscribe(topic_ID)</span></span><br></code></pre>
+<p>The function removes the consumer as a subscriber from the topic that has the <code>topic_ID</code>.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>topic_ID</code></p></div></div></td><td><div></div><div><div><p>The ID of the topic against which the consumers will be unsubscribed.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p><strong>Delete a topic</strong></p>
+<p>The API call to delete a topic from the system should look like this:</p>
+<pre><code><span><span>delete_topic(topic_ID)</span></span><br></code></pre>
+<p>The function deletes the topic on the basis of the <code>topic_ID</code>.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>topic_ID</code></p></div></div></td><td><div></div><div><div><p>The ID of the topic which is to be deleted.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>The design of pub-sub utilizes many building blocks that have been discussed in the initial chapters. We’ll consider the following lessons on building blocks.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-2-fig-2.svg" alt="The building blocks we’ll use"></div></div></div><div><span>The building blocks we’ll use</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872"><strong>Database</strong></a>: We’ll use databases to store information like subscription details.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5148400467312640"><strong>Distributed messaging queue</strong></a>: We’ll use use a messaging queue to store messages sent by the producer.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4747701493432320"><strong>Key-value</strong></a>: We’ll use a key-value store to hold information about consumers.</li>
+</ul>
+<p>In the next lesson, we’ll focus on designing a pub-sub system.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design of a Pub-sub System</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of a Pub-sub System</h1></div><div><div><div><p>Dive into designing a pub-sub system and its components.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#First-design">First design</a></li><li><a href="#Second-design">Second design</a><ul><li><a href="#High-level-design">High-level design</a></li></ul></li><li><a href="#Broker">Broker</a></li><li><a href="#Cluster-manager">Cluster manager</a></li><li><a href="#Consumer-manager">Consumer manager</a></li><li><a href="#Finalized-design">Finalized design</a></li><li><a href="#Conclusion">Conclusion</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>First design<a href="#First-design"><span>#</span></a></h2>
+<p>In the previous lesson, we discussed that a producer writes into topics, and consumers subscribe to a topic to read messages from that topic. Since new messages are added at the end of the queue, we can use <a href="https://www.google.com/collection/page/10370001/4941429335392256/5148400467312640">distributed messaging queues</a> for topics.</p>
+<p>The components we’ll need have been listed below:</p>
+<ul>
+<li>
+<p><strong>Topic queue</strong>: Each topic will be a distributed messaging queue so we can store the messages sent to us from the producer. A producer will write their messages to that queue.</p>
+</li>
+<li>
+<p><strong>Database</strong>: We’ll use a relational database that will store the subscription details. For example, we need to store which consumer has subscribed to which topic so we can provide the consumers with their desired messages. We’ll use a relational database since our consumer-related data is structured and we want to ensure our data integrity.</p>
+</li>
+<li>
+<p><strong>Message director</strong>: This service will read the message from the topic queue, fetch the consumers from the database, and send the message to the consumer queue.</p>
+</li>
+<li>
+<p><strong>Consumer queue</strong>: The message from the topic queue will be copied to the consumer’s queue so the consumer can read the message. For each consumer, we’ll define a separate distributed queue.</p>
+</li>
+<li>
+<p><strong>Subscriber</strong>: When the consumer requests a subscription to a topic, this service will add an entry into the database.</p>
+</li>
+</ul>
+<p>The consumer will subscribe to a topic, and the system will add the subscriber’s details to the database. The producer will write into the topics, and the message director will read the message from the queue, fetch the details to whom it should add the message, and send it to them. The consumers will consume the message from their queue.</p>
+<blockquote>
+<p><strong>Note</strong>: We’ll use fail-over services for the message director and subscriber to guard against failures.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-3-fig-1.svg" alt="Using the distributed messaging queue"></div></div></div><div><span>Using the distributed messaging queue</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Using the distributed messaging queues makes our design simple. However, the huge number of queues needed is a significant concern. If we have millions of subscribers for thousands of topics, defining and maintaining millions of queues is expensive. Moreover, we’ll copy the same message for a topic in all subscriber queues, which is unnecessary duplication and takes up space.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>Is there a way to avoid maintaining a separate queue for each reader?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 2</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Second design<a href="#Second-design"><span>#</span></a></h2>
+<p>Let’s consider another approach to designing a pub-sub system.</p>
+<h3>High-level design<a href="#High-level-design"><span>#</span></a></h3>
+<p>At a high level, the pub-sub system will have the following components:</p>
+<ul>
+<li>
+<p><strong>Broker</strong>: This server will handle the messages. It will store the messages sent from the producer and allow the consumers to read them.</p>
+</li>
+<li>
+<p><strong>Cluster manager</strong>: We’ll have numerous broker servers to cater to our scalability needs. We need a cluster manager to supervise the broker’s health. It will notify us if a broker fails.</p>
+</li>
+<li>
+<p><strong>Storage</strong>: We’ll use a relational database to store consumer details, such as subscription information and retention period.</p>
+</li>
+<li>
+<p><strong>Consumer manager</strong>: This is responsible for managing the consumers. For example, it will verify if the consumer is authorized to read a message from a certain topic or not.</p>
+</li>
+</ul>
+<p>Besides these components, we also have the following design considerations:</p>
+<ul>
+<li>
+<p><strong>Acknowledgment</strong>:  An acknowledgment is used to notify the producer that the received message has been stored successfully. The system will wait for an acknowledgment from the consumer if it has successfully consumed the message.</p>
+</li>
+<li>
+<p><strong>Retention time</strong>: The consumers can specify the retention period time of their messages. The default will be seven days, but it is configurable. Some applications like banking applications require the data to be stored for a few weeks as a business requirement, while an analytical application might not need the data after consumption.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-3-fig-2.svg" alt="High-level design of a pub-sub system"></div></div></div><div><span>High-level design of a pub-sub system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Let’s understand the role of each component in detail.</p>
+<h2>Broker<a href="#Broker"><span>#</span></a></h2>
+<p>The broker server is the core component of our pub-sub system. It will handle write and read requests. A broker will have multiple topics where each topic can have multiple <strong>partitions</strong> associated with it. We use partitions to store messages in the local storage for persistence. Consequently, this improves availability.  Partitions contain messages encapsulated in <strong>segments</strong>.
+Segments help identify the start and end of a message using an offset address. Using segments, consumers consume the message of their choice from a partition by reading from a specific offset address. The illustration below depicts the concept that has been described above.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-3-fig-3.svg" alt="A depiction of how messages are stored within segments inside a partition"></div></div></div><div><span>A depiction of how messages are stored within segments inside a partition</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>As we know, a <strong>topic</strong> is a persistent sequence of messages stored in the local storage of the broker.  Once the data has been added to the topic, it cannot be modified. Reading and writing a message from or to a topic is an I/O task for computers, and scaling such tasks is challenging. This is the reason we split the topics into multiple partitions. The data belonging to a single topic can be present in numerous partitions. For example, let’s assume have Topic A and we allocate three partitions for it. The producers will send their messages to the relevant topic. The messages received will be sent to various partitions on basis of the <span><span>round-robin algorithm</span></span>. We’ll use a variation of round-robin: <span><span>weighted round-robin</span></span>. The following slides show how the messages are stored in various partitions belonging to a single topic.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>Producers create messages of the same topic and send them to the system</span></div></div><div><span><strong>1</strong> of 9</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The round-robin algorithm decides the partition where we need to store the message</span></div></div><div><span><strong>1</strong> of 9</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The round-robin algorithm sends the message to Partition 0 and decides the partition for the incoming message</span></div></div><div><span><strong>1</strong> of 9</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The round-robin algorithm sends the message to Partition 1 and decides the partition for the incoming message</span></div></div><div><span><strong>1</strong> of 9</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The round-robin algorithm sends the message to Partition 1 and decides the partition for the incoming message</span></div></div><div><span><strong>1</strong> of 9</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>Strict ordering ensures that the messages are stored in the order in which they are produced. How can we ensure strict ordering for our messages?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 4</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We’ll allocate the partitions to various brokers in the system. This just means that different partitions of the same topic will be in different brokers. We’ll follow strict ordering in partitions by adding newer content at the end of existing messages.</p>
+
+<p>Consider the slides below. We have various brokers in our system. Each broker has different topics. The topic is divided into multiple partitions.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>A broker contains multiple topics</span></div></div><div><span><strong>1</strong> of 3</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Physical view: A topic is split into numerous partitions that are stored on other brokers</span></div></div><div><span><strong>1</strong> of 3</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Logical view: We can represent the partitions in another way. Here, Topic B is split into multiple partitions</span></div></div><div><span><strong>1</strong> of 3</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We discussed that a message will be stored in a segment. We’ll identify each segment using an offset. Since these are immutable records, the readers are independent and they can read messages anywhere from this file using the necessary API functions. The following slides show the segment level detail.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>A new entry will be added at the end of the file</span></div></div><div><span><strong>1</strong> of 2</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The consumers can read anywhere from the file. Producers add to the end of file</span></div></div><div><span><strong>1</strong> of 2</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The broker solved the problems that our first design had. We avoided a large number of queues by partitioning the topic. We introduced parallelism using partitions that avoided bottlenecks while consuming the message.</p>
+<h2>Cluster manager<a href="#Cluster-manager"><span>#</span></a></h2>
+<p>We’ll have multiple brokers in our cluster. The cluster manager will perform the following tasks:</p>
+<ul>
+<li>
+<p><strong>Broker and topics registry</strong>: This stores the list of topics for each broker.</p>
+</li>
+<li>
+<p><strong>Manage replication</strong>: The cluster manager manages replication by using the leader-follower approach. One of the brokers is the leader. If it fails, the manager decides who the next leader is. In case the follower fails, it adds a new broker and makes sure to turn it into an updated follower. It updates the metadata accordingly. We’ll keep three replicas of each partition on different brokers.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-3-fig-4.svg" alt="Replication at the partitioning level"></div></div></div><div><span>Replication at the partitioning level</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Consumer manager<a href="#Consumer-manager"><span>#</span></a></h2>
+<p>The consumer manager will manage the consumers. It has the following responsibilities:</p>
+<ul>
+<li>
+<p><strong>Verify the consumer</strong>: The manager will fetch the data from the database and verify if the consumer is allowed to read a certain message. For example, if the consumer has subscribed to Topic A (but not to Topic B), then it should not be allowed to read from Topic B. The consumer manager verifies the consumer’s request.</p>
+</li>
+<li>
+<p><strong>Retention time management</strong>: The manager will also verify if the consumer is allowed to read the specific message or not. If, according to its retention time, the message should be inaccessible to the consumer, then it will not allow the consumer to read the message.</p>
+</li>
+<li>
+<p><strong>Message receiving options management</strong>: There are two methods for consumers to get data. The first is that our system pushes the data to its consumers. This method may result in overloading the consumers with continuous messages. Another approach is for consumers to request the system to read data from a specific topic. The drawback is that a few consumers might want to know about a message as soon as it is published, but we do not support this function.</p>
+<p>Therefore, we’ll support both techniques. Each consumer will inform the broker that it wants the data to be pushed automatically or it needs the data to read itself. We can avoid overloading the consumer and also provide liberty to the consumer. We’ll save this information in the relational database along with other consumer details.</p>
+</li>
+<li>
+<p><strong>Allow multiple reads</strong>: The consumer manager stores the offset information of each consumer. We’ll use a key-value to store offset information against each consumer. It allows fast fetching and increases the availability of the consumers. If Consumer 1 has read from offset 0 and has sent the acknowledgment, we’ll store it. So, when the consumer wants to read again, we can provide the next offset to the reader for reading the message.</p>
+</li>
+</ul>
+<h2>Finalized design<a href="#Finalized-design"><span>#</span></a></h2>
+<p>The finalized design of our pub-sub system is shown below.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/pub-sub/lesson-3-fig-5.svg" alt="Finalized design"></div></div></div><div><span>Finalized design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Conclusion<a href="#Conclusion"><span>#</span></a></h2>
+<p>We saw two designs of pub-sub, using queues and using our custom storage optimized for writing and reading small-sized data.</p>
+<p>There are numerous use cases of a pub-sub. Due to decoupling between producers and consumers, the system can scale dynamically, and the failures are well-contained. Additionally, due to proper accounting of data consumption, the pub-sub is a system of choice for a large-scale system that produces enormous data.  We can determine precisely which data is needed and not needed.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

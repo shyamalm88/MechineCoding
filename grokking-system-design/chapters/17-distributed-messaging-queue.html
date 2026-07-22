@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>17. Distributed Messaging Queue — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html" aria-current="page">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>17. Distributed Messaging Queue</h1><section class="lesson"><h2>System Design: The Distributed Messaging Queue</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: The Distributed Messaging Queue</h1></div><div><div><div><p>Learn about the messaging queue, why we use it, and important use cases.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#What-is-a-messaging-queue?">What is a messaging queue?</a><ul><li><a href="#Motivation">Motivation</a></li><li><a href="#Messaging-queue-use-cases">Messaging queue use cases</a></li></ul></li><li><a href="#How-do-we-design-a-distributed-messaging-queue?">How do we design a distributed messaging queue?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>What is a messaging queue?<a href="#What-is-a-messaging-queue?"><span>#</span></a></h2>
+<p>A <strong>messaging queue</strong> is an intermediate component between the interacting entities known as <em>producers</em> and <em>consumers</em>. The <strong>producer</strong> produces messages and places them in the queue, while the <strong>consumer</strong> retrieves the messages from the queue and processes them. There might be multiple producers and consumers interacting with the queue at the same time.</p>
+<p>Here is an illustration of two applications interacting via a single messaging queue:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-1-fig-1.svg" alt="An example of two applications interacting via a single messaging queue"></div></div></div><div><span>An example of two applications interacting via a single messaging queue</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Motivation<a href="#Motivation"><span>#</span></a></h3>
+<p>A messaging queue has several advantages and use cases.</p>
+<ul>
+<li>
+<p><strong>Improved performance:</strong> Improved performance: A messaging queue enables asynchronous communication between the two interacting entities, producers and consumers, and eliminates their relative speed difference. A producer puts messages in the queue without waiting for the consumers. Similarly, a consumer processes the messages when they become available. Moreover, queues are often used to separate out slower operations from the critical path and, therefore, help reduce client-perceived latency. For example, instead of waiting for a specific task that’s taking a long time to complete, the producer process sends a message, which is kept in a queue if there are multiple requests, for the required task and continues its operations. The consumer can notify us about the fate of the processing, whether a success or failure, by using another queue.</p>
+</li>
+<li>
+<p><strong>Better reliability:</strong> The separation of interacting entities via a messaging queue makes the system more fault tolerant. For example, a producer or consumer can fail independently without affecting the others and restart later. Moreover, replicating the messaging queue on multiple servers ensures the system’s availability if one or more servers are down.</p>
+</li>
+<li>
+<p><strong>Granular scalability:</strong> Asynchronous communication makes the system more scalable. For example, many processes can communicate via a messaging queue. In addition, when the number of requests increases, we distribute the workload across several consumers. So, an application is in full control to tweak the number of producer or consumer processes according to its current need.</p>
+</li>
+<li>
+<p><strong>Easy decoupling:</strong> A messaging queue decouples dependencies among different entities in a system. The interacting entities communicate via messages and are kept unaware of each other’s internal working mechanisms.</p>
+</li>
+<li>
+<p><strong>Rate limiting:</strong> Messaging queues also help absorb any load spikes and prevent services from becoming overloaded, acting as a rudimentary form of rate limiting when there is a need to avoid dropping any incoming request.</p>
+</li>
+<li>
+<p><strong>Priority queue:</strong> Multiple queues can be used to implement different priorities—for example, one queue for each priority—and give more service time to a higher priority queue.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Messaging queue use cases<a href="#Messaging-queue-use-cases"><span>#</span></a></h3>
+<p>A messaging queue has many use cases, both in single-server and distributed environments. For example, it can be used for interprocess communication within one operating system. It also enables communication between processes in a distributed environment. Some of the use cases of a messaging queue are discussed below.</p>
+<ol>
+<li>
+<p><strong>Sending many emails:</strong> Emails are used for numerous purposes, such as sharing information, account verification, resetting passwords, marketing campaigns, and more. All of these emails written for different purposes don’t need immediate processing and, therefore, they don’t disturb the system’s <span><span>core functionality</span></span>. A messaging queue can help coordinate a large number of emails between different senders and receivers in such cases.</p>
+</li>
+<li>
+<p><strong>Data post-processing:</strong> Many multimedia applications need to process content for different viewer needs, such as for consumption on a mobile phone and a smart television. Oftentimes, applications upload the content into a store and use a messaging queue for post-processing of content offline. Doing this substantially reduces client-perceived latency and enables the service to schedule the offline work at some appropriate time—probably late at night when the compute capacity is less busy.</p>
+</li>
+<li>
+<p><strong>Recommender systems:</strong>  Some platforms use recommender systems to provide preferred content or information to a user. The recommender system takes the user’s historical data, processes it, and predicts relevant content or information. Since this is a time-consuming task, a messaging queue can be incorporated between the recommender system and requesting processes to increase and quicken performance.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>How do we design a distributed messaging queue?<a href="#How-do-we-design-a-distributed-messaging-queue?"><span>#</span></a></h2>
+<p>We divide the design of a distributed messaging queue into the following five lessons:</p>
+<ol>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5806944861814784">Requirements:</a></strong> Here, we focus on the functional and non-functional requirements of designing a distributed messaging queue. We also discuss a single server messaging queue and its drawbacks in this lesson.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6191662786674688">Design consideration:</a></strong> In this lesson, we discuss some important factors that may affect the design of a distributed messaging queue—for example, the order of placing messages in a queue, their extraction, their visibility in the queue, and the concurrency of incoming messages.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6330012742975488">Design:</a></strong>  In this lesson, we discuss the design of a distributed messaging queue in detail. We also describe the process of replication of queues and the interaction between various building blocks involved in the design.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4654974423793664">Evaluation:</a></strong> In this lesson, we evaluate the design of a distributed messaging queue based on its functional and non-functional requirements.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5261732032806912">Quiz:</a></strong> At the end of the chapter, we evaluate understanding of the design of a distributed messages queue via a quiz.</li>
+</ol>
+<p>Let’s start by understanding the requirements of designing a distributed messaging queue.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Requirements of a Distributed Messaging Queue’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Requirements of a Distributed Messaging Queue’s Design</h1></div><div><div><div><p>Learn about the requirements of designing a distributed messaging queue using a strawman solution.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#Single-server-messaging-queue">Single-server messaging queue</a></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>In a <strong>distributed messaging queue</strong>, data resides on several machines. Our aim is to design a distributed messaging queue that has the following functional and non-functional requirements.</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<p>Listed below are the actions that a client should be able to perform:</p>
+<ul>
+<li>
+<p><strong>Queue creation:</strong> The client should be able to create a queue and set some parameters—for example, queue name, <span><span>queue size</span></span>, and
+<span><span><span>maximum message size.</span></span></span></p>
+</li>
+<li>
+<p><strong>Send message:</strong> Producer entities should be able to send messages to a queue that’s intended for them.</p>
+</li>
+<li>
+<p><strong>Receive message:</strong> Consumer entities should be able to receive messages from their respective queues.</p>
+</li>
+<li>
+<p><strong>Delete message:</strong> The consumer processes should be able to delete a message from the queue after a successful processing of the message.</p>
+</li>
+<li>
+<p><strong>Queue deletion:</strong> Clients should be able to delete a specific queue.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<p>Our design of a distributed messaging queue should adhere to the following non-functional requirements:</p>
+<ul>
+<li>
+<p><strong>Durability</strong>: The data received by the system should be durable and shouldn’t be lost. Producers and consumers can fail independently, and a queue with data durability is critical to make the whole system work, because other entities are relying on the queue.</p>
+</li>
+<li>
+<p><strong>Scalability</strong>: The system needs to be scalable and capable of handling the increased load, queues, producers, consumers, and the number of messages. Similarly, when the load reduces, the system should be able to shrink the resources accordingly.</p>
+</li>
+<li>
+<p><strong>Availability</strong>: The system should be highly available for receiving and sending messages. It should continue operating uninterrupted, even after the failure of one or more of its components.</p>
+</li>
+<li>
+<p><strong>Performance:</strong> The system should provide high throughput and low latency.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Single-server messaging queue<a href="#Single-server-messaging-queue"><span>#</span></a></h2>
+<p>Before we embark on our journey to map out the design of a distributed messaging queue, we should recall how <span><span>queues</span></span> are used within a single server where the producer and consumer processes are also on the same node. A producer or consumer can access a single-server queue by acquiring the locking mechanism to avoid data inconsistency. The queue is considered a critical section where only one entity, either the producer or consumer, can access the data at a time.</p>
+<p>However, several aspects restrain us from using the single-server messaging queue in today’s distributed systems paradigm. For example, it becomes unavailable to cooperating processes, producers and consumers, in the event of hardware or network failures. Moreover, performance takes a major hit as contention on the lock increases. Furthermore, it is neither scalable nor durable.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-2-fig-1.svg" alt="Multiple producers and consumers interact via a single messaging queue"></div></div></div><div><span>Multiple producers and consumers interact via a single messaging queue</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Can we extend the design of a single-server messaging queue to a distributed messaging queue?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>The design of a distributed messaging queue utilizes the following building blocks:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-2-fig-2.svg" alt="The building blocks used to design a distributed messaging queue"></div></div></div><div><span>The building blocks used to design a distributed messaging queue</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872">Database(s)</a></strong> will be required to store the metadata of queues and users.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5053577315221504">Caches</a></strong> are important to keep frequently accessed data, whether it be data pertaining to users or queues metadata.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4521972679049216">Load balancers</a></strong> are used to direct incoming requests to servers where the metadata is stored.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In our discussion on messaging queues, we focused on their functional and non-functional requirements. Before moving on to the process of designing a distributed messaging queue, it’s essential for us to discuss some key considerations and challenges that may affect the design.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Considerations of a Distributed Messaging Queue’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Considerations of a Distributed Messaging Queue’s Design</h1></div><div><div><div><p>Learn about the factors that affect the design of a messaging queue.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Ordering-of-messages">Ordering of messages</a><ul><li><a href="#Best-effort-ordering">Best-effort ordering</a></li><li><a href="#Strict-ordering">Strict ordering</a><ul><li><a href="#Sorting">Sorting</a></li></ul></li></ul></li><li><a href="#Effect-on-performance">Effect on performance</a><ul><li><a href="#Managing-concurrency">Managing concurrency</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>Before embarking on our journey to design a distributed messaging queue, let’s discuss some major factors that could significantly affect the design. These include the order of messages, the effect of the ordering on performance, and the management of concurrent access to the queue. We discuss each of these factors in detail below.</p>
+<h2>Ordering of messages<a href="#Ordering-of-messages"><span>#</span></a></h2>
+<p>A messaging queue is used to receive messages from producers. These messages are consumed by the consumers at their own pace. Some operations are critical in that they require strict ordering of the execution of the tasks, driven by the messages in the queue. For example, while chatting over a messenger application with a friend, the messages should be delivered in order; otherwise, such communication can be confusing, to say the least. Similarly, emails received by a user from different users may not require strict ordering. Therefore, in some cases, the strict order of incoming messages in the queue is essential, while many use cases can tolerate some reordering.</p>
+<p>Let’s discuss the following two categories of messages ordering in a queue:</p>
+<ul>
+<li><em>Best-effort ordering</em></li>
+<li><em>Strict ordering</em></li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Best-effort ordering<a href="#Best-effort-ordering"><span>#</span></a></h3>
+<p>With the <strong>best-effort ordering</strong> approach, the system puts the messages in a specified queue in the same order that they’re received.</p>
+<p>For example, as shown in the following figure, the producer sends four messages, A, B, C, and D, in the same order as illustrated. Due to network congestion or some other issue, message B is received after message D. Hence, the order of messages is A, C, D, and B at the receiving end. Therefore, in this approach, the messages will be put in the queue in the same order they were received instead of the order in which they were produced on the client side.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-3-fig-1.svg" alt="Best-effort ordering: Messages are placed in a queue in the same order that they’re received and not in the order they were sent"></div></div></div><div><span>Best-effort ordering: Messages are placed in a queue in the same order that they’re received and not in the order they were sent</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Strict ordering<a href="#Strict-ordering"><span>#</span></a></h3>
+<p>The strict ordering technique preserves the ordering of messages more rigorously. Through this approach, messages are placed in a queue in the order that they’re produced.</p>
+<p>Before putting messages in a queue in the correct sequence, it’s crucial to have a mechanism to identify the order in which the messages were produced on the client side. Often, a unique identifier or time-stamp is used to mark a message when it’s produced.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Who’ll be responsible for providing the sequence numbers?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>One of the following three approaches can be used for ordering incoming messages:</p>
+<ol>
+<li>
+<p><strong>Monotonically increasing numbers:</strong>
+One way to order incoming messages is to assign monotonically increasing numbers to messages on the server side. When the first message arrives, the system assigns it a number, such as 1. It then assigns the number 2 to the second message, and so on.</p>
+<p>However, there are potential drawbacks to this approach. First, when a burst of requests is received, it acts as a bottleneck that affects the system’s performance because the system has to assign an ID in a specified sequence to a message while the other messages wait for their turn.</p>
+<p>Second, it still doesn’t tackle the problem that arises when a message is received before the one that’s produced earlier at the client side. Because of this, it doesn’t guarantee that it will generate the correct order for the messages produced at the client side.</p>
+</li>
+<li>
+<p><strong>Causality-based sorting at the server side:</strong>  Keeping in view the drawbacks of using monotonically increasing numbers, another approach that can be used for time-stamping and ordering of incoming messages is causality-based sorting. In this approach, messages are sorted based on the time stamp that was produced at the client side and are put in a queue accordingly. The major drawback of this approach is that for multiple client sessions, the service can’t determine the order in terms of wall-clock time.</p>
+</li>
+</ol>
+
+<ol>
+<li>
+<p><strong>Using time stamps based on synchronized clocks:</strong> To tackle the potential issues that arise with both of the approaches described above, we can use another appropriate method to assign time stamps to messages that’s based on synchronized clocks. In this approach, the time stamp (ID) provided to each message through a synchronized clock is unique and in the correct sequence of production of messages. We can tag a unique process identifier with the time stamp to make the overall message identifier unique and tackle the situation when two concurrent sessions ask for a time stamp at the exact same time. Moreover, with this approach, the server can easily identify delayed messages based on the time stamp and wait for the delayed messages.</p>
+<p>As we discussed in the section on the <a href="https://www.google.com/collection/page/10370001/4941429335392256/6499939719053312">sequencer</a> building block, we can get sequence numbers that fulfill double duty as sequence numbers and globally synchronized wall clock time stamps. Using this approach, our service can globally order messages across client sessions as well.</p>
+</li>
+</ol>
+<p>To conclude, the most appropriate mechanism to provide a unique ID or time stamp to incoming messages, from among the three approaches described above, involves the use of synchronized clocks.</p>
+<h4>Sorting<a href="#Sorting"><span>#</span></a></h4>
+<p>Once messages are received at the server side, we need to sort them based on their time stamps. Therefore, we use an appropriate  <span><span>online sorting</span></span>  algorithm for this purpose.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Suppose that a message sent earlier arrives late due to a network delay. What would be the proper approach to handle such a situation?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Effect on performance<a href="#Effect-on-performance"><span>#</span></a></h2>
+<p>Primarily, a queue is designed for first-in, <strong>first-out (FIFO) operations</strong>;. First-in, first-out operations suggest that the first message that enters a queue is always handed out first. However, it isn’t easy to maintain this strict order in distributed systems. Since message A was produced before message B, it’s still uncertain that message A will be consumed before message B. Using monotonically increasing message identifiers or causality-bearing identifiers provide high throughput while putting messages in a queue. Though the need for the online sorting to provide a strict order takes some time before messages are ready for extraction. To minimize latency caused by the online sorting, we use a
+<strong><span><span>time-window</span></span></strong> approach.</p>
+<p>Similarly, for strict ordering at the receiving end, we need to serialize all the requests to give out messages one by one. If that’s not required, we have better throughput and lower latency at the receiving end.</p>
+<p>Due to the reasons mentioned above, many distributed messaging queue solutions either don’t guarantee a strict order or have limitations around throughput. As we saw previously, the queues have to perform many additional validations and coordination operations to maintain the order.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Managing concurrency<a href="#Managing-concurrency"><span>#</span></a></h3>
+<p>Concurrent queue access needs proper management. Concurrency can take place at the following stages:</p>
+<ul>
+<li>
+<p>When multiple messages arrive at the same time.</p>
+</li>
+<li>
+<p>When multiple consumers request concurrently for a message.</p>
+</li>
+</ul>
+<p>The first solution is to use the locking mechanism. When a process or thread requests a message, it should acquire a lock for placing or consuming messages from the queue. However, as was discussed earlier, this approach has several drawbacks. It’s neither scalable nor performant.</p>
+<p>Another solution is to serialize the requests using the system’s buffer at both ends of the queue so that incoming messages are placed in an order and consumer processes also receive messages in their arrival sequence. This is a more viable solution because it can help us avoid the occurrence of race conditions.</p>
+<p>Applications might use multiple queues with dedicated producers and consumers to keep the ordering cost per queue under check, although this comes at the cost of more complicated application logic.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-3-fig-2.svg" alt="Avoiding race conditions: Producers and consumers are serialized at both ends of the queue"></div></div></div><div><span>Avoiding race conditions: Producers and consumers are serialized at both ends of the queue</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In this lesson, we discussed some key considerations and challenges in the design process of a messaging queue and answered the following questions:</p>
+<ul>
+<li>Why is the order of messages important, and how do we enforce that order?</li>
+<li>How does ordering affect performance?
+How do we handle concurrency while accessing a queue?</li>
+</ul>
+<p>Now, we are ready to start designing a distributed messaging queue.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design of a Distributed Messaging Queue: Part 1</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of a Distributed Messaging Queue: Part 1</h1></div><div><div><div><p>Learn about the high-level design of a messaging queue and how to scale the metadata of queues.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Distributed-messaging-queue">Distributed messaging queue</a><ul><li><a href="#High-level-design">High-level design</a><ul><li><a href="#Load-balancer">Load balancer</a></li><li><a href="#Front-end-service">Front-end service</a></li><li><a href="#Metadata-service">Metadata service</a></li></ul></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>So far, we’ve discussed the requirements and design considerations of a distributed messaging queue. Now, let’s begin with learning about the high-level design of a distributed messaging queue.</p>
+<h2>Distributed messaging queue<a href="#Distributed-messaging-queue"><span>#</span></a></h2>
+<p>Unlike a single-server messaging queue, a distributed messaging queue resides on multiple servers. A distributed messaging queue has its own challenges. However, it resolves the drawbacks of a single-server messaging queue if designed properly.</p>
+<p>The following sections focus on the scalability, availability, and durability issues of designing a distributed messaging queue by introducing us to a more fault-tolerant architecture of a messaging queue.</p>
+<h3>High-level design<a href="#High-level-design"><span>#</span></a></h3>
+<p>Before diving deep into the design, let’s assume the following points to make the discussion more simple and easy to understand. In the upcoming material, we discuss how the following assumptions enable us to eliminate the problems in a single-server solution to the messaging queue.</p>
+<ol>
+<li>
+<p>Queue data is replicated using either a primary-secondary or quorum-like system inside a cluster (read through the <a href="https://www.google.com/collection/page/10370001/4941429335392256/5241733675220992">Data Replication</a> lesson for more details). Our service can use data partitioning if the queue gets too long to fit on a server. We can use a consistent hashing-like scheme for this purpose, or we may use a key-value store where the key might be the sequence numbers of the messages. In that case, each shard is appropriately replicated (refer to the <a href="https://www.google.com/collection/page/10370001/4941429335392256/6254160546103296">Partition</a> lesson for more details on this).</p>
+</li>
+<li>
+<p>We also assume that our system can auto-expand and auto-shrink the resources as per the need to optimally utilize resources.</p>
+</li>
+</ol>
+<p>The following figure demonstrates a high-level design of a distributed messaging queue that’s composed of several components.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-4-fig-1.svg" alt="High-level architecture of distributed messaging queue"></div></div></div><div><span>High-level architecture of distributed messaging queue</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The essential components of our design are described in detail below.</p>
+<h4>Load balancer<a href="#Load-balancer"><span>#</span></a></h4>
+<p>The load balancer layer receives requests from producers and consumers, which are forwarded to one of the front-end servers. This layer consists of numerous load balancers. Therefore, requests are accepted with minimal latency and offer high availability.</p>
+<h4>Front-end service<a href="#Front-end-service"><span>#</span></a></h4>
+<p>The front-end service comprises stateless machines distributed across data centers. The frontend provides the following services:</p>
+<ul>
+<li>
+<p><strong>Request validation:</strong> This ensures the validity of a request and checks if it contains all the necessary information.</p>
+</li>
+<li>
+<p><strong>Authentication and authorization:</strong> This service checks if the requester is a valid user and if these services are authorized for use to a requester.</p>
+</li>
+</ul>
+
+<ul>
+<li>
+<p><strong>Caching:</strong> In the front-end cache, metadata information is stored related to the frequently used queues. Along with this, user-related data is also cached here to reduce request time to authentication and authorization services.</p>
+</li>
+<li>
+<p><strong>Request dispatching:</strong>  The frondend is also responsible for calling two other services, the backend and the metadata store. Differentiating calls to both of these services is one of the responsibilities of the frontend.</p>
+</li>
+<li>
+<p><strong>Request deduplication:</strong> The frontend also tracks information related to all the requests, therefore, it also prevents <span><span><span>identical requests</span></span></span> from being put in a queue. Deciding what to do about duplicates might be as easy as searching a hash key in a store. If something is found in the store, this implies a duplicate and the message can be rejected.</p>
+</li>
+<li>
+<p><strong>Usage data collection:</strong> This refers to the collection of real-time data that can be used for audit purposes.</p>
+</li>
+</ul>
+<h4>Metadata service<a href="#Metadata-service"><span>#</span></a></h4>
+<p>This component is responsible for storing, retrieving, and updating the metadata of queues in the metadata <span><span>store</span></span>  and <span><span>cache</span></span>.  Whenever a queue is created or deleted, the metadata store and cache are updated accordingly. The metadata service acts as a middleware between the front-end servers and the data layer. Since the metadata of the queues is kept in the cache, the cache is checked first by the front-end servers for any relevant information related to the receipt of the request. If a cache miss occurs, the information is retrieved from the metadata store and the cache is updated accordingly.</p>
+<p>There are two different approaches to organizing the metadata cache clusters:</p>
+<ol>
+<li>If the metadata that needs to be stored is small and can reside on a single machine, then it’s replicated on each cluster server. Subsequently, the request can be served from any random server. In this approach, a load balancer can also be introduced between the front-end servers and metadata services.</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-4-fig-2.svg" alt="A load balancer is introduced between the front-end servers and metadata services"></div></div></div><div><span>A load balancer is introduced between the front-end servers and metadata services</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ol>
+<li>If the metadata that needs to be stored is too large, then one of the following modes can be followed:</li>
+</ol>
+<ul>
+<li>The first strategy is to use the sharding approach to divide data into different shards. <strong>Sharding</strong> can be performed based on some partition key or hashing techniques, as was discussed in the lesson on <a href="https://www.google.com/collection/page/10370001/4941429335392256/6254160546103296">database partitioning</a>. Each shard is stored on a different host in the cluster. Moreover, each shard is also replicated on different hosts to enhance availability. In this cluster-organization approach, the front-end server has a mapping table between shards and the hosts. Therefore, the front-end server is responsible for redirecting requests to the host where the data is stored.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-4-fig-3.svg" alt="Mapping table resides on the front-end servers"></div></div></div><div><span>Mapping table resides on the front-end servers</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>The second approach is similar to the first one. However, the mapping table in this approach is stored on each host instead of just on the front-end servers. Because of this, any random host can receive a request and forward it to the host where the data resides. This technique is suitable for read-intensive applications.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-4-fig-4.svg" alt="Mapping table resides on each metadata server"></div></div></div><div><span>Mapping table resides on each metadata server</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In our discussion on distributed messaging queues, we focused on the high-level design of this type of queue. Furthermore, we explored each component in the high-level design, including the following:</p>
+<ul>
+<li>Front-end servers and the services required of them for smooth operations.</li>
+<li>Load balancers.</li>
+<li>Metadata services.</li>
+<li>Metadata clusters and their organization.</li>
+</ul>
+<p>A vital part of the design is the organization of servers at the backend for queue creation, deletion, and other such operations. The next lesson focuses on the organization of back-end servers and the management of queues, along with other important operations related to message delivery and retrieval.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Design of a Distributed Messaging Queue: Part 2</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of a Distributed Messaging Queue: Part 2</h1></div><div><div><div><p>Learn about the detailed design of a messaging queue and its management at the back-end servers.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Back-end-service">Back-end service</a><ul><li><a href="#Primary-secondary-model">Primary-secondary model</a></li><li><a href="#A-cluster-of-independent-hosts">A cluster of independent hosts</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>In the previous lesson, we discussed the responsibilities of front-end servers and metadata services. In this lesson, we’ll focus on the main part of the design where the queues and messages are stored: the back-end service.</p>
+<h2>Back-end service<a href="#Back-end-service"><span>#</span></a></h2>
+<p>This is the core part of the architecture where major activities take place. When the frontend receives a message, it refers to the metadata service to determine the host where the message needs to be sent. The message is then forwarded to the host and is replicated on the relevant hosts to overcome a possible availability issue. The message replication in a cluster on different hosts can be performed using one of the following two models:</p>
+<ol>
+<li><em>Primary-secondary model</em></li>
+<li><em>A cluster of independent hosts</em></li>
+</ol>
+<p>Before delving into the details of these models, let’s discuss the two types of cluster managers responsible for queue management: <em>internal</em> and <em>external</em> cluster managers. The differences between these two cluster managers are shown in the following table.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div>Internal versus External Cluster Managers</div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Internal Cluster Manager</strong></p></div></div></td><td><div></div><div><div><p><strong>External Cluster Manager</strong></p></div></div></td></tr><tr><td><div></div><div><div><p>It manages the assignment of queues within a cluster.</p></div></div></td><td><div></div><div><div><p>It manages the assignment of queues across clusters.</p></div></div></td></tr><tr><td><div></div><div><div><p>It knows about each and every node within a cluster.</p></div></div></td><td><div></div><div><div><p>It knows about each cluster. However, it doesn’t have information on every host that’s present inside a cluster.</p></div></div></td></tr><tr><td><div></div><div><div><p>It listens to the heartbeat from each node.</p></div></div></td><td><div></div><div><div><p>It monitors the health of each independent cluster.</p></div></div></td></tr><tr><td><div></div><div><div><p>It manages host failure, instance addition, and removals from the cluster.</p></div></div></td><td><div></div><div><div><p>It manages and utilizes clusters.</p></div></div></td></tr><tr><td><div></div><div><div><p>It partitions a queue into several parts and each part gets a primary server.</p></div></div></td><td><div></div><div><div><p>It may split a queue across several clusters, so that messages for the same queue are equally distributed between several clusters.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Primary-secondary model<a href="#Primary-secondary-model"><span>#</span></a></h3>
+<p>In the <strong>primary-secondary model</strong>, each node is considered a <strong>primary host</strong> for a collection of queues. The responsibility of a primary host is to receive requests for a particular queue and be fully responsible for data replication. The request is received by the frontend, which in turn communicates with the metadata service to determine the primary host for the request.</p>
+<p>For example, suppose we have two queues with the identities 101 and 102 residing on four different hosts A, B, C, and D. In this example, instance B is the primary host of queue 101 and the secondary hosts where the queue 101 is replicated are A and C. As the frontend receives message requests, it identifies the primary server from the internal cluster manager through the metadata service. The message is retrieved from the primary instance, which is also responsible for deleting the original message upon usage and all of its replicas.</p>
+<p>As shown in the following illustration, the internal cluster manager is a component that’s responsible for mapping between the primary host, secondary hosts, and queues. Moreover, it also helps in the primary host selection. Therefore, it needs to be reliable, scalable, and performant.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-5-fig-1.svg" alt="Primary-secondary model of distributed queue: A request is received for a queue with ID 101, which is served accordingly"></div></div></div><div><span>Primary-secondary model of distributed queue: A request is received for a queue with ID 101, which is served accordingly</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>A cluster of independent hosts<a href="#A-cluster-of-independent-hosts"><span>#</span></a></h3>
+<p>In the approach involving a <strong>cluster of independent hosts</strong>, we have several clusters of multiple independent hosts that are distributed across data centers. As the frontend receives a message, it determines the corresponding cluster via the metadata service from the external cluster manager. The message is then forwarded to a random host in the cluster, which replicates the message in other hosts where the queue is stored.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>How does a random host within a cluster replicate data—that is, messages—in the queues on other hosts within the same cluster?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The same process is applied to receive message requests from the consumer. Similar to the first approach, the randomly selected host is responsible for message delivery and cleanup upon a successful processing of the message.</p>
+<p>Furthermore, another component called an external cluster manager is introduced, which is accountable for maintaining the mapping between queues and clusters, as shown in the following figure. The external cluster manager is also responsible for queue management and cluster assignment to a particular queue.</p>
+<p>The following figure illustrates the cluster of independent hosts. There are two clusters, A and B, which consist of several nodes. The external cluster manager has the mapping table between queues and their corresponding cluster. Whenever a frontend receives a request for a queue, it determines the corresponding cluster for the queue and forwards the request to the cluster where the queue resides. The nodes within that cluster are responsible for storing and sending messages accordingly.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/distributed-messaging-queue/lesson-5-fig-2.svg" alt="A cluster of independent hosts that consist of distributed queues"></div></div></div><div><span>A cluster of independent hosts that consist of distributed queues</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>What kind of anomalies can arise while replicating messages on other hosts?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We have completed the design of a distributed messaging queue and discussed the two models for organizing the back-end server. We also described the management process of queues and how messages are processed at the backend. Furthermore, we discussed how back-end servers are managed through different cluster managers.</p>
+<p>In the next lesson, we discuss how our system fulfills the functional and non-functional requirements that were described earlier in the chapter.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Evaluation of a Distributed Messaging Queue’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Evaluation of a Distributed Messaging Queue’s Design</h1></div><div><div><div><p>Evaluate the proposed system based on the functional and non-functional requirements of a distributed messaging queue.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li><li><a href="#Conclusion">Conclusion</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>We completed the process of designing a distributed messaging queue. Now, let’s analyze whether the design met the functional and non-functional requirements of a distributed messaging queue.</p>
+<h2>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h2>
+<ul>
+<li>
+<p><strong>Queue creation and deletion:</strong>
+When a request for a queue is received at the frontend, the queue is created with all the necessary details provided by the client after undergoing some essential checks. The corresponding cluster manager assigns servers to the newly created queue and updates the information in the metadata stores and caches through a metadata service.</p>
+<p>Similarly, the queue is deleted when the client doesn’t need it anymore. The responsible cluster manager deallocates the space occupied by the queue and, consequently, deletes the data from all the metadata stores and caches.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>How do we handle messages that can’t be processed—here meaning consumed—after maximum processing attempts by the consumer?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><strong>Send and receive messages:</strong>
+Producers can deliver messages to specific queues once they are created. At the backend, receiving messages are sorted based on time stamps to preserve their order and are placed in the queue. Similarly, a consumer can retrieve messages from a specified queue.</li>
+</ul>
+<p>When a message is received from a producer for a specific queue, the frontend identifies the primary host or cluster, depending on the replication model, where the queue resides. The request is then forwarded to the corresponding <span><span>entity</span></span> and put in the queue.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><strong>Message deletion:</strong> Primarily, two options are used to delete a message from a queue.</li>
+</ul>
+<ol>
+<li>
+<p>The first option is to not delete a message after it’s consumed. However, in this case, the consumer is responsible for keeping track of what’s consumed. For this, we need to maintain the order of messages in the queue and keep track of a message within a queue. A job can then delete the message when the expiration conditions are met. Apache Kafka mostly uses this idea where multiple processes can consume a message.</p>
+</li>
+<li>
+<p>The second approach also doesn’t delete a message after it’s consumed. However, it’s made invisible for some time via an attribute—for example, <code>visibility_timeout</code>. This way, the other consumers are unable to get messages that have already been consumed. The message is then deleted by the consumer via an API call.</p>
+</li>
+</ol>
+<p>In both cases, the message being retrieved by the consumer is only deleted by the consumer. The reason behind this is to provide high durability if a consumer can’t process a message due to some failure. In such a case, in the absence of a delete call, the consumer can retrieve the message again when it comes back.</p>
+<p>Moreover, this approach also provides <span><span>at-least-once delivery semantic</span></span>. For example, when a worker fails to process the message, another worker can retrieve the message after it becomes visible in the queue.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>What happens when the visibility timeout of a specific message expires and the consumer is still busy processing the message?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h2>
+<ul>
+<li>
+<p><strong>Durability:</strong> To achieve durability, the queues’ metadata is replicated on different nodes. Similarly, when a message is received, it’s replicated in the queues that reside on different nodes. Therefore, if a node fails, other nodes can be used to deliver or retrieve messages.</p>
+</li>
+<li>
+<p><strong>Scalability:</strong> Our design components, such as front-end servers, metadata servers, caches, back-end clusters, and more are horizontally scalable. We can add to or remove their capacity to match our needs. The scalability can be divided into two dimensions:</p>
+<ol>
+<li>
+<p><strong>Increase in the number of messages:</strong> When the number of messages touches a specific limit—say, 80%—the specified queue is expanded. Similarly, the queue is shrunk when the number of messages drops below a certain threshold.</p>
+</li>
+<li>
+<p><strong>Increase in the number of queues:</strong> With an increasing number of queues, the demand for more servers also increases, in which case the cluster manager is responsible for adding extra servers. We commission nodes so that there is performance isolation between different queues. An increased load on one queue shouldn’t impact other queues.</p>
+</li>
+</ol>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li>
+<p><strong>Availability:</strong> Our data components, metadata and actual messages, are properly replicated inside or outside the data center, and the load balancer routes traffic around failed nodes. Together, these mechanisms make sure that our system remains available for service under faults.</p>
+</li>
+<li>
+<p><strong>Performance:</strong> For better performance we use caches, data replication, and partitioning, which reduces the data reads and writes time. Moreover, the best effort ordering strategy for ordering messages is there to use to increase the throughput and lower the latency when it’s necessary. In the case of strict ordering, we also suggest time-window based sorting to potentially reduce the latency.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Conclusion<a href="#Conclusion"><span>#</span></a></h2>
+<p>We discussed many subtleties in designing a FIFO queue in a distributed setting. We saw that there is a trade-off between strict message production,  message extraction orders, and achievable throughput and latency. Relaxed ordering gives us a higher throughput and lower latency. Asking for strict ordering forces the system to do extra work to enforce wall-clock or causality-based ordering. We use different data stores with appropriate replication and partitioning to scale with data. This design exercise highlights that a construct, a producer-consumer queue, that’s simple to realize in a single-OS based system becomes much more difficult in a distributed setting.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Quiz on the Distributed Messaging Queue’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Quiz on the Distributed Messaging Queue’s Design</h1></div><div><div><div><p>Assess your understanding of concepts related to distributed messaging queues via a quiz.</p></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>1</div><div></div></div><div><div><span><span><p>What kind of messages do dead-letter queues contain?</p>
+</span></span></div></div></div><div><div><div><div></div></div><span><h6>A)</h6></span><div><div><span><span><p>The messages that have been consumed successfully.</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>B)</h6></span><div><div><span><span><p>The messages that failed to be consumed and have reached the maximum attempts limit.</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>C)</h6></span><div><div><span><span><p>The messages that have been produced by a process that’s dead now.</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>D)</h6></span><div><div><span><span><p>None of the above</p>
+</span></span></div></div></div></div></div><div><div></div><div><span>Question 1 of 5<span>0 attempted</span></span></div><div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

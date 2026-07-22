@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>36. Design WhatsApp — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html" aria-current="page">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>36. Design WhatsApp</h1><section class="lesson"><h2>System Design: WhatsApp</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: WhatsApp</h1></div><div><div><div><p>Learn to design a WhatsApp messenger.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#WhatsApp">WhatsApp</a></li><li><a href="#Design-problem">Design problem</a></li><li><a href="#How-will-we-design-WhatsApp?">How will we design WhatsApp?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>WhatsApp<a href="#WhatsApp"><span>#</span></a></h2>
+
+<p>In today’s technological world, WhatsApp is an important messaging application that connects billions of people around the globe. Many users start their day by reading or sending WhatsApp messages to their friends and family. According to July 2021 estimates, WhatsApp has two billion active users worldwide. Further, an average WhatsApp user spends approximately 19.4 hours per month on the application.</p>
+<p>In December 2020, the WhatsApp CEO tweeted that WhatsApp users share more than 100 billion messages per day, an increase of approximately 54% since 2018. The increase in messages sent globally per day is depicted in the following chart:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div></div></div><div><div></div></div></div><canvas></canvas></div></div><div><span>The increase in messages communicated per day each year</span></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Design problem<a href="#Design-problem"><span>#</span></a></h2>
+<p>As system designers, we should be aware of the growth rate of users. There are many interesting questions about WhatsApp:</p>
+<ul>
+<li>How is this application designed?</li>
+<li>How does it work?</li>
+<li>What are the different types of components involved in it?</li>
+<li>How does WhatsApp enable billions of users to communicate with each other?</li>
+<li>How does WhatsApp keep all that data secure?</li>
+</ul>
+<p>In this chapter, we’ll focus on the high-level and detailed design of the WhatsApp application to answer the above questions.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>How will we design WhatsApp?<a href="#How-will-we-design-WhatsApp?"><span>#</span></a></h2>
+<p>We’ve divided the design of WhatsApp messenger into the following five lessons:</p>
+<ol>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5023065490063360">Requirements</a></strong>: In this lesson, we’ll identify functional and non-functional requirements. We’ll also discuss resource estimations required for better and smooth operations of the proposed design of WhatsApp.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6728651831246848">High-level Design</a></strong>: We’ll focus on the high-level design of our WhatsApp version. We’ll also discuss essential APIs for our WhatsApp design.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6731604231192576">Detailed Design</a></strong>: In this lesson, we’ll describe the design of our WhatsApp messenger in detail. Initially, we’ll explain the design of each microservice, including connection with servers, send and receive messages and media content, and group messages. In the end, the design of each microservice is combined into the detailed design of WhatsApp.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4861549654573056">Evaluation</a></strong>: This lesson will explain how our version of WhatsApp fulfills non-functional requirements. We’ll also evaluate some trade-offs of our design.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4877609447456768">Quiz</a></strong>: Here, we’ll assess what we’ve learned in this chapter through a quiz.</li>
+</ol>
+<p>Let’s start by discussing the requirements of our version of WhatsApp.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Requirements of WhatsApp’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Requirements of WhatsApp’s Design</h1></div><div><div><div><p>Learn about the functional and non-functional requirements for a chat application like WhatsApp.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#Resource-estimation">Resource estimation</a><ul><li><a href="#Storage-estimation">Storage estimation</a></li><li><a href="#Bandwidth-estimation">Bandwidth estimation</a></li><li><a href="#Number-of-servers-estimation">Number of servers estimation</a></li><li><a href="#Try-it-out">Try it out</a></li></ul></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>Our design of the WhatsApp messenger should meet the following requirements.</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<ul>
+<li>
+<p><strong>Conversation</strong>: The system should support one-on-one and group conversations between users.</p>
+</li>
+<li>
+<p><strong>Acknowledgment</strong>: The system should support message delivery acknowledgment, such as sent, delivered, and read.</p>
+</li>
+<li>
+<p><strong>Sharing</strong>: The system should support sharing of media files, such as images, videos, and audio.</p>
+</li>
+<li>
+<p><strong>Chat storage</strong>: The system must support the persistent storage of chat messages when a user is offline until the successful delivery of messages.</p>
+</li>
+<li>
+<p><strong>Push notifications</strong>: The system should be able to notify offline users of new messages once their status becomes online.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<ul>
+<li>
+<p><strong>Low latency</strong>: Users should be able to receive messages with low latency.</p>
+</li>
+<li>
+<p><strong>Consistency</strong>: Messages should be delivered in the order they were sent. Moreover, users must see the same chat history on all of their devices.</p>
+</li>
+<li>
+<p><strong>Availability</strong>: The system should be highly available. However, the availability can be compromised in the interest of consistency.</p>
+</li>
+<li>
+<p><strong>Security</strong>: The system must be secure via end-to-end encryption. The end-to-end encryption ensures that only the two communicating parties can see the content of messages. Nobody in between, not even WhatsApp, should have access.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-2-fig-1.svg" alt="The non-functional requirements of the WhatsApp system"></div></div></div><div><span>The non-functional requirements of the WhatsApp system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Resource estimation<a href="#Resource-estimation"><span>#</span></a></h2>
+<p>WhatsApp is the most used messaging application across the globe. According to WhatsApp, it supports more than two billion users around the world who share more than 100 billion messages each day. We need to estimate the storage capacity, bandwidth, and number of servers to support such an enormous number of users and messages.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Storage estimation<a href="#Storage-estimation"><span>#</span></a></h3>
+<p>As there are more than 100 billion messages shared per day over WhatsApp, let’s estimate the storage capacity based on this figure. Assume that each message takes 100 Bytes on average. Moreover, the WhatsApp servers keep the messages only for 30 days. So, if the user doesn’t get connected to the server within these days, the messages will be permanently deleted from the server.</p>
+<p><span><span><math><semantics><mrow><mn>100</mn><mtext> </mtext><mi>b</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>/</mi><mi>d</mi><mi>a</mi><mi>y</mi><mo>∗</mo><mn>100</mn><mtext> </mtext><mi>B</mi><mi>y</mi><mi>t</mi><mi>e</mi><mi>s</mi><mo>=</mo><mn>10</mn><mtext> </mtext><mi>T</mi><mi>B</mi><mi>/</mi><mi>d</mi><mi>a</mi><mi>y</mi></mrow><annotation>100\ billion/ day * 100\ Bytes = 10\ TB/day</annotation></semantics></math></span><span><span><span></span><span>100</span><span> </span><span>bi</span><span>ll</span><span>i</span><span>o</span><span>n</span><span>/</span><span>d</span><span>a</span><span>y</span><span></span><span>∗</span><span></span></span><span><span></span><span>100</span><span> </span><span>B</span><span>y</span><span>t</span><span>es</span><span></span><span>=</span><span></span></span><span><span></span><span>10</span><span> </span><span>TB</span><span>/</span><span>d</span><span>a</span><span>y</span></span></span></span></p>
+<p>For 30 days, the storage capacity would become the following:</p>
+<p><span><span><math><semantics><mrow><mn>30</mn><mo>∗</mo><mn>10</mn><mtext> </mtext><mi>T</mi><mi>B</mi><mi>/</mi><mi>d</mi><mi>a</mi><mi>y</mi><mo>=</mo><mn>300</mn><mtext> </mtext><mi>T</mi><mi>B</mi><mi>/</mi><mi>m</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>h</mi></mrow><annotation>30*10\ TB/day= 300\ TB/ month</annotation></semantics></math></span><span><span><span></span><span>30</span><span></span><span>∗</span><span></span></span><span><span></span><span>10</span><span> </span><span>TB</span><span>/</span><span>d</span><span>a</span><span>y</span><span></span><span>=</span><span></span></span><span><span></span><span>300</span><span> </span><span>TB</span><span>/</span><span>m</span><span>o</span><span>n</span><span>t</span><span>h</span></span></span></span></p>
+<p>Besides chat messages, we also have media files, which take more than 100 Bytes per message. Moreover, we also have to store users’ information and messages’ metadata—for example, time stamp, ID, and so on. Along the way, we also need encryption and decryption for secure communication. Therefore, we would also need to store encryption keys and relevant metadata. So, to be precise, we need more than 300 TB per month, but for the sake of simplicity, let’s stick to the number 300 TB per month.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-2-fig-2.svg" alt="The total storage required by WhatsApp in a month"></div></div></div><div><span>The total storage required by WhatsApp in a month</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Bandwidth estimation<a href="#Bandwidth-estimation"><span>#</span></a></h3>
+<p>According to the storage capacity estimation, our service will get 10TB of data each day, giving us a bandwidth of 926 Mb/s.</p>
+<p><span><span><math><semantics><mrow><mn>10</mn><mtext> </mtext><mi>T</mi><mi>B</mi><mi>/</mi><mn>86400</mn><mi>s</mi><mi>e</mi><mi>c</mi><mo>≈</mo><mn>926</mn></mrow><annotation>10\ TB/86400 sec \approx 926</annotation></semantics></math></span><span><span><span></span><span>10</span><span> </span><span>TB</span><span>/86400</span><span>sec</span><span></span><span>≈</span><span></span></span><span><span></span><span>926</span></span></span></span> <span><span><math><semantics><mrow><mi>M</mi><mi>b</mi><mi>/</mi><mi>s</mi></mrow><annotation>Mb/s</annotation></semantics></math></span><span><span><span></span><span>M</span><span>b</span><span>/</span><span>s</span></span></span></span></p>
+<blockquote>
+<p><strong>Note:</strong> To keep our design simple, we’ve ignored the media content (images, videos, documents, and so on). So, the number 926 might seem low.</p>
+</blockquote>
+<p>We also require an equal amount of outgoing bandwidth as the same message from the sender would need to be delivered to the receiver.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-2-fig-3.svg" alt="The total bandwidth required by WhatsApp"></div></div></div><div><span>The total bandwidth required by WhatsApp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div>High-level Estimates</div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Type</strong></p></div></div></td><td><div></div><div><div><p><strong>Estimates</strong></p></div></div></td></tr><tr><td><div></div><div><div><p>Total messages per day</p></div></div></td><td><div></div><div><div><p>100 billion</p></div></div></td></tr><tr><td><div></div><div><div><p>Storage required per day</p></div></div></td><td><div></div><div><div><p>10 TB</p></div></div></td></tr><tr><td><div></div><div><div><p>Storage for 30 days</p></div></div></td><td><div></div><div><div><p>300 TB</p></div></div></td></tr><tr><td><div></div><div><div><p>Incoming data per second</p></div></div></td><td><div></div><div><div><p>926 Mb/s</p></div></div></td></tr><tr><td><div></div><div><div><p>Outgoing data per second</p></div></div></td><td><div></div><div><div><p>926 Mb/s</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Number of servers estimation<a href="#Number-of-servers-estimation"><span>#</span></a></h3>
+<p>WhatsApp handles around 10 million connections on a single server, which seems quite high for a server. However, it’s possible by extensive <span><span>performance engineering</span></span>. We’ll need to know all the in-depth details of a system, such as a server’s kernel, networking library, infrastructure configuration, and so on.</p>
+<blockquote>
+<p><strong>Note:</strong> We can often optimize a general-purpose server for special tasks by careful performance engineering of the full software stack.</p>
+</blockquote>
+
+<p>Let’s move to the estimation of the number of servers:</p>
+<p><span><span><math><semantics><mrow><mi>N</mi><mi>o</mi><mi>.</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mo>=</mo><mi>T</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi><mtext> </mtext><mi>c</mi><mi>o</mi><mi>n</mi><mi>n</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mtext> </mtext><mi>p</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>d</mi><mi>a</mi><mi>y</mi><mi>/</mi><mi>N</mi><mi>o</mi><mi>.</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>c</mi><mi>o</mi><mi>n</mi><mi>n</mi><mi>e</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>s</mi><mtext> </mtext><mi>p</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi><mo>=</mo><mn>2</mn><mtext> </mtext><mi>b</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mi>/</mi><mn>10</mn><mtext> </mtext><mi>m</mi><mi>i</mi><mi>l</mi><mi>l</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>=</mo><mn>200</mn><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow><annotation>No.\ of\ servers = Total\ connections\ per\ day/No.\ of\ connections\ per\ server = 2\ billion/10\ million = 200\ servers</annotation></semantics></math></span><span><span><span></span><span>N</span><span>o</span><span>.</span><span> </span><span>o</span><span>f</span><span> </span><span>ser</span><span>v</span><span>ers</span><span></span><span>=</span><span></span></span><span><span></span><span>T</span><span>o</span><span>t</span><span>a</span><span>l</span><span> </span><span>co</span><span>nn</span><span>ec</span><span>t</span><span>i</span><span>o</span><span>n</span><span>s</span><span> </span><span>p</span><span>er</span><span> </span><span>d</span><span>a</span><span>y</span><span>/</span><span>N</span><span>o</span><span>.</span><span> </span><span>o</span><span>f</span><span> </span><span>co</span><span>nn</span><span>ec</span><span>t</span><span>i</span><span>o</span><span>n</span><span>s</span><span> </span><span>p</span><span>er</span><span> </span><span>ser</span><span>v</span><span>er</span><span></span><span>=</span><span></span></span><span><span></span><span>2</span><span> </span><span>bi</span><span>ll</span><span>i</span><span>o</span><span>n</span><span>/10</span><span> </span><span>mi</span><span>ll</span><span>i</span><span>o</span><span>n</span><span></span><span>=</span><span></span></span><span><span></span><span>200</span><span> </span><span>ser</span><span>v</span><span>ers</span></span></span></span></p>
+<p>So, according to the above estimates, we require 200 chat servers.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-2-fig-4.svg" alt="Number of chat servers required for WhatsApp"></div></div></div><div><span>Number of chat servers required for WhatsApp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Try it out<a href="#Try-it-out"><span>#</span></a></h3>
+<p>Let’s analyze how the number of messages per day affects the storage and bandwidth requirements. For this purpose, we can change values in the following table to compute the estimates:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4></h4><span><table><tbody><tr><td><span>Number of users per day (in billions)</span></td><td><span>2</span></td></tr><tr><td><span>Number of messages per day (in billions)</span></td><td><span>100</span></td></tr><tr><td><span>Size of each message (in bytes)</span></td><td><span>100</span></td></tr><tr><td><span>Number of connections a server can handle (in millions)</span></td><td><span>10</span></td></tr><tr><td><span>Storage estimation per day (in TB)</span></td><td><span>f</span><span>10</span></td></tr><tr><td><span>Incoming and Outgoing bandwidth (Mb/s)</span></td><td><span>f</span><span>926.4</span></td></tr><tr><td><span>Number of chat servers required</span></td><td><span>f</span><span>200</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>The design of WhatsApp utilizes the following building blocks that have also been discussed in the initial chapters:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-2-fig-5.svg" alt="The building blocks required to design WhatsApp"></div></div></div><div><span>The building blocks required to design WhatsApp</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872">Databases</a></strong> are required to store users’ and groups’ metadata.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4862646238576640">Blob storage</a></strong> is used to store multimedia content shared in messages.</li>
+<li>A <strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6624266925899776">CDN</a></strong> is used to effectively deliver multimedia content that’s frequently shared.</li>
+<li>A <strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/4521972679049216">load balancer</a></strong> distributes incoming requests among the pool of available servers.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5053577315221504">Caches</a></strong> are required to keep frequently accessed data used by various services.</li>
+<li>A <strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5148400467312640">messaging queue</a></strong> is used to temporarily keep messages in a queue on a database when a user is offline.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In the next lesson, we’ll focus on the high-level design of the WhatsApp messenger.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>High-level Design of WhatsApp</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>High-level Design of WhatsApp</h1></div><div><div><div><p>Get introduced to the high-level design of the WhatsApp system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#High-level-design">High-level design</a></li><li><a href="#API-design">API design</a><ul><li><a href="#Send-message">Send message</a></li><li><a href="#Get-message">Get message</a></li><li><a href="#Upload-media-or-document-file">Upload media or document file</a></li><li><a href="#Download-a-document-or-media-file">Download a document or media file</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>High-level design<a href="#High-level-design"><span>#</span></a></h2>
+<p>At an abstract level, the high-level design consists of a chat server responsible for communication between the sender and the receiver. When a user wants to send a message to another user, both connect to the chat server. Both users send their messages to the chat server. The chat server then sends the message to the other intended user and also stores the message in the database.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-3-fig-1.svg" alt="The high-level design of WhatsApp messenger"></div></div></div><div><span>The high-level design of WhatsApp messenger</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The following steps describe the communication between both clients:</p>
+<ol>
+<li>User A and user B create a communication channel with the chat server.</li>
+<li>User A sends a message to the chat server.</li>
+<li>Upon receiving the message, the chat server acknowledges back to user A.</li>
+<li>The chat server sends the message to user B and stores the message in the database if the receiver’s status is offline.</li>
+<li>User B sends an acknowledgment to the chat server.</li>
+<li>The chat server notifies user A that the message has been successfully delivered.</li>
+<li>When user B reads the message, the application notifies the chat server.</li>
+<li>The chat server notifies user A that user B has read the message.</li>
+</ol>
+<p>The process is shown in the following illustrations:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>User A and user B create connections with the chat server</span></div></div><div><span><strong>1</strong> of 8</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>User A sends a message to the chat server</span></div></div><div><span><strong>1</strong> of 8</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Upon receiving the message, the chat server acknowledges back to user A</span></div></div><div><span><strong>1</strong> of 8</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The chat server sends the message to user B and stores the message in the database</span></div></div><div><span><strong>1</strong> of 8</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>User B sends an acknowledgment to the chat server</span></div></div><div><span><strong>1</strong> of 8</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>API design<a href="#API-design"><span>#</span></a></h2>
+<p>WhatsApp provides a vast amount of features to its users via different APIs. Some features are mentioned below:</p>
+<ul>
+<li>Send message</li>
+<li>Get message or receive message</li>
+<li>Upload a media file or document</li>
+<li>Download document or media file</li>
+<li>Send a location</li>
+<li>Send a contact</li>
+<li>Create a status</li>
+</ul>
+<p>However, we’ll discuss essential APIs related to the first four features.</p>
+<h3>Send message<a href="#Send-message"><span>#</span></a></h3>
+<p>The <code>sendMessage</code> API is as follows:</p>
+<pre><code><span><span>sendMessage</span><span>(</span><span>sender_ID</span><span>,</span><span> reciever_ID</span><span>,</span><span> type</span><span>,</span><span> text</span><span>=</span><span>none</span><span>,</span><span> media_object</span><span>=</span><span>none</span><span>,</span><span> document</span><span>=</span><span>none</span><span>)</span></span><br></code></pre>
+<p>This API is used to send a <code>text</code> message from a sender to a receiver by making a POST API call to the <code>/messages</code> API endpoint. Generally, the sender’s and receiver’s IDs are their phone numbers. The parameters used in this API call are described in the following table:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>sender_ID</code></p></div></div></td><td><div></div><div><div><p>This is a unique identifier of the user who sends the message.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>reciever_ID</code></p></div></div></td><td><div></div><div><div><p>This is a unique identifier of the user who receives the message.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>type</code></p></div></div></td><td><div></div><div><div><p>The default message <code>type</code> is text. This represents whether the sender sends a media file or a document.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>text</code></p></div></div></td><td><div></div><div><div><p>This feild contains the text that has to be sent as a message.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>media_object</code></p></div></div></td><td><div></div><div><div><p>This parameter is defined based on the type parameter. It represents the media file to be sent.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>document</code></p></div></div></td><td><div></div><div><div><p>This represents the document file to be sent.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Get message<a href="#Get-message"><span>#</span></a></h3>
+<p>The <code>getMessage</code> API is as follows:</p>
+<pre><code><span><span>getMessage</span><span>(</span><span>user_Id</span><span>)</span></span><br></code></pre>
+<p>Using this API call, users can fetch all unread messages when they come online after being offline for some time.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>user_Id</code></p></div></div></td><td><div></div><div><div><p>This is a unique identifier representing the user who has to fetch all unread messages.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Upload media or document file<a href="#Upload-media-or-document-file"><span>#</span></a></h3>
+<p>The <code>uploadFile</code> API is as follows:</p>
+<pre><code><span><span>uploadFile</span><span>(</span><span>file_type</span><span>,</span><span> file</span><span>)</span></span><br></code></pre>
+<p>We can upload media files via the <code>uploadFile</code> API by making a POST request to the <code>/v1/media</code> API endpoint. A successful response returns an ID that’s forwarded to the receiver. The maximum file size for media that can be uploaded is 16 MB, while the limit is 100 MB for a document.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>file_type</code></p></div></div></td><td><div></div><div><div><p>This represents the type of file uploaded via the API call.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>file</code></p></div></div></td><td><div></div><div><div><p>This contains the file being uploaded via the API call. </p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Download a document or media file<a href="#Download-a-document-or-media-file"><span>#</span></a></h3>
+<p>The <code>downloadFile</code> API is as follows:</p>
+<pre><code><span><span>downloadFile</span><span>(</span><span>user_id</span><span>,</span><span> file</span><span>,</span><span> file_id</span><span>)</span></span><br></code></pre>
+<p>The parameters of this API call are explained in the following table:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Parameter</strong></p></div></div></td><td><div></div><div><div><p><strong>Description</strong></p></div></div></td></tr><tr><td><div></div><div><div><p><code>user_id</code></p></div></div></td><td><div></div><div><div><p>This is a unique identifier of the user who will download a file.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>file</code></p></div></div></td><td><div></div><div><div><p>This contains the file to be downloaded.</p></div></div></td></tr><tr><td><div></div><div><div><p><code>file_id</code></p></div></div></td><td><div></div><div><div><p>This is a unique identifier of a file. It’s generated while uploading a file via <code>uploadFIle()</code> API call. The <code>downloadFile()</code> API call downloads the media file through this identifier.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In the next lesson, we’ll focus on the detailed design of the WhatsApp system.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Detailed Design of WhatsApp</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Detailed Design of WhatsApp</h1></div><div><div><div><p>Learn about the design of the WhatsApp system in detail, and understand the interaction of various microservices.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Detailed-design">Detailed design</a><ul><li><a href="#Connection-with-a-WebSocket-server">Connection with a WebSocket server</a></li><li><a href="#Send-or-receive-messages">Send or receive messages</a></li><li><a href="#Send-or-receive-media-files">Send or receive media files</a></li><li><a href="#Support-for-group-messages">Support for group messages</a></li></ul></li><li><a href="#Put-everything-together">Put everything together</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Detailed design<a href="#Detailed-design"><span>#</span></a></h2>
+<p>The high-level design discussed in the previous lesson doesn’t answer the following questions:</p>
+<ul>
+<li>
+<p>How is a communication channel created between clients and servers?</p>
+</li>
+<li>
+<p>How can the high-level design be scaled to support billions of users?</p>
+</li>
+<li>
+<p>How is the user’s data stored?</p>
+</li>
+<li>
+<p>How is the receiver identified to whom the message is delivered?</p>
+</li>
+</ul>
+<p>To answer all these questions, let’s dive deep into the high-level design and explore each component in detail. Let’s start with how users make connections with the chat servers.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Connection with a WebSocket server<a href="#Connection-with-a-WebSocket-server"><span>#</span></a></h3>
+<p>In WhatsApp, each active device is connected with a <strong>WebSocket server</strong> via WebSocket protocol. A WebSocket server keeps the connection open with all the active (online) users. Since one server isn’t enough to handle billions of devices, there should be enough servers to handle billions of users. The responsibility of each of these servers is to provide a port to every online user. The mapping between servers, ports, and users is stored in the WebSocket manager that resides on top of a cluster of the data store. In this case, that’s Redis.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-4-fig-1.svg" alt="Two users are connected via WebSocket handlers"></div></div></div><div><span>Two users are connected via WebSocket handlers</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>Why is WebSocket preferred over HTTP(S) protocol for client-server communication?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Send or receive messages<a href="#Send-or-receive-messages"><span>#</span></a></h3>
+<p>The WebSocket manager is responsible for maintaining a mapping between an active user and a port assigned to the user. Whenever a user is connected to another WebSocket server, this information will be updated in the data store.</p>
+<p>A WebSocket server also communicates with another service called message service. <strong>Message service</strong> is a repository of messages on top of the
+<span><span><span>Mnesia database cluster</span></span></span>. The message service exposes APIs to receive messages by various filters, such as user ID, message ID, and so on.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-4-fig-2.svg" alt="WebSocket communicates with message service on top of Mnesia database cluster"></div></div></div><div><span>WebSocket communicates with message service on top of Mnesia database cluster</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Now, let’s assume that user A wants to send a message to user B. As shown in the above figure, both users are connected to different WebSocket servers. The system performs the following steps to send messages from user A to user B:</p>
+<ol>
+<li>
+<p>User A communicates with the corresponding WebSocket server to which it is connected.</p>
+</li>
+<li>
+<p>The WebSocket server associated with user A identifies the WebSocket to which user B is connected via the WebSocket manager. If user B is online, the WebSocket manager responds back to user A’s WebSocket server that user B is connected with its WebSocket server.</p>
+</li>
+<li>
+<p>Simultaneously, the WebSocket server sends the message to the message service and is stored in the Mnesia database where it gets processed in the first-in-first-out order. As soon as these messages are delivered to the receiver, they are deleted from the database.</p>
+</li>
+<li>
+<p>Now, user A’s WebSocket server has the information that user B is connected with its own WebSocket server. The communication between user A and user B gets started via their WebSocket servers.</p>
+</li>
+<li>
+<p>If user B is offline, messages are kept in the Mnesia database. Whenever they become online, all the messages intended for user B are delivered via push notification. Otherwise, these messages are deleted permanently after 30 days.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Both users (sender and receiver) communicate with the WebSocket manager to find each other’s WebSocket server. Consider a case where there can be a continuous conversation between both users. This way, many calls are made to the WebSocket manager. To minimize the latency and reduce the number of these calls to the WebSocket manager, each WebSocket server caches the following information:</p>
+<ul>
+<li>
+<p>If both users are connected to the same server, the call to the WebSocket manager is avoided.</p>
+</li>
+<li>
+<p>It caches information of recent conversations about which user is connected to which WebSocket server.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>The data in the cache will become outdated if a user gets disconnected and connects with another server. Keeping this in mind, how long should a WebSocket server cache information?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Send or receive media files<a href="#Send-or-receive-media-files"><span>#</span></a></h3>
+<p>So far, we’ve discussed the communication of text messages. But what happens when a user sends media files? Usually, the WebSocket servers are lightweight and don’t support heavy logic such as handling the sending and receiving of media files. We have another service called the <strong>asset service</strong>, which is responsible for sending and receiving media files.</p>
+<p>Moreover, the sending of media files consists of the following steps:</p>
+<ol>
+<li>
+<p>The media file is compressed and encrypted on the device side.</p>
+</li>
+<li>
+<p>The compressed and encrypted file is sent to the asset service to store the file on blob storage. The asset service assigns an ID that’s communicated with the sender. The asset service also maintains a hash for each file to avoid duplication of content on the blob storage. For example, if a user wants to upload an image that’s already there in the blob storage, the image won’t be uploaded. Instead, the same ID is forwarded to the receiver.</p>
+</li>
+<li>
+<p>The asset service sends the ID of media files to the receiver via the message service. The receiver downloads the media file from the blob storage using the ID.</p>
+</li>
+<li>
+<p>The content is loaded onto a CDN if the asset service receives a large number of requests for some particular content.</p>
+</li>
+</ol>
+<p>The following figure demonstrates the components involved in sharing media files over WhatsApp messenger:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-4-fig-3.svg" alt="Sending media files via the asset service"></div></div></div><div><span>Sending media files via the asset service</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Support for group messages<a href="#Support-for-group-messages"><span>#</span></a></h3>
+<p>WebSocket servers don’t keep track of groups because they only track active users. However, some users could be online and others could be offline in a group. For group messages, the following three main components are responsible for delivering messages to each user in a group:</p>
+<ul>
+<li>Group message handler</li>
+<li>Group message service</li>
+<li>Kafka</li>
+</ul>
+<p>Let’s assume that user A wants to send a message to a group with some unique ID—for example, <code>Group/A</code>. The following steps explain the flow of a message sent to a group:</p>
+<ol>
+<li>
+<p>Since user A is connected to a WebSocket server, it sends a message to the message service intended for <code>Group/A</code>.</p>
+</li>
+<li>
+<p>The message service sends the message to Kafka with other specific information about the group. The message is saved there for further processing. In Kafka terminology, a group can be a topic, and the senders and receivers can be producers and consumers, respectively.</p>
+</li>
+<li>
+<p>Now, here comes the responsibility of the group service. The <strong>group service</strong> keeps all information about users in each group in the system. It has all the information about each group, including user IDs, group ID, status, group icon, number of users, and so on. This service resides on top of the MySQL database cluster, with multiple secondary replicas distributed geographically. A Redis cache server also exists to cache data from the MySQL servers. Both geographically distributed replicas and Redis cache aid in reducing latency.</p>
+</li>
+<li>
+<p>The group message handler communicates with the group service to retrieve data of  <code>Group/A</code> users.</p>
+</li>
+<li>
+<p>In the last step, the group message handler follows the same process as a WebSocket server and delivers the message to each user.</p>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-4-fig-4.svg" alt="Components responsible for sending group messages"></div></div></div><div><span>Components responsible for sending group messages</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Put everything together<a href="#Put-everything-together"><span>#</span></a></h2>
+<p>We discussed the features of our WhatsApp system design. It includes user connection with a server, sending messages and media files, group messages, and end-to-end encryption, individually. The final design of our WhatsApp messenger is as follows:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-4-fig-5.svg" alt="The detailed WhatsApp design. Interaction of each component with other components is shown with arrows"></div></div></div><div><span>The detailed WhatsApp design. Interaction of each component with other components is shown with arrows</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>In the next lesson, we’ll evaluate our design and look into the non-functional requirements.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Evaluation of WhatsApp’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Evaluation of WhatsApp’s Design</h1></div><div><div><div><p>Evaluate the WhatsApp design and the associated non-functional requirements.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Fulfill-the-requirements">Fulfill the requirements</a></li><li><a href="#Trade-offs">Trade-offs</a><ul><li><a href="#The-trade-off-between-consistency-and-availability">The trade-off between consistency and availability</a></li><li><a href="#The-trade-off-between-latency-and-security">The trade-off between latency and security</a></li></ul></li><li><a href="#Summary">Summary</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Fulfill the requirements<a href="#Fulfill-the-requirements"><span>#</span></a></h2>
+<p>Our non-functional requirements for the proposed WhatsApp design are low latency, consistency, availability, and security. Let’s discuss how we have achieved these requirements in our system:</p>
+<ul>
+<li>
+<p><strong>Low latency</strong>: We can minimize the latency of the system at various levels:</p>
+<ul>
+<li>
+<p>We can do this through geographically distributed WebSocket servers and the cache associated with them.</p>
+</li>
+<li>
+<p>We can use Redis cache clusters on top of MySQL database clusters.</p>
+</li>
+<li>
+<p>We can use CDNs for frequently sharing documents and media content.</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Consistency</strong>: The system also provides high consistency in messages with the help of a FIFO messaging queue with strict ordering. However, the ordering of messages would require the <a href="https://www.google.com/collection/page/10370001/4941429335392256/6499939719053312">Sequencer</a> to provide ID with appropriate causality inference mechanisms to each message. For offline users, the Mnesia database stores messages in a queue. The messages are sent later in a sequence after the user goes online.</p>
+</li>
+<li>
+<p><strong>Availability</strong>: The system can be made highly available if we have enough WebSocket servers and replicate data across multiple servers. When a user gets disconnected due to some fault in the WebSocket server, the session is re-created via a load balancer with a different server. Moreover, the messages are stored on the Mnesia cluster following the primary-secondary replication model, which provides high availability and durability.</p>
+</li>
+<li>
+<p><strong>Security</strong>: The system also provides an end-to-end encryption mechanism that secures the chat between users.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>In the event of a network partition, what should the system choose to compromise between consistency and availability?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div>Approaches to Achieve the Non-functional Requirements</div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Non-functional Requirements</strong></p></div></div></td><td><div></div><div><div><p><strong>Approaches</strong></p></div></div></td></tr><tr><td><div></div><div><div><p>Minimizing latency</p></div></div></td><td><div></div><div><div><ul><li>Geographically distributed cache management systems and servers</li><li>CDNs</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Consistency</p></div></div></td><td><div></div><div><div><ul><li>Provide unique IDs to messages using Sequencer or other mechanisms</li><li>Use FIFO messaging queue with strict ordering</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Availability</p></div></div></td><td><div></div><div><div><ul><li>Provide multiple WebSocket servers and managers to establish connections between users</li><li>Replication of messages and data associated with users and groups on different servers</li><li>Follow disaster recovery protocols</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Security</p></div></div></td><td><div></div><div><div><ul><li>Via end-to-end encryption</li></ul></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Trade-offs<a href="#Trade-offs"><span>#</span></a></h2>
+<p>We’ve seen that our proposed WhatsApp system fulfills the functional and non-functional requirements. However, two major trade-offs exist in the proposed WhatsApp design:</p>
+<ul>
+<li>There’s a trade-off between consistency and availability.</li>
+<li>There’s a trade-off between latency and security.</li>
+</ul>
+<h3>The trade-off between consistency and availability<a href="#The-trade-off-between-consistency-and-availability"><span>#</span></a></h3>
+<p>According to the CAP theorem, in the event of a network failure or partition, the system can provide either consistency or availability. So, in the case of our WhatsApp design, we have to choose either consistency or availability. In WhatsApp, the order of messages sent or received by a user is essential. Therefore, we should prioritize consistency rather than availability.</p>
+<h3>The trade-off between latency and security<a href="#The-trade-off-between-latency-and-security"><span>#</span></a></h3>
+<p>Low latency is an essential factor in system design that provides a real-time experience to users. However, on the other side, sharing information or data over WhatsApp might be insecure without encryption. The absence of a proper security mechanism makes the data vulnerable to unauthorized access. So, we can accept a trade-off prioritizing the secure transmission of messages over low latency.</p>
+<p>We might wonder where the trade-off is. Often, communication involves multimedia. Encrypting them in near real-time on the sender device and decrypting on the receiver side can be taxing for the devices, causing latency. The process is illustrated in the following figure:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-whatsapp/lesson-5-fig-1.svg" alt="End-to-end encryption causes a delay in processing, which has an impact on latency"></div></div></div><div><span>End-to-end encryption causes a delay in processing, which has an impact on latency</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Summary<a href="#Summary"><span>#</span></a></h2>
+<p>In this chapter, we designed a WhatsApp messenger. First, we identified the functional and non-functional requirements along with the resources estimation crucial for the design. Second, we focused on the high-level and detailed design of the WhatsApp system, where we described various components responsible for different services. Finally, we evaluated the non-functional requirements and highlighted some trade-offs in the design.</p>
+<p>This design problem highlighted that we can optimize general-purpose computational resources for specific use cases. WhatsApp optimized its software stack to handle a substantially large number of connections on the commodity servers.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Quiz on WhatsApp’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Quiz on WhatsApp’s Design</h1></div><div><div><div><p>Test your understanding of the concepts related to our WhatsApp design via a quiz.</p></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>1</div><div></div></div><div><div><span><span><p>The WebSocket manager is responsible for which function?</p>
+</span></span></div></div></div><div><div><div><div></div></div><span><h6>A)</h6></span><div><div><span><span><p>Routing data toward a user</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>B)</h6></span><div><div><span><span><p>Maintaining the mapping between users and their WebSocket handlers</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>C)</h6></span><div><div><span><span><p>Reconnecting users to blob storage</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>D)</h6></span><div><div><span><span><p>None of the above</p>
+</span></span></div></div></div></div></div><div><div></div><div><span>Question 1 of 5<span>0 attempted</span></span></div><div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

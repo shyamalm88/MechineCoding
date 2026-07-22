@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>30. Design Uber — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html" aria-current="page">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>30. Design Uber</h1><section class="lesson"><h2>System Design: Uber</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>System Design: Uber</h1></div><div><div><div><p>Learn about the basics of designing an Uber service.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#What-is-Uber?">What is Uber?</a></li><li><a href="#How-will-we-design-Uber?">How will we design Uber?</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>What is Uber?<a href="#What-is-Uber?"><span>#</span></a></h2>
+<p><strong>Uber</strong> is an application that provides ride-hailing services to its users. Anyone who needs a ride can register and book a vehicle to travel from source to destination. Anyone who has a vehicle can register as a driver and take riders to their destination. Drivers and riders can communicate through the Uber app on their smartphones.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>Car en route to get a rider</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Car en route to get a rider</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Car en route to get a rider</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Car en route to get a rider</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>Car en route to get a rider</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The illustration below shows the number of active users of Uber from the start of 2017 to 2020 (source: Statista):</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div></div></div><div><div></div></div></div><canvas></canvas></div></div><div><span>Monthly number of Uber&#x27;s active users worldwide from 2017 to 2020(by quarter)</span></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>How will we design Uber?<a href="#How-will-we-design-Uber?"><span>#</span></a></h2>
+<p>There are many unanswered questions regarding Uber. How does it work? How do drivers connect with riders? These are only two of many. This chapter will design a system like Uber and find the answer to such questions.</p>
+<p>We’ve divided the design of Uber into six sections:</p>
+<ol>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6376322179268608">Requirements:</a></strong> This lesson will describe the functional and non-functional requirements of a system like Uber. We’ll also estimate the requirements of multiple aspects of Uber, such as storage, bandwidth, and the computation resources.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5429357153091584">High-level Design:</a></strong> We’ll discuss the high-level design of Uber in this lesson. In addition, we’ll also briefly explain the API design of the Uber service.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6683135341494272">Detailed Design:</a></strong> We’ll explore the detailed design of Uber in this lesson. Moreover, we will also discuss the working of different components used in designing Uber.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6353616188735488">Payment Service and Fraud Detection:</a></strong> We’ll learn how the payment system works in Uber design. Moreover, we’ll also discuss how we can catch different frauds related to payments in Uber-like systems.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/5469445371199488">Evaluation:</a></strong> This lesson will explain how Uber can fulfill all the non-functional requirements through the proposed design.</li>
+<li><strong><a href="https://www.google.com/collection/page/10370001/4941429335392256/6590232799739904">Quiz:</a></strong> We’ll reinforce major concepts of Uber design via a quiz.</li>
+</ol>
+<p>Let’s go over the requirements for designing a system like Uber in the next lesson.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Requirements of Uber’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Requirements of Uber’s Design</h1></div><div><div><div><p>Learn about the requirements to design an Uber service.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a><ul><li><a href="#Functional-requirements">Functional requirements</a></li><li><a href="#Non-functional-requirements">Non-functional requirements</a></li></ul></li><li><a href="#Resource-estimation">Resource estimation</a><ul><li><a href="#Storage-estimation">Storage estimation</a><ul><li><a href="#Rider%E2%80%99s-metadata">Rider’s metadata</a></li><li><a href="#Driver%E2%80%99s-metadata">Driver’s metadata</a></li><li><a href="#Driver-location-metadata">Driver location metadata</a></li><li><a href="#Trip-metadata">Trip metadata</a></li></ul></li><li><a href="#Bandwidth-estimation">Bandwidth estimation</a></li><li><a href="#Number-of-servers-estimation">Number of servers estimation</a></li></ul></li><li><a href="#Building-blocks-we-will-use">Building blocks we will use</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>Let’s start with the requirements for designing a system like Uber.</p>
+<h3>Functional requirements<a href="#Functional-requirements"><span>#</span></a></h3>
+<p>The functional requirements of our system are as follows:</p>
+<ul>
+<li>
+<p><strong>Update driver location</strong>: The driver is a moving entity, so the driver’s location should be automatically updated at regular intervals.</p>
+</li>
+<li>
+<p><strong>Find nearby drivers</strong>: The system should find and show the nearby available drivers to the rider.</p>
+</li>
+<li>
+<p><strong>Request a ride</strong>:  A rider should be able to request a ride, after which the nearest driver should be notified about the rider’s requests.</p>
+</li>
+<li>
+<p><strong>Manage payments:</strong> At the start of the trip, the system must initiate the payment process and manage the payments.</p>
+</li>
+<li>
+<p><strong>Show driver estimated time of arrival (ETA):</strong> The rider should be able to see the estimated time of arrival of the driver.</p>
+</li>
+<li>
+<p><strong>Confirm pickup:</strong> Drivers should be able to confirm that they have picked up the rider.</p>
+</li>
+<li>
+<p><strong>Show trip updates</strong>: Once a driver and a rider accept a ride, they should be able to constantly see trip updates like ETA and current location until the trip finishes.</p>
+</li>
+<li>
+<p><strong>End the trip:</strong> The driver marks the journey complete upon reaching the destination, and they then become available for the next ride.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>What if two drivers are at the same distance from the rider? How will we select the driver to whom we’ll send the request?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Non-functional requirements<a href="#Non-functional-requirements"><span>#</span></a></h3>
+<p>The non-functional requirements of our system are as follows:</p>
+<ul>
+<li>
+<p><strong>Availability:</strong> The system should be highly available. The downtime of even a fraction of a second can result in a trip failure, in the driver being unable to locate the rider, or in the rider being unable to contact the driver.</p>
+</li>
+<li>
+<p><strong>Scalability:</strong> The system should be scalable to handle an ever-increasing number of drivers and riders with time.</p>
+</li>
+<li>
+<p><strong>Reliability:</strong> The system should provide fast and error-free services. Ride requests and location updates should happen smoothly.</p>
+</li>
+<li>
+<p><strong>Consistency:</strong> The system must be strongly consistent. The drivers and riders in an area should have a consistent view of the system.</p>
+</li>
+<li>
+<p><strong>Fraud detection:</strong> The system should have the ability to detect any fraudulent activity related to payment.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Resource estimation<a href="#Resource-estimation"><span>#</span></a></h2>
+<p>Now, let’s estimate the resources for our design. Let’s assume it has around 500 million riders and about five million drivers. We’ll assume the following numbers for our estimates:</p>
+<ul>
+<li>We have 20 million daily active riders and three million daily active drivers.</li>
+<li>We have 20 million daily trips.</li>
+<li>All active drivers send a notification of their current location every four seconds.</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Storage estimation<a href="#Storage-estimation"><span>#</span></a></h3>
+<p>Let’s estimate the storage required for our system:</p>
+<h4>Rider’s metadata<a href="#Rider%E2%80%99s-metadata"><span>#</span></a></h4>
+<p>Let’s assume we need around 1,000 Bytes to store each rider’s information, including ID, name, email, and so on, when the rider registers in our application. To store the 500 million riders, we require 500 GB of storage:</p>
+<p><span><span><span><math><semantics><mrow><mrow><mn>500</mn><mo>×</mo><mn>1</mn><msup><mn>0</mn><mn>6</mn></msup><mo>×</mo><mn>1000</mn></mrow><mo>=</mo><mn>500</mn><mtext> </mtext><mi>G</mi><mi>B</mi></mrow><annotation>{500 \times 10^6 \times 1000 }  = 500\ GB
+</annotation></semantics></math></span><span><span><span></span><span><span>500</span><span></span><span>×</span><span></span><span>1</span><span><span>0</span><span><span><span><span><span><span></span><span><span>6</span></span></span></span></span></span></span></span><span></span><span>×</span><span></span><span>1000</span></span><span></span><span>=</span><span></span></span><span><span></span><span>500</span><span> </span><span>GB</span></span></span></span></span></p>
+<p>Additionally, if we have around 500,000 new riders registered daily, we’ll need a further 500 MB to store them.</p>
+<h4>Driver’s metadata<a href="#Driver%E2%80%99s-metadata"><span>#</span></a></h4>
+<p>Let’s assume we need around 1,000 Bytes to store each driver’s information, including ID, name, email, vehicle type, and so on, when the driver registers in our application. To store the five million drivers, we require 5 GB of storage:</p>
+<p><span><span><span><math><semantics><mrow><mrow><mn>5</mn><mo>×</mo><mn>1</mn><msup><mn>0</mn><mn>6</mn></msup><mo>×</mo><mn>1000</mn></mrow><mo>=</mo><mn>5</mn><mtext> </mtext><mi>G</mi><mi>B</mi></mrow><annotation>{5 \times 10^6 \times 1000 }  = 5\ GB
+</annotation></semantics></math></span><span><span><span></span><span><span>5</span><span></span><span>×</span><span></span><span>1</span><span><span>0</span><span><span><span><span><span><span></span><span><span>6</span></span></span></span></span></span></span></span><span></span><span>×</span><span></span><span>1000</span></span><span></span><span>=</span><span></span></span><span><span></span><span>5</span><span> </span><span>GB</span></span></span></span></span></p>
+<p>Additionally, if we have around 100,00 new drivers registered daily, we’ll need around 100 MB to store them.</p>
+<h4>Driver location metadata<a href="#Driver-location-metadata"><span>#</span></a></h4>
+<p>Let’s assume we need around 36 Bytes to store the driver’s location updates. If we have five million drivers, we need around 180 MB of storage just for the drivers’ locations.</p>
+<h4>Trip metadata<a href="#Trip-metadata"><span>#</span></a></h4>
+<p>Let’s assume we need around 100 Bytes to store single trip information, including trip ID, rider ID, driver ID, and so on. If we have 20 million daily rides, we need around 2 GB of storage for the trip data.</p>
+<p>Let’s calculate the total storage required for Uber in a single day:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Storage Capacity Estimation</h4><span><table><tbody><tr><td><span>Number of drivers (millions)</span></td><td><span>5</span></td></tr><tr><td><span>Storage required to store a driver&#x27;s location (Bytes)</span></td><td><span>36</span></td></tr><tr><td><span>Total storage required to store drivers’ locations (MB per day)</span></td><td><span>f</span><span>180</span></td></tr><tr><td><span>Number of trips (millions)</span></td><td><span>20</span></td></tr><tr><td><span>Storage required to store a trip (Bytes)</span></td><td><span>100</span></td></tr><tr><td><span>Total storage required to store trips (GB per day)</span></td><td><span>f</span><span>2</span></td></tr><tr><td><span>Storage required for new riders daily (MB per day)</span></td><td><span>500</span></td></tr><tr><td><span>Storage required for new drivers daily (MB per day)</span></td><td><span>100</span></td></tr><tr><td><span>Total storage (GB per day)</span></td><td><span>f</span><span>2.78</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-2-fig-1.svg" alt="Total storage required by Uber in an year"></div></div></div><div><span>Total storage required by Uber in an year</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> We can adjust the values in the table to see how the estimations change.</p>
+</blockquote>
+<h3>Bandwidth estimation<a href="#Bandwidth-estimation"><span>#</span></a></h3>
+<p>We’ll only consider drivers’ location updates and trip data for bandwidth calculation since other factors don’t require significant bandwidth. We have 20 million daily rides, which means we have approximately 232 trips per second.</p>
+<p><span><span><math><semantics><mrow><mfrac><mn>20000000</mn><mn>86400</mn></mfrac><mo>≈</mo><mn>232</mn><mtext> </mtext><mi>t</mi><mi>r</mi><mi>i</mi><mi>p</mi><mi>s</mi><mtext> </mtext><mi>p</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>d</mi></mrow><annotation>\frac{20000000}{86400} \approx 232\ trips\ per\ second</annotation></semantics></math></span><span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span><span>86400</span></span></span></span><span><span></span><span></span></span><span><span></span><span><span><span>20000000</span></span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>≈</span><span></span></span><span><span></span><span>232</span><span> </span><span>t</span><span>r</span><span>i</span><span>p</span><span>s</span><span> </span><span>p</span><span>er</span><span> </span><span>seco</span><span>n</span><span>d</span></span></span></span></p>
+<p>Now, each trip takes around 100 Bytes. So, it takes around 23 KB per second of bandwidth.</p>
+<p><span><span><math><semantics><mrow><mrow><mn>232</mn><mo>×</mo><mn>100</mn></mrow><mtext> </mtext><mo>=</mo><mtext> </mtext><mn>23</mn><mtext> </mtext><mi>K</mi><mi>B</mi><mo>×</mo><mn>8</mn><mtext> </mtext><mo>=</mo><mtext> </mtext><mn>185</mn><mtext> </mtext><mi>k</mi><mi>b</mi><mi>p</mi><mi>s</mi></mrow><annotation>{232 \times 100} \ =\ 23\ KB\times 8\ =\ 185\ kbps</annotation></semantics></math></span><span><span><span></span><span><span>232</span><span></span><span>×</span><span></span><span>100</span></span><span> </span><span></span><span>=</span><span> </span><span></span></span><span><span></span><span>23</span><span> </span><span>K</span><span>B</span><span></span><span>×</span><span></span></span><span><span></span><span>8</span><span> </span><span></span><span>=</span><span> </span><span></span></span><span><span></span><span>185</span><span> </span><span>kb</span><span>p</span><span>s</span></span></span></span></p>
+<p>As already stated, the driver’s location is updated every four seconds. If we receive the driver’s ID (3 Bytes) and location (16 Bytes), our application will take the following bandwidth:</p>
+<p><span><span><math><semantics><mrow><mrow><mn>3</mn><mi>M</mi><mtext> </mtext><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mtext> </mtext><mi>d</mi><mi>r</mi><mi>i</mi><mi>v</mi><mi>e</mi><mi>r</mi><mi>s</mi><mo>×</mo><mo>(</mo><mn>3</mn><mo>+</mo><mn>16</mn><mo>)</mo></mrow><mi>B</mi><mo>=</mo><mn>57</mn><mi>M</mi><mi>B</mi><mo>×</mo><mn>8</mn><mtext> </mtext><mo>=</mo><mfrac><mrow><mtext> </mtext><mn>456</mn></mrow><mn>4</mn></mfrac><mtext> </mtext><mo>=</mo><mn>114</mn><mtext> </mtext><mi>M</mi><mi>b</mi><mi>p</mi><mi>s</mi><mrow></mrow></mrow><annotation>{3M \ active\ drivers\times (3+16)}{B}  = 57 MB\times 8\ = \frac {\ 456 }{4} \ = 114\ Mbps {}</annotation></semantics></math></span><span><span><span></span><span><span>3</span><span>M</span><span> </span><span>a</span><span>c</span><span>t</span><span>i</span><span>v</span><span>e</span><span> </span><span>d</span><span>r</span><span>i</span><span>v</span><span>ers</span><span></span><span>×</span><span></span><span>(</span><span>3</span><span></span><span>+</span><span></span><span>16</span><span>)</span></span><span><span>B</span></span><span></span><span>=</span><span></span></span><span><span></span><span>57</span><span>MB</span><span></span><span>×</span><span></span></span><span><span></span><span>8</span><span> </span><span></span><span>=</span><span></span></span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span><span>4</span></span></span></span><span><span></span><span></span></span><span><span></span><span><span><span><span> </span></span><span>456</span></span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span> </span><span></span><span>=</span><span></span></span><span><span></span><span>114</span><span> </span><span>M</span><span>b</span><span>p</span><span>s</span><span></span></span></span></span></p>
+<p>These bandwidth requirements are modest because we didn’t include bandwidth needs for maps and other components that are present in the real Uber service.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Bandwidth Requirements</h4><span><table><tbody><tr><td><span>Trips per second</span></td><td><span>232</span></td></tr><tr><td><span>Bandwidth for each trip (Bytes)</span></td><td><span>100</span></td></tr><tr><td><span>Total bandwidth for trips (kilo bits per second)</span></td><td><span>f</span><span>185.6</span></td></tr><tr><td><span>Active drivers (millions)</span></td><td><span>3</span></td></tr><tr><td><span>Bandwidth for each driver (Bytes)</span></td><td><span>19</span></td></tr><tr><td><span>Bandwidth for drivers (Megabits per second)</span></td><td><span>f</span><span>114</span></td></tr><tr><td><span>Total bandwidth (Megabits per second)</span></td><td><span>f</span><span>114.19</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-2-fig-2.svg" alt="Total bandwidth required by Uber"></div></div></div><div><span>Total bandwidth required by Uber</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> We can adjust the values in the table to see how the requirements change.</p>
+</blockquote>
+<p>We’ve ignored the bandwidth from the Uber service to users because it was very small. More bandwidth will be required for sending map data from the Uber service to users, which we’ve also discussed in the <a href="https://www.google.com/collection/page/10370001/4941429335392256/5138720050642944">Google Maps</a> chapter.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Number of servers estimation<a href="#Number-of-servers-estimation"><span>#</span></a></h3>
+<p>We need to handle concurrent requests coming from 20 million daily active users. We’ll use the following formula to estimate a pragmatic number of servers. We established this formula in the <a href="https://www.google.com/collection/page/10370001/4941429335392256/5711642666467328">Back-of-the-envelope Calculations</a> chapter:</p>
+<p><span><span><span><math><semantics><mrow><mfrac><mrow><mi>N</mi><mi>u</mi><mi>m</mi><mi>b</mi><mi>e</mi><mi>r</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>d</mi><mi>a</mi><mi>i</mi><mi>l</mi><mi>y</mi><mtext> </mtext><mi>a</mi><mi>c</mi><mi>t</mi><mi>i</mi><mi>v</mi><mi>e</mi><mtext> </mtext><mi>u</mi><mi>s</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow><mrow><mi>R</mi><mi>P</mi><mi>S</mi><mtext> </mtext><mi>o</mi><mi>f</mi><mtext> </mtext><mi>a</mi><mtext> </mtext><mi>s</mi><mi>e</mi><mi>r</mi><mi>v</mi><mi>e</mi><mi>r</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mn>20</mn><mo>×</mo><mn>1</mn><msup><mn>0</mn><mn>6</mn></msup></mrow><mn>8000</mn></mfrac><mo>=</mo><mn>2500</mn></mrow><annotation>\frac{Number\ of\ daily\ active\ users}{RPS\ of\ a\ server}  = \frac{20 \times 10^6}{8000}  = 2500
+</annotation></semantics></math></span><span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span>RPS</span><span> </span><span>o</span><span>f</span><span> </span><span>a</span><span> </span><span>ser</span><span>v</span><span>er</span></span></span><span><span></span><span></span></span><span><span></span><span><span>N</span><span>u</span><span>mb</span><span>er</span><span> </span><span>o</span><span>f</span><span> </span><span>d</span><span>ai</span><span>l</span><span>y</span><span> </span><span>a</span><span>c</span><span>t</span><span>i</span><span>v</span><span>e</span><span> </span><span>u</span><span>sers</span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>=</span><span></span></span><span><span></span><span><span></span><span><span><span><span><span><span></span><span><span>8000</span></span></span><span><span></span><span></span></span><span><span></span><span><span>20</span><span></span><span>×</span><span></span><span>1</span><span><span>0</span><span><span><span><span><span><span></span><span><span>6</span></span></span></span></span></span></span></span></span></span></span><span>​</span></span><span><span><span></span></span></span></span></span><span></span></span><span></span><span>=</span><span></span></span><span><span></span><span>2500</span></span></span></span></span></p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-2-fig-3.svg" alt="Number of servers required for the Uber service"></div></div></div><div><span>Number of servers required for the Uber service</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h4>Estimating the Number of Servers</h4><span><table><tbody><tr><td><span>Daily active users (millions)</span></td><td><span>20</span></td></tr><tr><td><span>RPS of a server</span></td><td><span>8000</span></td></tr><tr><td><span>Number of servers required</span></td><td><span>f</span><span>2500</span></td></tr></tbody></table></span></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><blockquote>
+<p><strong>Note:</strong> We can adjust the values in the table to see how the estimations change.</p>
+</blockquote>
+<h2>Building blocks we will use<a href="#Building-blocks-we-will-use"><span>#</span></a></h2>
+<p>The design of Uber utilizes the following building blocks:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-2-fig-4.svg" alt="Building blocks in high-level design of Uber"></div></div></div><div><span>Building blocks in high-level design of Uber</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><ul>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872"><strong>Databases</strong></a> store the metadata of riders, drivers, and trips.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/5053577315221504"><strong>A cache</strong></a> stores the most requested data for quick responses.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/6624266925899776"><strong>CDNs</strong></a> are used to effectively deliver content to end users, reducing delay and the burden on end-servers.</li>
+<li><a href="https://www.google.com/collection/page/10370001/4941429335392256/4521972679049216"><strong>A load balancer</strong></a> distributes the read/write requests among the respective services.</li>
+</ul>
+<p>Riders’ and drivers’ devices should have sufficient bandwidth and GPS equipment for smooth navigation with maps.</p>
+<blockquote>
+<p><strong>Note:</strong> The information provided in this chapter is inspired by the engineering blog of Uber.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>High-level Design of Uber</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>High-level Design of Uber</h1></div><div><div><div><p>Learn how to design an Uber system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Workflow-of-our-application">Workflow of our application</a></li><li><a href="#High-level-design-of-Uber">High-level design of Uber</a></li><li><a href="#API-design">API design</a><ul><li><a href="#Update-driver-location">Update driver location</a></li><li><a href="#Find-nearby-drivers">Find nearby drivers</a></li><li><a href="#Request-a-ride">Request a ride</a></li><li><a href="#Show-driver-ETA">Show driver ETA</a></li><li><a href="#Confirm-pickup">Confirm pickup</a></li><li><a href="#Show-trip-updates">Show trip updates</a></li><li><a href="#End-the-trip">End the trip</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Workflow of our application<a href="#Workflow-of-our-application"><span>#</span></a></h2>
+<p>Before diving deep into the design, let’s understand how our application works. The following steps show the workflow of our application:</p>
+<ol>
+<li>
+<p>All the nearby drivers except those already serving rides can be seen when the rider starts our application.</p>
+</li>
+<li>
+<p>The rider enters the drop-off location and requests a ride.</p>
+</li>
+<li>
+<p>The application receives the request and finds a suitable driver.</p>
+</li>
+<li>
+<p>Until a  matching driver is found, the status will be “Waiting for the driver to respond.”</p>
+</li>
+<li>
+<p>The drivers report their location every four seconds. The application finds the trip information and returns it to the driver.</p>
+</li>
+<li>
+<p>The driver accepts or rejects the request:</p>
+<ul>
+<li>
+<p>The driver accepts the request, and status information is modified on both the rider’s and the driver’s applications. The rider finds that they have successfully matched and obtains the driver’s information.</p>
+</li>
+<li>
+<p>The driver refuses the ride request. The rider restarts from step 2 and rematches to another driver.</p>
+</li>
+</ul>
+</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>The rider is yet to open the application. The driver constantly updates their location</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The rider can see the nearby drivers when they open the application</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The rider enters the drop-off location</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The rider requests the ride</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The driver receives the request. The rider or driver can cancel the request here</span></div></div><div><span><strong>1</strong> of 7</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>High-level design of Uber<a href="#High-level-design-of-Uber"><span>#</span></a></h2>
+<p>At a high level, our system should be able to take requests for a ride from the rider and return the matched driver information and trip information to the rider. It also regularly takes the driver’s location. Additionally, it returns the trip and rider information to the driver when the driver is matched to a rider.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-3-fig-1.svg" alt="High-level design"></div></div></div><div><span>High-level design</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>API design<a href="#API-design"><span>#</span></a></h2>
+<p>Let’s discuss the design of APIs according to the functionalities we provide. We’ll design APIs to translate our feature set into technical specifications.</p>
+<p>We won’t repeat the description of repeating parameters in the following APIs.</p>
+<h3>Update driver location<a href="#Update-driver-location"><span>#</span></a></h3>
+<pre><code><span><span>updateDriverLocation</span><span>(</span><span>driverID</span><span>,</span><span> oldlat</span><span>,</span><span> oldlong</span><span>,</span><span> newlat</span><span>,</span><span> newlong </span><span>)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p>Parameter</p></div></div></td><td><div></div><div><div><p>Description</p></div></div></td></tr><tr><td><div></div><div><div><p><code>driverID</code></p></div></div></td><td><div></div><div><div><p>The ID of the driver</p></div></div></td></tr><tr><td><div></div><div><div><p><code>oldlat</code></p></div></div></td><td><div></div><div><div><p>The previous latitude of the driver</p></div></div></td></tr><tr><td><div></div><div><div><p><code>oldlong</code></p></div></div></td><td><div></div><div><div><p>The previous longitude of the driver</p></div></div></td></tr><tr><td><div></div><div><div><p><code>newlat</code></p></div></div></td><td><div></div><div><div><p>The new latitude of the driver</p></div></div></td></tr><tr><td><div></div><div><div><p><code>newlong</code></p></div></div></td><td><div></div><div><div><p>The new longitude of the driver</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The <code>updateDriverLocation</code> API is used to send the driver’s coordinates to the driver location servers. This is where the location of the driver is updated and communicated to the riders.</p>
+<h3>Find nearby drivers<a href="#Find-nearby-drivers"><span>#</span></a></h3>
+<pre><code><span><span>findNearbyDrivers</span><span>(</span><span>riderID</span><span>,</span><span> lat</span><span>,</span><span> long</span><span>)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p>Parameter</p></div></div></td><td><div></div><div><div><p>Description</p></div></div></td></tr><tr><td><div></div><div><div><p><code>riderID</code></p></div></div></td><td><div></div><div><div><p>The ID of the rider</p></div></div></td></tr><tr><td><div></div><div><div><p><code>lat</code></p></div></div></td><td><div></div><div><div><p>The latitude of the rider</p></div></div></td></tr><tr><td><div></div><div><div><p><code>long</code></p></div></div></td><td><div></div><div><div><p>The longitude of the rider</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The <code>findNearbyDrivers</code> API is used to send the location of the rider for whom we want to find the nearby drivers.</p>
+<h3>Request a ride<a href="#Request-a-ride"><span>#</span></a></h3>
+<pre><code><span><span>requestRide</span><span>(</span><span>riderID</span><span>,</span><span> lat</span><span>,</span><span> long</span><span>,</span><span> dropOfflat</span><span>,</span><span>dropOfflong</span><span>,</span><span> typeOfVehicle</span><span>)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p>Parameter</p></div></div></td><td><div></div><div><div><p>Description</p></div></div></td></tr><tr><td><div></div><div><div><p><code>lat</code></p></div></div></td><td><div></div><div><div><p>The current latitude of the rider</p></div></div></td></tr><tr><td><div></div><div><div><p><code>long</code></p></div></div></td><td><div></div><div><div><p>The current longitude of the rider</p></div></div></td></tr><tr><td><div></div><div><div><p><code>dropOfflat</code></p></div></div></td><td><div></div><div><div><p>The latitude of the rider’s drop-off location</p></div></div></td></tr><tr><td><div></div><div><div><p><code>dropOfflong<span>﻿</span></code></p></div></div></td><td><div></div><div><div><p>The longitude of the rider’s drop-off location</p></div></div></td></tr><tr><td><div></div><div><div><p><code>typeOfVehicle</code></p></div></div></td><td><div></div><div><div><p>The type of vehicle required by the rider—for example, business, economy, and so on.</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The <code>requestRide</code> API is used to send the location of the rider and the type of vehicle the rider needs.</p>
+<h3>Show driver ETA<a href="#Show-driver-ETA"><span>#</span></a></h3>
+<pre><code><span><span>showETA</span><span>(</span><span>driverID</span><span>,</span><span> eta</span><span>)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p>Parameter</p></div></div></td><td><div></div><div><div><p>Description</p></div></div></td></tr><tr><td><div></div><div><div><p><code>eta</code></p></div></div></td><td><div></div><div><div><p>The estimated time of arrival of the driver</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The <code>showEta</code> API is used to show the estimated time of arrival to the rider.</p>
+<h3>Confirm pickup<a href="#Confirm-pickup"><span>#</span></a></h3>
+<pre><code><span><span>confirmPickup</span><span>(</span><span>driverID</span><span>,</span><span> riderID</span><span>,</span><span> timestamp</span><span>)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p>Parameter</p></div></div></td><td><div></div><div><div><p>Description</p></div></div></td></tr><tr><td><div></div><div><div><p><code>timestamp</code></p></div></div></td><td><div></div><div><div><p>The time at which the driver picked up the rider</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The <code>confirmPickup</code> API is used to determine when the driver has picked up the rider.</p>
+<h3>Show trip updates<a href="#Show-trip-updates"><span>#</span></a></h3>
+<pre><code><span><span>showTripUpdates</span><span>(</span><span>tripID</span><span>,</span><span> riderID</span><span>,</span><span> driverID</span><span>,</span><span> driverlat</span><span>,</span><span> driverlong</span><span>,</span><span> time_elapsed</span><span>,</span><span> time_remaining</span><span>)</span></span><br></code></pre>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div></div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p>Parameter</p></div></div></td><td><div></div><div><div><p>Description</p></div></div></td></tr><tr><td><div></div><div><div><p><code>tripID</code></p></div></div></td><td><div></div><div><div><p>The ID of the trip</p></div></div></td></tr><tr><td><div></div><div><div><p><code>driverlat</code></p></div></div></td><td><div></div><div><div><p>The latitude of the driver</p></div></div></td></tr><tr><td><div></div><div><div><p><code>driverlong</code></p></div></div></td><td><div></div><div><div><p>The longitude of the driver</p></div></div></td></tr><tr><td><div></div><div><div><p><code>time_elapsed<span>﻿﻿</span></code></p></div></div></td><td><div></div><div><div><p>The total time of the trip</p></div></div></td></tr><tr><td><div></div><div><div><p><code>time_remaining</code></p></div></div></td><td><div></div><div><div><p>The time remaining (extract the current time from the ETA) to reach the destination</p></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The <code>showTripUpdates</code> API is used to show the updates of the trip, including the position of the driver and the time remaining to reach the destination.</p>
+<h3>End the trip<a href="#End-the-trip"><span>#</span></a></h3>
+<pre><code><span><span>endTrip</span><span>(</span><span>tripID</span><span>,</span><span> riderID</span><span>,</span><span> driverID </span><span>,</span><span>time_elapsed</span><span>,</span><span> lat</span><span>,</span><span> long</span><span>)</span></span><br></code></pre>
+<p>The <code>endTrip</code> API is used to end the trip.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Detailed Design of Uber</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Detailed Design of Uber</h1></div><div><div><div><p>Learn about the detailed design of the Uber system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Components">Components</a><ul><li><a href="#Location-manager">Location manager</a></li><li><a href="#Quadtree-map-service">Quadtree map service</a></li><li><a href="#Request-vehicle">Request vehicle</a></li><li><a href="#Find-driver">Find driver</a></li><li><a href="#Trip-manager">Trip manager</a></li><li><a href="#ETA-service">ETA service</a><ul><li><a href="#DeepETA">DeepETA</a></li></ul></li><li><a href="#Database">Database</a><ul><li><a href="#Storage-schema">Storage schema</a></li></ul></li><li><a href="#Fault-tolerance">Fault tolerance</a></li><li><a href="#Load-balancers">Load balancers</a></li><li><a href="#Cache">Cache</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>Let’s look at the detailed design of our Uber system and learn how the various components work together to offer a functioning service:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-4-fig-1.svg" alt="The detailed design of Uber"></div></div></div><div><span>The detailed design of Uber</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Components<a href="#Components"><span>#</span></a></h2>
+<p>Let’s discuss the components of our Uber system design in detail.</p>
+<h3>Location manager<a href="#Location-manager"><span>#</span></a></h3>
+<p>The riders and drivers are connected to the <strong>location manager</strong> service. This service shows the nearby drivers to the riders when they open the application. This service also receives location updates from the drivers every four seconds. The location of drivers is then communicated to the quadtree map service to determine which segment the driver belongs to on a map. The location manager saves the last location of all drivers in a database and saves the route followed by the drivers on a trip.</p>
+<h3>Quadtree map service<a href="#Quadtree-map-service"><span>#</span></a></h3>
+<p>The <strong>quadtree map service</strong> updates the location of the drivers. The main problem is how we deal with finding nearby drivers efficiently.</p>
+<p>We’ll modify the solution discussed in the <a href="https://www.google.com/collection/page/10370001/4941429335392256/5518783229198336">Yelp</a> chapter according to our requirements. We used <span><span>quadtrees</span></span> on Yelp to find the location. Quadtrees help to divide the map into segments. If the number of drivers exceeds a certain limit, for example, 500, then we split that segment into four more child nodes and divide the drivers into them.</p>
+<p>Each leaf node in quadtrees contains segments that can’t be divided further. We can use the same quadtrees for finding the drivers. The most significant difference we have now is that our quadtree wasn’t designed with regular upgrades in consideration. So, we have the following issues with our dynamic segment solution.</p>
+<p>We must update our data structures to point out that all active drivers update their location every four seconds. It takes a longer amount of time to modify the quadtree whenever a driver’s position changes. To identify the driver’s new location, we must first find a proper grid depending on the driver’s previous position. If the new location doesn’t match the current grid, we should remove the driver from the current grid and shift it to the correct grid. We have to repartition the new grid if it exceeds the driver limit, which is the number of drivers for each region that we set initially. Furthermore, our platform must tell both the driver and the rider, of the car’s current location while the ride is in progress.</p>
+<p>To overcome the above problem, we can use a hash table to store the latest position of the drivers and update our quadtree occasionally, say after 10–15 seconds. We can update the driver’s location in the quadtree around every 15 seconds instead of four seconds, and we use a hash table that updates every four seconds and reflects the drivers’ latest location. By doing this, we use fewer resources and time.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-4-fig-2.svg" alt="Updating driver&#x27;s location"></div></div></div><div><span>Updating driver&#x27;s location</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Request vehicle<a href="#Request-vehicle"><span>#</span></a></h3>
+<p>The rider contacts the <strong>request vehicle</strong> service to request a ride. The rider adds the drop-off location here. The request vehicle service then communicates with the find driver service to book a vehicle and get the details of the vehicle using the location manager service.</p>
+<h3>Find driver<a href="#Find-driver"><span>#</span></a></h3>
+<p>The <strong>find driver</strong> service finds the driver who can complete the trip. It sends the information of the selected driver and the trip information back to the request vehicle service to communicate the details to the rider. The find driver service also contacts the trip manager to manage the trip information.</p>
+<h3>Trip manager<a href="#Trip-manager"><span>#</span></a></h3>
+<p>The <strong>trip manager</strong> service manages all the trip-related tasks. It creates a trip in the database and stores all the information of the trip in the database.</p>
+<h3>ETA service<a href="#ETA-service"><span>#</span></a></h3>
+<p>The <strong>ETA service</strong> deals with the estimated time of arrival. It shows riders the pickup ETA when their trip is scheduled. This service considers factors such as route and traffic. The two basic components of predicting an ETA given an origin and destination on a road network are the following:</p>
+<ul>
+<li>Calculate the shortest route from origin to destination.</li>
+<li>Compute the time required to travel the route.</li>
+</ul>
+<p>The whole road network is represented as a graph. Intersections are represented by nodes, while edges represent road segments. The graph also depicts one-way streets, turn limitations, and speed limits.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-4-fig-3.svg" alt="Graph representation"></div></div></div><div><span>Graph representation</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>To identify the shortest path between source and destination, we can utilize routing algorithms such as Dijkstra’s algorithm. However, Dijkstra, or any other algorithm that operates on top of an unprocessed graph, is quite slow for such a system. Therefore, this method is impractical at the scale at which these ride-hailing platforms operate.</p>
+<p>To resolve these issues, we can split the whole graph into partitions. We preprocess the optimum path inside partitions using <span><span>contraction hierarchies</span></span> and deal with just the partition boundaries. This strategy can considerably reduce the time complexity since it partitions the graph into layers of tiny cells that are largely independent of one another. The preprocessing stage is executed in parallel in the partitions when necessary to increase speed. In the illustration below, all the partitions process the best route in parallel. For example, if each partition takes one second to find the path, we can have the complete path in one second since all partitions work in parallel.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-4-fig-4.svg" alt="Partitioning the graph"></div></div></div><div><span>Partitioning the graph</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Once we determine the best route, we calculate the expected time to travel the road segment while accounting for traffic. The traffic data will be the edge weights between the nodes.</p>
+<h4>DeepETA<a href="#DeepETA"><span>#</span></a></h4>
+<p>We use a machine learning component named <strong>DeepETA</strong> to deliver an immediate improvement to metrics in production. It establishes a model foundation that can be reused for multiple consumer use cases.</p>
+<p>We also use a routing engine that uses real-time traffic information and map data to predict an ETA to traverse the best path between the source and the destination. We use a post-processing ML model that considers spatial and temporal parameters, such as the source, destination, time of the request, and knowledge about real-time traffic, to forecast the ETA residual.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-4-fig-5.svg" alt="DeepETA"></div></div></div><div><span>DeepETA</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Database<a href="#Database"><span>#</span></a></h3>
+<p>Let’s select the database according to our requirements:</p>
+<ul>
+<li>The database must be able to scale horizontally. There are new customers and drivers on a regular basis, so we should be able to add more storage without any problems.</li>
+<li>The database should handle a large number of reads and writes because the location of drivers is updated every four seconds.</li>
+<li>Our system should never be down.</li>
+</ul>
+<p>We’ve already discussed the various database types and their specifications in the <a href="https://www.google.com/collection/page/10370001/4941429335392256/4901035478351872">Database</a> chapter. So, according to our understanding and requirements (high availability, high scalability, and fault tolerance), we can use <span><span>Cassandra</span></span> to store the driver’s last known location and the trip information after the trip has been completed, and there will be no updates to it.</p>
+<p>We can use a MySQL database to store trip information while it’s in progress. We use MySQL for in-progress trips for frequent updates since the trip information is relational, and it needs to be consistent across tables. We use Cassandra because the data we store is enormous and it increases continuously.</p>
+<blockquote>
+<p><strong>Note:</strong> Recently, Uber migrated their data storage to Google Cloud Spanner. It provides global transactions, strongly consistent reads, and automatic multisite replication and failover features.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>Why haven’t we used only the MySQL database?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 2</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h4>Storage schema<a href="#Storage-schema"><span>#</span></a></h4>
+<p>On a basic level in the Uber application, we need the following tables:</p>
+<ul>
+<li>
+<p><strong>Riders:</strong> We store the rider’s related information, such as ID, name, email, photo, phone number, and so on.</p>
+</li>
+<li>
+<p><strong>Drivers:</strong> We store the driver’s related information, such as ID, name, email, photo, phone number, vehicle name, vehicle type, and so on.</p>
+</li>
+<li>
+<p><strong>Driver_location:</strong> We store the driver’s last known location.</p>
+</li>
+<li>
+<p><strong>Trips:</strong> We store the trip’s related information, such as trip ID, rider ID, driver ID, status, ETA, location of the vehicle, and so on.</p>
+</li>
+</ul>
+<p>The following illustration visualizes the data model:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-4-fig-6.svg" alt="The storage schema"></div></div></div><div><span>The storage schema</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Fault tolerance<a href="#Fault-tolerance"><span>#</span></a></h3>
+<p>For availability, we need to have replicas of our database. We use the primary-secondary replication model. We have one primary database and a few secondary databases. We synchronously replicate data from primary to secondary databases. Whenever our primary database is down, we can use a secondary database as a primary one.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>How will we handle a driver’s slow and disconnecting network?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Load balancers<a href="#Load-balancers"><span>#</span></a></h3>
+<p>We use load balancers between clients (drivers and riders) and the application servers to uniformly distribute the load among the servers. The requests are routed to the specified server that provides the requested service.</p>
+<h3>Cache<a href="#Cache"><span>#</span></a></h3>
+<p>A million drivers need to send the updated location every four seconds. A million requests to the quadtree service affects how well it works. For this, we first store the updated location in the hash table stored in Redis. Eventually, these values are copied into the persistent storage every 10–15 seconds.</p>
+<p>We’ve discussed the detailed design of Uber and how different components work together to fulfill the requirements. In the next lesson, we’ll learn how the payment service works to move the money from riders to drivers and detect frauds.</p>
+</div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Payment Service and Fraud Detection in Uber Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Payment Service and Fraud Detection in Uber Design</h1></div><div><div><div><p>Learn how the payment service of Uber works and how they deal with payment fraud.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Major-functionality">Major functionality</a></li><li><a href="#What-to-prevent">What to prevent</a></li><li><a href="#Design">Design</a><ul><li><a href="#Workflow">Workflow</a></li><li><a href="#Apache-Kafka">Apache Kafka</a></li></ul></li><li><a href="#Fraud-detection">Fraud detection</a><ul><li><a href="#RADAR">RADAR</a></li></ul></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>Our goal in this lesson is to highlight the need to secure the system against malicious activities. We’ll discuss fraudulent activities in the context of payment. We’ll first briefly go through how the payment system works, and then we’ll cover how to guard our system against malicious activity.</p>
+<p>The payment service deals with the payments side of the Uber application. It includes collecting payment from the rider to give it to the driver. As the trip completes, it collects the trip information, calculates the cost of the journey, and initiates the payment process.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Major functionality<a href="#Major-functionality"><span>#</span></a></h2>
+<p>The Uber payments platform includes the following functionality:</p>
+<ul>
+<li><strong>New payment options</strong>: It adds new payment options for users.</li>
+<li><strong>Authorization</strong>: It <span><span>authorizes</span></span> the payments for transactions.</li>
+<li><strong>Refund</strong>: It refunds a payment that was authorized before.</li>
+<li><strong>Charging:</strong> It moves money from a user account to Uber.</li>
+</ul>
+<h2>What to prevent<a href="#What-to-prevent"><span>#</span></a></h2>
+<p>We need to prevent the following scenarios for the success of the payment system:</p>
+<ul>
+<li>Lack of payment</li>
+<li>Duplicate payments</li>
+<li>Incorrect payment</li>
+<li>Incorrect currency conversion</li>
+<li>Dangling authorization</li>
+</ul>
+<p>The Uber payment platform is based on the <span><span>double-entry bookkeeping</span></span> method.</p>
+<h2>Design<a href="#Design"><span>#</span></a></h2>
+<p>Let’s look at the design of the payment platform in Uber and learn how different components work together to complete the transactions:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-5-fig-1.svg" alt="The payment platform in Uber"></div></div></div><div><span>The payment platform in Uber</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The key components used in the payment service are as follows:</p>
+<ul>
+<li><strong>API</strong>: The Uber API is used to access the payment service.</li>
+<li><strong>Order store</strong>: This stores all the orders. Orders collect payments and contain information regarding money flow between different riders and drivers.</li>
+<li><strong>Account store</strong>: This stores all the accounts of riders and drivers.</li>
+<li><strong>Risk engine</strong>: The risk engine analyzes different risks involved in collecting payment from a particular rider. It checks the history of the rider—for example, the rating of the rider, if the rider has sufficient funds in their rider account, any pending dues, if the rider cancels the rides frequently, and so on.</li>
+<li><strong>Payment profile service</strong>: This provides information on the payment mechanisms, such as credit and debit cards.</li>
+<li><strong>User profile service</strong>: This provides information regarding users’ payments.</li>
+<li><strong>Payment authorization service</strong>: This offers payment authentication services.</li>
+<li><strong>PSP gateways</strong>: This connects with payment service providers</li>
+</ul>
+<h3>Workflow<a href="#Workflow"><span>#</span></a></h3>
+<p>The following steps show the workflow of the payment service:</p>
+<ol>
+<li>When a rider requests a ride, the Uber application uses the Uber API to request the risk engine to check the risks involved.</li>
+<li>The risk engine obtains user information from the user profile service and evaluates the risk involved.</li>
+<li>If the risks are high, the rider’s request isn’t entertained.</li>
+<li>If the risks are low, the risk engine creates an authorization token and sends it to the payment profile service (for record-keeping), which fetches that token and sends it to the payment authorization service.</li>
+<li>The payment authorization service sends that request to the PSP gateway, which contacts the service provider for authorization.</li>
+<li>The PSP gateway sends the authorization token back to the payment authorization service, which sends the token back to the Uber application that the trip request is approved.</li>
+<li>After the trip is completed, the Uber application uses the API to send the payment request to the PSP gateway with authorization data.</li>
+<li>The PSP gateway contacts the service provider and sends the status back to the Uber application through the API.</li>
+</ol>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The Uber payment service is constructed with a set of microservices grouped together as a stream-processing architecture.</p>
+<h3>Apache Kafka<a href="#Apache-Kafka"><span>#</span></a></h3>
+<p><strong>Kafka</strong> is an open-source <span><span>stream-processing</span></span>  software platform. It’s the primary technology used in payment services. Let’s see how Kafka helps to process an order:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-5-fig-2.svg" alt="Payment service with Kafka"></div></div></div><div><span>Payment service with Kafka</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>The order creator gets a business event—for example, the trip is finished. The order creator creates the money movement information and the metadata. This order creator publishes that information to Kafka. Kafka processes that order and sends it to the order processor. The order processor then takes that information from Kafka, processes it, and sends it as intent to Kafka. From that, the order processor again processes and contacts the PSP. The order processor then takes the answer from PSP and transmits it to Kafka as a result. The result is then saved by the order writer.</p>
+<p>The key capabilities of Kafka that the payment service uses are the following:</p>
+<ul>
+<li>
+<p>It works like message queues to publish and subscribe to message queues.</p>
+</li>
+<li>
+<p>It stores the records in a way that is fault tolerant.</p>
+</li>
+<li>
+<p>It processes the payment records asynchronously.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Fraud detection<a href="#Fraud-detection"><span>#</span></a></h2>
+<p>Fraud detection is a critical operational component of our design. Payment fraud losses are calculated as a percentage of gross amounts. Despite fraud activities accounting for a tiny portion of gross bookings, these losses considerably influence earnings. Moreover, if malicious behavior isn’t promptly detected and handled, it may be further leveraged, which results in significant losses for the business. Earlier, we discussed the risk engine that detects fraud before the trip starts. Here, we’ll focus on the fraud detection that happens during trips or at the end of the trips.</p>
+<p>Fraud detection is challenging because many instances of fraud are like detecting zero-day security bugs. Therefore, our system needs intelligence to detect anomalies, and it also needs accountability for automated decisions in the form of human-led audits.</p>
+<p>The <span><span>activities</span></span> that are considered fraudulent by Uber are as follows:</p>
+<ul>
+<li>
+<p>A driver deliberately increases the time or distance of a trip in a dishonest manner—for example, if they take a much longer route than necessary to the rider’s destination.</p>
+</li>
+<li>
+<p>A driver manipulates the GPS data or uses fake location GPS apps.</p>
+</li>
+<li>
+<p>A driver confirms trips with no intention of completing them, forcing riders to cancel.</p>
+</li>
+<li>
+<p>A driver creates false driver or rider accounts for fraudulent purposes.</p>
+</li>
+<li>
+<p>A driver provides incorrect or inaccurate information about themselves when opening their account.</p>
+</li>
+<li>
+<p>A driver drives a vehicle that hasn’t been approved by Uber.</p>
+</li>
+<li>
+<p>A driver claims fraudulent fees or charges, such as unwarranted cleaning fees.</p>
+</li>
+<li>
+<p>A driver willfully confirms or completes fraudulent trips.</p>
+</li>
+</ul>
+
+<h3>RADAR<a href="#RADAR"><span>#</span></a></h3>
+<p>Uber introduced <strong>RADAR</strong>, a human-assisted AI fraud detection and mitigation solution to handle the discussed scenarios of fraud. The RADAR system detects fraud by analyzing the activity time series of the payment system. It then generates a rule for it and stops it from further processing. This proactive approach can help to detect unseen fraud in real time. This detection model also uses human knowledge for continuous improvements. Here, we’ll briefly discuss how RADAR works:</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/design-uber/lesson-5-fig-3.svg" alt="The RADAR fraud detection solution"></div></div></div><div><span>The RADAR fraud detection solution</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>RADAR recognizes the beginning of a fraud attempt and creates a rule to prevent it. The fraud analyst is involved in the next step. They review the rule and approve or reject it if required. They then send feedback (approved or not approved) to the protection system. The feedback is also sent to the fraud detection system by the fraud analysts to improve detection.</p>
+<p>Furthermore, the system examines the data in the following time dimensions:</p>
+<ul>
+<li>
+<p>It examines the trip time when a trip has been completed. Multiple factors are involved in real-time trip monitoring. For instance, the system can check whether or not the driver and rider locations are the same. The system can also monitor the speed and analyze the real traffic to check if the driver is intentionally driving slow or if there’s traffic congestion.</p>
+</li>
+<li>
+<p>Payment settlement time refers to obtaining payment processing data. It might take days or weeks to settle.</p>
+</li>
+</ul>
+<p>We’ve just discussed the basic details of how guarding against malicious activity at scale is necessary for the success of a business. In the proposed model, the human experts are involved, potentially decreasing the scalability of the system. Research is being carried out on how to ensure that the decisions made by the AI system are fair and ethical.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Evaluation of Uber’s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Evaluation of Uber’s Design</h1></div><div><div><div><p>Let&#x27;s evaluate our design for the non-functional requirements.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Fulfill-non-functional-requirements">Fulfill non-functional requirements</a><ul><li><a href="#Availability">Availability</a></li><li><a href="#Scalability">Scalability</a></li><li><a href="#Reliability">Reliability</a></li><li><a href="#Consistency">Consistency</a></li><li><a href="#Fraud-detection">Fraud detection</a></li></ul></li><li><a href="#Conclusion">Conclusion</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Fulfill non-functional requirements<a href="#Fulfill-non-functional-requirements"><span>#</span></a></h2>
+<p>Let’s evaluate how our system fulfills the non-functional requirements.</p>
+<h3>Availability<a href="#Availability"><span>#</span></a></h3>
+<p>Our system is highly available. We used WebSocket servers. If a user gets disconnected, the session is recreated via a load balancer with a different server. We’ve used multiple replicas of our databases with a primary-secondary replication model. We have the Cassandra database, which provides highly available services and no single point of failure. We used a CDN, cache, and load balancers, which increase the availability of our system.</p>
+<h3>Scalability<a href="#Scalability"><span>#</span></a></h3>
+<p>Our system is highly scalable. We used many independent services so that we can scale these services horizontally, independent of each other as per our needs. We used quadtrees for searching by dividing the map into smaller segments, which shortens our search space. We used a CDN, which increases the capacity to handle more users. We also used a NoSQL database, Cassandra, which is horizontally scalable. Additionally, we used load balancers, which improve speed by distributing read workload among different servers.</p>
+<h3>Reliability<a href="#Reliability"><span>#</span></a></h3>
+<p>Our system is highly reliable. The trip can continue even if the rider’s or driver’s connection is broken. This is achieved by using their phones as local storage. The use of multiple WebSocket servers ensures smooth, nearly real-time operations. If any of the servers fail, the user is able to reconnect with another server. We also used redundant copies of the servers and databases to ensure that there’s no single point of failure. Our services are decoupled and isolated, which eventually increases the reliability. Load balancers help move the requests away from any failed servers to healthy ones.</p>
+<h3>Consistency<a href="#Consistency"><span>#</span></a></h3>
+<p>We used storage like MySQL to keep our data consistent globally. Moreover, our system does synchronous replication to achieve strong consistency. Because of a limited number of data writers and viewers for a trip (rider, driver, some internal services), the usage of traditional databases doesn’t become a bottleneck. Also, data sharding is easier in this scenario.</p>
+<h3>Fraud detection<a href="#Fraud-detection"><span>#</span></a></h3>
+<p>Our system is able to detect any fraudulent activity related to payment. We used the RADAR system to detect any suspicious activity. RADAR recognizes the beginning of a fraud attempt and creates a rule to prevent it.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div>Meeting Non-functional Requirements</div><div><div><div><table><colgroup><col><col></colgroup><tbody><tr><td><div></div><div><div><p><strong>Requirements</strong></p></div></div></td><td><div></div><div><div><p><strong>Techniques</strong></p></div></div></td></tr><tr><td><div></div><div><div><p>Availability</p></div></div></td><td><div></div><div><div><ul><li>Using server replicas</li><li>Using database replicas with Cassandra database</li><li>Load balancers hide server failures from end users</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Scalability </p></div></div></td><td><div></div><div><div><ul><li>Horizontal sharding of the database</li><li>The Cassandra NoSQL database</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Reliability</p></div></div></td><td><div></div><div><div><ul><li>No single point of failure</li><li>Redundant components</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Consistency</p></div></div></td><td><div></div><div><div><ul><li>Strong consistency using synchronous replications</li></ul></div></div></td></tr><tr><td><div></div><div><div><p>Fraud detection</p></div></div></td><td><div></div><div><div><ul><li>Using RADAR to recognize and prevent any fraud related to payments</li></ul></div></div></td></tr></tbody></table></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Conclusion<a href="#Conclusion"><span>#</span></a></h2>
+<p>This chapter taught us how to design a ride-hailing service like Uber. We discussed its functional and non-functional requirements. We learned how to efficiently locate drivers on the map using quadtrees. We also discussed how to efficiently calculate the estimated time of arrival using routing algorithms and machine learning. Additionally, we learned that guarding our service against fraudulent activities is important for the business’s success.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Quiz on Uber&#x27;s Design</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Quiz on Uber&#x27;s Design</h1></div><div><div><div><p>Test your understanding of the Uber design.</p></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>1</div><div></div></div><div><div><span><span><p><strong>(Select all that apply.)</strong> Which factors can help optimize the ETA at the start of the trip to lower the cost and duration of the trip?</p>
+</span></span></div></div></div><div><div><div><div></div></div><span><h6>A)</h6></span><div><div><span><span><p>Real-time traffic detail</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>B)</h6></span><div><div><span><span><p>Distance of a driver before the trip starts</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>C)</h6></span><div><div><span><span><p>Professional driver</p>
+</span></span></div></div></div><div><div><div></div></div><span><h6>D)</h6></span><div><div><span><span><p>Speed of vehicle</p>
+</span></span></div></div></div></div></div><div><div></div><div><span>Question 1 of 3<span>0 attempted</span></span></div><div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>14. Monitor Server-side Errors — Grokking System Design</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="layout"><nav class="sidebar"><h2 class="brand">Grokking System Design</h2><details open><summary>Fundamentals</summary><ul><li><a href="01-system-design-interviews.html">1. System Design Interviews</a></li><li><a href="02-introduction.html">2. Introduction</a></li><li><a href="03-abstractions.html">3. Abstractions</a></li><li><a href="04-non-functional-system-characteristics.html">4. Non-functional System Characteristics</a></li><li><a href="05-back-of-the-envelope-calculations.html">5. Back-of-the-envelope Calculations</a></li><li><a href="06-building-blocks.html">6. Building Blocks</a></li><li><a href="07-domain-name-system.html">7. Domain Name System</a></li><li><a href="08-load-balancers.html">8. Load Balancers</a></li><li><a href="09-databases.html">9. Databases</a></li><li><a href="10-key-value-store.html">10. Key-value Store</a></li><li><a href="11-content-delivery-network-cdn.html">11. Content Delivery Network  (CDN)</a></li><li><a href="12-sequencer.html">12. Sequencer</a></li><li><a href="13-distributed-monitoring.html">13. Distributed  Monitoring</a></li><li><a href="14-monitor-server-side-errors.html" aria-current="page">14. Monitor Server-side Errors</a></li><li><a href="15-monitor-client-side-errors.html">15. Monitor Client-side Errors</a></li><li><a href="16-distributed-cache.html">16. Distributed Cache</a></li><li><a href="17-distributed-messaging-queue.html">17. Distributed Messaging Queue</a></li><li><a href="18-pub-sub.html">18. Pub-sub</a></li><li><a href="19-rate-limiter.html">19. Rate Limiter</a></li><li><a href="20-blob-store.html">20. Blob Store</a></li><li><a href="21-distributed-search.html">21. Distributed Search</a></li><li><a href="22-distributed-logging.html">22. Distributed Logging</a></li><li><a href="23-distributed-task-scheduler.html">23. Distributed Task Scheduler</a></li><li><a href="24-sharded-counters.html">24. Sharded Counters</a></li><li><a href="25-concluding-the-building-blocks-discussion.html">25. Concluding the Building Blocks Discussion</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="26-design-youtube.html">26. Design YouTube</a></li><li><a href="27-design-quora.html">27. Design Quora</a></li><li><a href="28-design-google-maps.html">28. Design Google Maps</a></li><li><a href="29-design-a-proximity-service-yelp.html">29. Design a Proximity Service - Yelp</a></li><li><a href="30-design-uber.html">30. Design Uber</a></li><li><a href="31-design-twitter.html">31. Design Twitter</a></li><li><a href="32-design-newsfeed-system.html">32. Design Newsfeed System</a></li><li><a href="33-design-instagram.html">33. Design Instagram</a></li><li><a href="34-design-a-url-shortening-service-tinyurl.html">34. Design a URL Shortening Service - TinyURL</a></li><li><a href="35-design-a-web-crawler.html">35. Design a Web Crawler</a></li><li><a href="36-design-whatsapp.html">36. Design WhatsApp</a></li><li><a href="37-design-typeahead-suggestion.html">37. Design Typeahead Suggestion</a></li><li><a href="38-design-a-collaborative-document-editing-service-google-docs.html">38. Design a Collaborative Document Editing Service - Google Docs</a></li><li><a href="39-spectacular-failures.html">39. Spectacular Failures</a></li><li><a href="40-concluding-remarks.html">40. Concluding Remarks</a></li></ul></details></nav><main><h1>14. Monitor Server-side Errors</h1><section class="lesson"><h2>Design of a Monitoring System</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Design of a Monitoring System</h1></div><div><div><div><p>Learn about the initial design of a generic monitoring system.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Requirements">Requirements</a></li><li><a href="#Building-block-we-will-use">Building block we will use</a></li><li><a href="#High-level-design">High-level design</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><h2>Requirements<a href="#Requirements"><span>#</span></a></h2>
+<p>Let’s sum up what we want our monitoring system to do for us:</p>
+
+<ul>
+<li>
+<p>Monitor critical local processes on a server for crashes.</p>
+</li>
+<li>
+<p>Monitor any anomalies in the use of CPU/memory/disk/network bandwidth by a process on a server.</p>
+</li>
+<li>
+<p>Monitor overall server health, such as CPU, memory, disk, network bandwidth, average load, and so on.</p>
+</li>
+<li>
+<p>Monitor hardware component faults on a server, such as memory failures, failing or slowing disk, and so on.</p>
+</li>
+<li>
+<p>Monitor the server’s ability to reach out-of-server critical services, such as network file systems and so on.</p>
+</li>
+<li>
+<p>Monitor all network switches, load balancers, and any other specialized hardware inside a data center.</p>
+</li>
+<li>
+<p>Monitor power consumption at the server, rack, and data center levels.</p>
+</li>
+<li>
+<p>Monitor any power events on the servers, racks, and data center.</p>
+</li>
+<li>
+<p>Monitor routing information and DNS for external clients.</p>
+</li>
+<li>
+<p>Monitor network links and paths’ latency inside and across the data centers.</p>
+</li>
+<li>
+<p>Monitor network status at the peering points.</p>
+</li>
+<li>
+<p>Monitor overall service health that might span multiple data centers—for example, a CDN and its performance.</p>
+</li>
+</ul>
+<p>We want automated monitoring that identifies an anomaly in the system and informs the alert manager or shows the progress on a dashboard. Cloud service providers provide a health status of their services:</p>
+<ul>
+<li>AWS: <a href="https://health.aws.amazon.com/health/status">https://health.aws.amazon.com/health/status</a></li>
+<li>Azure: <a href="https://status.azure.com/en-us/status">https://status.azure.com/en-us/status</a></li>
+<li>Google: <a href="https://status.cloud.google.com/">https://status.cloud.google.com/</a></li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><h2>Building block we will use<a href="#Building-block-we-will-use"><span>#</span></a></h2></div><div><div><div><div><p>The design of distributed monitoring will consist of the following building block:</p>
+<p><a href="https://www.google.com/collection/page/10370001/4941429335392256/4862646238576640"><strong>Blob storage</strong></a>: We’ll use blob storage to store our information about metrics.</p>
+</div></div></div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-1-fig-1.svg" alt=""></div></div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>High-level design<a href="#High-level-design"><span>#</span></a></h2>
+<p>The high-level components of our monitoring service are the following:</p>
+<ul>
+<li>
+<p><strong>Storage</strong>: A time-series database stores metrics data, such as the current CPU use or the number of exceptions in an application.</p>
+</li>
+<li>
+<p><strong>Data collector service</strong>: This fetches the relevant data from each service and saves it in the storage.</p>
+</li>
+<li>
+<p><strong>Querying service</strong>: This is an API that can query on the time-series database and return the relevant information.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-1-fig-2.svg" alt="High-level design of a monitoring system"></div></div></div><div><span>High-level design of a monitoring system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Let’s dive deep into the components mentioned above in the next lesson.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Detailed Design of a Monitoring System</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Detailed Design of a Monitoring System</h1></div><div><div><div><p>Learn the details of designing a monitoring system and understand its pros and cons.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Storage">Storage</a></li><li><a href="#Data-collector">Data collector</a><ul><li><a href="#Service-discoverer">Service discoverer</a></li></ul></li><li><a href="#Querying-service">Querying service</a><ul><li><a href="#Alert-Manager">Alert Manager</a></li><li><a href="#Dashboard">Dashboard</a></li></ul></li><li><a href="#Pros">Pros</a></li><li><a href="#Cons">Cons</a></li><li><a href="#Improving-our-design">Improving our design</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>We’ll discuss the core components of our monitoring system, identify the shortcomings of our design, and improve the design to fulfill our requirements.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Storage<a href="#Storage"><span>#</span></a></h2>
+<p>We’ll use time-series databases to save the data locally on the server where our monitoring service is running. Then, we’ll integrate it with a separate storage node. We’ll use blob storage to store our metrics.</p>
+
+<p>We need to store metrics and know which action to perform if a metric has reached a particular value. For example, if CPU usage exceeds 90%, we generate an alert to the end user so the alert receiver can do take the necessary steps, such as allocate more resources to scale. For this purpose, we need another storage area that will contain the rules and actions. Let’s call it a rules databse. Upon any violation of the rules, we can take appropriate action.</p>
+<p>Here, we have identified two more components in our design—that is, a rules and action database and a storage node (a blob store).</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-2-fig-1.svg" alt="Adding blob storage and a rules and action database"></div></div></div><div><span>Adding blob storage and a rules and action database</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Data collector<a href="#Data-collector"><span>#</span></a></h2>
+<p>We need a monitoring system to update us about our several data centers. We can stay updated if the information about our processes reaches us, which is possible through logging. We’ll choose a pull strategy. Then, we’llextract our relevant metrics from the logs of the application. As discussed in our logging design, we used a <a href="https://www.google.com/collection/page/10370001/4941429335392256/4835612456124416#Using-distributed-messaging-queue">distributed messaging queue</a>. The message in the queue has the service name, ID, and a short description of the log. This will help us identify the metric and its information for a specific service. Exposing the relevant metrics to the data collector is necessary for monitoring any service so that our data collector can get the metrics from the service and store them into the time-series database.</p>
+<p>A real-world example of a monitoring system based on the pull-based approach is <span><span>DigitalOcean</span></span>. It monitors millions of machines that are dispersed globally.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Point to Ponder</p>
+</span></span></div></div><div><h6>Question </h6><div><div><span><span><p>What are some drawbacks of using a push-based approach?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h3>Service discoverer<a href="#Service-discoverer"><span>#</span></a></h3>
+<p>The data collector is responsible for fetching metrics from the services it monitors. This way, the monitoring system doesn’t need to keep a track of services. Instead, it can find them using discoverer service. We’ll save the relative information of the services we have to monitor. We’ll use a service discovery solution and integrate with several platforms and tools, including EC2, Kubernetes, and Consul. This will allow us to discover which services we have to monitor. Similar dynamic discovery can be used for newly commissioned hardware.</p>
+<p>Let’s add our newly identified component to our existing design.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-2-fig-2.svg" alt="Adding the service discoverer"></div></div></div><div><span>Adding the service discoverer</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Querying service<a href="#Querying-service"><span>#</span></a></h2>
+<p>We want a service to access the database and fetch the relevant query results. We need this because we want to view the errors like values of a particular node’s memory usage, or send an alert if a metric exceeds the set limit. Let’s add the two components we need along with querying.</p>
+<h3>Alert Manager<a href="#Alert-Manager"><span>#</span></a></h3>
+<p>The alert manager is responsible for sending alerts upon violations of set rules. It can send alerts as an email, a Slack message, and so on.</p>
+<h3>Dashboard<a href="#Dashboard"><span>#</span></a></h3>
+<p>We can set dashboards by using the collected metrics to display the required information—for example, the number of requests in the current week.</p>
+<p>Let’s add the components discussed above, which completes our design of the monitoring system.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-2-fig-3.svg" alt="Detailed design of monitoring system"></div></div></div><div><span>Detailed design of monitoring system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Our all-in-one monitoring service works for actively tracking systems and services. It collects and stores data, and it supports searches, graphs, and alerts.</p>
+<h2>Pros<a href="#Pros"><span>#</span></a></h2>
+<ul>
+<li>The design of our monitoring service ensures the smooth working of the operations and keeps an eye on signs of impending problems.</li>
+</ul>
+
+<ul>
+<li>
+<p>Our design avoids overloading the network traffic by fetching the data itself.</p>
+</li>
+<li>
+<p>The monitoring service provides higher availability.</p>
+</li>
+</ul>
+<h2>Cons<a href="#Cons"><span>#</span></a></h2>
+<ul>
+<li>
+<p>The system seems scalable, but managing more servers to monitor can be a problem. For example, we have a dedicated server responsible for running the monitoring service. It can be a single point of failure (SPOF). To cater to SPOF, we can have a failover server for our monitoring system. Then, we also need to maintain consistency between actual and failover servers. However, such a design will also hit a scalability ceiling as the number of servers further increase.</p>
+</li>
+<li>
+<p>Monitoring collects an enormous amount of data 24/7, and keeping it forever might not be feasible.  We need a policy and
+mechanisms to delete unwanted data periodically to efficiently utilize the resources.</p>
+</li>
+</ul>
+
+<p>Let’s think of a way to overcome the problems with our monitoring service.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Improving our design<a href="#Improving-our-design"><span>#</span></a></h2>
+<p>We want to improve our design so that our system can scale better and decide what data to keep and what to delete. Let’s see how the push-based approach works. In a push-based approach, the application pushes its data to the monitoring system.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-2-fig-4.svg" alt="Push-based monitoring system"></div></div></div><div><span>Push-based monitoring system</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We used a pull-based strategy to avoid network congestion. This also allows the applications to be free of the aspect that they have to send the relevant monitoring data of to the system. Instead, the monitoring system fetches or pulls the data itself. To cater to scaling needs, we need to apply a push-based approach too. We’ll use a hybrid approach by combining our pull-based strategy with the push-based strategy.</p>
+<p>We’ll keep using a pull-based strategy for several servers within a data center. We’ll also assign several monitoring servers for hundreds or thousands of servers within a data center—let’s say one server monitoring 5,000 servers. We’ll call them secondary monitoring servers.</p>
+<p>Now, we’ll apply the push-based strategy. The secondary monitoring systems will push their data to a primary data center server. The primary data center server will push its data to a global monitoring service responsible for checking all the data centers spread globally.</p>
+<p>We’ll use blob storage to store our excessive data, apply elastic search, and view our relevant stats using a visualizer. As our servers or data centers increase, we’ll add more monitoring systems. The design for this is given below.</p>
+<blockquote>
+<p><strong>Note</strong>: Using a hierarchy of systems for scaling is a common design pattern in system design. By increasing nodes on a level or introducing additional levels in the hierarchy, we get the ability to scale according to our current needs.</p>
+</blockquote>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><div><div><div>
+
+</div></div><div><span>Monitoring systems pull the data from various servers and then push the data to the data center monitoring system</span></div></div><div><span><strong>1</strong> of 2</span></div></div></div><div><div></div></div></div><div><div><div><div><div><div>
+
+</div></div><div><span>The data center monitoring systems push the data to the global monitoring system</span></div></div><div><span><strong>1</strong> of 2</span></div></div></div><div><div></div></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><span><span><p>Points to Ponder</p>
+</span></span></div></div><div><h6>Question 1</h6><div><div><span><span><p>What happens if a local or global monitoring system is down?</p>
+</span></span></div></div></div><div><div><span>Show Answer</span></div><div></div></div><div><h4>1 of 2</h4></div></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>Humans need to consume enormous amounts of data, and even after different kinds of data summarizations, the data can still be huge. Next, we’ll tackle how to present enormous data to human administrators.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p></p></div></div></div></div></div></div></div></div></div></div></div></div></section><section class="lesson"><h2>Visualize Data in a Monitoring System</h2><div><div><div></div></div><div><div></div></div><div><div><div><div><div><div><div><div><h1>Visualize Data in a Monitoring System</h1></div><div><div><div><p>Learn a novel way to visualize an enormous amount of monitoring data.</p></div><div><details><summary><div><span>We&#x27;ll cover the following</span></div></summary><div><div><div><ul><li><a href="#Using-heat-maps-to-troubleshoot">Using heat maps to troubleshoot</a></li><li><a href="#Summary">Summary</a></li></ul></div></div></div></details></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><p>Large data centers have millions of servers, and visualizing the health data for all of them is challenging. An important aspect of monitoring a fleet of servers is to know which ones are alive and which ones are offline. A modern data center can house many thousands of servers in a building. We can use a heat map to display information about thousands of servers compactly in a data center.</p>
+<p>A <strong>heat map</strong> is a data visualization technique that shows the magnitude of a phenomenon in two dimensions by using colors.</p>
+<h2>Using heat maps to troubleshoot<a href="#Using-heat-maps-to-troubleshoot"><span>#</span></a></h2>
+<p>We’ll identify if a server is down by using heat maps. Each rack of servers is named and is sorted by data center, then cluster, then row, so problems common at any of these levels are readily apparent.</p>
+<p>A heat map depicting the operational state of a large number of components is an effective method. The health of each component is indicated by the color of each cell in a big matrix. Nodes with green cells operate within permitted parameters, while nodes with red cells are nonresponsive on multiple tries.</p>
+<p>Below, we have a heat map displaying the server’s state.</p>
+
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><div><div><img src="../diagrams/monitor-server-side-errors/lesson-3-fig-1.svg" alt="Viewing servers in a data center using heat maps"></div></div></div><div><span>Viewing servers in a data center using heat maps</span></div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><p>We can use heat maps for the globally distributed systems and continuously share the health information of a server. We can use one bit (one for live, zero for dead). For 1,000,000 servers, we have 125 KB of data. We can quickly find out which server is down by the red color and focus on the problematic parts.</p>
+<p>We can create similar heat maps to get a bird’s-eye view of any resource, like filesystems, networking switches, links, and so on.</p>
+</div></div></div></div></div></div></div></div></div></div><div><div><div><div><div><div><div><div><div><div><h2>Summary<a href="#Summary"><span>#</span></a></h2>
+<ul>
+<li>
+<p>Monitoring systems are critical in distributed systems because they help in analyzing the system and alerting the stakeholders if a problem occurs.</p>
+</li>
+<li>
+<p>We can make a monitoring system scalable using a hybrid of the push and pull methods.</p>
+</li>
+<li>
+<p>Heat maps are a powerful tool for visualization and help us learn about the health of thousands of servers in a compact space.</p>
+</li>
+</ul>
+</div></div></div></div></div></div></div></div></div></div></div></div></section></main></div>
+</body>
+</html>
