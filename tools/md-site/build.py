@@ -44,7 +44,7 @@ def discover_md_files(source_dir):
     )
 
 
-H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
+H1_RE = re.compile(r"^#[ \t]+(\S.*?)\s*$", re.M)
 
 
 def extract_title(markdown_text, fallback):

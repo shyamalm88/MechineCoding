@@ -77,6 +77,10 @@ class TestExtractTitle(unittest.TestCase):
         text = "No heading here.\n"
         self.assertEqual(build.extract_title(text, fallback="Fallback"), "Fallback")
 
+    def test_falls_back_when_heading_is_whitespace_only(self):
+        text = "#   \n\nSome intro.\n"
+        self.assertEqual(build.extract_title(text, fallback="Fallback"), "Fallback")
+
 
 if __name__ == "__main__":
     unittest.main()
