@@ -4,6 +4,7 @@
 Usage:
     python3 build.py <source-dir> <output-dir>
 """
+import json
 import os
 import re
 import sys
@@ -50,6 +51,30 @@ H1_RE = re.compile(r"^#[ \t]+(\S.*?)\s*$", re.M)
 def extract_title(markdown_text, fallback):
     match = H1_RE.search(markdown_text)
     return match.group(1).strip() if match else fallback
+
+
+def load_config(source_dir):
+    config_path = os.path.join(source_dir, "site.config.json")
+    if not os.path.exists(config_path):
+        return None
+    with open(config_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_sidebar_groups(md_files, config):
+    if not config or "categories" not in config:
+        return [(None, list(md_files))]
+
+    categories = config["categories"]
+    missing = [f for f in md_files if f not in categories]
+    if missing:
+        raise ValueError(f"site.config.json is missing categories for: {missing}")
+
+    groups = {}
+    for filename in md_files:
+        category = categories[filename]
+        groups.setdefault(category, []).append(filename)
+    return list(groups.items())
 
 
 def main():
