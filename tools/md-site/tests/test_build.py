@@ -29,6 +29,9 @@ class TestSlugify(unittest.TestCase):
             "microfrontend-design-system",
         )
 
+    def test_slugify_treats_underscores_as_separators_like_title_from_filename(self):
+        self.assertEqual(build.slugify("browser_internals.md"), "browser-internals")
+
 
 class TestTitleFromFilename(unittest.TestCase):
     def test_known_acronyms_are_cased_correctly(self):
@@ -52,6 +55,14 @@ class TestDiscoverMdFiles(unittest.TestCase):
             for name in ["b.md", "a.md", "notes.txt", "site.config.json"]:
                 open(os_module.path.join(tmp, name), "w").close()
             self.assertEqual(build.discover_md_files(tmp), ["a.md", "b.md"])
+
+    def test_skips_directories_even_if_named_like_md_files(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            os.mkdir(os.path.join(tmp, "weird-dir.md"))
+            open(os.path.join(tmp, "real.md"), "w").close()
+            self.assertEqual(build.discover_md_files(tmp), ["real.md"])
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ ACRONYM_OVERRIDES = {
 
 def slugify(filename):
     name = os.path.splitext(filename)[0]
-    name = name.lower().replace(" ", "-")
+    name = re.sub(r"[-_\s]+", "-", name.lower())
     name = re.sub(r"[^a-z0-9\-]", "", name)
     return name
 
@@ -37,7 +37,11 @@ def title_from_filename(filename):
 
 
 def discover_md_files(source_dir):
-    return sorted(f for f in os.listdir(source_dir) if f.endswith(".md"))
+    return sorted(
+        f
+        for f in os.listdir(source_dir)
+        if f.endswith(".md") and os.path.isfile(os.path.join(source_dir, f))
+    )
 
 
 def main():
