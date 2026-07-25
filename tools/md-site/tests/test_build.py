@@ -315,6 +315,21 @@ class TestBundledAssetsExist(unittest.TestCase):
         actual = set(os.listdir(build.ASSETS_DIR))
         self.assertTrue(expected.issubset(actual))
 
+    def test_asset_files_are_non_trivial(self):
+        # Presence alone doesn't catch a corrupted or truncated download
+        # (e.g. curl silently saving an HTML error page instead of the
+        # real JS/CSS) -- a zero-byte or tiny placeholder would pass the
+        # presence check above but break the site silently in a browser.
+        minimums = {
+            "style.css": 1000,
+            "highlight.min.js": 50_000,
+            "highlight-theme.css": 200,
+            "mermaid.min.js": 1_000_000,
+        }
+        for name, min_size in minimums.items():
+            path = os.path.join(build.ASSETS_DIR, name)
+            self.assertGreater(os.path.getsize(path), min_size, name)
+
 
 if __name__ == "__main__":
     unittest.main()
