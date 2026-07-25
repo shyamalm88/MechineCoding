@@ -309,5 +309,12 @@ class TestBuildIntegration(unittest.TestCase):
             )
 
 
+class TestBundledAssetsExist(unittest.TestCase):
+    def test_required_asset_files_are_present(self):
+        expected = {"style.css", "highlight.min.js", "highlight-theme.css", "mermaid.min.js"}
+        actual = set(os.listdir(build.ASSETS_DIR))
+        self.assertTrue(expected.issubset(actual))
+
+
 if __name__ == "__main__":
     unittest.main()
