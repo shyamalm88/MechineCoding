@@ -236,16 +236,19 @@ class TestBuildIntegration(unittest.TestCase):
             self.assertIn("<summary>Group 1</summary>", index_html)
 
     def test_raises_on_duplicate_slug_collision(self):
-        # "a.md" and "A.md" both slugify to "a" (slugify lowercases).
-        # build() must fail loudly rather than silently let one file's
-        # output overwrite the other's.
+        # "a_b.md" and "a-b.md" both slugify to "a-b" (slugify treats
+        # underscores and hyphens as equivalent separators, per Task 2).
+        # Unlike a case-only collision (e.g. "a.md" vs "A.md"), these are
+        # genuinely distinct files on any filesystem, case-sensitive or
+        # not, so this test is portable. build() must fail loudly rather
+        # than silently let one file's output overwrite the other's.
         with tempfile.TemporaryDirectory() as source_dir, \
                 tempfile.TemporaryDirectory() as output_dir, \
                 tempfile.TemporaryDirectory() as assets_dir:
 
-            with open(os.path.join(source_dir, "a.md"), "w") as f:
+            with open(os.path.join(source_dir, "a_b.md"), "w") as f:
                 f.write("# First\n")
-            with open(os.path.join(source_dir, "A.md"), "w") as f:
+            with open(os.path.join(source_dir, "a-b.md"), "w") as f:
                 f.write("# Second\n")
             with open(os.path.join(assets_dir, "style.css"), "w") as f:
                 f.write("/* stub */")
