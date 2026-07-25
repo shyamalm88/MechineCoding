@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website Performance Optimization: A Senior Engineer&#x27;s Guide — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html" aria-current="page">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="website-performance-optimization-a-senior-engineers-guide">Website Performance Optimization: A Senior Engineer's Guide</h1>
+<p>A comprehensive guide to web performance strategies for system design interviews.</p>
+<hr />
+<h2 id="1-the-performance-mental-model">1. The Performance Mental Model</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                    USER PERCEPTION                          │
+├─────────────────────────────────────────────────────────────┤
+│  0-100ms   │ Instant - user feels in control               │
+│  100-300ms │ Slight delay - still acceptable               │
+│  300-1000ms│ Noticeable lag - user loses focus             │
+│  1000ms+   │ Mental context switch - user frustrated       │
+│  10000ms+  │ User abandons the task                        │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="the-cost-of-slow">The Cost of Slow</h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Business Impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>100ms latency</td>
+<td>1% sales drop (Amazon)</td>
+</tr>
+<tr>
+<td>500ms delay</td>
+<td>20% traffic drop (Google)</td>
+</tr>
+<tr>
+<td>1s load time</td>
+<td>7% conversion drop</td>
+</tr>
+<tr>
+<td>3s+ load time</td>
+<td>53% mobile users abandon</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-critical-rendering-path-crp">2. Critical Rendering Path (CRP)</h2>
+<p>The sequence of steps the browser takes to convert HTML, CSS, and JS into pixels.</p>
+<pre><code>┌──────────────────────────────────────────────────────────────┐
+│                   CRITICAL RENDERING PATH                    │
+│                                                              │
+│  HTML ──▶ DOM ──┐                                            │
+│                 ├──▶ Render Tree ──▶ Layout ──▶ Paint        │
+│  CSS ──▶ CSSOM ─┘                                            │
+│                                                              │
+│  JavaScript can BLOCK both DOM and CSSOM construction!       │
+└──────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="optimizing-the-crp">Optimizing the CRP</h3>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Minimize critical resources</td>
+<td>Inline critical CSS, defer non-critical</td>
+</tr>
+<tr>
+<td>Minimize critical bytes</td>
+<td>Minify, compress, remove unused code</td>
+</tr>
+<tr>
+<td>Minimize critical path length</td>
+<td>Reduce round trips, use HTTP/2</td>
+</tr>
+</tbody>
+</table>
+<h3 id="critical-css-extraction">Critical CSS Extraction</h3>
+<pre><code class="language-html">&lt;head&gt;
+  &lt;!-- Inline critical CSS (above-the-fold styles) --&gt;
+  &lt;style&gt;
+    .header { ... }
+    .hero { ... }
+  &lt;/style&gt;
+
+  &lt;!-- Load rest asynchronously --&gt;
+  &lt;link rel=&quot;preload&quot; href=&quot;styles.css&quot; as=&quot;style&quot; onload=&quot;this.rel='stylesheet'&quot;&gt;
+  &lt;noscript&gt;&lt;link rel=&quot;stylesheet&quot; href=&quot;styles.css&quot;&gt;&lt;/noscript&gt;
+&lt;/head&gt;
+</code></pre>
+<hr />
+<h2 id="3-resource-loading-optimization">3. Resource Loading Optimization</h2>
+<h3 id="script-loading-strategies">Script Loading Strategies</h3>
+<pre><code class="language-html">&lt;!-- Blocks parsing (avoid) --&gt;
+&lt;script src=&quot;app.js&quot;&gt;&lt;/script&gt;
+
+&lt;!-- Downloads parallel, executes immediately when ready --&gt;
+&lt;script src=&quot;analytics.js&quot; async&gt;&lt;/script&gt;
+
+&lt;!-- Downloads parallel, executes after DOM ready, in order --&gt;
+&lt;script src=&quot;main.js&quot; defer&gt;&lt;/script&gt;
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Download</th>
+<th>Execution</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>None</td>
+<td>Blocking</td>
+<td>Immediate</td>
+<td>Rarely needed</td>
+</tr>
+<tr>
+<td><code>async</code></td>
+<td>Parallel</td>
+<td>When ready</td>
+<td>Analytics, ads</td>
+</tr>
+<tr>
+<td><code>defer</code></td>
+<td>Parallel</td>
+<td>After DOM, in order</td>
+<td>App code</td>
+</tr>
+</tbody>
+</table>
+<h3 id="resource-hints">Resource Hints</h3>
+<pre><code class="language-html">&lt;!-- DNS lookup only (cheap) --&gt;
+&lt;link rel=&quot;dns-prefetch&quot; href=&quot;https://api.example.com&quot;&gt;
+
+&lt;!-- Full connection setup (DNS + TCP + TLS) --&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://fonts.googleapis.com&quot;&gt;
+
+&lt;!-- Download critical resource NOW --&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;hero.jpg&quot; as=&quot;image&quot;&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;critical.woff2&quot; as=&quot;font&quot; crossorigin&gt;
+
+&lt;!-- Download for next page (low priority) --&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;/next-page.js&quot;&gt;
+</code></pre>
+<h3 id="priority-hints-new">Priority Hints (New)</h3>
+<pre><code class="language-html">&lt;!-- Raise priority of important image --&gt;
+&lt;img src=&quot;hero.jpg&quot; fetchpriority=&quot;high&quot;&gt;
+
+&lt;!-- Lower priority of below-fold image --&gt;
+&lt;img src=&quot;footer-logo.jpg&quot; fetchpriority=&quot;low&quot;&gt;
+
+&lt;!-- Lower priority of non-critical script --&gt;
+&lt;script src=&quot;analytics.js&quot; fetchpriority=&quot;low&quot;&gt;&lt;/script&gt;
+</code></pre>
+<hr />
+<h2 id="4-image-optimization">4. Image Optimization</h2>
+<p>Images account for ~50% of page weight on average.</p>
+<h3 id="modern-formats">Modern Formats</h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Use Case</th>
+<th>Savings vs JPEG</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>WebP</strong></td>
+<td>General purpose</td>
+<td>25-35% smaller</td>
+</tr>
+<tr>
+<td><strong>AVIF</strong></td>
+<td>Best compression</td>
+<td>50% smaller</td>
+</tr>
+<tr>
+<td><strong>SVG</strong></td>
+<td>Icons, logos</td>
+<td>Scalable, tiny</td>
+</tr>
+</tbody>
+</table>
+<h3 id="responsive-images">Responsive Images</h3>
+<pre><code class="language-html">&lt;!-- Art direction with picture --&gt;
+&lt;picture&gt;
+  &lt;source media=&quot;(min-width: 1200px)&quot; srcset=&quot;hero-large.avif&quot; type=&quot;image/avif&quot;&gt;
+  &lt;source media=&quot;(min-width: 1200px)&quot; srcset=&quot;hero-large.webp&quot; type=&quot;image/webp&quot;&gt;
+  &lt;source media=&quot;(min-width: 800px)&quot; srcset=&quot;hero-medium.webp&quot; type=&quot;image/webp&quot;&gt;
+  &lt;img src=&quot;hero-small.jpg&quot; alt=&quot;Hero&quot; loading=&quot;lazy&quot;&gt;
+&lt;/picture&gt;
+
+&lt;!-- Resolution switching with srcset --&gt;
+&lt;img
+  srcset=&quot;photo-400.jpg 400w,
+          photo-800.jpg 800w,
+          photo-1200.jpg 1200w&quot;
+  sizes=&quot;(max-width: 600px) 100vw,
+         (max-width: 1200px) 50vw,
+         33vw&quot;
+  src=&quot;photo-800.jpg&quot;
+  alt=&quot;Photo&quot;
+&gt;
+</code></pre>
+<h3 id="lazy-loading">Lazy Loading</h3>
+<pre><code class="language-html">&lt;!-- Native lazy loading --&gt;
+&lt;img src=&quot;photo.jpg&quot; loading=&quot;lazy&quot; alt=&quot;Photo&quot;&gt;
+
+&lt;!-- Eager load above-fold images --&gt;
+&lt;img src=&quot;hero.jpg&quot; loading=&quot;eager&quot; alt=&quot;Hero&quot;&gt;
+</code></pre>
+<h3 id="placeholder-strategies">Placeholder Strategies</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  LQIP (Low Quality Image Placeholder)                       │
+│                                                              │
+│  1. Load tiny blurred version (~1KB)                        │
+│  2. Show with blur filter                                    │
+│  3. Fade in full image when loaded                          │
+│                                                              │
+│  BlurHash: Encode image as 20-30 character string           │
+│  Dominant Color: Simple colored rectangle                    │
+│  Skeleton: Gray placeholder matching layout                  │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="5-javascript-optimization">5. JavaScript Optimization</h2>
+<h3 id="bundle-size-reduction">Bundle Size Reduction</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  BUNDLE ANALYSIS                                             │
+│                                                              │
+│  1. npm install webpack-bundle-analyzer                      │
+│  2. Identify large dependencies                              │
+│  3. Consider alternatives:                                   │
+│     - moment.js (67KB) → date-fns (13KB tree-shaken)        │
+│     - lodash (72KB) → lodash-es (tree-shakeable)            │
+│     - axios (13KB) → fetch (native)                         │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="code-splitting">Code Splitting</h3>
+<pre><code class="language-js">// Route-based splitting
+const Dashboard = lazy(() =&gt; import('./Dashboard'));
+const Settings = lazy(() =&gt; import('./Settings'));
+
+// Component-based splitting
+const HeavyChart = lazy(() =&gt; import('./HeavyChart'));
+
+// Library splitting
+const { format } = await import('date-fns');
+</code></pre>
+<h3 id="tree-shaking">Tree Shaking</h3>
+<pre><code class="language-json">// package.json - Enable tree shaking
+{
+  &quot;sideEffects&quot;: false
+}
+
+// Or specify files with side effects
+{
+  &quot;sideEffects&quot;: [&quot;*.css&quot;, &quot;*.scss&quot;]
+}
+</code></pre>
+<h3 id="minification-compression">Minification &amp; Compression</h3>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>What It Does</th>
+<th>Savings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Minification</td>
+<td>Remove whitespace, shorten names</td>
+<td>30-50%</td>
+</tr>
+<tr>
+<td>Gzip</td>
+<td>Compress with dictionary</td>
+<td>60-80%</td>
+</tr>
+<tr>
+<td>Brotli</td>
+<td>Better compression</td>
+<td>15-20% smaller than Gzip</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-css-optimization">6. CSS Optimization</h2>
+<h3 id="remove-unused-css">Remove Unused CSS</h3>
+<pre><code class="language-bash"># PurgeCSS - Remove unused styles
+npx purgecss --css styles.css --content index.html --output dist/
+</code></pre>
+<h3 id="critical-css-extraction_1">Critical CSS Extraction</h3>
+<pre><code class="language-js">// Use critters for automatic critical CSS
+// webpack.config.js
+const Critters = require('critters-webpack-plugin');
+
+plugins: [
+  new Critters({
+    preload: 'swap',
+    inlineThreshold: 0
+  })
+]
+</code></pre>
+<h3 id="css-containment">CSS Containment</h3>
+<pre><code class="language-css">/* Tell browser this component is independent */
+.card {
+  contain: layout style paint;
+}
+
+/* Full containment (most aggressive) */
+.widget {
+  contain: strict;
+}
+</code></pre>
+<h3 id="content-visibility-skip-rendering">content-visibility (Skip Rendering)</h3>
+<pre><code class="language-css">/* Browser skips rendering until scrolled into view */
+.below-fold-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 500px; /* Estimated height */
+}
+</code></pre>
+<hr />
+<h2 id="7-caching-strategy">7. Caching Strategy</h2>
+<h3 id="cache-headers">Cache Headers</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  CACHING STRATEGY                                            │
+│                                                              │
+│  Static Assets (JS, CSS, images with hash):                  │
+│  Cache-Control: public, max-age=31536000, immutable          │
+│                                                              │
+│  HTML files:                                                 │
+│  Cache-Control: no-cache                                     │
+│  (or max-age=0, must-revalidate)                            │
+│                                                              │
+│  API responses:                                              │
+│  Cache-Control: private, max-age=60                         │
+│  (with ETag for validation)                                 │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="service-worker-caching">Service Worker Caching</h3>
+<pre><code class="language-js">// Stale-While-Revalidate pattern
+self.addEventListener('fetch', event =&gt; {
+  event.respondWith(
+    caches.open('v1').then(cache =&gt;
+      cache.match(event.request).then(cached =&gt; {
+        const fetched = fetch(event.request).then(response =&gt; {
+          cache.put(event.request, response.clone());
+          return response;
+        });
+        return cached || fetched;
+      })
+    )
+  );
+});
+</code></pre>
+<hr />
+<h2 id="8-network-optimization">8. Network Optimization</h2>
+<h3 id="http2-benefits">HTTP/2 Benefits</h3>
+<pre><code>HTTP/1.1:
+├── 6 connections per domain
+├── Head-of-line blocking
+└── Uncompressed headers
+
+HTTP/2:
+├── Single multiplexed connection
+├── Header compression (HPACK)
+├── Server push
+└── Stream prioritization
+</code></pre>
+<h3 id="reduce-round-trips">Reduce Round Trips</h3>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Savings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>preconnect</code> to API origin</td>
+<td>100-500ms (TCP + TLS)</td>
+</tr>
+<tr>
+<td>Inline critical CSS/JS</td>
+<td>1 round trip</td>
+</tr>
+<tr>
+<td>Use CDN (edge locations)</td>
+<td>50-200ms latency</td>
+</tr>
+<tr>
+<td>HTTP/2 multiplexing</td>
+<td>Eliminates connection overhead</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cdn-configuration">CDN Configuration</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  CDN EDGE CONFIGURATION                                      │
+│                                                              │
+│  Static assets:    TTL 1 year (immutable with hash)         │
+│  HTML pages:       TTL 60s (stale-while-revalidate)         │
+│  API responses:    TTL varies (use Surrogate-Key for purge) │
+│  Images:           TTL 30 days (purge on update)            │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="9-rendering-optimization">9. Rendering Optimization</h2>
+<h3 id="avoid-layout-thrashing">Avoid Layout Thrashing</h3>
+<pre><code class="language-js">// ❌ BAD - Forces multiple reflows
+elements.forEach(el =&gt; {
+  const height = el.offsetHeight;  // Read (forces reflow)
+  el.style.height = height + 10 + 'px';  // Write
+});
+
+// ✅ GOOD - Batch reads, then batch writes
+const heights = elements.map(el =&gt; el.offsetHeight);  // All reads
+elements.forEach((el, i) =&gt; {
+  el.style.height = heights[i] + 10 + 'px';  // All writes
+});
+</code></pre>
+<h3 id="use-transform-instead-of-layout-properties">Use transform Instead of Layout Properties</h3>
+<pre><code class="language-css">/* ❌ Triggers layout + paint */
+.animate {
+  left: 100px;
+  top: 100px;
+}
+
+/* ✅ Only triggers composite (GPU) */
+.animate {
+  transform: translate(100px, 100px);
+}
+</code></pre>
+<h3 id="will-change-hint">will-change Hint</h3>
+<pre><code class="language-css">/* Tell browser to prepare for animation */
+.card:hover {
+  will-change: transform;
+}
+
+.card.animating {
+  transform: scale(1.1);
+}
+
+/* Remove after animation */
+.card {
+  will-change: auto;
+}
+</code></pre>
+<hr />
+<h2 id="10-third-party-scripts">10. Third-Party Scripts</h2>
+<p>Third-party scripts are often the biggest performance killers.</p>
+<h3 id="audit-prioritize">Audit &amp; Prioritize</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  THIRD-PARTY AUDIT                                           │
+│                                                              │
+│  Essential (sync):     Payment SDK, Auth                    │
+│  Important (async):    Analytics, Error tracking            │
+│  Nice-to-have (defer): Chat widgets, Ads                    │
+│  Remove:               Unused tracking, Legacy widgets      │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="loading-strategies">Loading Strategies</h3>
+<pre><code class="language-html">&lt;!-- Load after page is interactive --&gt;
+&lt;script&gt;
+  window.addEventListener('load', () =&gt; {
+    const script = document.createElement('script');
+    script.src = 'https://chat-widget.com/widget.js';
+    document.body.appendChild(script);
+  });
+&lt;/script&gt;
+
+&lt;!-- Or use requestIdleCallback --&gt;
+&lt;script&gt;
+  requestIdleCallback(() =&gt; {
+    // Load non-critical third-party scripts
+  });
+&lt;/script&gt;
+</code></pre>
+<h3 id="facade-pattern">Facade Pattern</h3>
+<pre><code class="language-jsx">// Don't load YouTube embed until user clicks
+function YouTubeEmbed({ videoId }) {
+  const [loaded, setLoaded] = useState(false);
+
+  if (!loaded) {
+    return (
+      &lt;div
+        className=&quot;youtube-facade&quot;
+        onClick={() =&gt; setLoaded(true)}
+        style={{ backgroundImage: `url(https://i.ytimg.com/vi/${videoId}/hqdefault.jpg)` }}
+      &gt;
+        &lt;button&gt;▶ Play&lt;/button&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return &lt;iframe src={`https://youtube.com/embed/${videoId}?autoplay=1`} /&gt;;
+}
+</code></pre>
+<hr />
+<h2 id="11-monitoring-measurement">11. Monitoring &amp; Measurement</h2>
+<h3 id="real-user-monitoring-rum">Real User Monitoring (RUM)</h3>
+<pre><code class="language-js">// Collect navigation timing
+const navigation = performance.getEntriesByType('navigation')[0];
+
+const metrics = {
+  ttfb: navigation.responseStart - navigation.requestStart,
+  fcp: performance.getEntriesByName('first-contentful-paint')[0]?.startTime,
+  domComplete: navigation.domComplete - navigation.startTime,
+  loadComplete: navigation.loadEventEnd - navigation.startTime
+};
+
+// Send to analytics
+navigator.sendBeacon('/analytics', JSON.stringify(metrics));
+</code></pre>
+<h3 id="performance-budget">Performance Budget</h3>
+<pre><code class="language-json">// Example performance budget
+{
+  &quot;budgets&quot;: [
+    {
+      &quot;resourceType&quot;: &quot;script&quot;,
+      &quot;budget&quot;: 300  // KB
+    },
+    {
+      &quot;resourceType&quot;: &quot;total&quot;,
+      &quot;budget&quot;: 1000  // KB
+    },
+    {
+      &quot;metric&quot;: &quot;first-contentful-paint&quot;,
+      &quot;budget&quot;: 1500  // ms
+    },
+    {
+      &quot;metric&quot;: &quot;interactive&quot;,
+      &quot;budget&quot;: 3000  // ms
+    }
+  ]
+}
+</code></pre>
+<hr />
+<h2 id="12-quick-reference-checklist">12. Quick Reference Checklist</h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Optimization</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HTML</strong></td>
+<td>Minify, inline critical CSS, defer scripts</td>
+</tr>
+<tr>
+<td><strong>CSS</strong></td>
+<td>Remove unused, critical CSS, containment</td>
+</tr>
+<tr>
+<td><strong>JavaScript</strong></td>
+<td>Code split, tree shake, defer/async</td>
+</tr>
+<tr>
+<td><strong>Images</strong></td>
+<td>WebP/AVIF, lazy load, responsive, compression</td>
+</tr>
+<tr>
+<td><strong>Fonts</strong></td>
+<td>Preload, font-display: swap, subset</td>
+</tr>
+<tr>
+<td><strong>Network</strong></td>
+<td>HTTP/2, CDN, preconnect, compression</td>
+</tr>
+<tr>
+<td><strong>Caching</strong></td>
+<td>Long cache + fingerprinting, Service Worker</td>
+</tr>
+<tr>
+<td><strong>Third-party</strong></td>
+<td>Audit, defer, facade pattern</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-interview-tip">13. Interview Tip</h2>
+<blockquote>
+<p>"I approach web performance holistically. First, I establish a performance budget and set up monitoring to track Core Web Vitals in production. For the Critical Rendering Path, I inline critical CSS, defer non-essential JavaScript, and use resource hints for key origins. Images get the most attention—I serve WebP/AVIF with responsive srcset and lazy loading. For JavaScript, I code-split by route, tree-shake dependencies, and audit bundle size regularly. Third-party scripts are loaded after the page is interactive or behind facades. The key is measuring real user metrics, not just lab scores—Chrome DevTools is for debugging, but RUM tells the true story."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

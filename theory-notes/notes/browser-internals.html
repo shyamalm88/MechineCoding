@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser Internals: A Senior Engineer&#x27;s Deep Dive — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html" aria-current="page">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="browser-internals-a-senior-engineers-deep-dive">Browser Internals: A Senior Engineer's Deep Dive</h1>
+<p>Understanding how the browser works under the hood is essential for performance optimization and debugging.</p>
+<hr />
+<h2 id="1-the-browser-architecture">1. The Browser Architecture</h2>
+<p>Modern browsers have a multi-process architecture:</p>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                     Browser Process                          │
+│  (UI, bookmarks, network, storage)                          │
+└─────────────────────────────────────────────────────────────┘
+         │              │              │              │
+         ▼              ▼              ▼              ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│  Renderer   │ │  Renderer   │ │  Renderer   │ │    GPU      │
+│  Process    │ │  Process    │ │  Process    │ │  Process    │
+│  (Tab 1)    │ │  (Tab 2)    │ │  (Tab 3)    │ │             │
+└─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
+</code></pre>
+<h3 id="why-multiple-processes">Why Multiple Processes?</h3>
+<table>
+<thead>
+<tr>
+<th>Benefit</th>
+<th>Explanation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Security</strong></td>
+<td>Each tab is sandboxed; malicious site can't access other tabs</td>
+</tr>
+<tr>
+<td><strong>Stability</strong></td>
+<td>If one tab crashes, others survive</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>Parallel processing across CPU cores</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-the-rendering-pipeline-critical-rendering-path">2. The Rendering Pipeline (Critical Rendering Path)</h2>
+<p>This is <strong>the most important concept</strong> for frontend performance.</p>
+<pre><code>┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│   HTML   │───▶│   DOM    │───▶│  Render  │───▶│  Layout  │───▶│  Paint   │
+│  Parse   │    │   Tree   │    │   Tree   │    │          │    │          │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+                     │                │
+                     │                │
+               ┌─────▼─────┐          │
+               │   CSSOM   │──────────┘
+               │   Tree    │
+               └───────────┘
+</code></pre>
+<h3 id="step-by-step-breakdown">Step-by-Step Breakdown</h3>
+<h4 id="1-html-parsing-dom-tree">1. HTML Parsing → DOM Tree</h4>
+<pre><code class="language-html">&lt;html&gt;
+  &lt;body&gt;
+    &lt;div id=&quot;app&quot;&gt;
+      &lt;p&gt;Hello&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<pre><code>        document
+            │
+          html
+            │
+          body
+            │
+        div#app
+            │
+           p
+            │
+        &quot;Hello&quot;
+</code></pre>
+<p><strong>Key Point:</strong> Parser is <strong>synchronous</strong>. When it hits <code>&lt;script&gt;</code>, it STOPS.</p>
+<h4 id="2-css-parsing-cssom-tree">2. CSS Parsing → CSSOM Tree</h4>
+<pre><code class="language-css">body { font-size: 16px; }
+#app { color: blue; }
+p { margin: 10px; }
+</code></pre>
+<pre><code>        CSSOM
+          │
+     ┌────┴────┐
+   body      #app
+(font:16)   (color:blue)
+     │
+     p
+ (margin:10)
+</code></pre>
+<p><strong>Key Point:</strong> CSSOM construction <strong>blocks rendering</strong>. This is why we inline critical CSS.</p>
+<h4 id="3-render-tree-dom-cssom">3. Render Tree (DOM + CSSOM)</h4>
+<p>Only <strong>visible</strong> elements are included:</p>
+<pre><code>Render Tree:
+  body (font: 16px)
+    └─ div#app (color: blue)
+         └─ p (margin: 10px)
+              └─ &quot;Hello&quot;
+
+NOT included:
+  - &lt;head&gt; and its children
+  - Elements with display: none
+  - &lt;script&gt;, &lt;meta&gt;, &lt;link&gt;
+</code></pre>
+<h4 id="4-layout-reflow">4. Layout (Reflow)</h4>
+<p>Calculates the <strong>exact position and size</strong> of each element:</p>
+<pre><code>┌────────────────────────────────────────┐
+│ body: 0,0 - 1920x1080                  │
+│  ┌──────────────────────────────────┐  │
+│  │ div#app: 8,8 - 1904x500          │  │
+│  │  ┌────────────────────────────┐  │  │
+│  │  │ p: 8,18 - 1904x20          │  │  │
+│  │  └────────────────────────────┘  │  │
+│  └──────────────────────────────────┘  │
+└────────────────────────────────────────┘
+</code></pre>
+<p><strong>Expensive Operation:</strong> Changing width, height, position triggers reflow of all descendants.</p>
+<h4 id="5-paint">5. Paint</h4>
+<p>Fills in pixels: colors, borders, shadows, text.</p>
+<p><strong>Paint Order:</strong>
+1. Background color
+2. Background image
+3. Border
+4. Children
+5. Outline</p>
+<h4 id="6-composite">6. Composite</h4>
+<p>GPU combines layers into final image. Elements on separate layers can animate without repaint.</p>
+<hr />
+<h2 id="3-the-event-loop-javascripts-heartbeat">3. The Event Loop: JavaScript's Heartbeat</h2>
+<p>JavaScript is <strong>single-threaded</strong>. The Event Loop is how it handles async operations.</p>
+<h3 id="the-mental-model">The Mental Model</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                         HEAP                                 │
+│                   (Object Storage)                           │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────┐     ┌─────────────────────────────────────────┐
+│   CALL      │     │              WEB APIs                    │
+│   STACK     │     │  (setTimeout, fetch, DOM events, etc.)  │
+│             │     └──────────────────┬──────────────────────┘
+│  function() │                        │
+│  function() │                        ▼
+│  main()     │     ┌─────────────────────────────────────────┐
+└─────────────┘     │           CALLBACK QUEUES                │
+       ▲            │  ┌─────────────────────────────────────┐ │
+       │            │  │ Microtask Queue (Promises, queueMT) │ │
+       │            │  └─────────────────────────────────────┘ │
+       │            │  ┌─────────────────────────────────────┐ │
+       └────────────│  │ Macrotask Queue (setTimeout, I/O)   │ │
+     Event Loop     │  └─────────────────────────────────────┘ │
+     picks next     └─────────────────────────────────────────┘
+</code></pre>
+<h3 id="execution-order">Execution Order</h3>
+<pre><code class="language-js">console.log('1');  // Sync
+
+setTimeout(() =&gt; console.log('2'), 0);  // Macrotask
+
+Promise.resolve().then(() =&gt; console.log('3'));  // Microtask
+
+console.log('4');  // Sync
+
+// Output: 1, 4, 3, 2
+</code></pre>
+<p><strong>The Rule:</strong>
+1. Execute all synchronous code (Call Stack empties)
+2. Execute ALL microtasks (Promise callbacks, queueMicrotask)
+3. Execute ONE macrotask (setTimeout, setInterval, I/O)
+4. Repeat from step 2</p>
+<h3 id="microtasks-vs-macrotasks">Microtasks vs Macrotasks</h3>
+<table>
+<thead>
+<tr>
+<th>Microtasks</th>
+<th>Macrotasks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Promise.then/catch/finally</code></td>
+<td><code>setTimeout</code></td>
+</tr>
+<tr>
+<td><code>queueMicrotask()</code></td>
+<td><code>setInterval</code></td>
+</tr>
+<tr>
+<td><code>MutationObserver</code></td>
+<td><code>setImmediate</code> (Node)</td>
+</tr>
+<tr>
+<td><code>process.nextTick</code> (Node)</td>
+<td>I/O callbacks</td>
+</tr>
+<tr>
+<td></td>
+<td><code>requestAnimationFrame</code>*</td>
+</tr>
+</tbody>
+</table>
+<p>*<code>requestAnimationFrame</code> runs before repaint, after microtasks.</p>
+<h3 id="the-danger-blocking-the-event-loop">The Danger: Blocking the Event Loop</h3>
+<pre><code class="language-js">// BAD: Blocks for 5 seconds
+function processLargeArray(items) {
+  items.forEach(item =&gt; {
+    // Heavy computation
+    heavyWork(item);
+  });
+}
+
+// GOOD: Yield to the event loop
+async function processLargeArray(items) {
+  for (const item of items) {
+    heavyWork(item);
+
+    // Let browser breathe every 100 items
+    if (index % 100 === 0) {
+      await new Promise(r =&gt; setTimeout(r, 0));
+    }
+  }
+}
+</code></pre>
+<hr />
+<h2 id="4-reflow-vs-repaint">4. Reflow vs Repaint</h2>
+<p>Understanding what triggers each is crucial for performance.</p>
+<h3 id="repaint-cheap">Repaint (Cheap)</h3>
+<p>Changes to <strong>visual properties</strong> that don't affect layout:</p>
+<pre><code class="language-js">element.style.color = 'red';
+element.style.backgroundColor = 'blue';
+element.style.visibility = 'hidden';  // Still takes space
+element.style.opacity = 0.5;
+</code></pre>
+<h3 id="reflow-expensive">Reflow (Expensive)</h3>
+<p>Changes to <strong>geometry</strong> trigger layout recalculation:</p>
+<pre><code class="language-js">element.style.width = '100px';
+element.style.height = '200px';
+element.style.padding = '10px';
+element.style.margin = '20px';
+element.style.display = 'none';  // Removed from layout
+element.style.position = 'absolute';
+element.style.fontSize = '20px';  // Text reflow!
+</code></pre>
+<h3 id="layout-thrashing">Layout Thrashing</h3>
+<p>The <strong>worst performance anti-pattern</strong>:</p>
+<pre><code class="language-js">// BAD: Forces 100 reflows!
+elements.forEach(el =&gt; {
+  const height = el.offsetHeight;  // READ → forces layout
+  el.style.height = height + 10 + 'px';  // WRITE → invalidates layout
+});
+
+// GOOD: Batch reads, then batch writes
+const heights = elements.map(el =&gt; el.offsetHeight);  // All reads
+
+elements.forEach((el, i) =&gt; {
+  el.style.height = heights[i] + 10 + 'px';  // All writes
+});
+</code></pre>
+<h3 id="properties-that-trigger-layout">Properties That Trigger Layout</h3>
+<p>Reading these forces an immediate reflow:</p>
+<pre><code class="language-js">// These are &quot;layout-triggering&quot; getters
+element.offsetTop / offsetLeft / offsetWidth / offsetHeight
+element.scrollTop / scrollLeft / scrollWidth / scrollHeight
+element.clientTop / clientLeft / clientWidth / clientHeight
+element.getBoundingClientRect()
+window.getComputedStyle(element)
+</code></pre>
+<hr />
+<h2 id="5-compositor-layers">5. Compositor Layers</h2>
+<p>The GPU can animate certain properties <strong>without reflow or repaint</strong>.</p>
+<h3 id="properties-handled-by-compositor">Properties Handled by Compositor</h3>
+<pre><code class="language-css">/* These animate on the GPU — 60fps guaranteed */
+transform: translateX(100px);
+transform: scale(1.5);
+transform: rotate(45deg);
+opacity: 0.5;
+</code></pre>
+<h3 id="how-to-promote-to-own-layer">How to Promote to Own Layer</h3>
+<pre><code class="language-css">/* Modern way */
+.animated-element {
+  will-change: transform;
+}
+
+/* Legacy fallback */
+.animated-element {
+  transform: translateZ(0);  /* &quot;Null transform hack&quot; */
+}
+</code></pre>
+<h3 id="the-layer-explosion-problem">The Layer Explosion Problem</h3>
+<pre><code class="language-css">/* BAD: Creates too many layers */
+* {
+  will-change: transform;
+}
+
+/* GOOD: Only elements that will animate */
+.card:hover {
+  will-change: transform;
+}
+.card {
+  will-change: auto;  /* Release after animation */
+}
+</code></pre>
+<hr />
+<h2 id="6-requestanimationframe-the-right-way-to-animate">6. requestAnimationFrame: The Right Way to Animate</h2>
+<h3 id="why-not-settimeout">Why Not setTimeout?</h3>
+<pre><code class="language-js">// BAD: Timer doesn't sync with display refresh
+setInterval(() =&gt; {
+  element.style.left = x++ + 'px';
+}, 16);  // Hoping for 60fps
+
+// GOOD: Synced with browser's paint cycle
+function animate() {
+  element.style.left = x++ + 'px';
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</code></pre>
+<h3 id="when-raf-fires">When rAF Fires</h3>
+<pre><code>┌────────────────────────────────────────────────────────────┐
+│                    One Frame (~16.67ms)                     │
+├──────────┬──────────┬──────────┬──────────┬───────────────┤
+│   JS     │   rAF    │  Style   │  Layout  │     Paint     │
+│ (events) │callbacks │  Calc    │          │   Composite   │
+└──────────┴──────────┴──────────┴──────────┴───────────────┘
+</code></pre>
+<hr />
+<h2 id="7-web-workers-true-parallelism">7. Web Workers: True Parallelism</h2>
+<p>For heavy computation that would block the main thread:</p>
+<pre><code class="language-js">// main.js
+const worker = new Worker('worker.js');
+
+worker.postMessage({ data: largeArray });
+
+worker.onmessage = (event) =&gt; {
+  console.log('Result:', event.data);
+};
+
+// worker.js
+self.onmessage = (event) =&gt; {
+  const result = heavyComputation(event.data);
+  self.postMessage(result);
+};
+</code></pre>
+<h3 id="limitations">Limitations</h3>
+<table>
+<thead>
+<tr>
+<th>Can Access</th>
+<th>Cannot Access</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fetch</code></td>
+<td>DOM</td>
+</tr>
+<tr>
+<td><code>setTimeout/setInterval</code></td>
+<td><code>window</code></td>
+</tr>
+<tr>
+<td><code>WebSockets</code></td>
+<td><code>document</code></td>
+</tr>
+<tr>
+<td><code>IndexedDB</code></td>
+<td>UI-related APIs</td>
+</tr>
+<tr>
+<td><code>postMessage</code></td>
+<td><code>localStorage</code> (use IndexedDB)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8-memory-management-garbage-collection">8. Memory Management &amp; Garbage Collection</h2>
+<h3 id="how-gc-works-mark-and-sweep">How GC Works (Mark and Sweep)</h3>
+<pre><code>1. Mark Phase: Start from &quot;roots&quot; (global, stack), mark all reachable objects
+2. Sweep Phase: Delete all unmarked objects
+</code></pre>
+<h3 id="common-memory-leaks">Common Memory Leaks</h3>
+<pre><code class="language-js">// 1. Forgotten event listeners
+element.addEventListener('click', handler);
+// element removed from DOM, but handler still references it
+
+// 2. Closures holding references
+function createHandler() {
+  const largeData = new Array(1000000);
+  return () =&gt; console.log(largeData.length);
+}
+
+// 3. Detached DOM trees
+const div = document.createElement('div');
+div.innerHTML = '&lt;span&gt;Hello&lt;/span&gt;';
+// div never added to DOM, but JavaScript holds reference
+</code></pre>
+<h3 id="detecting-leaks">Detecting Leaks</h3>
+<pre><code class="language-js">// Chrome DevTools → Memory → Take Heap Snapshot
+// Compare snapshots before and after suspected leak
+</code></pre>
+<hr />
+<h2 id="9-interview-tip">9. Interview Tip</h2>
+<blockquote>
+<p>"I understand the browser as a multi-stage pipeline: parsing HTML/CSS into trees, combining them into the render tree, calculating layout, painting pixels, and compositing layers. I optimize by avoiding layout thrashing (batch reads before writes), using compositor-friendly properties (transform, opacity) for animations, and leveraging requestAnimationFrame for smooth 60fps. For heavy computation, I use Web Workers to keep the main thread responsive. Understanding the event loop — especially the microtask/macrotask distinction — helps me write predictable async code."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

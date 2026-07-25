@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hydration — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html" aria-current="page">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="hydration-interview-reference">Hydration — Interview Reference</h1>
+<hr />
+<h2 id="what-is-hydration">What is Hydration?</h2>
+<p>Hydration is the process of <strong>attaching JavaScript event listeners and React state to server-rendered HTML</strong> so a static page becomes interactive.</p>
+<blockquote>
+<p><strong>One-liner:</strong> The server sends HTML the browser can paint immediately. React then "hydrates" it — walks the DOM, matches it to the virtual DOM, and attaches event handlers — without re-rendering.</p>
+</blockquote>
+<p>Without hydration: SSR gives you fast first paint but a dead page — no clicks, no state.
+Without SSR: you get a blank page until JS downloads and React renders everything client-side.</p>
+<hr />
+<h2 id="the-hydration-flow">The Hydration Flow</h2>
+<div class="mermaid">
+sequenceDiagram
+    participant B as Browser
+    participant S as Server
+    participant R as React (client)
+
+    B->>S: GET /page
+    S->>S: renderToString(<App />) — React renders to HTML string
+    S-->>B: HTML + <script src="bundle.js">
+    B->>B: Browser paints HTML (FCP — fast, no JS needed)
+    Note over B: Page is VISIBLE but NOT interactive
+    B->>B: Downloads bundle.js
+    B->>R: ReactDOM.hydrateRoot(document, <App />)
+    R->>R: Renders virtual DOM tree (same as server output)
+    R->>B: Walks real DOM, matches nodes, attaches event listeners
+    Note over B: Page is NOW interactive (TTI)
+    B->>B: User interactions work
+</div>
+<p><strong>The gap between FCP (paint) and TTI (interactive) is the "uncanny valley"</strong> — the page looks complete but buttons don't work.</p>
+<hr />
+<h2 id="how-react-hydration-works-internally">How React Hydration Works Internally</h2>
+<p>React does <strong>not</strong> throw away the server HTML and re-render. It reuses the existing DOM nodes.</p>
+<pre><code>Server HTML:  &lt;div id=&quot;root&quot;&gt;&lt;button class=&quot;btn&quot;&gt;Click me&lt;/button&gt;&lt;/div&gt;
+React vDOM:   &lt;div&gt;&lt;button className=&quot;btn&quot;&gt;Click me&lt;/button&gt;&lt;/div&gt;
+
+Hydration:
+  1. Start at root DOM node
+  2. Compare: real DOM node type === React element type? → YES → adopt this node
+  3. Set internal fiber references (React's internal pointer) to this real DOM node
+  4. Attach event listeners (React uses delegation — one listener at root)
+  5. Repeat for every child
+</code></pre>
+<p>React uses <strong>one delegated event listener at the root</strong> — not per-element listeners. All events bubble up to the root and React dispatches them to the correct fiber.</p>
+<hr />
+<h2 id="hydration-mismatch">Hydration Mismatch</h2>
+<p>If the server-rendered HTML doesn't match what React expects to render client-side, React <strong>throws a hydration error and re-renders from scratch</strong> — destroying the server HTML and replacing it.</p>
+<pre><code class="language-jsx">// ❌ Mismatch — Date.now() different on server vs client
+function Page() {
+  return &lt;div&gt;Rendered at: {Date.now()}&lt;/div&gt;;
+}
+
+// ❌ Mismatch — window/localStorage not available on server
+function Page() {
+  return &lt;div&gt;{localStorage.getItem('theme')}&lt;/div&gt;;
+}
+
+// ❌ Mismatch — random IDs
+function Item() {
+  return &lt;div id={Math.random()}&gt;Item&lt;/div&gt;;
+}
+</code></pre>
+<p><strong>How React handles mismatches:</strong>
+- <strong>React 17 and below:</strong> Silent mismatch → patches individual nodes → inconsistent state
+- <strong>React 18:</strong> Throws a hydration error in dev, attempts recovery in prod (re-renders subtree client-side)</p>
+<p><strong>Fixing mismatches:</strong></p>
+<pre><code class="language-jsx">// Fix 1 — useEffect runs only client-side (after hydration)
+function Page() {
+  const [time, setTime] = useState(null);
+  useEffect(() =&gt; setTime(Date.now()), []); // runs after hydration
+  return &lt;div&gt;Rendered at: {time ?? 'loading...'}&lt;/div&gt;;
+}
+
+// Fix 2 — suppressHydrationWarning for intentional differences
+function Clock() {
+  return &lt;time suppressHydrationWarning&gt;{new Date().toISOString()}&lt;/time&gt;;
+}
+
+// Fix 3 — stable IDs with useId (React 18)
+function Item() {
+  const id = useId(); // deterministic, same on server and client
+  return &lt;div id={id}&gt;Item&lt;/div&gt;;
+}
+</code></pre>
+<hr />
+<h2 id="full-hydration-vs-selective-hydration">Full Hydration vs Selective Hydration</h2>
+<h3 id="full-hydration-traditional">Full Hydration (traditional)</h3>
+<p>All components hydrate before any are interactive. The entire JS bundle must download and execute before the first click works.</p>
+<pre><code>Download 500KB bundle → parse → execute → hydrate entire tree → interactive
+Time: ~3-5s on mobile
+</code></pre>
+<h3 id="selective-hydration-react-18-suspense-based">Selective Hydration (React 18 — Suspense-based)</h3>
+<p>React can hydrate different parts of the tree independently. Wrapped in <code>&lt;Suspense&gt;</code>, a component can:
+- Skip hydration initially (show fallback)
+- Hydrate when its data is ready
+- Be <strong>prioritized</strong> if the user clicks on it</p>
+<pre><code class="language-jsx">// React 18 — each Suspense boundary hydrates independently
+function App() {
+  return (
+    &lt;div&gt;
+      &lt;Header /&gt;  {/* hydrates first — no Suspense */}
+      &lt;Suspense fallback={&lt;Spinner /&gt;}&gt;
+        &lt;Comments /&gt;  {/* hydrates later — waits for its data */}
+      &lt;/Suspense&gt;
+      &lt;Suspense fallback={&lt;Spinner /&gt;}&gt;
+        &lt;Sidebar /&gt;   {/* hydrates independently */}
+      &lt;/Suspense&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<p><strong>Priority hydration:</strong> If the user clicks on <code>&lt;Comments&gt;</code> before it's hydrated, React interrupts hydration of everything else and hydrates <code>&lt;Comments&gt;</code> first to respond to the click.</p>
+<div class="mermaid">
+flowchart TD
+    HTML["Server HTML received\n(Full page visible instantly)"]
+    H1["Hydrate Header\n(no Suspense — eager)"]
+    H2["Hydrate Comments\n(Suspense — waits for data stream)"]
+    H3["Hydrate Sidebar\n(Suspense — waits for data stream)"]
+    U["User clicks Comments\nbefore it's hydrated"]
+    INT["React INTERRUPTS\nSidebar hydration"]
+    PRI["Hydrate Comments FIRST\n(priority bump)"]
+    RES["Resume Sidebar hydration"]
+
+    HTML --> H1
+    H1 --> H2
+    H1 --> H3
+    U --> INT --> PRI --> RES
+</div>
+<hr />
+<h2 id="streaming-ssr">Streaming SSR</h2>
+<p>Instead of waiting for the entire page to be ready before sending HTML, the server <strong>streams HTML in chunks</strong> as each part becomes ready.</p>
+<pre><code class="language-js">// React 18 — renderToPipeableStream
+import { renderToPipeableStream } from 'react-dom/server';
+
+app.get('/', (req, res) =&gt; {
+  const { pipe } = renderToPipeableStream(&lt;App /&gt;, {
+    bootstrapScripts: ['/bundle.js'],
+    onShellReady() {
+      res.setHeader('Content-Type', 'text/html');
+      pipe(res); // start streaming immediately
+    }
+  });
+});
+</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant B as Browser
+    participant S as Server
+
+    B->>S: GET /
+    S-->>B: <html><head>...</head><body><Header/>... (streams immediately)
+    B->>B: Paints Header (FCP — fast)
+    S-->>B: <main>Loading...</main> (Suspense fallback streamed)
+    B->>B: User sees spinner
+    S-->>B: <script>replaceContent(commentsHTML)</script> (data ready, streamed)
+    B->>B: Spinner replaced with real Comments
+    Note over B,S: Each piece arrives and paints as it's ready
+</div>
+<p><strong>Why this matters:</strong> TTFB (time to first byte) is instant. FCP is fast. Individual sections appear as their data is ready — no single blocking waterfall.</p>
+<hr />
+<h2 id="islands-architecture">Islands Architecture</h2>
+<blockquote>
+<p><strong>The idea:</strong> Most of a page is static content. Only isolated "islands" need JavaScript and interactivity. Hydrate only the islands, not the entire page.</p>
+</blockquote>
+<pre><code>+------------------------------------------+
+|  STATIC HEADER (no JS needed)            |
++------------------------------------------+
+|  STATIC ARTICLE BODY (no JS needed)      |
+|                                          |
+|  ┌──────────────────┐   ┌────────────┐  |
+|  │  🏝 ISLAND       │   │ 🏝 ISLAND  │  |
+|  │  Comment Form    │   │ Like Btn   │  |
+|  │  (JS hydrated)   │   │ (hydrated) │  |
+|  └──────────────────┘   └────────────┘  |
++------------------------------------------+
+|  STATIC FOOTER (no JS needed)            |
++------------------------------------------+
+</code></pre>
+<p><strong>Frameworks implementing this:</strong>
+- <strong>Astro</strong> — islands are explicit <code>client:*</code> directives
+- <strong>Fresh (Deno)</strong> — islands are components in <code>/islands/</code> directory
+- <strong>Qwik</strong> — lazy hydration taken to extreme (resumability)</p>
+<pre><code class="language-jsx">// Astro syntax — explicit per-component hydration strategy
+&lt;Header /&gt;                        // static — no JS shipped
+&lt;ArticleBody content={content} /&gt; // static — no JS shipped
+&lt;CommentForm client:load /&gt;       // hydrate immediately on load
+&lt;LikeButton client:visible /&gt;     // hydrate when scrolled into view
+&lt;Analytics client:idle /&gt;         // hydrate when browser is idle
+</code></pre>
+<p><strong><code>client:visible</code></strong> — uses <code>IntersectionObserver</code> to delay hydration until the component enters the viewport. Components below the fold don't hydrate until the user scrolls to them.</p>
+<hr />
+<h2 id="react-server-components-rsc">React Server Components (RSC)</h2>
+<p>RSC goes further than SSR — some components <strong>never ship JavaScript to the client at all</strong>.</p>
+<pre><code class="language-jsx">// Server Component — runs only on server, zero JS in bundle
+// Can: fetch data, access filesystem, use secrets
+// Cannot: useState, useEffect, event handlers, browser APIs
+async function ProductPage({ id }) {
+  const product = await db.products.findById(id); // direct DB access!
+  return (
+    &lt;div&gt;
+      &lt;h1&gt;{product.name}&lt;/h1&gt;
+      &lt;AddToCart productId={id} /&gt; {/* Client Component — ships JS */}
+    &lt;/div&gt;
+  );
+}
+
+// Client Component — ships JS, runs in browser
+'use client';
+function AddToCart({ productId }) {
+  const [added, setAdded] = useState(false);
+  return &lt;button onClick={() =&gt; setAdded(true)}&gt;Add to Cart&lt;/button&gt;;
+}
+</code></pre>
+<p><strong>What ships to the browser:</strong>
+- Server Components: <strong>zero JS</strong> — only their rendered HTML/JSON output
+- Client Components: <strong>JS bundle</strong> — as before</p>
+<p><strong>The serialization boundary:</strong> Server Components can pass props to Client Components, but only <strong>serializable data</strong> (strings, numbers, objects) — not functions, class instances, or Promises.</p>
+<div class="mermaid">
+graph TD
+    SC["Server Component\n(runs on server only)\nDB queries · secrets · file system"]
+    CC["Client Component\n(ships JS to browser)\nuseState · events · browser APIs"]
+    P["Serializable props only\n(strings · numbers · plain objects)"]
+
+    SC -->|P| CC
+    SC -->|"rendered as HTML/JSON\n(no JS bundle)"| Browser
+    CC -->|"JS bundle\n+ hydration"| Browser
+</div>
+<hr />
+<h2 id="progressive-hydration">Progressive Hydration</h2>
+<p>Delay hydration of low-priority components until after the critical path is interactive.</p>
+<pre><code class="language-jsx">// Hydrate above-fold content immediately
+// Defer below-fold content until idle
+function useLazyHydration() {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() =&gt; {
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() =&gt; setHydrated(true));
+    } else {
+      setTimeout(() =&gt; setHydrated(true), 200);
+    }
+  }, []);
+  return hydrated;
+}
+
+function BelowFoldSection({ children }) {
+  const hydrated = useLazyHydration();
+  if (!hydrated) return &lt;div dangerouslySetInnerHTML={{ __html: serverHTML }} /&gt;;
+  return children;
+}
+</code></pre>
+<hr />
+<h2 id="hydration-strategies-compared">Hydration Strategies Compared</h2>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>JS shipped</th>
+<th>Hydration timing</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSR</td>
+<td>All</td>
+<td>On load</td>
+<td>Dashboards, auth-gated apps</td>
+</tr>
+<tr>
+<td>Full SSR</td>
+<td>All</td>
+<td>Eagerly on load</td>
+<td>Marketing, e-commerce</td>
+</tr>
+<tr>
+<td>Selective hydration</td>
+<td>All</td>
+<td>Per Suspense boundary, prioritized</td>
+<td>Complex pages with slow data</td>
+</tr>
+<tr>
+<td>Streaming SSR</td>
+<td>All</td>
+<td>As chunks arrive</td>
+<td>Long pages with mixed data latency</td>
+</tr>
+<tr>
+<td>Islands</td>
+<td>Islands only</td>
+<td>Per directive (load/visible/idle)</td>
+<td>Content-heavy sites</td>
+</tr>
+<tr>
+<td>RSC</td>
+<td>Client components only</td>
+<td>On load</td>
+<td>Apps with heavy server data needs</td>
+</tr>
+<tr>
+<td>Progressive</td>
+<td>All</td>
+<td>Above-fold first, rest idle</td>
+<td>Large SPAs</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"Hydration is React walking the server-rendered DOM and attaching event listeners without re-rendering. React reuses existing DOM nodes — it doesn't throw away the server HTML. The cost is the JS download + parse + React tree walk, which creates the 'uncanny valley' between FCP and TTI."</p>
+</li>
+<li>
+<p>"Hydration mismatches happen when server output doesn't match client render — Date.now(), Math.random(), localStorage reads on the server. React 18 throws an error in dev and re-renders the mismatched subtree client-side. Fix with useEffect for client-only values, or useId for stable IDs."</p>
+</li>
+<li>
+<p>"Selective hydration in React 18 lets Suspense boundaries hydrate independently. If a user clicks a component that hasn't hydrated yet, React prioritizes it — interrupts other hydration work and hydrates the clicked component first. This is huge for perceived interactivity."</p>
+</li>
+<li>
+<p>"Streaming SSR sends HTML before all data is ready. Suspense boundaries stream their fallback first, then stream the real content when data resolves. TTFB is instant. Each section appears as its data is ready — no single blocking waterfall."</p>
+</li>
+<li>
+<p>"Islands architecture is the logical conclusion — only interactive components ship JS. Static content is zero-JS. Astro's <code>client:visible</code> hydrates components only when they enter the viewport using IntersectionObserver — below-fold components never hydrate if the user doesn't scroll."</p>
+</li>
+<li>
+<p>"React Server Components never ship JS to the browser at all. They run only on the server, can query databases directly, and serialize their output as HTML/JSON. The client only downloads JS for Client Components marked with 'use client'."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

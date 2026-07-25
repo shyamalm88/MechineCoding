@@ -1,0 +1,2204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Complete Guide to Web Asset Optimization — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html" aria-current="page">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="the-complete-guide-to-web-asset-optimization">The Complete Guide to Web Asset Optimization</h1>
+<p>A comprehensive reference for loading, optimizing, and delivering every type of web asset. The ultimate guide for system design interviews and production applications.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-critical-rendering-path">Critical Rendering Path</a></li>
+<li><a href="#2-scripts">Scripts</a></li>
+<li><a href="#3-stylesheets">Stylesheets</a></li>
+<li><a href="#4-fonts">Fonts</a></li>
+<li><a href="#5-images">Images</a></li>
+<li><a href="#6-videos">Videos</a></li>
+<li><a href="#7-resource-hints">Resource Hints</a></li>
+<li><a href="#8-third-party-scripts--analytics">Third-Party Scripts &amp; Analytics</a></li>
+<li><a href="#9-caching-strategies">Caching Strategies</a></li>
+<li><a href="#10-compression">Compression</a></li>
+<li><a href="#11-http2--http3">HTTP/2 &amp; HTTP/3</a></li>
+<li><a href="#12-core-web-vitals-impact">Core Web Vitals Impact</a></li>
+<li><a href="#13-priority-hints">Priority Hints</a></li>
+<li><a href="#14-service-workers--offline">Service Workers &amp; Offline</a></li>
+<li><a href="#15-cdn--edge-optimization">CDN &amp; Edge Optimization</a></li>
+<li><a href="#16-loading-order-cheatsheet">Loading Order Cheatsheet</a></li>
+</ol>
+<hr />
+<h2 id="1-critical-rendering-path">1. Critical Rendering Path</h2>
+<p>The browser must complete these steps before showing content:</p>
+<pre><code>HTML → DOM
+              ↘
+                → Render Tree → Layout → Paint
+              ↗
+CSS  → CSSOM
+</code></pre>
+<h3 id="render-blocking-resources">Render-Blocking Resources</h3>
+<table>
+<thead>
+<tr>
+<th>Resource Type</th>
+<th>Blocks Render?</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSS in <code>&lt;head&gt;</code></td>
+<td>Yes</td>
+<td>Critical CSS inline, defer rest</td>
+</tr>
+<tr>
+<td>Sync <code>&lt;script&gt;</code></td>
+<td>Yes</td>
+<td>Use <code>defer</code> or <code>async</code></td>
+</tr>
+<tr>
+<td>Fonts</td>
+<td>Partially</td>
+<td><code>font-display: swap</code></td>
+</tr>
+<tr>
+<td>Images</td>
+<td>No</td>
+<td>But affects LCP</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-goal">The Goal</h3>
+<p>Minimize <strong>Time to First Contentful Paint (FCP)</strong> by:</p>
+<ol>
+<li>Inlining critical CSS</li>
+<li>Deferring non-critical CSS/JS</li>
+<li>Preloading critical assets</li>
+<li>Avoiding render-blocking resources</li>
+</ol>
+<hr />
+<h2 id="2-scripts">2. Scripts</h2>
+<h3 id="21-loading-modes">2.1 Loading Modes</h3>
+<pre><code class="language-html">&lt;!-- BLOCKING: Stops everything --&gt;
+&lt;script src=&quot;app.js&quot;&gt;&lt;/script&gt;
+
+&lt;!-- ASYNC: Download parallel, execute immediately when ready --&gt;
+&lt;script src=&quot;analytics.js&quot; async&gt;&lt;/script&gt;
+
+&lt;!-- DEFER: Download parallel, execute after DOM ready, in order --&gt;
+&lt;script src=&quot;main.js&quot; defer&gt;&lt;/script&gt;
+
+&lt;!-- MODULE: Deferred by default, strict mode --&gt;
+&lt;script type=&quot;module&quot; src=&quot;app.mjs&quot;&gt;&lt;/script&gt;
+</code></pre>
+<h3 id="22-comparison-table">2.2 Comparison Table</h3>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Download</th>
+<th>Execution Order</th>
+<th>Blocks Parser?</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>None</td>
+<td>Sequential</td>
+<td>Document order</td>
+<td>Yes</td>
+<td>Legacy, inline scripts</td>
+</tr>
+<tr>
+<td><code>async</code></td>
+<td>Parallel</td>
+<td>Download order</td>
+<td>During execution</td>
+<td>Analytics, ads, independent scripts</td>
+</tr>
+<tr>
+<td><code>defer</code></td>
+<td>Parallel</td>
+<td>Document order</td>
+<td>No</td>
+<td>App code needing DOM</td>
+</tr>
+<tr>
+<td><code>type="module"</code></td>
+<td>Parallel</td>
+<td>Document order</td>
+<td>No</td>
+<td>Modern ES modules</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23-visual-timeline">2.3 Visual Timeline</h3>
+<pre><code>HTML:    ████████████████████████████████████████
+         ↓ script tag found
+
+BLOCKING:
+Parse:   ████░░░░░░░░░░░░░░░░░████████████████
+Download:    ░░░░████████░░░░░░░
+Execute:            ░░░░████░░░
+                              ↑ continues parsing
+
+DEFER:
+Parse:   ████████████████████████████████████████
+Download:    ░░░░████████░░░░░░░░░░░░░░░░░░░░░░░░
+Execute:                                    ████
+                                            ↑ after DOMContentLoaded
+
+ASYNC:
+Parse:   ████████████░░░░████████████████████████
+Download:    ░░░░████░░░░░░░░░░░░░░░░░░░░░░░░░░░
+Execute:            ████
+                    ↑ immediately when ready (pauses parser)
+</code></pre>
+<h3 id="24-multiple-deferred-scripts">2.4 Multiple Deferred Scripts</h3>
+<pre><code class="language-html">&lt;script src=&quot;vendor.js&quot; defer&gt;&lt;/script&gt;
+&lt;!-- 500KB, downloads slow --&gt;
+&lt;script src=&quot;app.js&quot; defer&gt;&lt;/script&gt;
+&lt;!-- 50KB, downloads fast --&gt;
+</code></pre>
+<p>Even if <code>app.js</code> finishes first, browser waits and executes <code>vendor.js</code> first (order preserved).</p>
+<h3 id="25-the-async-defer-fallback">2.5 The <code>async defer</code> Fallback</h3>
+<pre><code class="language-html">&lt;script src=&quot;app.js&quot; async defer&gt;&lt;/script&gt;
+</code></pre>
+<ul>
+<li>Modern browsers: Use <code>async</code>, ignore <code>defer</code></li>
+<li>IE9 and older: Use <code>defer</code> as fallback</li>
+</ul>
+<h3 id="26-dynamic-script-loading">2.6 Dynamic Script Loading</h3>
+<pre><code class="language-js">// Creates async behavior by default
+const script = document.createElement(&quot;script&quot;);
+script.src = &quot;analytics.js&quot;;
+document.head.appendChild(script);
+
+// Force synchronous-like behavior
+script.async = false; // Will execute in order if multiple scripts
+</code></pre>
+<h3 id="27-tree-shaking-side-effects">2.7 Tree Shaking &amp; Side Effects</h3>
+<pre><code class="language-json">// package.json
+{
+  &quot;sideEffects&quot;: false, // Safe to tree-shake everything
+  &quot;sideEffects&quot;: [&quot;*.css&quot;, &quot;*.scss&quot;, &quot;./src/polyfills.js&quot;] // Exceptions
+}
+</code></pre>
+<p><strong>Warning:</strong> Files with only imports (CSS, polyfills) may be removed if marked as side-effect-free.</p>
+<hr />
+<h2 id="3-stylesheets">3. Stylesheets</h2>
+<h3 id="31-css-is-render-blocking">3.1 CSS is Render-Blocking</h3>
+<p>By default, CSS blocks rendering because the browser needs complete CSSOM.</p>
+<pre><code class="language-html">&lt;!-- BLOCKING: Must download before render --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;styles.css&quot; /&gt;
+</code></pre>
+<h3 id="32-critical-css-pattern">3.2 Critical CSS Pattern</h3>
+<p>Inline critical (above-the-fold) CSS, defer the rest:</p>
+<pre><code class="language-html">&lt;head&gt;
+  &lt;!-- Critical CSS inlined --&gt;
+  &lt;style&gt;
+    /* Only styles needed for initial viewport */
+    header {
+      ...;
+    }
+    .hero {
+      ...;
+    }
+    nav {
+      ...;
+    }
+  &lt;/style&gt;
+
+  &lt;!-- Non-critical CSS deferred --&gt;
+  &lt;link
+    rel=&quot;preload&quot;
+    href=&quot;full.css&quot;
+    as=&quot;style&quot;
+    onload=&quot;this.onload=null;this.rel='stylesheet'&quot;
+  /&gt;
+  &lt;noscript&gt;&lt;link rel=&quot;stylesheet&quot; href=&quot;full.css&quot; /&gt;&lt;/noscript&gt;
+&lt;/head&gt;
+</code></pre>
+<h3 id="33-css-loading-strategies">3.3 CSS Loading Strategies</h3>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Technique</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Inline Critical</strong></td>
+<td><code>&lt;style&gt;</code> in head</td>
+<td>Above-the-fold content</td>
+</tr>
+<tr>
+<td><strong>Preload + Swap</strong></td>
+<td><code>rel="preload"</code> with onload</td>
+<td>Non-critical styles</td>
+</tr>
+<tr>
+<td><strong>Media Query</strong></td>
+<td><code>media="print"</code> swap</td>
+<td>Print styles, non-matching media</td>
+</tr>
+<tr>
+<td><strong>Dynamic Import</strong></td>
+<td>JavaScript injection</td>
+<td>Route-specific styles</td>
+</tr>
+</tbody>
+</table>
+<h3 id="34-media-attribute-trick">3.4 Media Attribute Trick</h3>
+<pre><code class="language-html">&lt;!-- Downloads with low priority, doesn't block render --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;print.css&quot; media=&quot;print&quot; /&gt;
+
+&lt;!-- Load non-critical CSS without blocking --&gt;
+&lt;link
+  rel=&quot;stylesheet&quot;
+  href=&quot;non-critical.css&quot;
+  media=&quot;print&quot;
+  onload=&quot;this.media='all'&quot;
+/&gt;
+</code></pre>
+<h3 id="35-css-containment">3.5 CSS Containment</h3>
+<p>Limit browser's rendering work:</p>
+<pre><code class="language-css">.widget {
+  contain: layout style paint; /* Isolate from rest of page */
+  content-visibility: auto; /* Skip rendering if off-screen */
+}
+</code></pre>
+<h3 id="36-reducing-css-size">3.6 Reducing CSS Size</h3>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Savings</th>
+<th>Tool</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Minification</td>
+<td>10-30%</td>
+<td>cssnano, clean-css</td>
+</tr>
+<tr>
+<td>Remove unused</td>
+<td>50-90%</td>
+<td>PurgeCSS, UnCSS</td>
+</tr>
+<tr>
+<td>CSS Modules</td>
+<td>Scoped, no duplicates</td>
+<td>Built into bundlers</td>
+</tr>
+<tr>
+<td>Atomic CSS</td>
+<td>Highly reusable</td>
+<td>Tailwind, Tachyons</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-fonts">4. Fonts</h2>
+<h3 id="41-font-loading-problems">4.1 Font Loading Problems</h3>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FOIT</strong> (Flash of Invisible Text)</td>
+<td>Text hidden until font loads</td>
+</tr>
+<tr>
+<td><strong>FOUT</strong> (Flash of Unstyled Text)</td>
+<td>System font shown, then swaps</td>
+</tr>
+<tr>
+<td><strong>Layout Shift</strong></td>
+<td>Text reflows when font changes</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42-font-display-property">4.2 font-display Property</h3>
+<pre><code class="language-css">@font-face {
+  font-family: &quot;MyFont&quot;;
+  src: url(&quot;font.woff2&quot;) format(&quot;woff2&quot;);
+  font-display: swap; /* Show fallback immediately, swap when ready */
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Block Period</th>
+<th>Swap Period</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto</code></td>
+<td>Browser decides</td>
+<td>Browser decides</td>
+<td>Default</td>
+</tr>
+<tr>
+<td><code>block</code></td>
+<td>3s</td>
+<td>Infinite</td>
+<td>Icon fonts</td>
+</tr>
+<tr>
+<td><code>swap</code></td>
+<td>None</td>
+<td>Infinite</td>
+<td>Body text (recommended)</td>
+</tr>
+<tr>
+<td><code>fallback</code></td>
+<td>100ms</td>
+<td>3s</td>
+<td>Balance of FOIT/FOUT</td>
+</tr>
+<tr>
+<td><code>optional</code></td>
+<td>100ms</td>
+<td>None</td>
+<td>Non-essential fonts</td>
+</tr>
+</tbody>
+</table>
+<h3 id="43-preloading-fonts">4.3 Preloading Fonts</h3>
+<pre><code class="language-html">&lt;!-- Preload critical fonts --&gt;
+&lt;link
+  rel=&quot;preload&quot;
+  href=&quot;/fonts/main.woff2&quot;
+  as=&quot;font&quot;
+  type=&quot;font/woff2&quot;
+  crossorigin
+/&gt;
+</code></pre>
+<p><strong>Important:</strong> <code>crossorigin</code> is required even for same-origin fonts!</p>
+<h3 id="44-font-loading-best-practices">4.4 Font Loading Best Practices</h3>
+<pre><code class="language-html">&lt;head&gt;
+  &lt;!-- 1. Preconnect to font origin --&gt;
+  &lt;link rel=&quot;preconnect&quot; href=&quot;https://fonts.gstatic.com&quot; crossorigin /&gt;
+
+  &lt;!-- 2. Preload critical font files --&gt;
+  &lt;link
+    rel=&quot;preload&quot;
+    href=&quot;/fonts/heading.woff2&quot;
+    as=&quot;font&quot;
+    type=&quot;font/woff2&quot;
+    crossorigin
+  /&gt;
+
+  &lt;!-- 3. Use font-display: swap --&gt;
+  &lt;style&gt;
+    @font-face {
+      font-family: &quot;Heading&quot;;
+      src: url(&quot;/fonts/heading.woff2&quot;) format(&quot;woff2&quot;);
+      font-display: swap;
+    }
+  &lt;/style&gt;
+&lt;/head&gt;
+</code></pre>
+<h3 id="45-reducing-font-size">4.5 Reducing Font Size</h3>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Subset</strong></td>
+<td>Only include characters you need (latin vs full unicode)</td>
+</tr>
+<tr>
+<td><strong>Variable Fonts</strong></td>
+<td>One file for all weights/styles</td>
+</tr>
+<tr>
+<td><strong>WOFF2</strong></td>
+<td>Best compression, 30% smaller than WOFF</td>
+</tr>
+<tr>
+<td><strong>System Font Stack</strong></td>
+<td>Zero download, instant render</td>
+</tr>
+</tbody>
+</table>
+<h3 id="46-system-font-stack">4.6 System Font Stack</h3>
+<pre><code class="language-css">font-family: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Oxygen,
+  Ubuntu, Cantarell, sans-serif;
+</code></pre>
+<h3 id="47-font-loading-api">4.7 Font Loading API</h3>
+<pre><code class="language-js">// Check if font is loaded
+document.fonts.ready.then(() =&gt; {
+  document.body.classList.add(&quot;fonts-loaded&quot;);
+});
+
+// Load font programmatically
+const font = new FontFace(&quot;MyFont&quot;, &quot;url(/fonts/my.woff2)&quot;);
+await font.load();
+document.fonts.add(font);
+</code></pre>
+<hr />
+<h2 id="5-images">5. Images</h2>
+<h3 id="51-image-formats-comparison">5.1 Image Formats Comparison</h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Best For</th>
+<th>Transparency</th>
+<th>Animation</th>
+<th>Compression</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>JPEG</strong></td>
+<td>Photos</td>
+<td>No</td>
+<td>No</td>
+<td>Lossy</td>
+</tr>
+<tr>
+<td><strong>PNG</strong></td>
+<td>Graphics, screenshots</td>
+<td>Yes</td>
+<td>No</td>
+<td>Lossless</td>
+</tr>
+<tr>
+<td><strong>WebP</strong></td>
+<td>Everything</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Both (30% smaller)</td>
+</tr>
+<tr>
+<td><strong>AVIF</strong></td>
+<td>Everything</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Both (50% smaller)</td>
+</tr>
+<tr>
+<td><strong>SVG</strong></td>
+<td>Icons, logos</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Vector (scalable)</td>
+</tr>
+<tr>
+<td><strong>GIF</strong></td>
+<td>Simple animations</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Lossless (limited colors)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-modern-format-with-fallback">5.2 Modern Format with Fallback</h3>
+<pre><code class="language-html">&lt;picture&gt;
+  &lt;source srcset=&quot;image.avif&quot; type=&quot;image/avif&quot; /&gt;
+  &lt;source srcset=&quot;image.webp&quot; type=&quot;image/webp&quot; /&gt;
+  &lt;img src=&quot;image.jpg&quot; alt=&quot;Description&quot; loading=&quot;lazy&quot; /&gt;
+&lt;/picture&gt;
+</code></pre>
+<h3 id="53-responsive-images">5.3 Responsive Images</h3>
+<pre><code class="language-html">&lt;!-- Different sizes for different viewports --&gt;
+&lt;img
+  srcset=&quot;small.jpg 480w, medium.jpg 800w, large.jpg 1200w&quot;
+  sizes=&quot;(max-width: 600px) 480px,
+         (max-width: 1000px) 800px,
+         1200px&quot;
+  src=&quot;medium.jpg&quot;
+  alt=&quot;Description&quot;
+/&gt;
+
+&lt;!-- Different images for art direction --&gt;
+&lt;picture&gt;
+  &lt;source media=&quot;(max-width: 600px)&quot; srcset=&quot;mobile.jpg&quot; /&gt;
+  &lt;source media=&quot;(max-width: 1000px)&quot; srcset=&quot;tablet.jpg&quot; /&gt;
+  &lt;img src=&quot;desktop.jpg&quot; alt=&quot;Description&quot; /&gt;
+&lt;/picture&gt;
+</code></pre>
+<h3 id="54-lazy-loading">5.4 Lazy Loading</h3>
+<pre><code class="language-html">&lt;!-- Native lazy loading --&gt;
+&lt;img src=&quot;image.jpg&quot; loading=&quot;lazy&quot; alt=&quot;Description&quot; /&gt;
+
+&lt;!-- Eager load above-the-fold images (LCP) --&gt;
+&lt;img src=&quot;hero.jpg&quot; loading=&quot;eager&quot; fetchpriority=&quot;high&quot; alt=&quot;Hero&quot; /&gt;
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lazy</code></td>
+<td>Load when near viewport</td>
+</tr>
+<tr>
+<td><code>eager</code></td>
+<td>Load immediately (default)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="55-image-decoding">5.5 Image Decoding</h3>
+<pre><code class="language-html">&lt;!-- Don't block main thread for decoding --&gt;
+&lt;img src=&quot;large.jpg&quot; decoding=&quot;async&quot; alt=&quot;Description&quot; /&gt;
+</code></pre>
+<h3 id="56-aspect-ratio-layout-shift">5.6 Aspect Ratio &amp; Layout Shift</h3>
+<pre><code class="language-html">&lt;!-- Prevent layout shift with dimensions --&gt;
+&lt;img src=&quot;photo.jpg&quot; width=&quot;800&quot; height=&quot;600&quot; alt=&quot;Description&quot; /&gt;
+
+&lt;!-- Or use aspect-ratio CSS --&gt;
+&lt;style&gt;
+  .image-container {
+    aspect-ratio: 16 / 9;
+  }
+&lt;/style&gt;
+</code></pre>
+<h3 id="57-image-cdn-transformations">5.7 Image CDN Transformations</h3>
+<pre><code class="language-html">&lt;!-- Cloudinary example --&gt;
+&lt;img
+  src=&quot;https://res.cloudinary.com/demo/image/upload/w_400,f_auto,q_auto/sample.jpg&quot;
+/&gt;
+
+&lt;!-- Imgix example --&gt;
+&lt;img src=&quot;https://example.imgix.net/image.jpg?w=400&amp;auto=format,compress&quot; /&gt;
+</code></pre>
+<p>Common transformations:</p>
+<ul>
+<li><code>f_auto</code> / <code>auto=format</code> - Serve best format (AVIF/WebP/JPEG)</li>
+<li><code>q_auto</code> / <code>auto=compress</code> - Automatic quality optimization</li>
+<li><code>w_400</code> - Resize to width</li>
+<li><code>dpr_2</code> - Device pixel ratio for retina</li>
+</ul>
+<h3 id="58-lcp-image-optimization">5.8 LCP Image Optimization</h3>
+<p>The Largest Contentful Paint image needs special treatment:</p>
+<pre><code class="language-html">&lt;head&gt;
+  &lt;!-- Preload LCP image --&gt;
+  &lt;link rel=&quot;preload&quot; as=&quot;image&quot; href=&quot;hero.jpg&quot; fetchpriority=&quot;high&quot; /&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;!-- LCP image with high priority --&gt;
+  &lt;img
+    src=&quot;hero.jpg&quot;
+    fetchpriority=&quot;high&quot;
+    loading=&quot;eager&quot;
+    decoding=&quot;async&quot;
+    alt=&quot;Hero&quot;
+  /&gt;
+&lt;/body&gt;
+</code></pre>
+<hr />
+<h2 id="6-videos">6. Videos</h2>
+<h3 id="61-video-loading-attributes">6.1 Video Loading Attributes</h3>
+<pre><code class="language-html">&lt;video src=&quot;video.mp4&quot; poster=&quot;thumbnail.jpg&quot; &lt;!-- Show before load --&gt;
+  preload=&quot;metadata&quot;
+  &lt;!-- Only load metadata initially --&gt;
+  playsinline
+  &lt;!-- Don't fullscreen on mobile --&gt;
+  &gt;
+&lt;/video&gt;
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>preload Value</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>none</code></td>
+<td>Don't preload anything</td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td>Load duration, dimensions only</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td>Browser decides (often full video)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-lazy-load-videos">6.2 Lazy Load Videos</h3>
+<pre><code class="language-html">&lt;!-- Only load when near viewport --&gt;
+&lt;video preload=&quot;none&quot; poster=&quot;thumb.jpg&quot;&gt;
+  &lt;source data-src=&quot;video.webm&quot; type=&quot;video/webm&quot; /&gt;
+  &lt;source data-src=&quot;video.mp4&quot; type=&quot;video/mp4&quot; /&gt;
+&lt;/video&gt;
+
+&lt;script&gt;
+  // Intersection Observer to load video sources
+&lt;/script&gt;
+</code></pre>
+<h3 id="63-video-formats">6.3 Video Formats</h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Codec</th>
+<th>Browser Support</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MP4</strong></td>
+<td>H.264</td>
+<td>Universal</td>
+<td>Fallback</td>
+</tr>
+<tr>
+<td><strong>WebM</strong></td>
+<td>VP9</td>
+<td>Chrome, Firefox</td>
+<td>Better compression</td>
+</tr>
+<tr>
+<td><strong>WebM</strong></td>
+<td>AV1</td>
+<td>Modern browsers</td>
+<td>Best compression</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64-animated-images-vs-video">6.4 Animated Images vs Video</h3>
+<p>Replace GIFs with videos for huge savings:</p>
+<pre><code class="language-html">&lt;!-- Instead of 10MB GIF --&gt;
+&lt;video autoplay loop muted playsinline&gt;
+  &lt;source src=&quot;animation.webm&quot; type=&quot;video/webm&quot; /&gt;
+  &lt;source src=&quot;animation.mp4&quot; type=&quot;video/mp4&quot; /&gt;
+&lt;/video&gt;
+</code></pre>
+<p>A 10MB GIF can become a 500KB video!</p>
+<hr />
+<h2 id="7-resource-hints">7. Resource Hints</h2>
+<h3 id="71-complete-reference">7.1 Complete Reference</h3>
+<pre><code class="language-html">&lt;!-- DNS lookup only (cheapest) --&gt;
+&lt;link rel=&quot;dns-prefetch&quot; href=&quot;https://api.example.com&quot; /&gt;
+
+&lt;!-- DNS + TCP + TLS (use sparingly, max 2-3) --&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://api.example.com&quot; /&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://fonts.gstatic.com&quot; crossorigin /&gt;
+
+&lt;!-- Download now, use on THIS page (high priority) --&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;critical.css&quot; as=&quot;style&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;hero.jpg&quot; as=&quot;image&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;font.woff2&quot; as=&quot;font&quot; crossorigin /&gt;
+
+&lt;!-- Download later, use on NEXT page (low priority, idle time) --&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;next-page.js&quot; /&gt;
+
+&lt;!-- Preload ES modules --&gt;
+&lt;link rel=&quot;modulepreload&quot; href=&quot;app.mjs&quot; /&gt;
+
+&lt;!-- Prerender entire page (Chrome only) --&gt;
+&lt;link rel=&quot;prerender&quot; href=&quot;https://example.com/likely-next-page&quot; /&gt;
+</code></pre>
+<h3 id="72-comparison-table">7.2 Comparison Table</h3>
+<table>
+<thead>
+<tr>
+<th>Hint</th>
+<th>What It Does</th>
+<th>Priority</th>
+<th>Cost</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dns-prefetch</code></td>
+<td>DNS lookup</td>
+<td>Low</td>
+<td>Very cheap</td>
+<td>Third-party domains</td>
+</tr>
+<tr>
+<td><code>preconnect</code></td>
+<td>DNS + TCP + TLS</td>
+<td>Medium</td>
+<td>~100-300ms saved</td>
+<td>Critical third-party APIs</td>
+</tr>
+<tr>
+<td><code>preload</code></td>
+<td>Full download</td>
+<td>High</td>
+<td>Network + memory</td>
+<td>Critical current-page assets</td>
+</tr>
+<tr>
+<td><code>prefetch</code></td>
+<td>Full download</td>
+<td>Low</td>
+<td>Uses idle bandwidth</td>
+<td>Next-page assets</td>
+</tr>
+<tr>
+<td><code>modulepreload</code></td>
+<td>Download + parse module</td>
+<td>High</td>
+<td>Network + CPU</td>
+<td>Critical ES modules</td>
+</tr>
+<tr>
+<td><code>prerender</code></td>
+<td>Full page render</td>
+<td>Very Low</td>
+<td>Expensive</td>
+<td>Highly likely next page</td>
+</tr>
+</tbody>
+</table>
+<h3 id="73-the-as-attribute">7.3 The <code>as</code> Attribute</h3>
+<p>Required for <code>preload</code> to set correct priority and headers:</p>
+<pre><code class="language-html">&lt;link rel=&quot;preload&quot; href=&quot;style.css&quot; as=&quot;style&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;main.js&quot; as=&quot;script&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;font.woff2&quot; as=&quot;font&quot; crossorigin /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;data.json&quot; as=&quot;fetch&quot; crossorigin /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;hero.jpg&quot; as=&quot;image&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;video.mp4&quot; as=&quot;video&quot; /&gt;
+</code></pre>
+<h3 id="74-common-mistakes">7.4 Common Mistakes</h3>
+<pre><code class="language-html">&lt;!-- WRONG: Missing crossorigin for fonts --&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;font.woff2&quot; as=&quot;font&quot; /&gt;
+
+&lt;!-- CORRECT --&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;font.woff2&quot; as=&quot;font&quot; crossorigin /&gt;
+
+&lt;!-- WRONG: Preloading too many resources --&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;a.js&quot; as=&quot;script&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;b.js&quot; as=&quot;script&quot; /&gt;
+&lt;link rel=&quot;preload&quot; href=&quot;c.js&quot; as=&quot;script&quot; /&gt;
+&lt;!-- ... 10 more preloads = defeats the purpose --&gt;
+
+&lt;!-- WRONG: Preconnect to too many origins --&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://a.com&quot; /&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://b.com&quot; /&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://c.com&quot; /&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://d.com&quot; /&gt;
+&lt;!-- Max 2-3 preconnects! --&gt;
+</code></pre>
+<hr />
+<h2 id="8-third-party-scripts-analytics">8. Third-Party Scripts &amp; Analytics</h2>
+<h3 id="81-the-cost-of-third-party">8.1 The Cost of Third-Party</h3>
+<p>Third-party scripts are often the biggest performance killers:</p>
+<ul>
+<li><strong>Main thread blocking</strong></li>
+<li><strong>Additional DNS/connections</strong></li>
+<li><strong>Unpredictable size &amp; execution time</strong></li>
+<li><strong>No control over caching</strong></li>
+</ul>
+<h3 id="82-loading-strategies">8.2 Loading Strategies</h3>
+<pre><code class="language-html">&lt;!-- Option 1: async (most common) --&gt;
+&lt;script async src=&quot;https://www.googletagmanager.com/gtag/js?id=GA_ID&quot;&gt;&lt;/script&gt;
+
+&lt;!-- Option 2: Defer until idle (better) --&gt;
+&lt;script&gt;
+  // Load after page is interactive
+  window.addEventListener(&quot;load&quot;, () =&gt; {
+    setTimeout(() =&gt; {
+      const script = document.createElement(&quot;script&quot;);
+      script.src = &quot;https://analytics.example.com/script.js&quot;;
+      document.body.appendChild(script);
+    }, 2000); // 2 second delay
+  });
+&lt;/script&gt;
+
+&lt;!-- Option 3: requestIdleCallback (best) --&gt;
+&lt;script&gt;
+  requestIdleCallback(() =&gt; {
+    // Load analytics when browser is idle
+  });
+&lt;/script&gt;
+</code></pre>
+<h3 id="83-facade-pattern-youtube-maps-chat">8.3 Facade Pattern (YouTube, Maps, Chat)</h3>
+<p>Don't load heavy embeds until interaction:</p>
+<pre><code class="language-html">&lt;!-- Instead of loading 1MB YouTube embed --&gt;
+&lt;div class=&quot;youtube-facade&quot; data-video-id=&quot;dQw4w9WgXcQ&quot;&gt;
+  &lt;img src=&quot;thumbnail.jpg&quot; alt=&quot;Video thumbnail&quot; /&gt;
+  &lt;button&gt;Play Video&lt;/button&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+  document.querySelector(&quot;.youtube-facade&quot;).addEventListener(&quot;click&quot;, (e) =&gt; {
+    const iframe = document.createElement(&quot;iframe&quot;);
+    iframe.src = `https://www.youtube.com/embed/${e.target.dataset.videoId}?autoplay=1`;
+    e.target.replaceWith(iframe);
+  });
+&lt;/script&gt;
+</code></pre>
+<h3 id="84-web-workers-for-analytics">8.4 Web Workers for Analytics</h3>
+<p>Offload tracking to worker thread:</p>
+<pre><code class="language-js">// analytics-worker.js
+self.onmessage = (e) =&gt; {
+  fetch(&quot;https://analytics.example.com/collect&quot;, {
+    method: &quot;POST&quot;,
+    body: JSON.stringify(e.data),
+    keepalive: true, // Complete even if page closes
+  });
+};
+
+// main.js
+const analyticsWorker = new Worker(&quot;analytics-worker.js&quot;);
+analyticsWorker.postMessage({ event: &quot;page_view&quot;, page: location.href });
+</code></pre>
+<h3 id="85-partytown-third-party-in-worker">8.5 Partytown (Third-Party in Worker)</h3>
+<p>Move third-party scripts to web worker:</p>
+<pre><code class="language-html">&lt;script&gt;
+  partytown = { forward: [&quot;dataLayer.push&quot;] };
+&lt;/script&gt;
+&lt;script src=&quot;partytown.js&quot;&gt;&lt;/script&gt;
+&lt;script
+  type=&quot;text/partytown&quot;
+  src=&quot;https://www.googletagmanager.com/gtag/js&quot;
+&gt;&lt;/script&gt;
+</code></pre>
+<hr />
+<h2 id="9-caching-strategies">9. Caching Strategies</h2>
+<h3 id="91-cache-control-headers">9.1 Cache-Control Headers</h3>
+<pre><code># Immutable assets (hashed filenames)
+Cache-Control: public, max-age=31536000, immutable
+
+# HTML (always revalidate)
+Cache-Control: no-cache
+
+# API responses (short cache)
+Cache-Control: private, max-age=60
+
+# No caching at all
+Cache-Control: no-store
+</code></pre>
+<h3 id="92-caching-strategy-by-asset-type">9.2 Caching Strategy by Asset Type</h3>
+<table>
+<thead>
+<tr>
+<th>Asset Type</th>
+<th>Filename</th>
+<th>Cache-Control</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JS/CSS bundles</td>
+<td><code>app.a1b2c3.js</code></td>
+<td>1 year, immutable</td>
+<td>Hash changes on update</td>
+</tr>
+<tr>
+<td>Images</td>
+<td><code>hero.d4e5f6.jpg</code></td>
+<td>1 year, immutable</td>
+<td>Hash changes on update</td>
+</tr>
+<tr>
+<td>HTML</td>
+<td><code>index.html</code></td>
+<td>no-cache</td>
+<td>Always check for updates</td>
+</tr>
+<tr>
+<td>Fonts</td>
+<td><code>font.woff2</code></td>
+<td>1 year</td>
+<td>Rarely change</td>
+</tr>
+<tr>
+<td>API data</td>
+<td>-</td>
+<td>Short or no-store</td>
+<td>Dynamic content</td>
+</tr>
+</tbody>
+</table>
+<h3 id="93-etag-last-modified">9.3 ETag &amp; Last-Modified</h3>
+<pre><code># Server response
+ETag: &quot;abc123&quot;
+Last-Modified: Tue, 01 Jan 2024 00:00:00 GMT
+
+# Client revalidation request
+If-None-Match: &quot;abc123&quot;
+If-Modified-Since: Tue, 01 Jan 2024 00:00:00 GMT
+
+# Server response if unchanged
+304 Not Modified
+</code></pre>
+<h3 id="94-service-worker-caching">9.4 Service Worker Caching</h3>
+<pre><code class="language-js">// Cache-first strategy
+self.addEventListener(&quot;fetch&quot;, (event) =&gt; {
+  event.respondWith(
+    caches.match(event.request).then((cached) =&gt; {
+      return cached || fetch(event.request);
+    })
+  );
+});
+
+// Network-first with cache fallback
+self.addEventListener(&quot;fetch&quot;, (event) =&gt; {
+  event.respondWith(
+    fetch(event.request).catch(() =&gt; caches.match(event.request))
+  );
+});
+</code></pre>
+<hr />
+<h2 id="10-compression">10. Compression</h2>
+<h3 id="101-compression-algorithms">10.1 Compression Algorithms</h3>
+<table>
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>Compression</th>
+<th>Speed</th>
+<th>Browser Support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>gzip</strong></td>
+<td>Good</td>
+<td>Fast</td>
+<td>Universal</td>
+</tr>
+<tr>
+<td><strong>Brotli</strong></td>
+<td>15-25% better</td>
+<td>Slower</td>
+<td>Modern browsers</td>
+</tr>
+<tr>
+<td><strong>Zstandard</strong></td>
+<td>Fastest at same ratio</td>
+<td>Very fast</td>
+<td>Limited</td>
+</tr>
+</tbody>
+</table>
+<h3 id="102-what-to-compress">10.2 What to Compress</h3>
+<table>
+<thead>
+<tr>
+<th>Compress</th>
+<th>Don't Compress</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HTML, CSS, JS</td>
+<td>JPEG, PNG, WebP, AVIF</td>
+</tr>
+<tr>
+<td>JSON, XML</td>
+<td>WOFF2 (already compressed)</td>
+</tr>
+<tr>
+<td>SVG</td>
+<td>MP4, WebM</td>
+</tr>
+<tr>
+<td>Plain text</td>
+<td>ZIP, GZIP files</td>
+</tr>
+</tbody>
+</table>
+<h3 id="103-content-negotiation">10.3 Content Negotiation</h3>
+<pre><code># Client request
+Accept-Encoding: br, gzip, deflate
+
+# Server response (Brotli)
+Content-Encoding: br
+</code></pre>
+<h3 id="104-typical-savings">10.4 Typical Savings</h3>
+<table>
+<thead>
+<tr>
+<th>File Type</th>
+<th>Original</th>
+<th>Gzip</th>
+<th>Brotli</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HTML</td>
+<td>100 KB</td>
+<td>20 KB</td>
+<td>17 KB</td>
+</tr>
+<tr>
+<td>CSS</td>
+<td>150 KB</td>
+<td>25 KB</td>
+<td>20 KB</td>
+</tr>
+<tr>
+<td>JavaScript</td>
+<td>500 KB</td>
+<td>120 KB</td>
+<td>95 KB</td>
+</tr>
+<tr>
+<td>JSON</td>
+<td>200 KB</td>
+<td>30 KB</td>
+<td>25 KB</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-http2-http3">11. HTTP/2 &amp; HTTP/3</h2>
+<h3 id="111-http11-limitations">11.1 HTTP/1.1 Limitations</h3>
+<ul>
+<li><strong>6 connections per domain</strong> max</li>
+<li><strong>Head-of-line blocking</strong> - one slow resource blocks others</li>
+<li><strong>No multiplexing</strong> - one request per connection at a time</li>
+</ul>
+<h3 id="112-http2-benefits">11.2 HTTP/2 Benefits</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Multiplexing</strong></td>
+<td>Many requests over one connection</td>
+</tr>
+<tr>
+<td><strong>Header compression</strong></td>
+<td>HPACK reduces header size</td>
+</tr>
+<tr>
+<td><strong>Server push</strong></td>
+<td>Send resources before requested</td>
+</tr>
+<tr>
+<td><strong>Stream prioritization</strong></td>
+<td>Important resources first</td>
+</tr>
+</tbody>
+</table>
+<h3 id="113-http2-strategy-changes">11.3 HTTP/2 Strategy Changes</h3>
+<table>
+<thead>
+<tr>
+<th>Old (HTTP/1.1)</th>
+<th>New (HTTP/2+)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bundle everything</td>
+<td>Granular chunks</td>
+</tr>
+<tr>
+<td>CSS sprites</td>
+<td>Individual images</td>
+</tr>
+<tr>
+<td>Domain sharding</td>
+<td>Single domain</td>
+</tr>
+<tr>
+<td>Inline small assets</td>
+<td>Separate files (cacheable)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="114-http3-quic">11.4 HTTP/3 (QUIC)</h3>
+<ul>
+<li><strong>UDP-based</strong> - No TCP head-of-line blocking</li>
+<li><strong>0-RTT resumption</strong> - Faster repeat connections</li>
+<li><strong>Better on unreliable networks</strong> - Mobile, WiFi</li>
+</ul>
+<h3 id="115-granular-chunking-strategy">11.5 Granular Chunking Strategy</h3>
+<pre><code class="language-js">// webpack.config.js
+optimization: {
+  splitChunks: {
+    chunks: 'all',
+    maxSize: 50000,  // 50KB chunks
+    cacheGroups: {
+      vendor: {
+        test: /[\\/]node_modules[\\/]/,
+        name: 'vendors',
+      },
+    },
+  },
+},
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>On Code Change</th>
+<th>User Downloads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One 2MB bundle</td>
+<td>Re-download 2MB</td>
+<td>2MB</td>
+</tr>
+<tr>
+<td>Granular chunks</td>
+<td>Re-download ~50KB</td>
+<td>~50KB</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-core-web-vitals-impact">12. Core Web Vitals Impact</h2>
+<h3 id="121-lcp-largest-contentful-paint">12.1 LCP (Largest Contentful Paint)</h3>
+<p><strong>Target:</strong> &lt; 2.5 seconds</p>
+<table>
+<thead>
+<tr>
+<th>Asset Type</th>
+<th>Impact</th>
+<th>Optimization</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hero image</td>
+<td>Direct</td>
+<td>Preload, proper format, responsive</td>
+</tr>
+<tr>
+<td>Web fonts</td>
+<td>Delays text</td>
+<td>font-display: swap, preload</td>
+</tr>
+<tr>
+<td>CSS</td>
+<td>Blocks render</td>
+<td>Critical CSS inline</td>
+</tr>
+<tr>
+<td>JS</td>
+<td>Can block</td>
+<td>defer, async</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-html">&lt;!-- LCP optimization combo --&gt;
+&lt;link rel=&quot;preload&quot; as=&quot;image&quot; href=&quot;hero.webp&quot; fetchpriority=&quot;high&quot; /&gt;
+&lt;link rel=&quot;preload&quot; as=&quot;font&quot; href=&quot;heading.woff2&quot; crossorigin /&gt;
+&lt;style&gt;
+  /* Critical CSS */
+&lt;/style&gt;
+</code></pre>
+<h3 id="122-fidinp-interaction-responsiveness">12.2 FID/INP (Interaction Responsiveness)</h3>
+<p><strong>Target:</strong> &lt; 100ms (FID) / &lt; 200ms (INP)</p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Long JS tasks</td>
+<td>Break into chunks, yield to main thread</td>
+</tr>
+<tr>
+<td>Heavy third-party</td>
+<td>Defer, use web workers</td>
+</tr>
+<tr>
+<td>Large bundle</td>
+<td>Code splitting</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-js">// Yield to allow paint
+async function processItems(items) {
+  for (const item of items) {
+    process(item);
+    (await scheduler.yield?.()) ?? new Promise((r) =&gt; setTimeout(r, 0));
+  }
+}
+</code></pre>
+<h3 id="123-cls-cumulative-layout-shift">12.3 CLS (Cumulative Layout Shift)</h3>
+<p><strong>Target:</strong> &lt; 0.1</p>
+<table>
+<thead>
+<tr>
+<th>Cause</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Images without dimensions</td>
+<td>Set width/height or aspect-ratio</td>
+</tr>
+<tr>
+<td>Fonts causing reflow</td>
+<td>font-display: optional, size-adjust</td>
+</tr>
+<tr>
+<td>Dynamic content</td>
+<td>Reserve space with min-height</td>
+</tr>
+<tr>
+<td>Ads/embeds</td>
+<td>Fixed size containers</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-html">&lt;!-- Prevent layout shift --&gt;
+&lt;img src=&quot;photo.jpg&quot; width=&quot;800&quot; height=&quot;600&quot; alt=&quot;&quot; /&gt;
+
+&lt;style&gt;
+  @font-face {
+    font-family: &quot;MyFont&quot;;
+    src: url(&quot;font.woff2&quot;);
+    font-display: swap;
+    size-adjust: 105%; /* Match fallback metrics */
+  }
+&lt;/style&gt;
+</code></pre>
+<hr />
+<h2 id="13-priority-hints">13. Priority Hints</h2>
+<h3 id="131-fetchpriority-attribute">13.1 fetchpriority Attribute</h3>
+<pre><code class="language-html">&lt;!-- High priority (LCP image) --&gt;
+&lt;img src=&quot;hero.jpg&quot; fetchpriority=&quot;high&quot; /&gt;
+
+&lt;!-- Low priority (below fold) --&gt;
+&lt;img src=&quot;footer-logo.jpg&quot; fetchpriority=&quot;low&quot; /&gt;
+
+&lt;!-- High priority script --&gt;
+&lt;script src=&quot;critical.js&quot; fetchpriority=&quot;high&quot;&gt;&lt;/script&gt;
+
+&lt;!-- Low priority prefetch --&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;next.js&quot; fetchpriority=&quot;low&quot; /&gt;
+</code></pre>
+<h3 id="132-default-priorities">13.2 Default Priorities</h3>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Default Priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSS in head</td>
+<td>Highest</td>
+</tr>
+<tr>
+<td>Fonts</td>
+<td>High</td>
+</tr>
+<tr>
+<td>Scripts (blocking)</td>
+<td>High</td>
+</tr>
+<tr>
+<td>Scripts (async)</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Images (in viewport)</td>
+<td>High</td>
+</tr>
+<tr>
+<td>Images (below fold)</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<h3 id="133-fetch-api-priority">13.3 Fetch API Priority</h3>
+<pre><code class="language-js">fetch(&quot;/api/critical-data&quot;, { priority: &quot;high&quot; });
+fetch(&quot;/api/analytics&quot;, { priority: &quot;low&quot; });
+</code></pre>
+<hr />
+<h2 id="14-service-workers-offline">14. Service Workers &amp; Offline</h2>
+<h3 id="141-caching-strategies">14.1 Caching Strategies</h3>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Use Case</th>
+<th>Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cache First</strong></td>
+<td>Static assets</td>
+<td><code>cache.match() \|\| fetch()</code></td>
+</tr>
+<tr>
+<td><strong>Network First</strong></td>
+<td>API, fresh content</td>
+<td><code>fetch().catch(() =&gt; cache.match())</code></td>
+</tr>
+<tr>
+<td><strong>Stale While Revalidate</strong></td>
+<td>Balance of fresh + fast</td>
+<td>Return cache, update in background</td>
+</tr>
+<tr>
+<td><strong>Cache Only</strong></td>
+<td>Offline-only assets</td>
+<td><code>cache.match()</code></td>
+</tr>
+<tr>
+<td><strong>Network Only</strong></td>
+<td>Always fresh</td>
+<td><code>fetch()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="142-stale-while-revalidate">14.2 Stale While Revalidate</h3>
+<pre><code class="language-js">self.addEventListener(&quot;fetch&quot;, (event) =&gt; {
+  event.respondWith(
+    caches.open(&quot;dynamic&quot;).then((cache) =&gt; {
+      return cache.match(event.request).then((cached) =&gt; {
+        const fetchPromise = fetch(event.request).then((response) =&gt; {
+          cache.put(event.request, response.clone());
+          return response;
+        });
+        return cached || fetchPromise;
+      });
+    })
+  );
+});
+</code></pre>
+<h3 id="143-precaching">14.3 Precaching</h3>
+<pre><code class="language-js">// Install event - cache shell
+self.addEventListener(&quot;install&quot;, (event) =&gt; {
+  event.waitUntil(
+    caches.open(&quot;static-v1&quot;).then((cache) =&gt; {
+      return cache.addAll([&quot;/&quot;, &quot;/app.js&quot;, &quot;/styles.css&quot;, &quot;/offline.html&quot;]);
+    })
+  );
+});
+</code></pre>
+<hr />
+<h2 id="15-cdn-edge-optimization">15. CDN &amp; Edge Optimization</h2>
+<h3 id="151-cdn-benefits">15.1 CDN Benefits</h3>
+<table>
+<thead>
+<tr>
+<th>Benefit</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Geographic proximity</strong></td>
+<td>Serve from nearest edge</td>
+</tr>
+<tr>
+<td><strong>Reduced latency</strong></td>
+<td>Shorter round trips</td>
+</tr>
+<tr>
+<td><strong>Offload origin</strong></td>
+<td>Less server load</td>
+</tr>
+<tr>
+<td><strong>DDoS protection</strong></td>
+<td>Absorb attacks at edge</td>
+</tr>
+<tr>
+<td><strong>Automatic optimization</strong></td>
+<td>Image resizing, compression</td>
+</tr>
+</tbody>
+</table>
+<h3 id="152-edge-computing">15.2 Edge Computing</h3>
+<pre><code class="language-js">// Cloudflare Worker example
+addEventListener(&quot;fetch&quot;, (event) =&gt; {
+  event.respondWith(handleRequest(event.request));
+});
+
+async function handleRequest(request) {
+  // Personalize at edge
+  const country = request.cf.country;
+  const response = await fetch(request);
+
+  // Modify response
+  return new HTMLRewriter()
+    .on(&quot;h1&quot;, new CountryHandler(country))
+    .transform(response);
+}
+</code></pre>
+<h3 id="153-cache-invalidation">15.3 Cache Invalidation</h3>
+<pre><code class="language-bash"># Purge by URL
+curl -X POST &quot;https://api.cloudflare.com/purge&quot; -d '{&quot;files&quot;:[&quot;https://example.com/style.css&quot;]}'
+
+# Purge by tag
+curl -X POST &quot;https://api.cloudflare.com/purge&quot; -d '{&quot;tags&quot;:[&quot;static-assets&quot;]}'
+</code></pre>
+<hr />
+<h2 id="16-loading-order-cheatsheet">16. Loading Order Cheatsheet</h2>
+<h3 id="161-optimal-head-order">16.1 Optimal <code>&lt;head&gt;</code> Order</h3>
+<pre><code class="language-html">&lt;head&gt;
+  &lt;!-- 1. Character encoding (must be in first 1024 bytes) --&gt;
+  &lt;meta charset=&quot;UTF-8&quot; /&gt;
+
+  &lt;!-- 2. Viewport --&gt;
+  &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+
+  &lt;!-- 3. Preconnect to critical origins --&gt;
+  &lt;link rel=&quot;preconnect&quot; href=&quot;https://fonts.googleapis.com&quot; /&gt;
+  &lt;link rel=&quot;preconnect&quot; href=&quot;https://api.example.com&quot; /&gt;
+
+  &lt;!-- 4. Preload critical assets --&gt;
+  &lt;link rel=&quot;preload&quot; href=&quot;/fonts/main.woff2&quot; as=&quot;font&quot; crossorigin /&gt;
+  &lt;link rel=&quot;preload&quot; href=&quot;/hero.webp&quot; as=&quot;image&quot; fetchpriority=&quot;high&quot; /&gt;
+
+  &lt;!-- 5. Critical CSS inline --&gt;
+  &lt;style&gt;
+    /* Critical above-fold CSS */
+  &lt;/style&gt;
+
+  &lt;!-- 6. Async non-critical CSS --&gt;
+  &lt;link
+    rel=&quot;stylesheet&quot;
+    href=&quot;/main.css&quot;
+    media=&quot;print&quot;
+    onload=&quot;this.media='all'&quot;
+  /&gt;
+
+  &lt;!-- 7. Deferred scripts --&gt;
+  &lt;script src=&quot;/app.js&quot; defer&gt;&lt;/script&gt;
+
+  &lt;!-- 8. Async third-party --&gt;
+  &lt;script async src=&quot;https://analytics.example.com/script.js&quot;&gt;&lt;/script&gt;
+
+  &lt;!-- 9. Prefetch for next navigation --&gt;
+  &lt;link rel=&quot;prefetch&quot; href=&quot;/about.js&quot; /&gt;
+
+  &lt;!-- 10. DNS prefetch for secondary domains --&gt;
+  &lt;link rel=&quot;dns-prefetch&quot; href=&quot;https://cdn.example.com&quot; /&gt;
+&lt;/head&gt;
+</code></pre>
+<h3 id="162-asset-priority-matrix">16.2 Asset Priority Matrix</h3>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Priority</th>
+<th>Loading</th>
+<th>Caching</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Critical CSS</td>
+<td>Highest</td>
+<td>Inline</td>
+<td>-</td>
+</tr>
+<tr>
+<td>LCP Image</td>
+<td>Highest</td>
+<td>Preload + eager</td>
+<td>1 year</td>
+</tr>
+<tr>
+<td>Web fonts</td>
+<td>High</td>
+<td>Preload</td>
+<td>1 year</td>
+</tr>
+<tr>
+<td>Main JS</td>
+<td>High</td>
+<td>defer</td>
+<td>1 year (hashed)</td>
+</tr>
+<tr>
+<td>Non-critical CSS</td>
+<td>Medium</td>
+<td>Async load</td>
+<td>1 year</td>
+</tr>
+<tr>
+<td>Below-fold images</td>
+<td>Low</td>
+<td>lazy</td>
+<td>1 year</td>
+</tr>
+<tr>
+<td>Third-party scripts</td>
+<td>Lowest</td>
+<td>async + delayed</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Prefetch resources</td>
+<td>Idle</td>
+<td>prefetch</td>
+<td>Varies</td>
+</tr>
+</tbody>
+</table>
+<h3 id="163-quick-reference">16.3 Quick Reference</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                     ASSET LOADING BIBLE                         │
+├─────────────────────────────────────────────────────────────────┤
+│ SCRIPTS                                                         │
+│   • App code → defer                                            │
+│   • Analytics → async + delay                                   │
+│   • Critical → inline or preload                                │
+├─────────────────────────────────────────────────────────────────┤
+│ STYLES                                                          │
+│   • Above-fold → inline                                         │
+│   • Rest → preload + media swap                                 │
+│   • Third-party → preconnect                                    │
+├─────────────────────────────────────────────────────────────────┤
+│ FONTS                                                           │
+│   • Critical → preload + swap                                   │
+│   • Secondary → swap or optional                                │
+│   • Always → WOFF2 + crossorigin                                │
+├─────────────────────────────────────────────────────────────────┤
+│ IMAGES                                                          │
+│   • LCP → preload + eager + fetchpriority=&quot;high&quot;               │
+│   • Below-fold → loading=&quot;lazy&quot;                                 │
+│   • Format → AVIF &gt; WebP &gt; JPEG                                 │
+│   • Always → width/height for CLS                               │
+├─────────────────────────────────────────────────────────────────┤
+│ RESOURCE HINTS                                                  │
+│   • Critical API → preconnect (max 2-3)                         │
+│   • Third-party → dns-prefetch                                  │
+│   • Current page → preload                                      │
+│   • Next page → prefetch                                        │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="17-build-tool-configuration-webpackvite">17. Build Tool Configuration (Webpack/Vite)</h2>
+<h3 id="171-critical-css-with-critters-automatic">17.1 Critical CSS with Critters (Automatic)</h3>
+<p>Critters automatically inlines critical CSS and defers the rest:</p>
+<pre><code class="language-js">// webpack.config.js
+const Critters = require(&quot;critters-webpack-plugin&quot;);
+const HtmlWebpackPlugin = require(&quot;html-webpack-plugin&quot;);
+const MiniCssExtractPlugin = require(&quot;mini-css-extract-plugin&quot;);
+
+module.exports = {
+  plugins: [
+    new HtmlWebpackPlugin({ template: &quot;./src/index.html&quot; }),
+    new MiniCssExtractPlugin({ filename: &quot;[name].[contenthash].css&quot; }),
+    new Critters({
+      // Inline critical CSS for above-the-fold
+      preload: &quot;swap&quot;, // Preload strategy for rest
+      inlineFonts: true, // Inline critical @font-face
+      pruneSource: true, // Remove inlined CSS from stylesheet
+      compress: true, // Minify inlined CSS
+      mergeStylesheets: true, // Combine all stylesheets
+    }),
+  ],
+  module: {
+    rules: [
+      {
+        test: /\.css$/,
+        use: [MiniCssExtractPlugin.loader, &quot;css-loader&quot;],
+      },
+    ],
+  },
+};
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code class="language-html">&lt;head&gt;
+  &lt;!-- Critical CSS inlined automatically --&gt;
+  &lt;style&gt;
+    .header {
+      ...;
+    }
+    .hero {
+      ...;
+    }
+    .nav {
+      ...;
+    }
+  &lt;/style&gt;
+
+  &lt;!-- Rest loaded async --&gt;
+  &lt;link
+    rel=&quot;preload&quot;
+    href=&quot;main.abc123.css&quot;
+    as=&quot;style&quot;
+    onload=&quot;this.rel='stylesheet'&quot;
+  /&gt;
+&lt;/head&gt;
+</code></pre>
+<h3 id="172-code-splitting-for-critical-js">17.2 Code Splitting for Critical JS</h3>
+<pre><code class="language-js">// webpack.config.js
+module.exports = {
+  entry: {
+    // Critical: loads first, contains minimal bootstrap
+    critical: &quot;./src/critical.js&quot;,
+    // Main: deferred, loads after critical
+    main: &quot;./src/index.js&quot;,
+  },
+
+  optimization: {
+    splitChunks: {
+      chunks: &quot;all&quot;,
+      maxInitialRequests: 25,
+      minSize: 20000,
+
+      cacheGroups: {
+        // Critical vendor libs (React, essential UI)
+        criticalVendor: {
+          test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+          name: &quot;critical-vendor&quot;,
+          chunks: &quot;all&quot;,
+          priority: 30,
+          enforce: true,
+        },
+
+        // Non-critical vendors (charts, heavy libs)
+        vendors: {
+          test: /[\\/]node_modules[\\/]/,
+          name: &quot;vendors&quot;,
+          chunks: &quot;all&quot;,
+          priority: 20,
+        },
+
+        // Shared code between entry points
+        common: {
+          minChunks: 2,
+          name: &quot;common&quot;,
+          chunks: &quot;all&quot;,
+          priority: 10,
+          reuseExistingChunk: true,
+        },
+      },
+    },
+
+    // Separate runtime for better caching
+    runtimeChunk: &quot;single&quot;,
+  },
+};
+</code></pre>
+<h3 id="173-preloadprefetch-with-webpack-magic-comments">17.3 Preload/Prefetch with Webpack Magic Comments</h3>
+<pre><code class="language-js">// Dynamic imports with hints
+// PRELOAD: Critical for current page (high priority)
+const Header = import(/* webpackPreload: true */ &quot;./Header&quot;);
+
+// PREFETCH: Needed for next navigation (idle time)
+const Dashboard = import(/* webpackPrefetch: true */ &quot;./Dashboard&quot;);
+
+// Named chunks for better caching
+const UserProfile = import(
+  /* webpackChunkName: &quot;user-profile&quot; */
+  /* webpackPrefetch: true */
+  &quot;./UserProfile&quot;
+);
+</code></pre>
+<p><strong>Generated HTML:</strong></p>
+<pre><code class="language-html">&lt;link rel=&quot;preload&quot; href=&quot;Header.js&quot; as=&quot;script&quot; /&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;Dashboard.js&quot; /&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;user-profile.js&quot; /&gt;
+</code></pre>
+<h3 id="174-html-webpack-plugin-for-resource-hints">17.4 HTML Webpack Plugin for Resource Hints</h3>
+<pre><code class="language-js">// webpack.config.js
+const HtmlWebpackPlugin = require(&quot;html-webpack-plugin&quot;);
+
+module.exports = {
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: &quot;./src/index.html&quot;,
+
+      // Script loading strategy
+      scriptLoading: &quot;defer&quot;, // 'blocking' | 'defer' | 'module'
+
+      // Inject assets
+      inject: &quot;head&quot;, // Put scripts in head with defer
+
+      // Preload critical chunks
+      meta: {
+        viewport: &quot;width=device-width, initial-scale=1&quot;,
+      },
+    }),
+  ],
+};
+
+// Custom resource hints plugin
+class ResourceHintsPlugin {
+  apply(compiler) {
+    compiler.hooks.compilation.tap(&quot;ResourceHintsPlugin&quot;, (compilation) =&gt; {
+      HtmlWebpackPlugin.getHooks(compilation).alterAssetTags.tapAsync(
+        &quot;ResourceHintsPlugin&quot;,
+        (data, cb) =&gt; {
+          // Add preconnect
+          data.assetTags.meta.unshift({
+            tagName: &quot;link&quot;,
+            attributes: {
+              rel: &quot;preconnect&quot;,
+              href: &quot;https://api.example.com&quot;,
+            },
+          });
+          cb(null, data);
+        }
+      );
+    });
+  }
+}
+</code></pre>
+<h3 id="175-complete-critical-path-webpack-config">17.5 Complete Critical Path Webpack Config</h3>
+<pre><code class="language-js">// webpack.config.js - Production optimized for above-the-fold
+const path = require(&quot;path&quot;);
+const HtmlWebpackPlugin = require(&quot;html-webpack-plugin&quot;);
+const MiniCssExtractPlugin = require(&quot;mini-css-extract-plugin&quot;);
+const CssMinimizerPlugin = require(&quot;css-minimizer-webpack-plugin&quot;);
+const TerserPlugin = require(&quot;terser-webpack-plugin&quot;);
+const Critters = require(&quot;critters-webpack-plugin&quot;);
+const CompressionPlugin = require(&quot;compression-webpack-plugin&quot;);
+const { BundleAnalyzerPlugin } = require(&quot;webpack-bundle-analyzer&quot;);
+
+module.exports = {
+  mode: &quot;production&quot;,
+
+  entry: {
+    critical: &quot;./src/critical.js&quot;, // Minimal bootstrap
+    main: &quot;./src/index.js&quot;, // Full app
+  },
+
+  output: {
+    path: path.resolve(__dirname, &quot;dist&quot;),
+    filename: &quot;[name].[contenthash:8].js&quot;,
+    chunkFilename: &quot;[name].[contenthash:8].chunk.js&quot;,
+    clean: true,
+  },
+
+  optimization: {
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          compress: {
+            drop_console: true, // Remove console.logs
+            drop_debugger: true,
+          },
+          output: {
+            comments: false,
+          },
+        },
+        extractComments: false,
+      }),
+      new CssMinimizerPlugin(),
+    ],
+
+    splitChunks: {
+      chunks: &quot;all&quot;,
+      maxSize: 50000, // 50KB max chunks for HTTP/2
+      cacheGroups: {
+        criticalVendor: {
+          test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
+          name: &quot;critical-vendor&quot;,
+          priority: 30,
+        },
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: &quot;vendors&quot;,
+          priority: 20,
+        },
+      },
+    },
+
+    runtimeChunk: &quot;single&quot;,
+    moduleIds: &quot;deterministic&quot;, // Stable chunk hashes
+  },
+
+  module: {
+    rules: [
+      {
+        test: /\.jsx?$/,
+        exclude: /node_modules/,
+        use: {
+          loader: &quot;babel-loader&quot;,
+          options: {
+            presets: [
+              [&quot;@babel/preset-env&quot;, { modules: false }], // Preserve ES modules for tree shaking
+              &quot;@babel/preset-react&quot;,
+            ],
+          },
+        },
+      },
+      {
+        test: /\.css$/,
+        use: [MiniCssExtractPlugin.loader, &quot;css-loader&quot;, &quot;postcss-loader&quot;],
+      },
+      {
+        test: /\.(woff2?|ttf|eot)$/,
+        type: &quot;asset/resource&quot;,
+        generator: {
+          filename: &quot;fonts/[name].[hash:8][ext]&quot;,
+        },
+      },
+      {
+        test: /\.(png|jpe?g|gif|webp|avif|svg)$/,
+        type: &quot;asset&quot;,
+        parser: {
+          dataUrlCondition: {
+            maxSize: 4 * 1024, // Inline &lt; 4KB images
+          },
+        },
+        generator: {
+          filename: &quot;images/[name].[hash:8][ext]&quot;,
+        },
+      },
+    ],
+  },
+
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: &quot;./src/index.html&quot;,
+      scriptLoading: &quot;defer&quot;,
+      inject: &quot;head&quot;,
+      minify: {
+        collapseWhitespace: true,
+        removeComments: true,
+        removeRedundantAttributes: true,
+      },
+    }),
+
+    new MiniCssExtractPlugin({
+      filename: &quot;[name].[contenthash:8].css&quot;,
+      chunkFilename: &quot;[name].[contenthash:8].chunk.css&quot;,
+    }),
+
+    // Auto-inline critical CSS
+    new Critters({
+      preload: &quot;swap&quot;,
+      inlineFonts: true,
+      pruneSource: true,
+    }),
+
+    // Generate Brotli/Gzip
+    new CompressionPlugin({
+      algorithm: &quot;brotliCompress&quot;,
+      test: /\.(js|css|html|svg)$/,
+      threshold: 10240, // Only compress &gt; 10KB
+      minRatio: 0.8,
+    }),
+
+    // Analyze bundle (run with --analyze flag)
+    process.env.ANALYZE &amp;&amp; new BundleAnalyzerPlugin(),
+  ].filter(Boolean),
+
+  // Performance budgets
+  performance: {
+    maxAssetSize: 250000, // 250KB per asset
+    maxEntrypointSize: 250000, // 250KB initial load
+    hints: &quot;error&quot;, // Fail build if exceeded
+  },
+};
+</code></pre>
+<h3 id="176-vite-configuration-for-critical-path">17.6 Vite Configuration for Critical Path</h3>
+<pre><code class="language-js">// vite.config.js
+import { defineConfig } from &quot;vite&quot;;
+import react from &quot;@vitejs/plugin-react&quot;;
+import { critters } from &quot;@vite-pwa/assets-generator&quot;;
+
+export default defineConfig({
+  plugins: [react()],
+
+  build: {
+    // Target modern browsers for smaller bundles
+    target: &quot;es2020&quot;,
+
+    // CSS code splitting
+    cssCodeSplit: true,
+
+    // Chunk strategy
+    rollupOptions: {
+      output: {
+        // Manual chunks for critical path
+        manualChunks: (id) =&gt; {
+          // Critical vendor libs
+          if (id.includes(&quot;node_modules/react&quot;)) {
+            return &quot;critical-vendor&quot;;
+          }
+          // Heavy libs loaded later
+          if (
+            id.includes(&quot;node_modules/chart.js&quot;) ||
+            id.includes(&quot;node_modules/moment&quot;)
+          ) {
+            return &quot;heavy-vendor&quot;;
+          }
+          // Other node_modules
+          if (id.includes(&quot;node_modules&quot;)) {
+            return &quot;vendor&quot;;
+          }
+        },
+
+        // Asset naming
+        chunkFileNames: &quot;js/[name]-[hash].js&quot;,
+        entryFileNames: &quot;js/[name]-[hash].js&quot;,
+        assetFileNames: (assetInfo) =&gt; {
+          if (/\.css$/.test(assetInfo.name)) {
+            return &quot;css/[name]-[hash][extname]&quot;;
+          }
+          if (/\.(woff2?|ttf|eot)$/.test(assetInfo.name)) {
+            return &quot;fonts/[name]-[hash][extname]&quot;;
+          }
+          return &quot;assets/[name]-[hash][extname]&quot;;
+        },
+      },
+    },
+
+    // Minification
+    minify: &quot;terser&quot;,
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+      },
+    },
+  },
+
+  // Preload critical assets
+  experimental: {
+    renderBuiltUrl(filename, { hostType }) {
+      if (hostType === &quot;js&quot; &amp;&amp; filename.includes(&quot;critical&quot;)) {
+        return { runtime: `preloadLink(&quot;${filename}&quot;)` };
+      }
+      return filename;
+    },
+  },
+});
+</code></pre>
+<h3 id="177-route-based-code-splitting-react">17.7 Route-Based Code Splitting (React)</h3>
+<pre><code class="language-jsx">// App.jsx - Critical vs lazy routes
+import { Suspense, lazy } from &quot;react&quot;;
+import { Routes, Route } from &quot;react-router-dom&quot;;
+
+// CRITICAL: Import directly (bundled with main)
+import Home from &quot;./pages/Home&quot;;
+import Header from &quot;./components/Header&quot;;
+
+// NON-CRITICAL: Lazy load (separate chunks)
+const Dashboard = lazy(() =&gt;
+  import(
+    /* webpackChunkName: &quot;dashboard&quot; */
+    /* webpackPrefetch: true */
+    &quot;./pages/Dashboard&quot;
+  )
+);
+
+const Settings = lazy(() =&gt;
+  import(
+    /* webpackChunkName: &quot;settings&quot; */
+    &quot;./pages/Settings&quot;
+  )
+);
+
+// Heavy features - only load on demand
+const Analytics = lazy(() =&gt;
+  import(
+    /* webpackChunkName: &quot;analytics&quot; */
+    &quot;./pages/Analytics&quot;
+  )
+);
+
+function App() {
+  return (
+    &lt;&gt;
+      &lt;Header /&gt; {/* Critical - renders immediately */}
+      &lt;Suspense fallback={&lt;div className=&quot;skeleton&quot; /&gt;}&gt;
+        &lt;Routes&gt;
+          &lt;Route path=&quot;/&quot; element={&lt;Home /&gt;} /&gt;
+          &lt;Route path=&quot;/dashboard&quot; element={&lt;Dashboard /&gt;} /&gt;
+          &lt;Route path=&quot;/settings&quot; element={&lt;Settings /&gt;} /&gt;
+          &lt;Route path=&quot;/analytics&quot; element={&lt;Analytics /&gt;} /&gt;
+        &lt;/Routes&gt;
+      &lt;/Suspense&gt;
+    &lt;/&gt;
+  );
+}
+</code></pre>
+<h3 id="178-manual-critical-css-extraction">17.8 Manual Critical CSS Extraction</h3>
+<pre><code class="language-js">// scripts/extract-critical.js
+const critical = require(&quot;critical&quot;);
+const fs = require(&quot;fs&quot;);
+const path = require(&quot;path&quot;);
+
+async function extractCriticalCSS() {
+  const pages = [
+    { url: &quot;/&quot;, output: &quot;index.html&quot; },
+    { url: &quot;/products&quot;, output: &quot;products.html&quot; },
+  ];
+
+  for (const page of pages) {
+    const result = await critical.generate({
+      base: &quot;dist/&quot;,
+      src: page.output,
+      target: {
+        html: page.output,
+        css: `critical-${page.output.replace(&quot;.html&quot;, &quot;.css&quot;)}`,
+      },
+      width: 1300,
+      height: 900,
+      inline: true, // Inline critical CSS
+      extract: true, // Remove from original CSS
+      penthouse: {
+        blockJSRequests: false,
+      },
+    });
+
+    console.log(`✓ Extracted critical CSS for ${page.url}`);
+  }
+}
+
+extractCriticalCSS();
+</code></pre>
+<p><strong>package.json:</strong></p>
+<pre><code class="language-json">{
+  &quot;scripts&quot;: {
+    &quot;build&quot;: &quot;webpack --mode production&quot;,
+    &quot;postbuild&quot;: &quot;node scripts/extract-critical.js&quot;
+  }
+}
+</code></pre>
+<h3 id="179-performance-budget-configuration">17.9 Performance Budget Configuration</h3>
+<pre><code class="language-js">// webpack.config.js
+module.exports = {
+  performance: {
+    // Error if budgets exceeded
+    hints: 'error',
+
+    // Individual asset limit
+    maxAssetSize: 200 * 1024,  // 200KB
+
+    // Initial load limit (critical path)
+    maxEntrypointSize: 150 * 1024,  // 150KB
+
+    // Custom checks
+    assetFilter: (assetFilename) =&gt; {
+      // Only check JS and CSS
+      return /\.(js|css)$/.test(assetFilename);
+    },
+  },
+};
+
+// bundlesize.config.json (CI integration)
+{
+  &quot;files&quot;: [
+    {
+      &quot;path&quot;: &quot;dist/critical*.js&quot;,
+      &quot;maxSize&quot;: &quot;30 kB&quot;,
+      &quot;compression&quot;: &quot;brotli&quot;
+    },
+    {
+      &quot;path&quot;: &quot;dist/main*.js&quot;,
+      &quot;maxSize&quot;: &quot;150 kB&quot;,
+      &quot;compression&quot;: &quot;brotli&quot;
+    },
+    {
+      &quot;path&quot;: &quot;dist/*.css&quot;,
+      &quot;maxSize&quot;: &quot;50 kB&quot;,
+      &quot;compression&quot;: &quot;brotli&quot;
+    }
+  ]
+}
+</code></pre>
+<h3 id="1710-above-the-fold-optimization-checklist">17.10 Above-the-Fold Optimization Checklist</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│              ABOVE-THE-FOLD SPEED CHECKLIST                     │
+├─────────────────────────────────────────────────────────────────┤
+│ CSS                                                             │
+│   □ Critical CSS inlined (&lt;14KB)                                │
+│   □ Non-critical CSS deferred with media=&quot;print&quot; trick          │
+│   □ Critters/Critical configured in build                       │
+│   □ Unused CSS removed (PurgeCSS)                               │
+├─────────────────────────────────────────────────────────────────┤
+│ JAVASCRIPT                                                      │
+│   □ Critical JS &lt; 50KB (compressed)                             │
+│   □ Main bundle uses defer                                      │
+│   □ Route-based code splitting                                  │
+│   □ Heavy libs lazy loaded (charts, editors)                    │
+│   □ webpackPrefetch for likely next pages                       │
+├─────────────────────────────────────────────────────────────────┤
+│ IMAGES                                                          │
+│   □ LCP image preloaded with fetchpriority=&quot;high&quot;               │
+│   □ Hero image in modern format (WebP/AVIF)                     │
+│   □ Responsive srcset configured                                │
+│   □ Width/height attributes set                                 │
+├─────────────────────────────────────────────────────────────────┤
+│ FONTS                                                           │
+│   □ Critical font preloaded                                     │
+│   □ font-display: swap                                          │
+│   □ Subset to required characters                               │
+│   □ WOFF2 format                                                │
+├─────────────────────────────────────────────────────────────────┤
+│ BUILD OUTPUT                                                    │
+│   □ Initial JS &lt; 150KB (compressed)                             │
+│   □ Initial CSS &lt; 50KB (compressed)                             │
+│   □ All assets Brotli compressed                                │
+│   □ Content hashes for caching                                  │
+│   □ Performance budgets enforced                                │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="interview-answer-template">Interview Answer Template</h2>
+<blockquote>
+<p>"For asset optimization, I follow a priority-based approach:</p>
+<p><strong>Critical path first:</strong> I inline critical CSS and preload LCP images and fonts. Scripts use <code>defer</code> for app code and <code>async</code> with delays for analytics.</p>
+<p><strong>Fonts:</strong> I use <code>font-display: swap</code> to avoid FOIT, preload critical fonts, and always serve WOFF2.</p>
+<p><strong>Images:</strong> I serve modern formats (AVIF/WebP) with fallbacks, use responsive images with <code>srcset</code>, lazy-load below-fold images, and always set dimensions to prevent layout shift.</p>
+<p><strong>Third-party:</strong> I delay loading until after the page is interactive, use facades for heavy embeds like YouTube, and consider Partytown for running scripts in workers.</p>
+<p><strong>Caching:</strong> Immutable assets with content hashes get 1-year cache, HTML uses no-cache for instant updates.</p>
+<p>The goal is achieving good Core Web Vitals: LCP under 2.5s, INP under 200ms, and CLS under 0.1."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Micro-Frontends — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html" aria-current="page">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="micro-frontends-interview-reference">Micro-Frontends — Interview Reference</h1>
+<hr />
+<h2 id="what-are-micro-frontends">What Are Micro-Frontends?</h2>
+<p>Micro-frontends apply <strong>microservice thinking to the frontend</strong> — decompose a monolithic UI into independently owned, deployed, and composed vertical slices.</p>
+<blockquote>
+<p><strong>One-liner:</strong> Micro-frontends let multiple teams own separate business domains end-to-end (UI → API → DB), deploying independently while presenting a single cohesive user experience.</p>
+</blockquote>
+<p><strong>The organizational problem they solve:</strong></p>
+<div class="mermaid">
+graph LR
+    subgraph mono["Monolith — one release train"]
+        TC["Team Chat"] --> M["One giant repo"]
+        TCA["Team Calendar"] --> M
+        TS["Team Search"] --> M
+        M -->|"blocked by each other"| D["Deploy together"]
+    end
+
+    subgraph mfe["Micro-Frontend — independent deploys"]
+        TC2["Team Chat"] -->|deploy independently| RC["chat.example.com/remoteEntry.js"]
+        TCA2["Team Calendar"] -->|deploy independently| RCA["calendar.example.com/remoteEntry.js"]
+        TS2["Team Search"] -->|deploy independently| RS["search.example.com/remoteEntry.js"]
+        SH["Shell (auth + nav)"] --> RC & RCA & RS
+    end
+</div>
+<blockquote>
+<p>Micro-frontends are an <strong>organizational solution</strong> first, technical solution second. If you have one team, you probably don't need them.</p>
+</blockquote>
+<hr />
+<h2 id="1-vertical-slicing-core-philosophy">1. Vertical Slicing — Core Philosophy</h2>
+<p>Unlike horizontal layers (UI / Logic / Data), vertical slices give one team full ownership from UI to database for their domain.</p>
+<div class="mermaid">
+graph TD
+    subgraph "Horizontal (Monolith)"
+        UL["UI Layer — all teams commit here"]
+        LL["Logic Layer — all teams commit here"]
+        DL["Data Layer — all teams commit here"]
+    end
+
+    subgraph "Vertical (Micro-Frontend)"
+        CA["Chat Team\nUI + API + DB"]
+        CAL["Calendar Team\nUI + API + DB"]
+        SE["Search Team\nUI + API + DB"]
+        SH["Shell Team\nAuth + Nav + Orchestration"]
+    end
+</div>
+<table>
+<thead>
+<tr>
+<th>Team</th>
+<th>Owns</th>
+<th>Deploys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Shell</td>
+<td>Navigation, auth, route orchestration</td>
+<td>Independently</td>
+</tr>
+<tr>
+<td>Chat</td>
+<td>Chat UI, chat API, chat DB</td>
+<td>Independently</td>
+</tr>
+<tr>
+<td>Calendar</td>
+<td>Calendar UI, events API, events DB</td>
+<td>Independently</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Search UI, search service, index</td>
+<td>Independently</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-integration-strategies-trade-offs">2. Integration Strategies — Trade-offs</h2>
+<p>Three ways to stitch independently built frontends into one shell.</p>
+<h3 id="a-build-time-integration-npm-packages">A. Build-Time Integration (NPM packages)</h3>
+<p>Each team publishes their component as an npm package. Shell installs and bundles them at build time.</p>
+<pre><code>Team Chat publishes @company/chat-widget@2.1.0
+Shell: npm install @company/chat-widget
+Shell: import ChatWidget from '@company/chat-widget'
+→ Shell must rebuild + redeploy to pick up Chat updates
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>✅ Pros</th>
+<th>❌ Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simple setup, strong type safety</td>
+<td>Not truly independent — Shell redeploys on every update</td>
+</tr>
+<tr>
+<td>Tree-shakeable, optimized bundle</td>
+<td>Creates a "distributed monolith" — teams still synchronized</td>
+</tr>
+<tr>
+<td>No runtime coordination needed</td>
+<td>Version lag — consumers stuck on old version until they upgrade</td>
+</tr>
+</tbody>
+</table>
+<p><strong>When to use:</strong> Shared design system components, utility libraries — not for independently deployable features.</p>
+<hr />
+<h3 id="b-server-side-composition-edge-esi">B. Server-Side Composition (Edge / ESI)</h3>
+<p>Server assembles the page from fragments owned by different services before sending HTML to browser.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant B as Browser
+    participant N as Nginx / Composition Layer
+    participant CS as chat-service
+    participant CAS as calendar-service
+    participant SS as search-service
+
+    B->>N: GET /dashboard
+    par Parallel fragment requests
+        N->>CS: GET /fragment
+        N->>CAS: GET /fragment
+        N->>SS: GET /fragment
+    end
+    CS-->>N: Chat HTML fragment
+    CAS-->>N: Calendar HTML fragment
+    SS-->>N: Search HTML fragment
+    N->>N: Assemble into one HTML response
+    N-->>B: Complete HTML
+</div>
+<table>
+<thead>
+<tr>
+<th>✅ Pros</th>
+<th>❌ Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Excellent SEO — full HTML on first load</td>
+<td>High infrastructure complexity</td>
+</tr>
+<tr>
+<td>Fast FCP — no client-side loading states</td>
+<td>Server-to-server latency adds up</td>
+</tr>
+<tr>
+<td>Works without JavaScript</td>
+<td>Hard to do client-side transitions between fragments</td>
+</tr>
+<tr>
+<td>True deployment independence</td>
+<td>Shared session/auth state is complex</td>
+</tr>
+</tbody>
+</table>
+<p><strong>When to use:</strong> Content-heavy sites (news, e-commerce product pages), SEO-critical pages.</p>
+<hr />
+<h3 id="c-run-time-integration-module-federation">C. Run-Time Integration — Module Federation</h3>
+<p>Shell fetches independently hosted JavaScript bundles at runtime and composes them in the browser. This is how Teams, Azure Portal, and similar large apps work.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant SH as Shell App
+    participant CH as chat.example.com
+    participant CA as calendar.example.com
+
+    U->>SH: Opens app
+    SH->>SH: Loads Shell bundle (auth, nav)
+    U->>SH: Navigates to /chat
+    SH->>CH: fetch remoteEntry.js
+    CH-->>SH: module map + container
+    SH->>SH: init(sharedScope) — negotiate React version
+    SH->>CH: get('ChatApp')
+    CH-->>SH: Chat component chunk
+    SH->>SH: Mount ChatApp into DOM
+    U->>SH: Navigates to /calendar
+    SH->>CA: fetch remoteEntry.js (parallel to user interaction)
+    CA-->>SH: Calendar component chunk
+    SH->>SH: Mount CalendarApp into DOM
+</div>
+<table>
+<thead>
+<tr>
+<th>✅ Pros</th>
+<th>❌ Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>True runtime independence — no Shell rebuild</td>
+<td>Runtime coordination complexity</td>
+</tr>
+<tr>
+<td>Teams deploy at any time without coordination</td>
+<td>Network latency for each remoteEntry.js load</td>
+</tr>
+<tr>
+<td>Shared singletons (React loaded once)</td>
+<td>Global scope used for coordination</td>
+</tr>
+<tr>
+<td>Lazy load remotes only when needed</td>
+<td>Version conflicts can cause subtle bugs</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-module-federation-deep-dive">3. Module Federation Deep Dive</h2>
+<h3 id="configuration">Configuration</h3>
+<pre><code class="language-js">// chat-app/webpack.config.js — REMOTE
+new ModuleFederationPlugin({
+  name: 'chatApp',
+  filename: 'remoteEntry.js',    // manifest — loaded by Shell
+  exposes: {
+    './ChatApp':    './src/ChatApp',
+    './useChat':    './src/hooks/useChat',    // expose hooks too
+    './chatStore':  './src/store/chatStore',  // expose store
+  },
+  shared: {
+    react:     { singleton: true, requiredVersion: '^18.0.0' },
+    'react-dom': { singleton: true, requiredVersion: '^18.0.0' },
+    'react-router-dom': { singleton: true },
+  }
+})
+
+// shell/webpack.config.js — HOST
+new ModuleFederationPlugin({
+  name: 'shell',
+  remotes: {
+    chatApp:     'chatApp@https://chat.example.com/remoteEntry.js',
+    calendarApp: 'calendarApp@https://calendar.example.com/remoteEntry.js',
+  },
+  shared: {
+    react:     { singleton: true, requiredVersion: '^18.0.0', eager: true },
+    'react-dom': { singleton: true, requiredVersion: '^18.0.0', eager: true },
+  }
+})
+</code></pre>
+<h3 id="the-global-scope-registry-the-trick">The Global Scope Registry (the trick)</h3>
+<pre><code class="language-js">// When remoteEntry.js loads:
+self['chatApp'] = {
+  init: (sharedScope) =&gt; { /* negotiate shared deps */ },
+  get:  (module) =&gt; { /* return module factory */ }
+};
+
+// Shell accesses via window global:
+const container = window['chatApp'];
+await container.init(__webpack_share_scopes__.default);
+const factory = await container.get('./ChatApp');
+const ChatApp = factory().default;
+</code></pre>
+<p><strong>Why window?</strong> Two separately deployed builds have no other shared channel. The global registry IS the communication protocol between independently hosted bundles.</p>
+<h3 id="version-negotiation-the-dance">Version Negotiation — The Dance</h3>
+<pre><code>Shell declares:   react@18.2.0 (loaded, singleton: true)
+ChatApp declares: react ^18.0.0 (needs, singleton: true)
+
+Module Federation checks:
+  18.2.0 satisfies ^18.0.0? → YES → ChatApp uses Shell's React
+
+CalendarApp declares: react ^17.0.0 (needs, singleton: true)
+  18.2.0 satisfies ^17.0.0? → NO (major version mismatch)
+  strictVersion: false → CalendarApp loads its OWN React 17
+  → TWO React instances → hooks will BREAK
+</code></pre>
+<p><strong>Fix:</strong> Enforce version alignment across teams. Use <code>requiredVersion</code> in CI checks. Teams must upgrade React together.</p>
+<h3 id="eager-vs-lazy-loading"><code>eager</code> vs lazy loading</h3>
+<pre><code class="language-js">// eager: true — include in initial bundle (no async chunk)
+// Use for Shell's OWN React — must be available immediately
+shared: { react: { singleton: true, eager: true } }
+
+// eager: false (default) — load on demand
+// Use for remotes' shared deps — loaded when remote first loads
+</code></pre>
+<hr />
+<h2 id="4-css-isolation">4. CSS Isolation</h2>
+<p>Without isolation, CSS from one MFE leaks into another. Three strategies:</p>
+<h3 id="strategy-1-css-modules-build-time-scoping">Strategy 1 — CSS Modules (build-time scoping)</h3>
+<pre><code class="language-css">/* chat.module.css */
+.container { padding: 16px; } /* → .chatApp_container_abc123 */
+.button { color: blue; }      /* → .chatApp_button_abc123 */
+</code></pre>
+<p>Zero runtime cost. Works with any bundler. Does not isolate third-party styles.</p>
+<h3 id="strategy-2-shadow-dom-true-browser-isolation">Strategy 2 — Shadow DOM (true browser isolation)</h3>
+<pre><code class="language-js">class ChatWidget extends HTMLElement {
+  connectedCallback() {
+    const shadow = this.attachShadow({ mode: 'open' });
+    // All styles inside shadow are completely isolated from the document
+    shadow.innerHTML = `
+      &lt;style&gt;
+        .container { padding: 16px; }  /* never leaks outside */
+      &lt;/style&gt;
+      &lt;div class=&quot;container&quot;&gt;&lt;/div&gt;
+    `;
+    // Mount React inside shadow root
+    ReactDOM.createRoot(shadow.querySelector('.container')).render(&lt;Chat /&gt;);
+  }
+}
+customElements.define('chat-widget', ChatWidget);
+</code></pre>
+<p><strong>True isolation</strong> — no CSS leakage either direction. <strong>Trade-off:</strong> React portals (modals, tooltips) need explicit handling as they render outside the shadow root.</p>
+<h3 id="strategy-3-css-in-js-with-scoped-classnames">Strategy 3 — CSS-in-JS with scoped classnames</h3>
+<pre><code class="language-js">// Each team uses a unique prefix in their CSS-in-JS theme
+const theme = createTheme({
+  components: {
+    MuiButton: {
+      styleOverrides: { root: { /* chat-specific overrides */ } }
+    }
+  }
+});
+// Styled-components generates: .sc-chatApp-abc123
+</code></pre>
+<h3 id="strategy-4-bem-namespace-convention-simplest">Strategy 4 — BEM namespace convention (simplest)</h3>
+<pre><code class="language-css">/* Each team prefixes all classes with their app name */
+.chat__container { }
+.chat__button { }
+.calendar__container { }   /* never collides with .chat__container */
+</code></pre>
+<p>No tooling needed. Relies on team discipline.</p>
+<hr />
+<h2 id="5-shared-state-and-communication">5. Shared State and Communication</h2>
+<h3 id="option-1-custom-events-recommended-for-decoupled-teams">Option 1 — Custom Events (recommended for decoupled teams)</h3>
+<pre><code class="language-js">// Chat publishes an event
+window.dispatchEvent(new CustomEvent('app:notification', {
+  detail: { from: 'chat', count: 5, preview: 'Alice: Hey!' }
+}));
+
+// Shell (or any remote) listens — no knowledge of who published
+window.addEventListener('app:notification', (e) =&gt; {
+  updateNotificationBadge(e.detail);
+});
+</code></pre>
+<p>Zero coupling. Works across frameworks. <strong>Limitation:</strong> Late-mounted remotes miss past events.
+<strong>Fix:</strong> Also write current state to <code>window.__APP_STATE__</code> for initial read.</p>
+<h3 id="option-2-shared-store-singleton-via-module-federation">Option 2 — Shared Store (singleton via Module Federation)</h3>
+<pre><code class="language-js">// shell exposes its store
+exposes: { './store': './src/store/appStore' }
+
+// Chat remote imports it
+import { useAppStore } from 'shell/store';
+const user = useAppStore(state =&gt; state.user);
+</code></pre>
+<p>Same store instance guaranteed by <code>singleton: true</code>. <strong>Risk:</strong> Tight coupling between teams — store schema changes require coordination.</p>
+<h3 id="option-3-url-query-params-for-navigation-state">Option 3 — URL / Query Params (for navigation state)</h3>
+<pre><code class="language-js">// Shell navigates with state in URL — works across remotes and page refreshes
+navigate('/chat?threadId=123&amp;userId=456');
+
+// Remote reads from URL — no cross-app coupling
+const { threadId } = useParams();
+</code></pre>
+<p>Simple, debuggable, browser-native. Works with back/forward buttons. Limited payload size.</p>
+<h3 id="option-4-shared-context-react-only">Option 4 — Shared Context (React-only)</h3>
+<pre><code class="language-js">// Shell exposes AuthContext
+exposes: { './AuthContext': './src/contexts/AuthContext' }
+
+// Remote consumes it — same React instance means same fiber tree
+import { useAuth } from 'shell/AuthContext';
+const { user, token } = useAuth();
+</code></pre>
+<h3 id="communication-matrix">Communication Matrix</h3>
+<div class="mermaid">
+flowchart LR
+    SH["Shell"]
+    CH["Chat Remote"]
+    CA["Calendar Remote"]
+
+    SH <-->|"Custom Events\napp:notification"| CH
+    SH <-->|"Custom Events\napp:calendar-update"| CA
+    CH <-->|"Custom Events\napp:mention-in-chat"| CA
+    SH -->|"Shared store\n(singleton)"| CH
+    SH -->|"Shared store\n(singleton)"| CA
+</div>
+<hr />
+<h2 id="6-authentication-session-sharing">6. Authentication &amp; Session Sharing</h2>
+<p>Auth is owned by the Shell. Remotes never handle login — they consume the session.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant SH as Shell
+    participant IDP as Identity Provider
+    participant CH as Chat Remote
+
+    U->>SH: Navigate to app
+    SH->>IDP: Check session (cookie/token)
+    IDP-->>SH: Access token + refresh token
+    SH->>SH: Store access token in memory
+    SH->>SH: Store refresh token in HttpOnly cookie
+
+    U->>SH: Navigate to /chat
+    SH->>CH: Load remoteEntry.js
+    SH->>CH: Mount <ChatApp token={accessToken} />
+    Note over CH: Chat never handles login
+    Note over CH: Receives token via prop or shared context
+
+    CH->>CH: API calls use token from context
+    CH->>SH: Token expired → dispatch 'app:token-expired'
+    SH->>IDP: Refresh token (silent)
+    SH->>SH: Update shared scope with new token
+</div>
+<p><strong>Patterns for token sharing:</strong>
+- <strong>Props</strong> — Shell passes <code>token</code> prop to remote components (simplest, but prop-drilling)
+- <strong>Shared AuthContext</strong> — Shell exposes <code>AuthContext</code>, remotes consume via <code>useAuth()</code>
+- <strong>Shared store</strong> — <code>authStore.getState().token</code> accessible to all remotes
+- <strong>Cookie</strong> — HttpOnly cookie sent automatically with every API call (requires same domain or CORS config)</p>
+<hr />
+<h2 id="7-routing-strategies">7. Routing Strategies</h2>
+<h3 id="option-a-shell-controlled-centralized">Option A — Shell-Controlled (centralized)</h3>
+<pre><code class="language-jsx">// Shell owns all top-level routes
+&lt;Routes&gt;
+  &lt;Route path=&quot;/chat/*&quot;     element={&lt;RemoteLoader remote=&quot;chatApp&quot; module=&quot;ChatApp&quot; /&gt;} /&gt;
+  &lt;Route path=&quot;/calendar/*&quot; element={&lt;RemoteLoader remote=&quot;calendarApp&quot; module=&quot;CalendarApp&quot; /&gt;} /&gt;
+&lt;/Routes&gt;
+</code></pre>
+<p>✅ Central navigation, consistent UX
+❌ Shell must know every remote's route prefix — coordination required</p>
+<h3 id="option-b-nested-remote-routing-federated">Option B — Nested Remote Routing (federated)</h3>
+<pre><code class="language-jsx">// Shell: delegates everything under /chat/* to Chat remote
+&lt;Route path=&quot;/chat/*&quot; element={&lt;ChatApp /&gt;} /&gt;
+
+// Inside ChatApp — owns its own sub-routes independently
+&lt;Routes&gt;
+  &lt;Route index element={&lt;ChatList /&gt;} /&gt;
+  &lt;Route path=&quot;:threadId&quot; element={&lt;ChatThread /&gt;} /&gt;
+  &lt;Route path=&quot;settings&quot; element={&lt;ChatSettings /&gt;} /&gt;
+&lt;/Routes&gt;
+</code></pre>
+<p>✅ True independence — Chat team controls its own routes
+❌ URL collisions possible if teams don't coordinate prefixes</p>
+<h3 id="option-c-dynamic-route-registration">Option C — Dynamic Route Registration</h3>
+<pre><code class="language-js">// Each remote registers its routes at runtime into a shared router registry
+// Shell exposes the registration API
+exposes: { './routeRegistry': './src/routing/RouteRegistry' }
+
+// Chat remote registers on mount
+import { registerRoutes } from 'shell/routeRegistry';
+useEffect(() =&gt; {
+  registerRoutes('chatApp', [
+    { path: '/chat',          component: () =&gt; import('./ChatList') },
+    { path: '/chat/:threadId', component: () =&gt; import('./ChatThread') },
+  ]);
+  return () =&gt; unregisterRoutes('chatApp');
+}, []);
+</code></pre>
+<p>✅ Shell doesn't need to know routes at build time — fully dynamic
+❌ Complex implementation, potential race conditions on initial load</p>
+<hr />
+<h2 id="8-error-boundaries-resilience">8. Error Boundaries &amp; Resilience</h2>
+<p>A failed remote must never crash the Shell or other remotes.</p>
+<pre><code class="language-jsx">// Shell wraps every remote in isolation
+function RemoteLoader({ remote, module, fallback }) {
+  const RemoteComponent = React.lazy(() =&gt;
+    import(`${remote}/${module}`).catch((err) =&gt; {
+      // Log to monitoring (Sentry, Datadog)
+      reportError(`Remote ${remote}/${module} failed`, err);
+      // Return degraded fallback — not a crash
+      return { default: () =&gt; &lt;RemoteUnavailable name={remote} /&gt; };
+    })
+  );
+
+  return (
+    &lt;ErrorBoundary
+      fallback={&lt;RemoteUnavailable name={remote} /&gt;}
+      onError={(err) =&gt; reportError(err)}
+    &gt;
+      &lt;Suspense fallback={fallback ?? &lt;RemoteSkeleton /&gt;}&gt;
+        &lt;RemoteComponent /&gt;
+      &lt;/Suspense&gt;
+    &lt;/ErrorBoundary&gt;
+  );
+}
+</code></pre>
+<h3 id="remote-health-check-prefetching">Remote Health Check + Prefetching</h3>
+<pre><code class="language-js">// Shell prefetches remote manifests on idle — fail early, not on click
+const remotes = ['chatApp', 'calendarApp', 'searchApp'];
+
+window.addEventListener('load', () =&gt; {
+  requestIdleCallback(() =&gt; {
+    remotes.forEach(async (name) =&gt; {
+      const url = REMOTE_URLS[name];
+      try {
+        await fetch(`${url}/remoteEntry.js`, { method: 'HEAD' });
+      } catch {
+        // Mark as unavailable BEFORE user clicks — show degraded nav
+        markRemoteUnavailable(name);
+        reportError(`Remote ${name} unreachable`);
+      }
+    });
+  });
+});
+</code></pre>
+<p><strong>Retry with backoff for transient failures:</strong></p>
+<pre><code class="language-js">async function loadRemoteWithRetry(remoteName, retries = 3) {
+  for (let i = 0; i &lt; retries; i++) {
+    try {
+      return await import(`${remoteName}/App`);
+    } catch {
+      if (i === retries - 1) throw new Error(`${remoteName} unavailable`);
+      await new Promise(r =&gt; setTimeout(r, 500 * 2 ** i)); // 500ms, 1s, 2s
+    }
+  }
+}
+</code></pre>
+<hr />
+<h2 id="9-versioning-deployment-strategy">9. Versioning &amp; Deployment Strategy</h2>
+<h3 id="semantic-versioning-for-remotes">Semantic Versioning for Remotes</h3>
+<pre><code>remoteEntry.js              ← always points to latest (used by Shell)
+remoteEntry-v2.1.0.js       ← pinned version (used for canary/rollback)
+</code></pre>
+<pre><code class="language-js">// Shell can pin specific versions
+remotes: {
+  chatApp: process.env.CHAT_VERSION === 'canary'
+    ? 'chatApp@https://chat.example.com/remoteEntry-canary.js'
+    : 'chatApp@https://chat.example.com/remoteEntry.js'
+}
+</code></pre>
+<h3 id="blue-green-deployment">Blue-Green Deployment</h3>
+<div class="mermaid">
+flowchart TD
+    START["CDN: remoteEntry.js → BLUE (stable)"]
+    SMOKE{"Smoke tests pass?"}
+    SWITCH["CDN switches pointer to GREEN"]
+    GREEN["remoteEntry.js → GREEN (new version)"]
+    NEW["New sessions → GREEN"]
+    OLD["In-progress sessions finish on BLUE (graceful)"]
+    RB["Rollback: pointer stays on BLUE"]
+
+    START --> SMOKE
+    SMOKE -->|"✅ pass"| SWITCH --> GREEN
+    SMOKE -->|"❌ fail"| RB
+    GREEN --> NEW
+    GREEN --> OLD
+</div>
+<h3 id="rollback-strategy">Rollback Strategy</h3>
+<pre><code>Problem: Chat team deployed v2.1.0 with a bug.
+Shell is fetching: chat.example.com/remoteEntry.js → v2.1.0
+
+Rollback options:
+1. CDN pointer rollback — update DNS/CDN to serve v2.0.9 in &lt;1min
+2. Shell environment variable — redeploy Shell with CHAT_VERSION=v2.0.9
+3. Feature flag — disable Chat remote entirely, show fallback
+
+Shell should always have a &quot;killswitch&quot; per remote:
+if (!featureFlags.chatEnabled) return &lt;ChatUnavailablePage /&gt;;
+</code></pre>
+<h3 id="canary-deployments">Canary Deployments</h3>
+<pre><code class="language-js">// Shell routes 10% of traffic to new Chat version
+function getRemoteUrl(remoteName, userId) {
+  const isCanary = hashUserId(userId) % 100 &lt; 10; // 10% canary
+  return isCanary
+    ? `https://chat-canary.example.com/remoteEntry.js`
+    : `https://chat.example.com/remoteEntry.js`;
+}
+</code></pre>
+<hr />
+<h2 id="10-testing-strategy">10. Testing Strategy</h2>
+<p>Testing federated apps requires multiple layers:</p>
+<h3 id="layer-1-unit-tests-per-remote-isolated">Layer 1 — Unit Tests (per remote, isolated)</h3>
+<p>Each remote tests its own components in isolation — no Shell, no other remotes. Standard Jest + Testing Library.</p>
+<h3 id="layer-2-contract-testing-the-critical-one">Layer 2 — Contract Testing (the critical one)</h3>
+<p>Remote exposes a contract (what it exports). Shell has a contract (what it expects). Contract tests verify these match — without running either app.</p>
+<pre><code class="language-js">// chat-app/src/__tests__/contract.test.js
+// Verify that Chat exports exactly what Shell expects
+describe('ChatApp contract', () =&gt; {
+  it('exports a ChatApp component', async () =&gt; {
+    const module = await import('../ChatApp');
+    expect(module.default).toBeDefined();
+    expect(typeof module.default).toBe('function');
+  });
+
+  it('ChatApp accepts expected props', () =&gt; {
+    const { getByTestId } = render(&lt;ChatApp userId=&quot;123&quot; token=&quot;tok&quot; /&gt;);
+    expect(getByTestId('chat-container')).toBeInTheDocument();
+  });
+});
+
+// shell/src/__tests__/chatApp.contract.test.js
+// Verify Shell's assumptions about Chat match Chat's actual interface
+it('ChatApp renders without crashing with minimal props', () =&gt; {
+  const { container } = render(
+    &lt;RemoteLoader remote=&quot;chatApp&quot; module=&quot;ChatApp&quot;
+      props={{ userId: 'test', token: 'test' }} /&gt;
+  );
+  expect(container).not.toBeEmpty();
+});
+</code></pre>
+<h3 id="layer-3-integration-tests-shell-one-remote">Layer 3 — Integration Tests (Shell + one remote)</h3>
+<pre><code class="language-js">// Test Shell routing to Chat — real Chat remote loaded via mock server
+it('navigates to chat and renders ChatApp', async () =&gt; {
+  // Mock chat remote entry
+  server.use(
+    rest.get('https://chat.example.com/remoteEntry.js', (req, res, ctx) =&gt;
+      res(ctx.text(mockRemoteEntry))
+    )
+  );
+  render(&lt;Shell /&gt;);
+  fireEvent.click(screen.getByText('Chat'));
+  await screen.findByTestId('chat-container');
+});
+</code></pre>
+<h3 id="layer-4-e2e-tests-playwrightcypress-against-live-deployed-apps">Layer 4 — E2E Tests (Playwright/Cypress against live deployed apps)</h3>
+<pre><code class="language-js">// test with real remotes — run after each deployment
+test('user can send a chat message', async ({ page }) =&gt; {
+  await page.goto('https://app.example.com');
+  await page.click('[data-testid=&quot;nav-chat&quot;]');
+  await expect(page.locator('[data-testid=&quot;chat-input&quot;]')).toBeVisible();
+  await page.fill('[data-testid=&quot;chat-input&quot;]', 'Hello');
+  await page.click('[data-testid=&quot;send-btn&quot;]');
+  await expect(page.locator('[data-testid=&quot;message-list&quot;]')).toContainText('Hello');
+});
+</code></pre>
+<hr />
+<h2 id="11-cicd-pipeline">11. CI/CD Pipeline</h2>
+<div class="mermaid">
+flowchart TD
+    PR["PR raised by Chat Team"]
+    LT["Lint + Unit Tests\n(Chat repo only)"]
+    CT["Contract Tests\n(Chat exports vs Shell expectations)"]
+    BLD["Build Chat Remote\nchat.example.com/remoteEntry.js"]
+    CC["Canary Deploy\n10% traffic → new Chat"]
+    SM["Smoke Tests\n(E2E against canary)"]
+    FD["Full Deploy\n100% traffic"]
+    SN["Notify Shell team\n(Slack/Webhook)"]
+    RB["Rollback\n(CDN pointer flip)"]
+
+    PR --> LT --> CT --> BLD --> CC --> SM
+    SM -->|"✅ pass"| FD --> SN
+    SM -->|"❌ fail"| RB
+</div>
+<p><strong>Key principle:</strong> Chat team CI never touches Shell repo. Shell team is notified via webhook after Chat deploys successfully. Shell re-fetches <code>remoteEntry.js</code> on next user session — zero Shell redeployment needed.</p>
+<hr />
+<h2 id="12-feature-flagging-across-mfes">12. Feature Flagging Across MFEs</h2>
+<p>Feature flags must be consistent across remotes — a flag enabling a feature in Chat should be visible to Calendar if Calendar reacts to it.</p>
+<pre><code class="language-js">// Shell fetches flags from flagging service on load
+// Stores in shared context/store — all remotes read from same source
+const flags = await flagService.getFlags(userId);
+store.dispatch(setFeatureFlags(flags));
+
+// Remote reads flag — same store instance via singleton
+import { useAppStore } from 'shell/store';
+
+function ChatApp() {
+  const newEditorEnabled = useAppStore(s =&gt; s.flags['chat-new-editor']);
+  return newEditorEnabled ? &lt;NewEditor /&gt; : &lt;LegacyEditor /&gt;;
+}
+</code></pre>
+<p><strong>Important:</strong> Feature flags must NOT be evaluated in each remote independently — network latency could cause Shell and Chat to see different flag values in the same session (flag flicker).</p>
+<hr />
+<h2 id="13-performance-the-mfe-tax">13. Performance — The MFE Tax</h2>
+<p>Every remote adds a network waterfall. Mitigate aggressively.</p>
+<h3 id="the-waterfall-problem">The waterfall problem</h3>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant SH as Shell
+    participant CDN as Remote CDN
+
+    Note over SH: Shell bundle loaded (200ms)
+    U->>SH: Clicks Chat link
+    SH->>CDN: fetch remoteEntry.js
+    CDN-->>SH: module map (50ms RTT)
+    SH->>CDN: fetch chat.chunk.js
+    CDN-->>SH: Chat bundle (100ms)
+    Note over SH: parse + execute (50ms)
+    Note over SH: render (16ms)
+    Note over U,CDN: Total extra time to interactive: ~416ms
+</div>
+<h3 id="mitigation-strategies">Mitigation strategies</h3>
+<pre><code class="language-html">&lt;!-- 1. Prefetch remote manifests on Shell load (not on click) --&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;https://chat.example.com/remoteEntry.js&quot; /&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;https://calendar.example.com/remoteEntry.js&quot; /&gt;
+</code></pre>
+<pre><code class="language-js">// 2. Preload on hover (user signals intent 200ms before click)
+navItem.addEventListener('mouseenter', () =&gt; {
+  import('chatApp/ChatApp'); // starts loading 200ms early
+});
+
+// 3. Service Worker caches remoteEntry.js
+// Cache strategy: stale-while-revalidate for remoteEntry.js
+// → instant from cache, updates in background
+self.addEventListener('fetch', (e) =&gt; {
+  if (e.request.url.includes('remoteEntry.js')) {
+    e.respondWith(
+      caches.open('mfe-manifests').then(cache =&gt;
+        cache.match(e.request).then(cached =&gt; {
+          const fetchPromise = fetch(e.request).then(res =&gt; {
+            cache.put(e.request, res.clone());
+            return res;
+          });
+          return cached || fetchPromise; // stale-while-revalidate
+        })
+      )
+    );
+  }
+});
+</code></pre>
+<h3 id="bundle-size-discipline">Bundle size discipline</h3>
+<pre><code class="language-js">// Each remote must stay within a size budget
+// webpack.config.js
+performance: {
+  maxAssetSize: 250_000,       // 250KB per chunk
+  maxEntrypointSize: 500_000,  // 500KB total
+  hints: 'error'               // fail build if exceeded
+}
+</code></pre>
+<hr />
+<h2 id="14-security">14. Security</h2>
+<h3 id="content-security-policy-csp-the-hardest-mfe-problem">Content Security Policy (CSP) — the hardest MFE problem</h3>
+<p>Standard CSP blocks dynamically loaded scripts from unknown origins. Module Federation loads scripts from remote domains at runtime — you must explicitly allow them.</p>
+<pre><code># Without MFE-aware CSP:
+Content-Security-Policy: script-src 'self'
+→ Shell loads chat.example.com/remoteEntry.js
+→ Browser BLOCKS it — origin not in allowlist
+</code></pre>
+<pre><code># MFE-aware CSP:
+Content-Security-Policy:
+  script-src 'self'
+    https://chat.example.com
+    https://calendar.example.com
+    https://search.example.com;
+  connect-src 'self'
+    https://chat-api.example.com
+    https://calendar-api.example.com;
+</code></pre>
+<p><strong>Problem:</strong> Adding a new remote requires updating Shell's CSP header. Tight coupling via infrastructure.</p>
+<p><strong>Better approach — nonce-based CSP:</strong></p>
+<pre><code class="language-js">// Server generates a unique nonce per request
+const nonce = crypto.randomBytes(16).toString('base64');
+res.setHeader('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
+
+// Shell passes nonce to Module Federation plugin
+new ModuleFederationPlugin({
+  // scripts injected by MF get the nonce automatically
+})
+</code></pre>
+<p><strong>Practical reality:</strong> Most large MFE apps use a subdomain pattern (<code>*.example.com</code>) in CSP — simpler, teams don't need Shell approval for new remotes, still restricts scripts to the org's domain.</p>
+<pre><code>Content-Security-Policy: script-src 'self' *.example.com
+</code></pre>
+<hr />
+<h3 id="subresource-integrity-sri-for-remoteentryjs">Subresource Integrity (SRI) for remoteEntry.js</h3>
+<p>SRI verifies that a fetched script hasn't been tampered with (CDN compromise, MITM attack).</p>
+<pre><code class="language-html">&lt;!-- Standard SRI — works for static scripts --&gt;
+&lt;script src=&quot;https://cdn.example.com/library.js&quot;
+        integrity=&quot;sha384-abc123...&quot;
+        crossorigin=&quot;anonymous&quot;&gt;&lt;/script&gt;
+</code></pre>
+<p><strong>Problem with MFE:</strong> <code>remoteEntry.js</code> is dynamic and content changes on every deployment — you can't pin a hash.</p>
+<p><strong>Solution — use HTTPS + CORS strictly:</strong></p>
+<pre><code>Instead of SRI for dynamic scripts, enforce:
+1. TLS everywhere — no HTTP remotes
+2. Strict CORS on remote CDN origins
+3. CSP restricts allowed origins
+4. Code signing via CI/CD pipeline (sign artifacts, verify in deploy step)
+</code></pre>
+<p><strong>XSS surface area — what MFE adds:</strong></p>
+<pre><code>Traditional app XSS:
+  Attack vector: inject script via user input
+
+MFE additional attack vectors:
+  1. Compromised CDN → malicious remoteEntry.js → full app access
+  2. DNS hijack of chat.example.com → load attacker-controlled JS
+  3. Shared window namespace → window.chatApp overwritten by attacker
+
+Mitigations:
+  - Integrity checks in CI before publishing remoteEntry.js
+  - CDN access restricted to CI/CD service account only
+  - CSP to limit what origins can load
+  - Avoid storing sensitive data in window.__APP_STATE__
+</code></pre>
+<hr />
+<h3 id="cross-remote-data-leakage">Cross-Remote Data Leakage</h3>
+<p>Remotes share the same JavaScript heap. Sensitive data in one remote's memory is accessible to another.</p>
+<pre><code class="language-js">// ❌ Don't put sensitive data in window
+window.__APP_STATE__ = { user: { ssn: '123-45-6789' } };
+// Any remote (or injected script) can read this
+
+// ✅ Share only what's necessary, via controlled API
+// Shell exposes a scoped accessor — not the raw store
+exposes: {
+  './useCurrentUser': './src/auth/useCurrentUser',
+  // → returns { id, name, role } — not the full token or PII
+}
+</code></pre>
+<hr />
+<h2 id="15-dynamic-remote-discovery">15. Dynamic Remote Discovery</h2>
+<p><strong>Problem with hardcoded remote URLs:</strong></p>
+<pre><code class="language-js">// Hardcoded in Shell — changing remote URL requires Shell redeploy
+remotes: {
+  chatApp: 'chatApp@https://chat.example.com/remoteEntry.js',
+}
+</code></pre>
+<p><strong>Solution — runtime manifest (production pattern):</strong></p>
+<pre><code class="language-js">// Shell fetches a manifest on startup — all remote URLs centralized
+const manifest = await fetch('/api/remote-manifest').then(r =&gt; r.json());
+// Returns:
+// {
+//   chatApp:     &quot;https://chat.example.com/remoteEntry.js&quot;,
+//   calendarApp: &quot;https://calendar.example.com/remoteEntry.js&quot;,
+// }
+</code></pre>
+<pre><code class="language-js">// Shell uses dynamic remote loading (no webpack.config remotes needed)
+async function loadRemote(manifestEntry) {
+  const { name, url } = manifestEntry;
+
+  // Dynamically inject the remote script
+  await new Promise((resolve, reject) =&gt; {
+    const script = document.createElement('script');
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  // Access the registered container
+  const container = window[name];
+  await container.init(__webpack_share_scopes__.default);
+  return container;
+}
+</code></pre>
+<pre><code class="language-js">// Get a component from a dynamically loaded remote
+async function getRemoteComponent(remoteName, modulePath) {
+  const container = await loadRemote({ name: remoteName, url: manifest[remoteName] });
+  const factory = await container.get(modulePath);
+  return factory().default;
+}
+
+// Usage in Shell
+const ChatApp = await getRemoteComponent('chatApp', './ChatApp');
+</code></pre>
+<p><strong>Benefits:</strong>
+- New remote deployments update the manifest — Shell picks it up without redeployment
+- A/B testing by returning different URLs per user segment
+- Rollback by updating manifest to point to previous version URL
+- Canary by returning canary URL for specific user cohorts</p>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant SH as Shell
+    participant MAN as Manifest API
+    participant REG as Remote CDNs
+
+    U->>SH: App loads
+    SH->>MAN: GET /api/remote-manifest
+    MAN-->>SH: { chatApp: "...", calendarApp: "..." }
+    SH->>SH: Cache manifest in memory
+    U->>SH: Navigate to /chat
+    SH->>REG: fetch manifest[chatApp]
+    REG-->>SH: remoteEntry.js
+    SH->>SH: Mount ChatApp
+</div>
+<hr />
+<h2 id="16-observability-monitoring">16. Observability &amp; Monitoring</h2>
+<p>Single-page apps are easy to monitor — one error boundary, one Sentry project. MFEs are harder: a crash in Chat looks identical to a crash in Calendar from the Shell's perspective.</p>
+<h3 id="error-attribution-which-remote-crashed">Error Attribution — which remote crashed?</h3>
+<pre><code class="language-js">// Each remote sets its identity before mounting
+function RemoteLoader({ remoteName, ...props }) {
+  useEffect(() =&gt; {
+    // Tag all errors thrown during this remote's lifetime
+    Sentry.setTag('mfe.remote', remoteName);
+    Sentry.setContext('remote', {
+      name: remoteName,
+      version: window.__REMOTE_VERSIONS__?.[remoteName],
+      url: REMOTE_URLS[remoteName],
+    });
+  }, [remoteName]);
+
+  return (
+    &lt;ErrorBoundary
+      onError={(error) =&gt; {
+        Sentry.withScope((scope) =&gt; {
+          scope.setTag('mfe.remote', remoteName);
+          scope.setTag('mfe.crash', true);
+          Sentry.captureException(error);
+        });
+      }}
+    &gt;
+      {/* ... */}
+    &lt;/ErrorBoundary&gt;
+  );
+}
+</code></pre>
+<h3 id="distributed-tracing-across-remotes">Distributed Tracing Across Remotes</h3>
+<p>Each remote makes its own API calls. Without trace propagation, you can't correlate a slow Calendar API call with the user's original Shell action.</p>
+<pre><code class="language-js">// Shell generates a trace ID for the session
+const traceId = crypto.randomUUID();
+store.dispatch(setTraceId(traceId));
+
+// Shell exposes trace context via shared store
+exposes: { './tracing': './src/observability/tracing' }
+
+// Each remote imports and propagates the trace ID
+import { getTraceContext } from 'shell/tracing';
+
+async function fetchCalendarEvents() {
+  const { traceId, spanId } = getTraceContext();
+  return fetch('/api/events', {
+    headers: {
+      'X-Trace-Id': traceId,       // correlates all remote calls for this session
+      'X-Span-Id': spanId,         // identifies this specific remote's call
+      'X-Remote-Name': 'calendarApp',
+    }
+  });
+}
+</code></pre>
+<h3 id="performance-monitoring-per-remote">Performance Monitoring Per Remote</h3>
+<pre><code class="language-js">// Measure each remote's load time independently
+performance.mark(`remote:${remoteName}:start`);
+await loadRemote(remoteName);
+performance.mark(`remote:${remoteName}:end`);
+
+performance.measure(
+  `remote:${remoteName}:load`,
+  `remote:${remoteName}:start`,
+  `remote:${remoteName}:end`
+);
+
+// Report to analytics
+const [entry] = performance.getEntriesByName(`remote:${remoteName}:load`);
+analytics.track('remote_load_time', {
+  remote: remoteName,
+  duration: entry.duration,
+  version: window.__REMOTE_VERSIONS__?.[remoteName],
+});
+</code></pre>
+<h3 id="remote-version-tracking">Remote Version Tracking</h3>
+<pre><code class="language-js">// Each remoteEntry.js sets its version on load
+// chat/webpack.config.js
+new webpack.DefinePlugin({
+  '__REMOTE_VERSION__': JSON.stringify(process.env.GIT_SHA),
+  '__REMOTE_NAME__': JSON.stringify('chatApp'),
+});
+
+// chat/src/index.js — runs when remoteEntry.js executes
+window.__REMOTE_VERSIONS__ = window.__REMOTE_VERSIONS__ || {};
+window.__REMOTE_VERSIONS__['chatApp'] = __REMOTE_VERSION__;
+</code></pre>
+<pre><code class="language-js">// Shell can now report: user experienced a bug while using
+// Shell@abc123 + ChatApp@def456 + CalendarApp@ghi789
+function reportBugSnapshot() {
+  return {
+    shell: process.env.SHELL_VERSION,
+    remotes: window.__REMOTE_VERSIONS__,
+    timestamp: Date.now(),
+    userId: store.getState().auth.userId,
+  };
+}
+</code></pre>
+<hr />
+<h2 id="17-design-system-shared-theming">17. Design System &amp; Shared Theming</h2>
+<p>The hardest shared-UI problem in MFEs: how do independently deployed remotes share visual consistency without build-time coupling?</p>
+<h3 id="css-custom-properties-the-right-answer">CSS Custom Properties — the right answer</h3>
+<p>CSS custom properties (variables) are inherited across Shadow DOM boundaries and work with any framework.</p>
+<pre><code class="language-css">/* Shell sets design tokens as CSS custom properties on :root */
+:root {
+  /* Colors */
+  --color-primary:     #0066cc;
+  --color-primary-dark: #0052a3;
+  --color-danger:      #d32f2f;
+  --color-surface:     #ffffff;
+  --color-on-surface:  #1a1a1a;
+
+  /* Typography */
+  --font-family-base:  'Inter', sans-serif;
+  --font-size-sm:      0.875rem;
+  --font-size-md:      1rem;
+  --font-size-lg:      1.25rem;
+
+  /* Spacing */
+  --spacing-sm:  8px;
+  --spacing-md:  16px;
+  --spacing-lg:  24px;
+
+  /* Elevation */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.12);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.15);
+}
+</code></pre>
+<pre><code class="language-css">/* Chat remote uses tokens — zero knowledge of actual values */
+.chat-button {
+  background: var(--color-primary);
+  font-family: var(--font-family-base);
+  padding: var(--spacing-sm) var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Shell switches to dark mode by updating tokens — ALL remotes update instantly */
+[data-theme=&quot;dark&quot;] {
+  --color-surface:     #1a1a1a;
+  --color-on-surface:  #ffffff;
+  --color-primary:     #66b2ff;
+}
+</code></pre>
+<p><strong>Why CSS custom properties beat alternatives:</strong>
+- No build-time coupling — remotes don't import from Shell
+- Works across frameworks (React, Vue, Angular, vanilla)
+- Works inside Shadow DOM (custom properties pierce the shadow boundary)
+- Dark mode / white-label theming is a one-line change on <code>:root</code>
+- Computed in the browser — no SCSS variable re-compilation needed</p>
+<h3 id="theme-propagation-at-runtime">Theme Propagation at Runtime</h3>
+<pre><code class="language-js">// Shell exposes a theme setter — remotes can react to theme changes
+exposes: { './theme': './src/design/theme' }
+
+// Shell updates tokens dynamically
+function applyTheme(tokens) {
+  const root = document.documentElement;
+  Object.entries(tokens).forEach(([key, value]) =&gt; {
+    root.style.setProperty(`--${key}`, value);
+  });
+}
+
+// Customer-specific white-label theming
+const brandTokens = await fetch(`/api/brand/${tenantId}/tokens`).then(r =&gt; r.json());
+applyTheme(brandTokens);
+// → all remotes instantly reflect the brand colors
+</code></pre>
+<h3 id="shared-component-library-strategy">Shared Component Library Strategy</h3>
+<p>Two approaches for sharing UI components across remotes:</p>
+<p><strong>Option A — Published npm package (build-time)</strong></p>
+<pre><code>@company/design-system → versioned npm package
+Each remote: npm install @company/design-system@1.4.0
+→ Shell must coordinate version upgrades across all remotes
+→ Version drift is real — Chat on v1.4, Calendar on v1.6
+</code></pre>
+<p><strong>Option B — Module Federation exposed (runtime)</strong></p>
+<pre><code class="language-js">// Shell exposes design system components
+exposes: {
+  './Button':  './src/design-system/Button',
+  './Modal':   './src/design-system/Modal',
+  './Input':   './src/design-system/Input',
+}
+
+// Remote imports at runtime — always the current Shell version
+import Button from 'shell/Button';
+</code></pre>
+<pre><code>✅ All remotes always use the same version (Shell's)
+✅ Design system updates propagate without remote redeployment
+❌ Coupling — design system change in Shell affects all remotes simultaneously
+❌ Remote can't use a newer Button until Shell deploys first
+</code></pre>
+<p><strong>Pragmatic recommendation:</strong> CSS custom properties for tokens (always runtime, zero coupling) + npm package for component primitives (versioned, teams upgrade at their own pace) + Module Federation for complex shared state-bearing components (auth context, notification center).</p>
+<hr />
+<h2 id="18-mfe-approaches-compared">18. MFE Approaches Compared</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Module Federation</th>
+<th>iframes</th>
+<th>Web Components</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>JS isolation</strong></td>
+<td>Shared (by design)</td>
+<td>Full (separate browsing context)</td>
+<td>Partial (Shadow DOM for CSS)</td>
+</tr>
+<tr>
+<td><strong>CSS isolation</strong></td>
+<td>Manual (CSS Modules/BEM)</td>
+<td>Full (separate document)</td>
+<td>Full (Shadow DOM)</td>
+</tr>
+<tr>
+<td><strong>Communication</strong></td>
+<td>Events, shared store</td>
+<td><code>postMessage</code> only</td>
+<td>Events, attributes</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>Fast (shared deps)</td>
+<td>Heavy (separate document per frame)</td>
+<td>Fast</td>
+</tr>
+<tr>
+<td><strong>SEO</strong></td>
+<td>Good</td>
+<td>Poor (crawlers skip iframes)</td>
+<td>Good</td>
+</tr>
+<tr>
+<td><strong>Routing</strong></td>
+<td>Shared (Shell controls)</td>
+<td>Independent per frame</td>
+<td>Shared</td>
+</tr>
+<tr>
+<td><strong>Framework sharing</strong></td>
+<td>Yes (React singleton)</td>
+<td>No (separate React per iframe)</td>
+<td>Framework-agnostic</td>
+</tr>
+<tr>
+<td><strong>Best for</strong></td>
+<td>SPA-like apps, same-team ecosystem</td>
+<td>3rd party widgets, sandboxing untrusted code</td>
+<td>Design system components, cross-framework</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="15-interview-summary">15. Interview Summary</h2>
+<h3 id="key-decisions-table">Key Decisions Table</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem it solves</th>
+<th>Trade-off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Module Federation (runtime)</td>
+<td>True deployment independence</td>
+<td>Global scope coordination, version conflicts</td>
+</tr>
+<tr>
+<td><code>singleton: true</code> for React</td>
+<td>One React instance = no hook breaks</td>
+<td>All teams must stay on compatible version</td>
+</tr>
+<tr>
+<td>Shell owns auth</td>
+<td>Remotes never touch tokens</td>
+<td>Auth changes require Shell coordination</td>
+</tr>
+<tr>
+<td>Custom events for cross-remote</td>
+<td>Zero coupling between teams</td>
+<td>Late-mounted remotes miss past events</td>
+</tr>
+<tr>
+<td>Error boundary per remote</td>
+<td>Failed remote doesn't crash Shell</td>
+<td>Extra boilerplate per remote mount</td>
+</tr>
+<tr>
+<td>CDN pointer for rollback</td>
+<td>Rollback in &lt;1min without redeployment</td>
+<td>CDN invalidation propagation delay</td>
+</tr>
+<tr>
+<td>Contract tests</td>
+<td>Catch Shell/Remote interface mismatch before deployment</td>
+<td>Teams must maintain contract test suites</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"Micro-frontends are an organizational solution first. The question isn't 'can we do it' — it's 'do we have multiple teams blocked on each other's deployments?' If yes, MFE solves that. If not, a monolith is simpler."</p>
+</li>
+<li>
+<p>"Module Federation uses <code>window</code> as a shared registry — <code>window.chatApp</code> is the remote container. This is intentional global scope pollution. It's the only way two separately deployed builds can coordinate at runtime without a shared build step."</p>
+</li>
+<li>
+<p>"Version negotiation: Shell declares React 18.2.0. Chat needs <code>^18.0.0</code>. MF sees 18.2.0 satisfies the range → Chat reuses Shell's React. Calendar needs <code>^17.0.0</code> → range mismatch → Calendar loads its own React 17 → two React instances → hooks break. This is the most common production bug in MFE setups."</p>
+</li>
+<li>
+<p>"CSS isolation choices: CSS Modules for build-time scoping (most common), Shadow DOM for true browser-level isolation (needed for untrusted/3rd party), BEM namespacing as the lowest-friction option. Shadow DOM breaks React portals — modals render outside the shadow root."</p>
+</li>
+<li>
+<p>"Rollback is a CDN pointer flip — <code>chat.example.com/remoteEntry.js</code> is updated to serve the previous version. Shell fetches <code>remoteEntry.js</code> on each session start. No Shell redeployment. In-progress sessions finish gracefully on the old version. Rollback is complete in under a minute."</p>
+</li>
+<li>
+<p>"Contract testing is the missing piece most teams skip. Unit tests per remote don't catch the interface mismatch between Shell's expectations and what Chat actually exports. Contract tests run in CI before deployment and fail if Chat's exported props change in a breaking way."</p>
+</li>
+<li>
+<p>"The MFE performance tax is real — every remote adds a network waterfall. Mitigate with: <code>&lt;link rel=prefetch&gt;</code> for remote manifests on Shell load, preload on hover (user signals intent 200ms before click), Service Worker stale-while-revalidate for <code>remoteEntry.js</code>, and bundle size budgets that fail CI if exceeded."</p>
+</li>
+<li>
+<p>"Hardcoded remote URLs in webpack.config create a tight coupling between Shell and remote deployments. Production MFEs use a runtime manifest — Shell fetches <code>/api/remote-manifest</code> on startup, gets the current URLs, and loads remotes dynamically. This enables zero-Shell-redeploy rollback and A/B routing."</p>
+</li>
+<li>
+<p>"CSP is the sneaky security problem in MFE. Standard <code>script-src 'self'</code> blocks all remote scripts. You need to explicitly allowlist each remote origin — or use <code>*.example.com</code> to cover all team subdomains. Every new remote requires an infrastructure change unless you design the CSP upfront."</p>
+</li>
+<li>
+<p>"For observability, the key problem is error attribution — when Chat crashes inside Shell, Sentry sees one crash with no indication which remote caused it. Wrap every remote in an error boundary that sets <code>mfe.remote</code> as a Sentry tag. Also track <code>window.__REMOTE_VERSIONS__</code> so each bug report includes the exact Chat commit SHA, not just the Shell version."</p>
+</li>
+<li>
+<p>"Shared theming without build-time coupling: CSS custom properties set on <code>:root</code> by Shell are consumed by all remotes without any import. Dark mode or white-label theming is a single <code>document.documentElement.style.setProperty</code> call — all remotes update instantly, no redeploy."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

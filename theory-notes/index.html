@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theory Notes — Theory Notes</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="notes/javascript-core.html">JavaScript Core</a></li><li><a href="notes/v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="notes/browser-document-execution.html">Browser Document Execution</a></li><li><a href="notes/browser-internals.html">Browser Internals</a></li><li><a href="notes/hydration.html">Hydration</a></li><li><a href="notes/rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="notes/assets.html">Assets</a></li><li><a href="notes/cache.html">Cache</a></li><li><a href="notes/core-web-vitals.html">Core Web Vitals</a></li><li><a href="notes/react-performance.html">React Performance</a></li><li><a href="notes/web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="notes/microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="notes/monorepo.html">Monorepo</a></li><li><a href="notes/optimistic-updates.html">Optimistic Updates</a></li><li><a href="notes/state-machines.html">State Machines</a></li><li><a href="notes/state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="notes/cors-security.html">CORS Security</a></li><li><a href="notes/graphql.html">GraphQL</a></li><li><a href="notes/javascript-sdk.html">JavaScript SDK</a></li><li><a href="notes/network.html">Network</a></li><li><a href="notes/security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="notes/observability.html">Observability</a></li><li><a href="notes/webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="notes/yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><p class="empty-state">Select a note from the sidebar to begin.</p></main>
+</div>
+<script src="assets/highlight.min.js"></script>
+<script src="assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

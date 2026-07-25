@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optimistic Updates — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html" aria-current="page">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="optimistic-updates-interview-reference">Optimistic Updates — Interview Reference</h1>
+<hr />
+<h2 id="what-is-an-optimistic-update">What is an Optimistic Update?</h2>
+<p>Apply a UI change <strong>immediately</strong> (assume success), then confirm or revert based on the server response.</p>
+<blockquote>
+<p><strong>One-liner:</strong> Don't wait for the server — update the UI now, rollback if the server disagrees.</p>
+</blockquote>
+<p><strong>Without optimistic updates:</strong></p>
+<pre><code>User clicks &quot;Like&quot; → spinner → wait 500ms → server confirms → UI updates
+</code></pre>
+<p><strong>With optimistic updates:</strong></p>
+<pre><code>User clicks &quot;Like&quot; → UI updates instantly → server confirms in background
+</code></pre>
+<hr />
+<h2 id="the-core-pattern">The Core Pattern</h2>
+<p>Every optimistic update needs three things:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. Snapshot</strong></td>
+<td>Save current state before mutation</td>
+</tr>
+<tr>
+<td><strong>2. Apply</strong></td>
+<td>Update UI immediately</td>
+</tr>
+<tr>
+<td><strong>3. Rollback</strong></td>
+<td>On error, restore the snapshot</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-js">// Bare React — manual optimistic update
+function LikeButton({ postId, initialLikes }) {
+  const [likes, setLikes] = useState(initialLikes);
+  const [liked, setLiked] = useState(false);
+
+  async function handleLike() {
+    // 1. Snapshot current state
+    const prevLikes = likes;
+    const prevLiked = liked;
+
+    // 2. Apply optimistically
+    setLikes(l =&gt; l + 1);
+    setLiked(true);
+
+    try {
+      await api.likePost(postId);
+      // server confirmed — nothing to do
+    } catch {
+      // 3. Rollback on failure
+      setLikes(prevLikes);
+      setLiked(prevLiked);
+    }
+  }
+
+  return &lt;button onClick={handleLike}&gt;{liked ? '❤️' : '🤍'} {likes}&lt;/button&gt;;
+}
+</code></pre>
+<hr />
+<h2 id="react-query-optimistic-updates">React Query — Optimistic Updates</h2>
+<p>React Query handles snapshot, apply, and rollback with <code>onMutate</code> / <code>onError</code> / <code>onSettled</code>.</p>
+<pre><code class="language-js">const queryClient = useQueryClient();
+
+const likeMutation = useMutation({
+  mutationFn: (postId) =&gt; api.likePost(postId),
+
+  // 1. Before mutation fires — snapshot + apply optimistically
+  onMutate: async (postId) =&gt; {
+    // Cancel any in-flight refetches (prevent overwriting optimistic update)
+    await queryClient.cancelQueries({ queryKey: ['post', postId] });
+
+    // Snapshot current value
+    const previous = queryClient.getQueryData(['post', postId]);
+
+    // Apply optimistic update to cache
+    queryClient.setQueryData(['post', postId], old =&gt; ({
+      ...old,
+      likes: old.likes + 1,
+      liked: true,
+    }));
+
+    // Return context with snapshot for rollback
+    return { previous };
+  },
+
+  // 2. On error — rollback to snapshot
+  onError: (err, postId, context) =&gt; {
+    queryClient.setQueryData(['post', postId], context.previous);
+  },
+
+  // 3. Always — sync with server truth
+  onSettled: (data, error, postId) =&gt; {
+    queryClient.invalidateQueries({ queryKey: ['post', postId] });
+  },
+});
+
+// Usage
+likeMutation.mutate(postId);
+</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant UI as React UI
+    participant QC as Query Cache
+    participant API as Server
+
+    U->>UI: clicks Like
+    UI->>QC: cancelQueries (prevent race)
+    UI->>QC: snapshot previous state
+    UI->>QC: setQueryData (optimistic +1)
+    UI-->>U: UI shows liked instantly ✅
+
+    UI->>API: POST /likes (async, in background)
+
+    alt Success
+        API-->>UI: 200 OK
+        UI->>QC: invalidateQueries (refetch real data)
+        QC-->>UI: server data confirms
+    else Failure
+        API-->>UI: 500 Error
+        UI->>QC: setQueryData(previous) — rollback
+        UI-->>U: UI reverts to previous ❌
+    end
+</div>
+<hr />
+<h2 id="list-mutations-add-delete-reorder">List Mutations — Add / Delete / Reorder</h2>
+<h3 id="optimistic-add">Optimistic Add</h3>
+<pre><code class="language-js">const addTodoMutation = useMutation({
+  mutationFn: (title) =&gt; api.createTodo({ title }),
+
+  onMutate: async (title) =&gt; {
+    await queryClient.cancelQueries({ queryKey: ['todos'] });
+    const previous = queryClient.getQueryData(['todos']);
+
+    // Add a temporary item with a temp ID
+    queryClient.setQueryData(['todos'], old =&gt; [
+      ...old,
+      { id: `temp-${Date.now()}`, title, done: false, _isOptimistic: true }
+    ]);
+
+    return { previous };
+  },
+
+  onError: (err, title, context) =&gt; {
+    queryClient.setQueryData(['todos'], context.previous);
+  },
+
+  onSettled: () =&gt; {
+    queryClient.invalidateQueries({ queryKey: ['todos'] });
+    // Server response replaces temp item with real ID
+  },
+});
+</code></pre>
+<h3 id="optimistic-delete">Optimistic Delete</h3>
+<pre><code class="language-js">const deleteMutation = useMutation({
+  mutationFn: (id) =&gt; api.deleteTodo(id),
+
+  onMutate: async (id) =&gt; {
+    await queryClient.cancelQueries({ queryKey: ['todos'] });
+    const previous = queryClient.getQueryData(['todos']);
+
+    // Remove immediately from cache
+    queryClient.setQueryData(['todos'], old =&gt; old.filter(t =&gt; t.id !== id));
+
+    return { previous };
+  },
+
+  onError: (err, id, context) =&gt; {
+    queryClient.setQueryData(['todos'], context.previous); // restore deleted item
+  },
+
+  onSettled: () =&gt; queryClient.invalidateQueries({ queryKey: ['todos'] }),
+});
+</code></pre>
+<hr />
+<h2 id="conflict-resolution-when-server-disagrees">Conflict Resolution — When Server Disagrees</h2>
+<p>The server is always the source of truth. Three patterns for handling conflicts:</p>
+<h3 id="pattern-1-last-write-wins-simplest">Pattern 1 — Last Write Wins (simplest)</h3>
+<pre><code class="language-js">onSettled: () =&gt; {
+  // Always refetch — server state replaces optimistic state
+  queryClient.invalidateQueries({ queryKey: ['post', postId] });
+}
+// If two users edit the same post, last server response wins
+// Optimistic state is a temporary UX improvement, not a source of truth
+</code></pre>
+<h3 id="pattern-2-merge-server-client-for-partial-updates">Pattern 2 — Merge server + client (for partial updates)</h3>
+<pre><code class="language-js">onSuccess: (serverData) =&gt; {
+  queryClient.setQueryData(['post', postId], old =&gt; ({
+    ...old,           // keep local state not changed by this mutation
+    ...serverData,    // server wins for fields it returned
+  }));
+}
+</code></pre>
+<h3 id="pattern-3-version-based-conflict-detection">Pattern 3 — Version-based conflict detection</h3>
+<pre><code class="language-js">const updateMutation = useMutation({
+  mutationFn: ({ id, changes, version }) =&gt;
+    api.update(id, { ...changes, expectedVersion: version }),
+
+  onMutate: async ({ id, changes }) =&gt; {
+    const previous = queryClient.getQueryData(['item', id]);
+    queryClient.setQueryData(['item', id], old =&gt; ({ ...old, ...changes }));
+    return { previous };
+  },
+
+  onError: (err, vars, context) =&gt; {
+    if (err.status === 409) {
+      // Conflict — server has a newer version
+      // Rollback and show conflict UI
+      queryClient.setQueryData(['item', vars.id], context.previous);
+      showConflictDialog();
+    } else {
+      queryClient.setQueryData(['item', vars.id], context.previous);
+    }
+  },
+});
+</code></pre>
+<hr />
+<h2 id="cancelqueries-why-its-critical"><code>cancelQueries</code> — Why It's Critical</h2>
+<p>Without canceling in-flight refetches, a background refetch can overwrite your optimistic update:</p>
+<pre><code>T=0ms  User clicks Like → optimistic update: likes=11
+T=50ms Background refetch was already in-flight → returns: likes=10
+T=50ms React Query receives refetch response → overwrites cache with likes=10
+T=50ms UI flickers back to 10 ← optimistic update lost!
+</code></pre>
+<pre><code class="language-js">// cancelQueries sends an abort signal to in-flight fetches
+await queryClient.cancelQueries({ queryKey: ['post', postId] });
+// Now the in-flight refetch is aborted before our optimistic update
+</code></pre>
+<hr />
+<h2 id="useoptimistic-react-19-built-in">useOptimistic — React 19 Built-in</h2>
+<p>React 19 adds <code>useOptimistic</code> — a first-class hook for optimistic state.</p>
+<pre><code class="language-js">import { useOptimistic } from 'react';
+
+function LikeButton({ postId, likes }) {
+  const [optimisticLikes, addOptimisticLike] = useOptimistic(
+    likes,
+    (state, delta) =&gt; state + delta // how to apply the optimistic update
+  );
+
+  async function handleLike() {
+    addOptimisticLike(1); // apply optimistically
+    await api.likePost(postId); // server confirms
+    // On settle, optimistic state is automatically replaced by server state
+  }
+
+  return &lt;button onClick={handleLike}&gt;❤️ {optimisticLikes}&lt;/button&gt;;
+}
+</code></pre>
+<p><code>useOptimistic</code> automatically reverts when the async action settles — the optimistic state exists only for the duration of the transition.</p>
+<hr />
+<h2 id="common-mistakes">Common Mistakes</h2>
+<pre><code class="language-js">// ❌ Forgetting cancelQueries — race condition
+onMutate: async (postId) =&gt; {
+  // No cancelQueries — in-flight refetch can overwrite optimistic update
+  const previous = queryClient.getQueryData(['post', postId]);
+  queryClient.setQueryData(['post', postId], ...);
+  return { previous };
+}
+
+// ❌ Not returning context from onMutate — rollback fails
+onMutate: async (postId) =&gt; {
+  const previous = queryClient.getQueryData(['post', postId]);
+  queryClient.setQueryData(['post', postId], ...);
+  // forgot: return { previous }
+  // onError receives context=undefined → rollback crashes
+}
+
+// ❌ Skipping onSettled — stale optimistic state lingers
+// Always call invalidateQueries in onSettled to sync with server truth
+// even on success — the server may have applied additional changes
+
+// ❌ Mutating cached objects directly
+queryClient.setQueryData(['todos'], old =&gt; {
+  old.push(newItem); // mutates old array — React won't re-render
+  return old;
+});
+// Fix:
+queryClient.setQueryData(['todos'], old =&gt; [...old, newItem]);
+</code></pre>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"Optimistic updates need three things: snapshot before mutation, apply immediately, rollback on error. That's it. The complexity is all in managing the race conditions."</p>
+</li>
+<li>
+<p>"The most important step people miss is <code>cancelQueries</code> before applying the optimistic update. Without it, an in-flight background refetch arrives after your optimistic update and silently overwrites it — the UI flickers back to stale data."</p>
+</li>
+<li>
+<p>"React Query's <code>onMutate</code> / <code>onError</code> / <code>onSettled</code> maps perfectly to snapshot / rollback / sync. <code>onMutate</code> fires before the network call, <code>onError</code> fires on failure with the context you returned from <code>onMutate</code>, <code>onSettled</code> fires always to invalidate and sync with server truth."</p>
+</li>
+<li>
+<p>"For lists, optimistic adds use a temporary ID. The real ID arrives from the server via <code>onSettled</code> invalidation. Never assume the temp ID is stable — the server's response replaces the temp item."</p>
+</li>
+<li>
+<p>"The server is always the source of truth. Optimistic state is a UX illusion for the duration of the network call. <code>onSettled</code> always invalidates — even on success — because the server might have applied side effects you didn't optimistically predict (e.g. running totals, computed fields, audit logs)."</p>
+</li>
+<li>
+<p>"React 19's <code>useOptimistic</code> is the native solution — no need for manual snapshot + rollback. The optimistic value automatically reverts to the real value when the async action settles."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State Management: A Senior Engineer&#x27;s Guide — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html" aria-current="page">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="state-management-a-senior-engineers-guide">State Management: A Senior Engineer's Guide</h1>
+<p>Understanding when and how to manage state is crucial for building scalable frontend applications.</p>
+<hr />
+<h2 id="1-the-state-spectrum">1. The State Spectrum</h2>
+<p>Not all state is equal. Understanding the different types helps you choose the right tool.</p>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│                        STATE SPECTRUM                                │
+├──────────────┬──────────────┬──────────────┬───────────────────────┤
+│   UI State   │  Form State  │ Server State │   Global App State    │
+│              │              │              │                       │
+│ - Modal open │ - Input vals │ - API data   │ - User session        │
+│ - Dropdown   │ - Validation │ - Cache      │ - Theme               │
+│ - Hover      │ - Dirty/clean│ - Loading    │ - Feature flags       │
+│              │              │              │                       │
+│  useState()  │  React Hook  │ React Query  │  Zustand/Redux        │
+│              │    Form      │  SWR         │  Context              │
+└──────────────┴──────────────┴──────────────┴───────────────────────┘
+</code></pre>
+<h3 id="the-golden-rule">The Golden Rule</h3>
+<blockquote>
+<p><strong>Put state as close to where it's used as possible, and lift it up only when necessary.</strong></p>
+</blockquote>
+<hr />
+<h2 id="2-local-state-usestate-usereducer">2. Local State: useState &amp; useReducer</h2>
+<h3 id="usestate-simple-values">useState: Simple Values</h3>
+<pre><code class="language-jsx">function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    &lt;button onClick={() =&gt; setCount(c =&gt; c + 1)}&gt;
+      Count: {count}
+    &lt;/button&gt;
+  );
+}
+</code></pre>
+<p><strong>Use when:</strong> Single value, simple updates, one component owns it.</p>
+<h3 id="usereducer-complex-logic">useReducer: Complex Logic</h3>
+<pre><code class="language-jsx">const initialState = { count: 0, step: 1 };
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment':
+      return { ...state, count: state.count + state.step };
+    case 'decrement':
+      return { ...state, count: state.count - state.step };
+    case 'setStep':
+      return { ...state, step: action.payload };
+    default:
+      throw new Error(`Unknown action: ${action.type}`);
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, initialState);
+
+  return (
+    &lt;&gt;
+      &lt;button onClick={() =&gt; dispatch({ type: 'decrement' })}&gt;-&lt;/button&gt;
+      &lt;span&gt;{state.count}&lt;/span&gt;
+      &lt;button onClick={() =&gt; dispatch({ type: 'increment' })}&gt;+&lt;/button&gt;
+      &lt;input
+        type=&quot;number&quot;
+        value={state.step}
+        onChange={(e) =&gt; dispatch({ type: 'setStep', payload: +e.target.value })}
+      /&gt;
+    &lt;/&gt;
+  );
+}
+</code></pre>
+<p><strong>Use when:</strong> Multiple related values, complex update logic, state machine-like behavior.</p>
+<hr />
+<h2 id="3-prop-drilling-vs-context-vs-state-library">3. Prop Drilling vs Context vs State Library</h2>
+<h3 id="the-problem-prop-drilling">The Problem: Prop Drilling</h3>
+<pre><code class="language-jsx">// Passing theme through 5 levels of components
+&lt;App theme={theme}&gt;
+  &lt;Layout theme={theme}&gt;
+    &lt;Sidebar theme={theme}&gt;
+      &lt;Menu theme={theme}&gt;
+        &lt;MenuItem theme={theme} /&gt;  // Finally uses it!
+      &lt;/Menu&gt;
+    &lt;/Sidebar&gt;
+  &lt;/Layout&gt;
+&lt;/App&gt;
+</code></pre>
+<h3 id="solution-1-react-context">Solution 1: React Context</h3>
+<pre><code class="language-jsx">// Create context
+const ThemeContext = createContext('light');
+
+// Provide at top level
+function App() {
+  const [theme, setTheme] = useState('light');
+
+  return (
+    &lt;ThemeContext.Provider value={{ theme, setTheme }}&gt;
+      &lt;Layout /&gt;
+    &lt;/ThemeContext.Provider&gt;
+  );
+}
+
+// Consume anywhere below
+function MenuItem() {
+  const { theme, setTheme } = useContext(ThemeContext);
+  return &lt;button className={theme}&gt;Toggle&lt;/button&gt;;
+}
+</code></pre>
+<h3 id="context-gotcha-re-renders">Context Gotcha: Re-renders</h3>
+<pre><code class="language-jsx">// BAD: Every consumer re-renders when ANY value changes
+const AppContext = createContext();
+
+function App() {
+  const [user, setUser] = useState(null);
+  const [theme, setTheme] = useState('light');
+  const [notifications, setNotifications] = useState([]);
+
+  return (
+    &lt;AppContext.Provider value={{ user, theme, notifications, setTheme }}&gt;
+      {/* ALL consumers re-render when notifications change */}
+    &lt;/AppContext.Provider&gt;
+  );
+}
+
+// GOOD: Split into separate contexts
+&lt;UserContext.Provider value={user}&gt;
+  &lt;ThemeContext.Provider value={{ theme, setTheme }}&gt;
+    &lt;NotificationContext.Provider value={notifications}&gt;
+      {children}
+    &lt;/NotificationContext.Provider&gt;
+  &lt;/ThemeContext.Provider&gt;
+&lt;/UserContext.Provider&gt;
+</code></pre>
+<h3 id="when-context-falls-short">When Context Falls Short</h3>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Problem with Context</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>High-frequency updates</td>
+<td>Every consumer re-renders</td>
+</tr>
+<tr>
+<td>Complex state logic</td>
+<td>No built-in reducer pattern</td>
+</tr>
+<tr>
+<td>DevTools debugging</td>
+<td>No time-travel debugging</td>
+</tr>
+<tr>
+<td>Middleware (logging, async)</td>
+<td>Must build yourself</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-server-state-react-query-swr">4. Server State: React Query / SWR</h2>
+<p>Server state is <strong>fundamentally different</strong> from client state:
+- It's owned by the server, not the client
+- It can become stale
+- It needs caching, deduplication, and background refetching</p>
+<h3 id="react-query-basics">React Query Basics</h3>
+<pre><code class="language-jsx">import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// Fetching data
+function UserProfile({ userId }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () =&gt; fetch(`/api/users/${userId}`).then(r =&gt; r.json()),
+    staleTime: 5 * 60 * 1000,  // Consider fresh for 5 minutes
+  });
+
+  if (isLoading) return &lt;Spinner /&gt;;
+  if (error) return &lt;Error message={error.message} /&gt;;
+
+  return &lt;div&gt;{data.name}&lt;/div&gt;;
+}
+
+// Mutating data
+function UpdateUser({ userId }) {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (newData) =&gt;
+      fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(newData),
+      }),
+    onSuccess: () =&gt; {
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['user', userId] });
+    },
+  });
+
+  return (
+    &lt;button onClick={() =&gt; mutation.mutate({ name: 'New Name' })}&gt;
+      Update
+    &lt;/button&gt;
+  );
+}
+</code></pre>
+<h3 id="react-query-under-the-hood">React Query: Under the Hood</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                    React Query Cache                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ['users']          → { data: [...], updatedAt: 1234567890 }    │
+│  ['user', 1]        → { data: {...}, updatedAt: 1234567891 }    │
+│  ['user', 2]        → { data: {...}, updatedAt: 1234567892 }    │
+│  ['posts', {page:1}]→ { data: [...], updatedAt: 1234567893 }    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+Automatic behaviors:
+1. Deduplication: 10 components request ['user', 1] → 1 network call
+2. Background refetch: When tab regains focus
+3. Stale-while-revalidate: Show cached, fetch fresh in background
+4. Garbage collection: Remove unused queries after 5 minutes
+</code></pre>
+<h3 id="react-query-vs-swr">React Query vs SWR</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>React Query</th>
+<th>SWR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bundle Size</strong></td>
+<td>~13KB</td>
+<td>~4KB</td>
+</tr>
+<tr>
+<td><strong>Devtools</strong></td>
+<td>Excellent</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Mutations</strong></td>
+<td>First-class</td>
+<td>Manual</td>
+</tr>
+<tr>
+<td><strong>Pagination</strong></td>
+<td>Built-in hooks</td>
+<td>DIY</td>
+</tr>
+<tr>
+<td><strong>Optimistic Updates</strong></td>
+<td>Easy</td>
+<td>DIY</td>
+</tr>
+<tr>
+<td><strong>Best For</strong></td>
+<td>Complex apps</td>
+<td>Simpler needs</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-global-state-zustand">5. Global State: Zustand</h2>
+<p>Zustand is the modern choice for global client state—simple, fast, no boilerplate.</p>
+<h3 id="basic-store">Basic Store</h3>
+<pre><code class="language-js">import { create } from 'zustand';
+
+const useStore = create((set, get) =&gt; ({
+  // State
+  count: 0,
+  user: null,
+
+  // Actions
+  increment: () =&gt; set((state) =&gt; ({ count: state.count + 1 })),
+  decrement: () =&gt; set((state) =&gt; ({ count: state.count - 1 })),
+  setUser: (user) =&gt; set({ user }),
+
+  // Async actions
+  fetchUser: async (id) =&gt; {
+    const response = await fetch(`/api/users/${id}`);
+    const user = await response.json();
+    set({ user });
+  },
+
+  // Computed (using get)
+  doubleCount: () =&gt; get().count * 2,
+}));
+
+// Usage in component
+function Counter() {
+  const count = useStore((state) =&gt; state.count);
+  const increment = useStore((state) =&gt; state.increment);
+
+  return &lt;button onClick={increment}&gt;{count}&lt;/button&gt;;
+}
+</code></pre>
+<h3 id="selective-subscriptions-performance">Selective Subscriptions (Performance)</h3>
+<pre><code class="language-jsx">// BAD: Re-renders on ANY state change
+function Component() {
+  const store = useStore();  // Subscribes to entire store
+  return &lt;div&gt;{store.count}&lt;/div&gt;;
+}
+
+// GOOD: Only re-renders when count changes
+function Component() {
+  const count = useStore((state) =&gt; state.count);
+  return &lt;div&gt;{count}&lt;/div&gt;;
+}
+
+// GOOD: Multiple values with shallow comparison
+import { shallow } from 'zustand/shallow';
+
+function Component() {
+  const { count, user } = useStore(
+    (state) =&gt; ({ count: state.count, user: state.user }),
+    shallow  // Prevents re-render if object reference changes but values don't
+  );
+}
+</code></pre>
+<h3 id="zustand-with-middleware">Zustand with Middleware</h3>
+<pre><code class="language-js">import { create } from 'zustand';
+import { devtools, persist } from 'zustand/middleware';
+
+const useStore = create(
+  devtools(
+    persist(
+      (set) =&gt; ({
+        count: 0,
+        increment: () =&gt; set((state) =&gt; ({ count: state.count + 1 })),
+      }),
+      {
+        name: 'my-store',  // localStorage key
+      }
+    ),
+    { name: 'MyStore' }  // DevTools name
+  )
+);
+</code></pre>
+<hr />
+<h2 id="6-redux-when-you-need-it">6. Redux: When You Need It</h2>
+<p>Redux is still relevant for <strong>very large teams</strong> and <strong>complex requirements</strong>.</p>
+<h3 id="modern-redux-toolkit">Modern Redux Toolkit</h3>
+<pre><code class="language-js">import { createSlice, configureStore } from '@reduxjs/toolkit';
+
+// Slice = reducer + actions in one
+const counterSlice = createSlice({
+  name: 'counter',
+  initialState: { value: 0 },
+  reducers: {
+    increment: (state) =&gt; {
+      state.value += 1;  // Immer allows &quot;mutation&quot;
+    },
+    decrement: (state) =&gt; {
+      state.value -= 1;
+    },
+    incrementByAmount: (state, action) =&gt; {
+      state.value += action.payload;
+    },
+  },
+});
+
+export const { increment, decrement, incrementByAmount } = counterSlice.actions;
+
+// Store
+const store = configureStore({
+  reducer: {
+    counter: counterSlice.reducer,
+  },
+});
+
+// Usage
+function Counter() {
+  const count = useSelector((state) =&gt; state.counter.value);
+  const dispatch = useDispatch();
+
+  return (
+    &lt;button onClick={() =&gt; dispatch(increment())}&gt;
+      {count}
+    &lt;/button&gt;
+  );
+}
+</code></pre>
+<h3 id="redux-vs-zustand">Redux vs Zustand</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Redux Toolkit</th>
+<th>Zustand</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Boilerplate</strong></td>
+<td>Medium</td>
+<td>Minimal</td>
+</tr>
+<tr>
+<td><strong>Learning Curve</strong></td>
+<td>Steeper</td>
+<td>Gentle</td>
+</tr>
+<tr>
+<td><strong>DevTools</strong></td>
+<td>Excellent</td>
+<td>Good</td>
+</tr>
+<tr>
+<td><strong>Bundle Size</strong></td>
+<td>~11KB + react-redux</td>
+<td>~3KB</td>
+</tr>
+<tr>
+<td><strong>Middleware</strong></td>
+<td>Rich ecosystem</td>
+<td>Basic built-in</td>
+</tr>
+<tr>
+<td><strong>Best For</strong></td>
+<td>Large teams, strict patterns</td>
+<td>Most apps</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-form-state-react-hook-form">7. Form State: React Hook Form</h2>
+<p>Forms are a special category—they're high-frequency updates with validation.</p>
+<pre><code class="language-jsx">import { useForm } from 'react-hook-form';
+
+function SignupForm() {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm();
+
+  const onSubmit = async (data) =&gt; {
+    await api.signup(data);
+  };
+
+  return (
+    &lt;form onSubmit={handleSubmit(onSubmit)}&gt;
+      &lt;input
+        {...register('email', {
+          required: 'Email is required',
+          pattern: {
+            value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+            message: 'Invalid email',
+          },
+        })}
+      /&gt;
+      {errors.email &amp;&amp; &lt;span&gt;{errors.email.message}&lt;/span&gt;}
+
+      &lt;input
+        type=&quot;password&quot;
+        {...register('password', {
+          required: 'Password is required',
+          minLength: { value: 8, message: 'Min 8 characters' },
+        })}
+      /&gt;
+      {errors.password &amp;&amp; &lt;span&gt;{errors.password.message}&lt;/span&gt;}
+
+      &lt;button type=&quot;submit&quot; disabled={isSubmitting}&gt;
+        {isSubmitting ? 'Signing up...' : 'Sign Up'}
+      &lt;/button&gt;
+    &lt;/form&gt;
+  );
+}
+</code></pre>
+<h3 id="why-not-usestate-for-forms">Why Not useState for Forms?</h3>
+<pre><code class="language-jsx">// BAD: Re-renders on every keystroke
+function Form() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  // ... 10 more fields
+
+  return (
+    &lt;input value={email} onChange={(e) =&gt; setEmail(e.target.value)} /&gt;
+    // Component re-renders on EVERY character typed
+  );
+}
+
+// GOOD: React Hook Form uses refs, minimal re-renders
+// Only re-renders when you explicitly watch a field
+</code></pre>
+<hr />
+<h2 id="8-decision-framework">8. Decision Framework</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                    STATE DECISION TREE                           │
+└─────────────────────────────────────────────────────────────────┘
+
+Is it SERVER data (from API)?
+├── YES → React Query / SWR
+│         (caching, background refetch, deduplication)
+│
+└── NO → Is it used by MULTIPLE components?
+         ├── NO → useState / useReducer
+         │        (keep it local)
+         │
+         └── YES → How many components? How often does it change?
+                   │
+                   ├── Few components, low frequency
+                   │   → Context (simple, built-in)
+                   │
+                   ├── Many components, medium frequency
+                   │   → Zustand (simple, performant)
+                   │
+                   └── Enterprise, strict patterns, large team
+                       → Redux Toolkit (conventions, ecosystem)
+
+Is it FORM data?
+└── YES → React Hook Form / Formik
+          (validation, performance, submission handling)
+</code></pre>
+<hr />
+<h2 id="9-anti-patterns-to-avoid">9. Anti-Patterns to Avoid</h2>
+<h3 id="1-putting-everything-in-global-state">1. Putting Everything in Global State</h3>
+<pre><code class="language-js">// BAD: Modal open state doesn't need to be global
+const useStore = create((set) =&gt; ({
+  isModalOpen: false,  // This should be local!
+  products: [],        // This might need to be global
+}));
+
+// GOOD: Keep modal state local
+function ProductPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const products = useStore((s) =&gt; s.products);
+}
+</code></pre>
+<h3 id="2-duplicating-server-state">2. Duplicating Server State</h3>
+<pre><code class="language-js">// BAD: Copying API data into Redux
+dispatch(setProducts(await fetchProducts()));
+
+// Now you have TWO sources of truth:
+// 1. What's in your Redux store
+// 2. What's actually on the server
+
+// GOOD: Use React Query as the source of truth
+const { data: products } = useQuery({
+  queryKey: ['products'],
+  queryFn: fetchProducts,
+});
+</code></pre>
+<h3 id="3-not-memoizing-selectors">3. Not Memoizing Selectors</h3>
+<pre><code class="language-jsx">// BAD: Creates new array on every render
+function ProductList() {
+  const products = useStore((state) =&gt;
+    state.products.filter((p) =&gt; p.inStock)  // New array every render!
+  );
+}
+
+// GOOD: Memoize the selector
+const selectInStockProducts = (state) =&gt;
+  state.products.filter((p) =&gt; p.inStock);
+
+// Or use a memoization library
+import { createSelector } from 'reselect';
+</code></pre>
+<hr />
+<h2 id="10-interview-tip">10. Interview Tip</h2>
+<blockquote>
+<p>"I think about state in layers: UI state stays local with useState, server state goes in React Query for automatic caching and background updates, and true global client state (like user session or theme) goes in Zustand for its simplicity and performance. I avoid putting everything in global state—that leads to unnecessary complexity and re-renders. For forms, React Hook Form handles validation and minimizes re-renders. The key is matching the tool to the type of state, not forcing one solution for everything."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -112,6 +112,23 @@ class TestBuildSidebarGroups(unittest.TestCase):
             [("Group 1", ["a.md", "c.md"]), ("Group 2", ["b.md"])],
         )
 
+    def test_category_order_follows_config_not_alphabetical_file_order(self):
+        # "a.md" sorts alphabetically before "z.md" (as discover_md_files
+        # would order them), but the config declares "Group Z" first --
+        # the sidebar must follow the config author's intended order, not
+        # whatever order the filesystem happens to sort files in.
+        config = {
+            "categories": {
+                "z.md": "Group Z",
+                "a.md": "Group A",
+            }
+        }
+        groups = build.build_sidebar_groups(["a.md", "z.md"], config)
+        self.assertEqual(
+            groups,
+            [("Group Z", ["z.md"]), ("Group A", ["a.md"])],
+        )
+
     def test_raises_when_file_missing_from_categories(self):
         config = {"categories": {"a.md": "Group 1"}}
         with self.assertRaises(ValueError):
@@ -329,6 +346,31 @@ class TestBundledAssetsExist(unittest.TestCase):
         for name, min_size in minimums.items():
             path = os.path.join(build.ASSETS_DIR, name)
             self.assertGreater(os.path.getsize(path), min_size, name)
+
+
+class TestRealTheorySmoke(unittest.TestCase):
+    def test_builds_against_real_theory_folder(self):
+        repo_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        theory_dir = os.path.join(repo_root, "Theory")
+        with tempfile.TemporaryDirectory() as output_dir:
+            build.build(theory_dir, output_dir)
+
+            self.assertTrue(os.path.exists(os.path.join(output_dir, "index.html")))
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(output_dir, "notes", "javascript-core.html")
+                )
+            )
+            note_count = len(
+                [
+                    f
+                    for f in os.listdir(os.path.join(output_dir, "notes"))
+                    if f.endswith(".html")
+                ]
+            )
+            self.assertEqual(note_count, 24)
 
 
 if __name__ == "__main__":

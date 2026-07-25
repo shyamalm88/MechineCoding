@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Webpack — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html" aria-current="page">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="webpack-interview-reference">Webpack — Interview Reference</h1>
+<hr />
+<h2 id="what-is-webpack">What is Webpack?</h2>
+<p>Webpack is a <strong>static module bundler</strong> for JavaScript applications. It takes your source files — JS, CSS, images, fonts — and bundles them into optimized output files the browser can load.</p>
+<blockquote>
+<p><strong>One-liner:</strong> Webpack walks your dependency graph, transforms every file type it encounters (via loaders), and emits optimized bundles (via plugins).</p>
+</blockquote>
+<hr />
+<h2 id="why-do-we-need-it">Why Do We Need It?</h2>
+<h3 id="the-real-root-problem-browsers-have-no-module-system">The Real Root Problem: Browsers Have No Module System</h3>
+<p>Before ES Modules (ES2015), the browser had <strong>one shared global scope</strong> for all JavaScript. Every <code>&lt;script&gt;</code> tag dumped its variables into <code>window</code>.</p>
+<pre><code class="language-html">&lt;!-- All three files share window — one global scope --&gt;
+&lt;script src=&quot;utils.js&quot;&gt;&lt;/script&gt;    &lt;!-- defines window.helper --&gt;
+&lt;script src=&quot;lodash.js&quot;&gt;&lt;/script&gt;   &lt;!-- also defines window._ --&gt;
+&lt;script src=&quot;app.js&quot;&gt;&lt;/script&gt;      &lt;!-- must load last or it breaks --&gt;
+</code></pre>
+<p><strong>What this means in practice:</strong></p>
+<pre><code class="language-js">// utils.js
+var data = [];          // window.data — global
+
+// vendor.js (some third-party lib)
+var data = 'config';   // window.data — OVERWRITTEN silently
+
+// app.js
+console.log(data);     // 'config' — not what you expected
+</code></pre>
+<ul>
+<li>Any script can overwrite any other script's variables — <strong>silent collisions</strong></li>
+<li>Load order is a runtime contract you must manually maintain</li>
+<li>No way to say "this function belongs to this file only"</li>
+</ul>
+<p><strong>The pre-webpack workaround: IIFE (Immediately Invoked Function Expression)</strong></p>
+<pre><code class="language-js">// Each file wraps itself in a function to create a private scope
+(function() {
+  var data = [];   // scoped to this function, NOT window
+  window.MyApp = { data };  // expose only what you want to
+})();
+</code></pre>
+<p>Works but: verbose, manual, no dependency tracking, still relies on load order.</p>
+<p><strong>CommonJS (Node.js) solved this on the server:</strong></p>
+<pre><code class="language-js">// Node modules have their own scope — no global leak
+const data = require('./data');  // isolated
+module.exports = { doSomething };
+</code></pre>
+<p>But browsers couldn't run <code>require()</code> — it's synchronous and browsers load files over the network (async).</p>
+<p><strong>Webpack bridges this gap:</strong></p>
+<p>Webpack brings the CommonJS/ESM module system to the browser. It takes your <code>import</code>/<code>require</code> calls, resolves the full dependency graph at build time, and emits a single bundle where <strong>each module is wrapped in its own function scope</strong> — no global leaks.</p>
+<pre><code class="language-js">// What you write
+import { add } from './math';
+export const result = add(1, 2);
+
+// What webpack emits (simplified)
+(function(modules) {
+  function __webpack_require__(moduleId) {
+    var module = { exports: {} };
+    modules[moduleId](module, module.exports, __webpack_require__);
+    return module.exports;
+  }
+  __webpack_require__(0); // start from entry
+})({
+  0: function(module, exports, require) {
+    // your index.js — isolated scope
+    var math = require(1);
+    exports.result = math.add(1, 2);
+  },
+  1: function(module, exports, require) {
+    // your math.js — isolated scope
+    exports.add = function(a, b) { return a + b; };
+  }
+});
+</code></pre>
+<p>Each module is a function. Its variables are local to that function. <strong>Zero global scope pollution.</strong> This is what webpack actually compiles your code into.</p>
+<p><strong>What webpack solves:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Webpack solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Global scope collisions</td>
+<td>Each module wrapped in its own function scope</td>
+</tr>
+<tr>
+<td>50 HTTP requests</td>
+<td>Bundle all JS into 1–3 files</td>
+</tr>
+<tr>
+<td><code>require()</code> in browser</td>
+<td>Webpack's runtime implements <code>__webpack_require__</code></td>
+</tr>
+<tr>
+<td>Non-JS assets (CSS, images)</td>
+<td>Loaders transform anything into a module</td>
+</tr>
+<tr>
+<td>Send only what's needed</td>
+<td>Code splitting + lazy loading</td>
+</tr>
+<tr>
+<td>Unused code in bundle</td>
+<td>Tree shaking removes dead code</td>
+</tr>
+<tr>
+<td>Dev feedback speed</td>
+<td>Hot Module Replacement (HMR)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Why not just use native ES Modules in the browser?</strong>
+You can — modern browsers support <code>&lt;script type="module"&gt;</code>. But: no tree shaking, no code splitting control, no loader pipeline for CSS/images, no HMR, and hundreds of individual network requests in development. Webpack (or Vite) still wins for production apps.</p>
+</blockquote>
+<hr />
+<h2 id="core-concepts">Core Concepts</h2>
+<h3 id="1-entry">1. Entry</h3>
+<p>The starting point — webpack builds the dependency graph from here.</p>
+<pre><code class="language-js">entry: './src/index.js'
+// or multiple entries
+entry: { app: './src/app.js', admin: './src/admin.js' }
+</code></pre>
+<h3 id="2-output">2. Output</h3>
+<p>Where and how to emit the bundled files.</p>
+<pre><code class="language-js">output: {
+  filename: '[name].[contenthash].js',  // cache busting
+  path: path.resolve(__dirname, 'dist')
+}
+</code></pre>
+<h3 id="3-loaders">3. Loaders</h3>
+<p>Webpack only understands JS and JSON by default. <strong>Loaders transform other file types into modules.</strong></p>
+<pre><code class="language-js">module: {
+  rules: [
+    { test: /\.jsx?$/, use: 'babel-loader' },   // JSX → JS
+    { test: /\.css$/, use: ['style-loader', 'css-loader'] },
+    { test: /\.png$/, type: 'asset/resource' }  // images
+  ]
+}
+</code></pre>
+<blockquote>
+<p>Loaders run <strong>right to left</strong> in the <code>use</code> array — <code>css-loader</code> first (resolves imports), then <code>style-loader</code> (injects into DOM).</p>
+</blockquote>
+<h3 id="4-plugins">4. Plugins</h3>
+<p>Plugins operate on the <strong>output bundle</strong> — more powerful than loaders.</p>
+<pre><code class="language-js">plugins: [
+  new HtmlWebpackPlugin({ template: './index.html' }),  // injects &lt;script&gt; tags
+  new MiniCssExtractPlugin({ filename: '[name].css' }), // extracts CSS to file
+  new DefinePlugin({ 'process.env.NODE_ENV': '&quot;production&quot;' })
+]
+</code></pre>
+<h3 id="5-mode">5. Mode</h3>
+<pre><code class="language-js">mode: 'development' | 'production' | 'none'
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>development</code></td>
+<td>Source maps, readable output, HMR enabled</td>
+</tr>
+<tr>
+<td><code>production</code></td>
+<td>Minification, tree shaking, scope hoisting, content hash</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="how-webpack-works-internally">How Webpack Works — Internally</h2>
+<div class="mermaid">
+flowchart TD
+    E["📄 Entry Point\nindex.js"]
+    R["🔍 Resolver\nFind file on disk"]
+    L["⚙️ Loaders\nTransform file → JS module\nbabel-loader · css-loader · ts-loader"]
+    G["🕸️ Dependency Graph\nRecursively follow all imports"]
+    P["🔌 Plugins\nOperate on full compilation\nMinify · Extract CSS · Inject HTML"]
+    C["📦 Chunks\nGroup modules into output files\ninitial · async · runtime"]
+    O["💾 Output\ndist/app.[hash].js\ndist/vendors.[hash].js\ndist/styles.[hash].css"]
+
+    E --> R --> L --> G
+    G -->|"import('./Dashboard')\nasync chunk"| G
+    G --> P --> C --> O
+</div>
+<p><strong>Dependency graph example:</strong></p>
+<div class="mermaid">
+graph TD
+    idx["index.js\n(entry)"]
+    app["App.jsx\nbabel-loader → JS"]
+    hdr["Header.jsx\nbabel-loader → JS"]
+    css["styles.css\ncss-loader → JS module\nMiniCssExtractPlugin → .css file"]
+    utl["utils.js"]
+    lod["lodash\nnode_modules"]
+    img["logo.png\nasset/resource → URL"]
+
+    idx --> app
+    app --> hdr
+    app --> css
+    idx --> utl
+    utl --> lod
+    hdr --> img
+</div>
+<p>Everything is a module — CSS, images, fonts. Webpack handles them all through loaders.</p>
+<hr />
+<h2 id="chunks-code-splitting">Chunks &amp; Code Splitting</h2>
+<p>A <strong>chunk</strong> is a group of modules that get emitted as a single output file.</p>
+<h3 id="types-of-chunks">Types of Chunks</h3>
+<table>
+<thead>
+<tr>
+<th>Chunk type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Initial chunk</strong></td>
+<td>The main bundle loaded on page start</td>
+</tr>
+<tr>
+<td><strong>Async chunk</strong></td>
+<td>Lazy-loaded chunk created by dynamic <code>import()</code></td>
+</tr>
+<tr>
+<td><strong>Runtime chunk</strong></td>
+<td>Webpack's internal module loading logic</td>
+</tr>
+</tbody>
+</table>
+<h3 id="why-code-splitting">Why Code Splitting?</h3>
+<p>Without it, 1 giant bundle → user downloads all code upfront even for pages they never visit.</p>
+<div class="mermaid">
+flowchart LR
+    subgraph "Without splitting"
+        B1["bundle.js\n2 MB\n(Home + Dashboard + Admin\n+ React + Lodash)"]
+    end
+
+    subgraph "With splitting"
+        B2["vendors.js\n1.8 MB\ncached long-term"]
+        B3["app.js\n150 KB\nre-downloaded on deploy"]
+        B4["dashboard.chunk.js\n50 KB\nlazy — loaded on /dashboard only"]
+        B5["admin.chunk.js\n40 KB\nlazy — loaded on /admin only"]
+    end
+
+    U1["👤 User visits /home"] -->|"downloads everything\n2 MB"| B1
+    U2["👤 User visits /home"] -->|"downloads\n1.95 MB"| B2
+    U2 --> B3
+    U2 -.->|"NOT downloaded\nuntil user navigates"| B4
+    U2 -.->|"NOT downloaded\nuntil user navigates"| B5
+</div>
+<h3 id="dynamic-import-lazy-loading">Dynamic Import (lazy loading)</h3>
+<pre><code class="language-js">// Loaded only when user navigates to /dashboard
+const Dashboard = React.lazy(() =&gt; import('./Dashboard'));
+</code></pre>
+<p>Webpack sees <code>import()</code> and creates a <strong>separate async chunk</strong> — loaded on demand.</p>
+<h3 id="splitchunksplugin-vendor-splitting">SplitChunksPlugin (vendor splitting)</h3>
+<pre><code class="language-js">optimization: {
+  splitChunks: {
+    chunks: 'all',         // split async AND initial chunks
+    cacheGroups: {
+      vendor: {
+        test: /node_modules/,
+        name: 'vendors',   // react, lodash → vendors.js (cached separately)
+      }
+    }
+  }
+}
+</code></pre>
+<p><strong>Why split vendors?</strong> Your app code changes on every deploy. <code>node_modules</code> rarely change. Separate chunks → <code>vendors.js</code> stays cached in the browser even after app updates.</p>
+<pre><code>Without splitting:   bundle.js (2MB)  → all users re-download 2MB every deploy
+With splitting:      app.js (200KB)   → re-downloaded on deploy
+                     vendors.js (1.8MB) → cached long-term (no change)
+</code></pre>
+<hr />
+<h2 id="styles">Styles</h2>
+<p>Three ways to handle CSS:</p>
+<h3 id="1-style-loader-css-loader-development">1. style-loader + css-loader (development)</h3>
+<pre><code class="language-js">{ test: /\.css$/, use: ['style-loader', 'css-loader'] }
+</code></pre>
+<ul>
+<li><code>css-loader</code>: resolves <code>@import</code> and <code>url()</code>, converts CSS to JS module</li>
+<li><code>style-loader</code>: injects <code>&lt;style&gt;</code> tag into DOM at runtime</li>
+</ul>
+<p><strong>Problem:</strong> CSS is bundled inside JS → flash of unstyled content; no browser caching for CSS separately.</p>
+<h3 id="2-minicssextractplugin-production">2. MiniCssExtractPlugin (production)</h3>
+<pre><code class="language-js">{ test: /\.css$/, use: [MiniCssExtractPlugin.loader, 'css-loader'] }
+</code></pre>
+<p>Extracts CSS into separate <code>.css</code> files → loaded in parallel with JS, browser-cached independently.</p>
+<h3 id="3-css-modules">3. CSS Modules</h3>
+<pre><code class="language-js">{ test: /\.css$/, use: ['style-loader', { loader: 'css-loader', options: { modules: true } }] }
+</code></pre>
+<p>Locally scoped class names — <code>styles.button</code> becomes <code>_src_Button_button_abc123</code> — zero global conflicts.</p>
+<hr />
+<h2 id="tree-shaking">Tree Shaking</h2>
+<p>Removes <strong>dead code</strong> (exported but never imported) from the final bundle.</p>
+<pre><code class="language-js">// utils.js
+export const add = (a, b) =&gt; a + b;
+export const subtract = (a, b) =&gt; a - b; // never used anywhere
+
+// app.js
+import { add } from './utils';  // only 'add' imported
+</code></pre>
+<p>Webpack in production mode: <code>subtract</code> is never imported → <strong>eliminated from bundle</strong>.</p>
+<p><strong>Requirements for tree shaking:</strong>
+- ES Modules (<code>import</code>/<code>export</code>) — NOT CommonJS (<code>require</code>)
+- <code>"sideEffects": false</code> in <code>package.json</code> (or list files with side effects)
+- <code>mode: 'production'</code></p>
+<hr />
+<h2 id="module-federation">Module Federation</h2>
+<blockquote>
+<p><strong>Problem it solves:</strong> You have 5 micro-frontends, each a separate webpack build. How do they share React without bundling it 5 times? How can App A expose a <code>&lt;Header&gt;</code> component that App B consumes at runtime — without rebuilding either?</p>
+</blockquote>
+<p>Module Federation allows <strong>separate webpack builds to share modules at runtime</strong> — across different deployments.</p>
+<h3 id="key-concepts">Key concepts</h3>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Host</strong></td>
+<td>The app that consumes remote modules</td>
+</tr>
+<tr>
+<td><strong>Remote</strong></td>
+<td>The app that exposes modules for others to consume</td>
+</tr>
+<tr>
+<td><strong>Shared</strong></td>
+<td>Libraries loaded only once (e.g. React, ReactDOM)</td>
+</tr>
+<tr>
+<td><strong>Exposes</strong></td>
+<td>What the remote makes available</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example">Example</h3>
+<pre><code class="language-js">// Remote app (header-app/webpack.config.js)
+new ModuleFederationPlugin({
+  name: 'headerApp',
+  filename: 'remoteEntry.js',       // manifest file — loaded by hosts
+  exposes: {
+    './Header': './src/Header.jsx', // what we share
+  },
+  shared: { react: { singleton: true }, 'react-dom': { singleton: true } }
+})
+
+// Host app (shell/webpack.config.js)
+new ModuleFederationPlugin({
+  name: 'shell',
+  remotes: {
+    headerApp: 'headerApp@https://header.example.com/remoteEntry.js'
+  },
+  shared: { react: { singleton: true }, 'react-dom': { singleton: true } }
+})
+
+// Usage in host
+const Header = React.lazy(() =&gt; import('headerApp/Header'));
+</code></pre>
+<p><strong>What happens at runtime:</strong>
+1. Host loads <code>remoteEntry.js</code> from the remote's URL
+2. Remote's module map is registered in the browser
+3. <code>import('headerApp/Header')</code> fetches only that component's chunk
+4. React is shared — loaded once, not duplicated across all apps</p>
+<p><strong>Why it matters:</strong>
+- Independent deployments — header team deploys without rebuilding shell
+- Shared dependencies — React loaded once across all micro-frontends
+- Runtime composition — apps can even load different versions of a remote</p>
+<h3 id="the-global-scope-trick-how-module-federation-actually-works">The Global Scope Trick — How Module Federation Actually Works</h3>
+<blockquote>
+<p>This is the tricky part interviewers love. Module Federation deliberately uses the browser's global scope to coordinate between independently built apps.</p>
+</blockquote>
+<p>Webpack normally fights against global scope (wraps everything in module functions). But for Module Federation to work across separately deployed apps, it <strong>intentionally uses <code>window</code> (globalThis) as a shared registry</strong>.</p>
+<p><strong>Step 1 — Remote registers itself on <code>window</code>:</strong></p>
+<p>When the browser loads <code>remoteEntry.js</code>, webpack executes:</p>
+<pre><code class="language-js">// remoteEntry.js (auto-generated by webpack)
+var headerApp;          // will be assigned to window.headerApp
+// ...
+self[&quot;headerApp&quot;] = __webpack_expose_module__(/* module map */);
+</code></pre>
+<p>So <code>window.headerApp</code> is now a <strong>container object</strong> with two methods:
+- <code>window.headerApp.init(sharedScope)</code> — initializes shared modules
+- <code>window.headerApp.get('./Header')</code> — returns a factory for the Header module</p>
+<p><strong>Step 2 — Host accesses it via the global:</strong></p>
+<pre><code class="language-js">// Host runtime (simplified)
+const container = window['headerApp'];  // global lookup
+await container.init(__webpack_share_scopes__.default);
+const factory = await container.get('./Header');
+const Header = factory();  // actual React component
+</code></pre>
+<p><code>import('headerApp/Header')</code> in your code is syntax sugar — webpack compiles it into this global lookup under the hood.</p>
+<p><strong>Step 3 — Shared scope coordinates React (avoiding duplicates):</strong></p>
+<pre><code class="language-js">// window.__webpack_share_scopes__.default — another global!
+{
+  &quot;react&quot;: {
+    &quot;18.2.0&quot;: {
+      get: () =&gt; Promise.resolve(() =&gt; require('react')),
+      loaded: true,
+      from: 'shell'   // which app loaded it first
+    }
+  }
+}
+</code></pre>
+<p>When the remote tries to load React, it checks <code>__webpack_share_scopes__</code> first. React is already there (loaded by the host) → <strong>reuses it</strong>. This is how one React instance is shared across 5 micro-frontend apps.</p>
+<p><strong>Why this is the trick:</strong></p>
+<pre><code>Normal webpack:    window pollution = BAD (modules wrapped in functions)
+Module Federation: window pollution = DELIBERATE (cross-app coordination)
+</code></pre>
+<p>MF has no choice — two separately built, separately deployed apps have no other shared channel except the browser's global scope. There's no import statement that works across deployment boundaries at runtime. The global registry IS the communication protocol.</p>
+<p><strong>What can go wrong:</strong>
+- <code>window.headerApp</code> is undefined → <code>remoteEntry.js</code> didn't load (network failure, wrong URL)
+- React version mismatch → if <code>singleton: true</code> is not set, both apps load their own React → hooks break (React requires exactly one instance)
+- Init order race → host must <code>await container.init()</code> before calling <code>container.get()</code> — if you skip the await, you get "cannot read property of undefined"</p>
+<div class="mermaid">
+sequenceDiagram
+    participant Browser
+    participant Shell as Shell App (Host)
+    participant HeaderCDN as header.example.com
+    participant SharedScope as window.__webpack_share_scopes__
+
+    Browser->>Shell: loads shell/index.html
+    Shell->>Shell: registers own modules in shared scope
+    Shell->>SharedScope: { react: "18.2.0", loaded: true, from: "shell" }
+
+    Browser->>HeaderCDN: fetch remoteEntry.js
+    HeaderCDN-->>Browser: remoteEntry.js (container manifest)
+    Browser->>Browser: window.headerApp = container
+
+    Note over Browser: import('headerApp/Header') triggered
+
+    Browser->>Browser: container.init(sharedScope)
+    Browser->>SharedScope: check if React already loaded
+    SharedScope-->>Browser: ✅ React 18.2.0 already there — reuse it
+    Browser->>HeaderCDN: fetch Header.chunk.js only
+    HeaderCDN-->>Browser: Header component module
+    Browser->>Shell: Header renders inside Shell tree
+</div>
+<hr />
+<h2 id="passing-data-host-remote-module-federation">Passing Data: Host → Remote (Module Federation)</h2>
+<blockquote>
+<p>This is a common interview follow-up: "You've loaded a remote component — how do you pass data to it?"</p>
+</blockquote>
+<p>Module Federation loads remote components lazily at runtime. They are still React components — but the trick is they live in a <strong>different webpack scope</strong> (different build, different <code>__webpack_require__</code>). Data passing strategies ranked by use case:</p>
+<h3 id="strategy-1-props-simplest-most-natural">Strategy 1 — Props (simplest, most natural)</h3>
+<p>The remote just exposes a React component. The host passes props like any other component.</p>
+<pre><code class="language-jsx">// Remote exposes a normal component
+// header-app/src/Header.jsx
+export default function Header({ user, onLogout }) {
+  return &lt;div&gt;Hello {user.name} &lt;button onClick={onLogout}&gt;Logout&lt;/button&gt;&lt;/div&gt;;
+}
+
+// Host uses it with props
+const Header = React.lazy(() =&gt; import('headerApp/Header'));
+
+function Shell({ user }) {
+  return &lt;Header user={user} onLogout={() =&gt; logout()} /&gt;;
+}
+</code></pre>
+<p>Works perfectly. The component boundary is normal React — props flow as usual. The webpack complexity is invisible at this level.</p>
+<p><strong>Limitation:</strong> Props only flow down. Remote can't push data back up without callbacks. Fine for display components, limiting for complex state.</p>
+<hr />
+<h3 id="strategy-2-exposed-api-hook-remote-host">Strategy 2 — Exposed API / Hook (remote → host)</h3>
+<p>The <strong>reverse of props</strong>. Instead of the host pushing data down, the remote exposes its own hooks, functions, or store actions — and the host imports and uses them directly. The remote owns the data; the host just pulls from it.</p>
+<pre><code class="language-js">// cart-app/webpack.config.js — remote exposes its own API surface
+new ModuleFederationPlugin({
+  name: 'cartApp',
+  exposes: {
+    './useCart':   './src/hooks/useCart',    // hook
+    './cartStore': './src/store/cartStore',  // store actions
+  }
+})
+
+// cart-app/src/hooks/useCart.js — remote owns this data
+export function useCart() {
+  const [items, setItems] = useState([]);
+  const addItem   = (item) =&gt; setItems(prev =&gt; [...prev, item]);
+  const removeItem = (id)  =&gt; setItems(prev =&gt; prev.filter(i =&gt; i.id !== id));
+  return { items, count: items.length, addItem, removeItem };
+}
+</code></pre>
+<pre><code class="language-js">// Host imports and uses the remote's hook — host never manages cart state
+import { useCart } from 'cartApp/useCart';
+
+function ShellHeader() {
+  const { count } = useCart(); // remote owns the data, host just reads
+  return &lt;Badge count={count} /&gt;;
+}
+
+function ProductPage({ productId }) {
+  const { addItem } = useCart(); // host calls remote's action
+  return &lt;button onClick={() =&gt; addItem({ id: productId })}&gt;Add to cart&lt;/button&gt;;
+}
+</code></pre>
+<p><strong>Why this is genuinely different from props:</strong>
+- Data direction is <strong>remote → host</strong> (props is host → remote)
+- Remote is the <strong>source of truth</strong> for this domain — host doesn't even hold the state
+- Works for <strong>cross-remote</strong> too — Remote A can import Remote B's hook with no host involvement
+- Remote team fully owns the API contract; host team just consumes it</p>
+<p><strong>Limitation:</strong> Both apps must share the same React instance (<code>singleton: true</code>) for hooks to work. Also, the hook runs in the host's React tree — if the same hook is imported in two places, two separate state instances are created (not one shared cart). Fix: expose a store (Zustand/Redux) instead of a raw hook if shared singleton state is needed.</p>
+<p><strong>Best for:</strong> Feature-team ownership — cart team owns cart state and exposes a clean API; shell team consumes it without caring about implementation.</p>
+<hr />
+<h3 id="strategy-3-shared-store-redux-zustand-via-shared-modules">Strategy 3 — Shared Store (Redux / Zustand via shared modules)</h3>
+<p>Both host and remote depend on the same state library. You declare it as a <strong>shared singleton</strong> in Module Federation config. Both apps use the exact same store instance at runtime.</p>
+<pre><code class="language-js">// Both host and remote webpack.config.js
+new ModuleFederationPlugin({
+  shared: {
+    'zustand': { singleton: true, requiredVersion: '^4.0.0' },
+    './src/store': { singleton: true }  // share the store module itself
+  }
+})
+</code></pre>
+<pre><code class="language-js">// Remote reads from the shared store directly
+import { useStore } from 'zustand';
+import { useAppStore } from 'hostApp/store'; // or a shared package
+
+function RemoteCart() {
+  const user = useAppStore(state =&gt; state.user); // same store the host writes to
+  return &lt;div&gt;{user.name}'s cart&lt;/div&gt;;
+}
+</code></pre>
+<p><strong>Why singleton matters:</strong> Without <code>singleton: true</code>, host loads Zustand 4.1, remote loads Zustand 4.2 — two different instances — store reads return nothing. <code>singleton: true</code> forces one version to win and both apps use it.</p>
+<p><strong>Best for:</strong> Deeply integrated micro-frontends where the remote genuinely needs global app state (auth, cart, theme).</p>
+<hr />
+<h3 id="strategy-4-custom-events-decoupled-cross-framework">Strategy 4 — Custom Events (decoupled, cross-framework)</h3>
+<p>Host and remote communicate through the browser's native <code>CustomEvent</code> API on <code>window</code>. Zero coupling — works even if remote is Vue and host is React.</p>
+<pre><code class="language-js">// Host dispatches an event when user logs in
+window.dispatchEvent(new CustomEvent('app:user-changed', {
+  detail: { user: { id: 1, name: 'Alice', role: 'admin' } }
+}));
+
+// Remote listens — doesn't know or care who the host is
+useEffect(() =&gt; {
+  const handler = (e) =&gt; setUser(e.detail.user);
+  window.addEventListener('app:user-changed', handler);
+  return () =&gt; window.removeEventListener('app:user-changed', handler);
+}, []);
+</code></pre>
+<p><strong>Best for:</strong> Loosely coupled apps from different teams, cross-framework communication, fire-and-forget events (user logged out, theme changed, language switched).</p>
+<p><strong>Limitation:</strong> No history — remote mounted after the event fires misses it. Fix: host also writes to <code>window.__APP_STATE__</code> as a fallback initial read.</p>
+<hr />
+<h3 id="strategy-5-shared-context-react-specific-elegant">Strategy 5 — Shared Context (React-specific, elegant)</h3>
+<p>Host exposes a React Context provider as a shared module. Remote consumes it. Both use the same React instance (enforced by <code>singleton: true</code>) so context propagates normally.</p>
+<pre><code class="language-js">// host-app/src/UserContext.js (exposed via MF)
+export const UserContext = React.createContext(null);
+export const UserProvider = ({ children }) =&gt; {
+  const [user, setUser] = useState(null);
+  return &lt;UserContext.Provider value={{ user, setUser }}&gt;{children}&lt;/UserContext.Provider&gt;;
+};
+
+// host webpack.config.js
+exposes: { './UserContext': './src/UserContext' }
+
+// Remote consumes it
+import { UserContext } from 'hostApp/UserContext';
+const { user } = useContext(UserContext);
+</code></pre>
+<p><strong>Why this works:</strong> Context lives in React's internal fiber tree, not in a module variable. As long as both apps use the same React instance (<code>singleton: true</code>), context crosses the module federation boundary transparently.</p>
+<p><strong>Best for:</strong> Auth context, theme context, feature flags — any tree-wide data the host owns that remotes need to read.</p>
+<hr />
+<h3 id="which-pattern-when">Which Pattern When?</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Pattern</th>
+<th>Direction</th>
+<th>Use when</th>
+<th>Avoid when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Props</td>
+<td>host → remote</td>
+<td>Remote is a display component</td>
+<td>Remote needs to push data back up</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Exposed API / Hook</td>
+<td>remote → host</td>
+<td>Remote owns the domain (cart, auth)</td>
+<td>Hook creates two instances — use store instead</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Shared Store</td>
+<td>bidirectional</td>
+<td>Deep integration, remote needs read+write</td>
+<td>Teams shouldn't share state contracts</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Custom Events</td>
+<td>any direction</td>
+<td>Cross-framework, loosely coupled teams</td>
+<td>You need synchronous read of current state</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Shared Context</td>
+<td>any direction</td>
+<td>React-only, tree-wide data (auth, theme)</td>
+<td>Remote is not React</td>
+</tr>
+</tbody>
+</table>
+<div class="mermaid">
+flowchart TD
+    H["🏠 Host App"]
+    R["📦 Remote App"]
+
+    H -->|"1 · props\nhost → remote"| P["Remote Component\nreceives props\nfrom host"]
+    R -->|"2 · exposed hook/API\nremote → host"| A["Host imports\nuseCart · cartStore\nRemote owns the data"]
+    H <-->|"3 · shared store\nbidirectional"| S["Zustand / Redux\nsingleton instance\nboth read + write"]
+    H <-->|"4 · CustomEvent\nany direction"| E["window.dispatchEvent\nzero coupling\ncross-framework"]
+    H <-->|"5 · shared context\nany direction"| C["React.createContext\nexposed by host\nsame fiber tree"]
+
+    P --> T1["✅ Simple\n❌ One-way only"]
+    A --> T2["✅ Remote owns domain\n❌ Two hook instances\nif not singleton store"]
+    S --> T3["✅ Read + Write\n❌ Shared contract\nbetween teams"]
+    E --> T4["✅ Cross-framework\n❌ Misses past events"]
+    C --> T5["✅ Tree-wide\n❌ React only"]
+</div>
+<hr />
+<h2 id="content-hashing-caching">Content Hashing &amp; Caching</h2>
+<pre><code class="language-js">output: {
+  filename: '[name].[contenthash].js'
+}
+</code></pre>
+<ul>
+<li><code>[contenthash]</code> changes only when file content changes</li>
+<li><code>app.abc123.js</code> → unchanged → browser uses cache</li>
+<li><code>app.def456.js</code> → content changed → browser re-downloads</li>
+</ul>
+<p>Without content hash: every deploy invalidates all caches even if only one file changed.</p>
+<hr />
+<h2 id="hmr-hot-module-replacement">HMR — Hot Module Replacement</h2>
+<p>In development, webpack watches for file changes and pushes only the changed module to the browser — without a full page reload.</p>
+<pre><code>File saved → webpack recompiles changed module →
+  WebSocket push to browser → module swapped in memory →
+  React state preserved
+</code></pre>
+<p>vs. Live Reload: changes any file → full browser refresh → state lost.</p>
+<hr />
+<h2 id="other-important-concepts">Other Important Concepts</h2>
+<h3 id="resolvealias-path-shortcuts"><code>resolve.alias</code> — Path Shortcuts</h3>
+<p>Tired of <code>../../components/Button</code>? Alias maps a short name to a path.</p>
+<pre><code class="language-js">resolve: {
+  alias: {
+    '@components': path.resolve(__dirname, 'src/components'),
+    '@utils':      path.resolve(__dirname, 'src/utils'),
+  }
+}
+
+// Now in any file:
+import Button from '@components/Button'; // instead of '../../components/Button'
+</code></pre>
+<p>Also configure <code>resolve.extensions</code> so you can skip file extensions:</p>
+<pre><code class="language-js">resolve: { extensions: ['.tsx', '.ts', '.jsx', '.js'] }
+// import App from './App'  → webpack tries App.tsx, App.ts, App.jsx, App.js
+</code></pre>
+<hr />
+<h3 id="publicpath-where-assets-are-served-from"><code>publicPath</code> — Where Assets Are Served From</h3>
+<p>Tells webpack the base URL prefix for all asset URLs in the output.</p>
+<pre><code class="language-js">output: {
+  publicPath: 'https://cdn.example.com/assets/'
+}
+// → &lt;script src=&quot;https://cdn.example.com/assets/app.abc123.js&quot;&gt;
+// → background: url('https://cdn.example.com/assets/logo.png')
+</code></pre>
+<p>If you deploy to a sub-path: <code>publicPath: '/my-app/'</code>. If wrong, lazy-loaded chunks 404 because the browser requests <code>/chunk.js</code> instead of <code>/my-app/chunk.js</code>. <strong>Module Federation also uses <code>publicPath</code></strong> to build the URL for <code>remoteEntry.js</code> — critical to get right.</p>
+<hr />
+<h3 id="devserver-local-development"><code>devServer</code> — Local Development</h3>
+<pre><code class="language-js">devServer: {
+  port: 3000,
+  hot: true,              // HMR
+  historyApiFallback: true, // SPA: serve index.html for all 404 routes
+  proxy: {
+    '/api': 'http://localhost:8080'  // proxy API calls to backend
+  }
+}
+</code></pre>
+<p><code>historyApiFallback</code> is critical for React Router — without it, refreshing <code>/dashboard</code> returns a 404 because there's no actual file at that path.</p>
+<hr />
+<h3 id="source-maps-debugging-minified-code">Source Maps — Debugging Minified Code</h3>
+<p>Minified production code is unreadable. Source maps link minified output back to original source.</p>
+<pre><code class="language-js">devtool: 'eval-cheap-module-source-map'  // fast, development only
+devtool: 'source-map'                    // separate .map file, production-safe
+devtool: false                           // no source maps (fastest build)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th><code>devtool</code> value</th>
+<th>Speed</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eval</code></td>
+<td>Fastest</td>
+<td>Dev only, no column info</td>
+</tr>
+<tr>
+<td><code>eval-cheap-module-source-map</code></td>
+<td>Fast</td>
+<td>Dev — good quality, recommended</td>
+</tr>
+<tr>
+<td><code>source-map</code></td>
+<td>Slow</td>
+<td>Production — full, separate <code>.map</code> file</td>
+</tr>
+<tr>
+<td><code>hidden-source-map</code></td>
+<td>Slow</td>
+<td>Production — map not linked in bundle (upload to Sentry only)</td>
+</tr>
+</tbody>
+</table>
+<p><code>hidden-source-map</code> is the production best practice: you upload the <code>.map</code> to your error tracker (Sentry) but it's never exposed to users in the browser.</p>
+<hr />
+<h3 id="environment-variables">Environment Variables</h3>
+<pre><code class="language-js">// webpack.config.js
+new webpack.DefinePlugin({
+  'process.env.API_URL': JSON.stringify(process.env.API_URL),
+  'process.env.NODE_ENV': JSON.stringify('production'),
+})
+</code></pre>
+<p><code>DefinePlugin</code> does <strong>text replacement at build time</strong> — not runtime injection. <code>process.env.API_URL</code> in source code is literally replaced with the string value during compilation. Dead code elimination then removes <code>if (process.env.NODE_ENV === 'development') { ... }</code> blocks entirely in production.</p>
+<pre><code class="language-js">// Source code
+if (process.env.NODE_ENV === 'development') {
+  console.log('debug info');  // ← removed entirely in production build
+}
+</code></pre>
+<hr />
+<h3 id="webpack-5-persistent-cache">Webpack 5 Persistent Cache</h3>
+<p>Build times in large projects can exceed 60 seconds. Webpack 5 introduced filesystem caching — stores the compilation result to disk between builds.</p>
+<pre><code class="language-js">cache: {
+  type: 'filesystem',          // persist to disk (vs 'memory' — default)
+  buildDependencies: {
+    config: [__filename],      // invalidate cache if webpack.config.js changes
+  }
+}
+</code></pre>
+<ul>
+<li>First build: normal speed (populates cache)</li>
+<li>Subsequent builds: <strong>5–10× faster</strong> — only changed modules are recompiled</li>
+<li>Cache stored in <code>node_modules/.cache/webpack</code></li>
+</ul>
+<hr />
+<h3 id="asset-modules-webpack-5-no-more-url-loader-file-loader">Asset Modules (Webpack 5) — No More url-loader / file-loader</h3>
+<p>Webpack 5 handles static assets natively without extra loaders.</p>
+<pre><code class="language-js">module: {
+  rules: [
+    {
+      test: /\.(png|jpg|gif|svg)$/,
+      type: 'asset',           // auto: inline if &lt;8KB, emit file if &gt;8KB
+    },
+    {
+      test: /\.svg$/,
+      type: 'asset/inline',   // always base64 inline (no HTTP request)
+    },
+    {
+      test: /\.(woff2|ttf)$/,
+      type: 'asset/resource', // always emit as separate file
+    }
+  ]
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Asset type</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>asset/resource</code></td>
+<td>Emits file, returns URL</td>
+</tr>
+<tr>
+<td><code>asset/inline</code></td>
+<td>Base64-encodes into bundle (no extra request)</td>
+</tr>
+<tr>
+<td><code>asset/source</code></td>
+<td>Returns file content as string</td>
+</tr>
+<tr>
+<td><code>asset</code></td>
+<td>Auto-decides: inline if under <code>parser.dataUrlCondition.maxSize</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="webpack-vs-alternatives">Webpack vs Alternatives</h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Approach</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Webpack</strong></td>
+<td>Full bundler, highly configurable</td>
+<td>Large apps, micro-frontends, complex pipelines</td>
+</tr>
+<tr>
+<td><strong>Vite</strong></td>
+<td>ESM dev server (no bundle in dev), Rollup for prod</td>
+<td>Fast DX, modern projects</td>
+</tr>
+<tr>
+<td><strong>Rollup</strong></td>
+<td>Optimized for libraries</td>
+<td>Publishing npm packages</td>
+</tr>
+<tr>
+<td><strong>esbuild</strong></td>
+<td>Go-based, extremely fast</td>
+<td>CI speed, used inside Vite</td>
+</tr>
+<tr>
+<td><strong>Parcel</strong></td>
+<td>Zero-config bundler</td>
+<td>Small/medium apps</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Webpack is the most configurable and battle-tested. Vite is winning for new projects due to near-instant dev server. In large enterprises with module federation requirements, webpack remains dominant.</p>
+</blockquote>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="one-liner-definitions">One-liner definitions</h3>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Say this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Webpack</td>
+<td>"A static module bundler that builds a dependency graph from an entry point and emits optimized chunks via loaders and plugins."</td>
+</tr>
+<tr>
+<td>Loader</td>
+<td>"Transforms a non-JS file type into a JS module webpack can process."</td>
+</tr>
+<tr>
+<td>Plugin</td>
+<td>"Hooks into the compilation lifecycle to perform operations on the output bundle — minification, extraction, injection."</td>
+</tr>
+<tr>
+<td>Chunk</td>
+<td>"A group of modules emitted as a single output file — can be initial (loaded on start) or async (lazy-loaded on demand)."</td>
+</tr>
+<tr>
+<td>Tree shaking</td>
+<td>"Dead code elimination for ES modules — unused exports are removed at build time in production mode."</td>
+</tr>
+<tr>
+<td>Module Federation</td>
+<td>"Allows separate webpack builds to expose and consume modules from each other at runtime — enables true independent micro-frontend deployments."</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"Webpack solves the N-HTTP-requests problem by building a dependency graph and bundling everything. But the real power is code splitting — you only send what the user needs for the current page."</p>
+</li>
+<li>
+<p>"Loaders and plugins are often confused. Loaders transform individual files before they enter the graph. Plugins operate on the entire compilation — they can split chunks, extract CSS, inject HTML, anything."</p>
+</li>
+<li>
+<p>"Tree shaking only works with ES modules because they're statically analyzable. CommonJS <code>require()</code> is dynamic — webpack can't know at build time which exports are used."</p>
+</li>
+<li>
+<p>"The vendor split trick is critical for caching. App code changes every deploy, <code>node_modules</code> rarely do. Separate chunks = vendors stay cached, only app re-downloads."</p>
+</li>
+<li>
+<p>"Module federation is the webpack answer to micro-frontends. Instead of each app bundling React separately, they share it at runtime. The host loads a <code>remoteEntry.js</code> manifest and pulls modules from other deployed apps on demand."</p>
+</li>
+<li>
+<p>"MF deliberately uses <code>window</code> as a shared registry — <code>window.headerApp</code> is the container. This is the one place webpack intentionally pollutes global scope, because there's no other communication channel between separately deployed builds at runtime."</p>
+</li>
+<li>
+<p>"Data passing in MF has five patterns. Props (host → remote) and Exposed API/Hook (remote → host) are the two direct module patterns — mirror images of each other. Then Shared Store (bidirectional, deep integration), Custom Events (decoupled, cross-framework), and Shared Context (React tree-wide). The key insight with Exposed API: the remote owns the domain data and exposes a clean hook or store — the host just consumes it without holding any of that state itself."</p>
+</li>
+<li>
+<p>"Source maps in production should be <code>hidden-source-map</code> — the <code>.map</code> file is generated and uploaded to an error tracker like Sentry, but never linked in the bundle. Users can't read your source. Your engineers can debug stack traces."</p>
+</li>
+<li>
+<p>"Webpack 5 persistent cache (<code>cache: { type: 'filesystem' }</code>) makes repeat builds 5–10× faster. It's a one-liner that most teams don't know about but should always use in CI."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

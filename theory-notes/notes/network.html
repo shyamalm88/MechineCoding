@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network Protocols: A Senior Engineer&#x27;s Guide — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html" aria-current="page">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="network-protocols-a-senior-engineers-guide">Network Protocols: A Senior Engineer's Guide</h1>
+<p>A comprehensive guide to REST, GraphQL, WebSockets, and SSE for system design interviews.</p>
+<hr />
+<h2 id="1-rest-representational-state-transfer">1. REST (Representational State Transfer)</h2>
+<p>REST is the foundation of most web communication, built on the <strong>stateless nature of HTTP</strong>.</p>
+<h3 id="transport-mechanism">Transport Mechanism</h3>
+<p>Operates primarily over HTTP/1.1 or HTTP/2:</p>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HTTP/1.1</strong></td>
+<td>Each request usually requires a new TCP connection (or reuses with overhead)</td>
+</tr>
+<tr>
+<td><strong>HTTP/2</strong></td>
+<td>Multiplexes multiple requests over a single connection to reduce latency</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-over-fetching-problem">The "Over-fetching" Problem</h3>
+<p>A major architectural drawback of REST is that endpoints return a <strong>fixed data structure</strong>.</p>
+<pre><code>GET /users/1
+
+// You only need the name, but you get everything:
+{
+  &quot;id&quot;: 1,
+  &quot;name&quot;: &quot;John&quot;,
+  &quot;email&quot;: &quot;john@example.com&quot;,
+  &quot;address&quot;: { ... },
+  &quot;orderHistory&quot;: [ ... ],  // 50KB of data you don't need
+  &quot;preferences&quot;: { ... }
+}
+</code></pre>
+<p><strong>Result:</strong> Wasting bandwidth and browser memory.</p>
+<h3 id="caching-strategy-rests-superpower">Caching Strategy (REST's Superpower)</h3>
+<p>REST is uniquely powerful because it leverages <strong>standard HTTP caching headers</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ETag</code></td>
+<td>Content fingerprint for conditional requests</td>
+</tr>
+<tr>
+<td><code>Cache-Control</code></td>
+<td>Tells browser/CDN how long to cache</td>
+</tr>
+<tr>
+<td><code>Last-Modified</code></td>
+<td>Timestamp-based cache validation</td>
+</tr>
+</tbody>
+</table>
+<p>Browsers and CDNs can <strong>natively cache</strong> REST responses, significantly reducing server load for static or semi-static data.</p>
+<hr />
+<h2 id="2-graphql">2. GraphQL</h2>
+<p>GraphQL is a <strong>query language for APIs</strong> that provides a complete and understandable description of the data in your API.</p>
+<h3 id="the-under-fetching-solution">The "Under-fetching" Solution</h3>
+<p>Unlike REST, which might require three separate calls to get a user, their posts, and their followers, GraphQL fetches all of this in a <strong>single round trip</strong>.</p>
+<pre><code class="language-graphql"># One request, all the data you need
+query {
+  user(id: 1) {
+    name
+    posts {
+      title
+    }
+    followers {
+      name
+    }
+  }
+}
+</code></pre>
+<p><strong>Critical for mobile:</strong> High latency on cellular networks makes multiple round trips expensive.</p>
+<h3 id="schema-type-safety">Schema &amp; Type Safety</h3>
+<p>GraphQL uses a <strong>strongly typed schema</strong>:</p>
+<pre><code class="language-graphql">type User {
+  id: ID!
+  name: String!
+  email: String!
+  posts: [Post!]!
+}
+</code></pre>
+<p><strong>Benefit:</strong> Tools like <code>GraphQL Code Generator</code> automatically create TypeScript interfaces, ensuring the frontend never attempts to access a field that doesn't exist.</p>
+<h3 id="architectural-cost">Architectural Cost</h3>
+<p>Because GraphQL often uses <strong>POST requests</strong> for all queries, native browser caching is much harder.</p>
+<p><strong>Solutions:</strong>
+- <strong>Apollo Client</strong> - Sophisticated in-memory cache with normalized data
+- <strong>Relay</strong> - Facebook's production-grade caching layer
+- <strong>Persisted Queries</strong> - Hash queries to enable GET requests and CDN caching</p>
+<hr />
+<h2 id="3-websockets-ws">3. WebSockets (WS)</h2>
+<p>WebSockets provide a <strong>persistent, full-duplex (two-way)</strong> communication channel between client and server.</p>
+<h3 id="the-handshake">The Handshake</h3>
+<pre><code>1. Client sends HTTP request with &quot;Upgrade: websocket&quot; header
+2. Server responds with &quot;101 Switching Protocols&quot;
+3. Protocol switches from HTTP to Binary/Frame-based communication
+4. Connection stays open for bidirectional messaging
+</code></pre>
+<h3 id="framing-and-overhead">Framing and Overhead</h3>
+<table>
+<thead>
+<tr>
+<th>Protocol</th>
+<th>Header Size per Message</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HTTP</strong></td>
+<td>~800 bytes (cookies, user-agents, etc.)</td>
+</tr>
+<tr>
+<td><strong>WebSocket</strong></td>
+<td>2-10 bytes (after handshake)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Result:</strong> Most efficient protocol for high-frequency data:
+- Cursor positions in collaborative docs (Google Docs)
+- Rapid price updates (Trading platforms)
+- Multiplayer game state</p>
+<h3 id="state-management-challenge">State Management Challenge</h3>
+<p>Since the connection is <strong>persistent</strong>, the server must keep a record of every connected client in memory.</p>
+<p><strong>Problem:</strong> Horizontal scaling is difficult.</p>
+<p><strong>Solution:</strong> Use a <strong>Pub/Sub layer</strong> (like Redis) to sync messages across multiple server instances.</p>
+<pre><code>┌──────────┐     ┌──────────┐     ┌──────────┐
+│ Server 1 │────▶│  Redis   │◀────│ Server 2 │
+│ (1000    │     │  Pub/Sub │     │ (1000    │
+│  clients)│     └──────────┘     │  clients)│
+└──────────┘                      └──────────┘
+</code></pre>
+<hr />
+<h2 id="4-sse-server-sent-events">4. SSE (Server-Sent Events)</h2>
+<p>SSE is a standard that allows servers to <strong>push data to web pages over HTTP</strong>.</p>
+<h3 id="unidirectional-flow">Unidirectional Flow</h3>
+<p>Unlike WebSockets, SSE is strictly <strong>one-way (Server → Client)</strong>.</p>
+<pre><code class="language-js">// Client
+const eventSource = new EventSource('/notifications');
+
+eventSource.onmessage = (event) =&gt; {
+  console.log('New notification:', event.data);
+};
+
+// Server sends updates whenever available
+// data: {&quot;type&quot;: &quot;new_message&quot;, &quot;count&quot;: 5}
+</code></pre>
+<h3 id="native-advantages">Native Advantages</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Built on HTTP</strong></td>
+<td>Works through most firewalls and proxies without special configuration</td>
+</tr>
+<tr>
+<td><strong>Auto-reconnection</strong></td>
+<td>Browser automatically tries to reconnect on disconnect</td>
+</tr>
+<tr>
+<td><strong>Last-Event-ID</strong></td>
+<td>Server can "catch up" on missed messages after reconnect</td>
+</tr>
+</tbody>
+</table>
+<h3 id="best-use-case">Best Use Case</h3>
+<p>SSE is the <strong>"goldilocks" protocol</strong> for:
+- News feeds
+- Stock tickers
+- Social media notifications
+- Live sports scores</p>
+<p><strong>When to use:</strong> User doesn't need to talk back to the server in real-time, but needs to see server updates immediately.</p>
+<hr />
+<h2 id="5-quick-comparison-table">5. Quick Comparison Table</h2>
+<table>
+<thead>
+<tr>
+<th>Protocol</th>
+<th>Statefulness</th>
+<th>Browser Caching</th>
+<th>Scalability Complexity</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>REST</strong></td>
+<td>Stateless</td>
+<td>Excellent (Native)</td>
+<td>Low</td>
+<td>CRUD operations, Public APIs</td>
+</tr>
+<tr>
+<td><strong>GraphQL</strong></td>
+<td>Stateless</td>
+<td>Difficult (Requires Library)</td>
+<td>Medium</td>
+<td>Complex data requirements, Mobile apps</td>
+</tr>
+<tr>
+<td><strong>WebSockets</strong></td>
+<td>Stateful</td>
+<td>None</td>
+<td>High (Requires Pub/Sub)</td>
+<td>Real-time bidirectional (Chat, Games)</td>
+</tr>
+<tr>
+<td><strong>SSE</strong></td>
+<td>Stateful</td>
+<td>Limited</td>
+<td>Medium</td>
+<td>Server push notifications</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-decision-framework-for-interviews">6. Decision Framework for Interviews</h2>
+<pre><code>Is the data...
+│
+├─▶ Static or changes infrequently?
+│   └─▶ REST (leverage HTTP caching)
+│
+├─▶ Complex with nested relationships?
+│   └─▶ GraphQL (avoid over/under-fetching)
+│
+├─▶ Real-time AND bidirectional?
+│   └─▶ WebSockets (chat, collaboration, games)
+│
+└─▶ Real-time BUT server-to-client only?
+    └─▶ SSE (notifications, feeds, tickers)
+</code></pre>
+<hr />
+<h2 id="7-deep-dive-http2-and-http3">7. Deep Dive: HTTP/2 and HTTP/3</h2>
+<p>Understanding the transport layer is crucial for Senior-level discussions.</p>
+<h3 id="http11-limitations">HTTP/1.1 Limitations</h3>
+<pre><code>┌─────────────────────────────────────────────┐
+│  Browser (6 connection limit per domain)    │
+│                                             │
+│  Conn 1: GET /style.css ──────────────────▶ │
+│  Conn 2: GET /app.js ─────────────────────▶ │
+│  Conn 3: GET /image1.png ─────────────────▶ │
+│  Conn 4: GET /image2.png ─────────────────▶ │
+│  Conn 5: GET /image3.png ─────────────────▶ │
+│  Conn 6: GET /image4.png ─────────────────▶ │
+│                                             │
+│  image5.png WAITING... (blocked)            │
+└─────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Head-of-Line Blocking:</strong> If <code>style.css</code> is slow, it blocks its connection.</p>
+<h3 id="http2-multiplexing">HTTP/2 Multiplexing</h3>
+<pre><code>┌─────────────────────────────────────────────┐
+│  Single TCP Connection                      │
+│                                             │
+│  Stream 1: GET /style.css ──┐               │
+│  Stream 2: GET /app.js ─────┼───▶ Server    │
+│  Stream 3: GET /image1.png ─┤               │
+│  Stream 4: GET /image2.png ─┤               │
+│  Stream 5: GET /image3.png ─┘               │
+│                                             │
+│  All requests sent simultaneously!          │
+└─────────────────────────────────────────────┘
+</code></pre>
+<p><strong>Key Features:</strong>
+- <strong>Binary Framing:</strong> Headers and body are split into frames
+- <strong>Header Compression (HPACK):</strong> Reduces header overhead by 85%
+- <strong>Server Push:</strong> Server can send resources before client asks</p>
+<h3 id="http3-quic">HTTP/3 (QUIC)</h3>
+<p>Built on <strong>UDP</strong> instead of TCP:</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>HTTP/2 (TCP)</th>
+<th>HTTP/3 (QUIC)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Connection Setup</strong></td>
+<td>TCP + TLS = 2-3 RTT</td>
+<td>0-1 RTT (connection ID persists)</td>
+</tr>
+<tr>
+<td><strong>Head-of-Line Blocking</strong></td>
+<td>Still exists at TCP level</td>
+<td>Eliminated (streams are independent)</td>
+</tr>
+<tr>
+<td><strong>Connection Migration</strong></td>
+<td>Breaks on IP change</td>
+<td>Survives (uses connection ID, not IP)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mobile Game-Changer:</strong> When user switches from WiFi to cellular, HTTP/3 connection survives.</p>
+<hr />
+<h2 id="8-cors-the-security-handshake">8. CORS: The Security Handshake</h2>
+<p>Cross-Origin Resource Sharing is the browser's security mechanism for cross-domain requests.</p>
+<h3 id="the-preflight-dance">The Preflight Dance</h3>
+<pre><code>┌──────────┐                           ┌──────────┐
+│  Browser │                           │  Server  │
+│(app.com) │                           │(api.com) │
+└────┬─────┘                           └────┬─────┘
+     │                                      │
+     │  OPTIONS /api/users                  │
+     │  Origin: https://app.com             │
+     │  Access-Control-Request-Method: POST │
+     │  Access-Control-Request-Headers:     │
+     │    Content-Type, Authorization       │
+     │─────────────────────────────────────▶│
+     │                                      │
+     │  204 No Content                      │
+     │  Access-Control-Allow-Origin: *      │
+     │  Access-Control-Allow-Methods: POST  │
+     │  Access-Control-Max-Age: 86400       │
+     │◀─────────────────────────────────────│
+     │                                      │
+     │  POST /api/users (actual request)    │
+     │─────────────────────────────────────▶│
+</code></pre>
+<h3 id="when-preflight-is-triggered">When Preflight is Triggered</h3>
+<table>
+<thead>
+<tr>
+<th>Request Type</th>
+<th>Preflight Required?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code> with standard headers</td>
+<td>No (Simple Request)</td>
+</tr>
+<tr>
+<td><code>POST</code> with <code>Content-Type: application/json</code></td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td>Any request with <code>Authorization</code> header</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td><code>PUT</code>, <code>DELETE</code>, <code>PATCH</code></td>
+<td><strong>Yes</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="cors-headers-reference">CORS Headers Reference</h3>
+<pre><code class="language-http"># Server response headers
+Access-Control-Allow-Origin: https://app.com  # Or * for any
+Access-Control-Allow-Methods: GET, POST, PUT
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Allow-Credentials: true  # For cookies
+Access-Control-Max-Age: 86400  # Cache preflight for 24 hours
+Access-Control-Expose-Headers: X-Custom-Header  # Expose to JS
+</code></pre>
+<h3 id="the-credentials-trap">The Credentials Trap</h3>
+<pre><code class="language-js">// Frontend
+fetch('https://api.com/data', {
+  credentials: 'include'  // Send cookies
+});
+
+// Backend MUST respond with:
+// Access-Control-Allow-Credentials: true
+// Access-Control-Allow-Origin: https://app.com  (NOT *)
+</code></pre>
+<p><strong>Rule:</strong> When <code>credentials: 'include'</code>, you <strong>cannot</strong> use <code>*</code> for origin.</p>
+<hr />
+<h2 id="9-request-lifecycle-under-the-hood">9. Request Lifecycle: Under the Hood</h2>
+<h3 id="dns-resolution">DNS Resolution</h3>
+<pre><code>1. Browser checks local cache
+2. OS checks /etc/hosts and its cache
+3. Query goes to configured DNS resolver (ISP or 8.8.8.8)
+4. Resolver checks its cache
+5. If miss: Recursive query to root → TLD → Authoritative NS
+6. IP address returned and cached (TTL-based)
+</code></pre>
+<h3 id="tcp-connection-establishment-3-way-handshake">TCP Connection Establishment (3-Way Handshake)</h3>
+<pre><code>Client                    Server
+   │                         │
+   │─────── SYN ────────────▶│  &quot;I want to connect&quot;
+   │                         │
+   │◀────── SYN-ACK ─────────│  &quot;OK, I acknowledge&quot;
+   │                         │
+   │─────── ACK ────────────▶│  &quot;Great, connected!&quot;
+   │                         │
+   │      Connection Open    │
+</code></pre>
+<p><strong>Time Cost:</strong> ~1 RTT (Round Trip Time)</p>
+<h3 id="tls-handshake-https">TLS Handshake (HTTPS)</h3>
+<pre><code>Client                           Server
+   │                               │
+   │─── ClientHello ──────────────▶│  Supported ciphers, random
+   │                               │
+   │◀── ServerHello + Certificate ─│  Chosen cipher, cert
+   │                               │
+   │─── Key Exchange + Finished ──▶│  Pre-master secret
+   │                               │
+   │◀── Finished ──────────────────│
+   │                               │
+   │     Encrypted Connection      │
+</code></pre>
+<p><strong>Time Cost:</strong> ~2 RTT (TLS 1.2) or ~1 RTT (TLS 1.3)</p>
+<p><strong>Total for new HTTPS connection:</strong> 3-4 RTT before first byte of data!</p>
+<hr />
+<h2 id="10-interview-tip">10. Interview Tip</h2>
+<blockquote>
+<p>"The protocol choice depends on the data access pattern. For standard CRUD with good caching needs, REST wins. For complex, nested data on mobile, GraphQL reduces round trips. For real-time bidirectional communication, WebSockets are necessary despite the scaling complexity. For simple server-push scenarios, SSE offers the best simplicity-to-functionality ratio. I also consider the transport layer — HTTP/2 for multiplexing, HTTP/3 for mobile users who switch networks. And for cross-origin security, I ensure proper CORS configuration with preflight caching to minimize overhead."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -77,14 +77,27 @@ def build_sidebar_groups(md_files, config):
     if missing:
         raise ValueError(f"site.config.json is missing categories for: {missing}")
 
+    # Group order follows first-appearance in the config's own key
+    # declaration order (a hand-curated config controls sidebar category
+    # order), NOT alphabetical md_files order -- those can easily differ,
+    # e.g. a file whose name happens to sort first alphabetically would
+    # otherwise yank its category to the top regardless of how the config
+    # author ordered things. Files *within* a category still follow
+    # md_files order.
+    md_files_set = set(md_files)
     groups = {}
-    for filename in md_files:
-        category = categories[filename]
+    for filename, category in categories.items():
+        if filename not in md_files_set:
+            continue  # extra config entry with no matching file -- ignored
         if not isinstance(category, str) or not category.strip():
             raise ValueError(
                 f"site.config.json has an invalid category for {filename!r}: {category!r}"
             )
-        groups.setdefault(category, []).append(filename)
+        groups.setdefault(category, [])
+
+    for filename in md_files:
+        groups[categories[filename]].append(filename)
+
     return list(groups.items())
 
 

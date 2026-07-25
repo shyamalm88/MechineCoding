@@ -1,0 +1,35 @@
+{
+  "title": "Theory Notes",
+  "categories": {
+    "javascript-core.md": "JavaScript & Runtime",
+    "v8-internals.md": "JavaScript & Runtime",
+
+    "browser-internals.md": "Browser & Rendering",
+    "browser-document-execution.md": "Browser & Rendering",
+    "rendering-spectrum.md": "Browser & Rendering",
+    "hydration.md": "Browser & Rendering",
+
+    "core-web-vitals.md": "Performance",
+    "web-performance.md": "Performance",
+    "react-performance.md": "Performance",
+    "cache.md": "Performance",
+    "assets.md": "Performance",
+
+    "state-management.md": "State & Architecture",
+    "state-machines.md": "State & Architecture",
+    "optimistic-updates.md": "State & Architecture",
+    "monorepo.md": "State & Architecture",
+    "MicroFrontEnd Design system.md": "State & Architecture",
+
+    "network.md": "Network & Security",
+    "cors-security.md": "Network & Security",
+    "security.md": "Network & Security",
+    "graphql.md": "Network & Security",
+    "javascript-sdk.md": "Network & Security",
+
+    "webpack.md": "Build & Observability",
+    "observability.md": "Build & Observability",
+
+    "Yotube1000cuts.md": "Case Studies"
+  }
+}

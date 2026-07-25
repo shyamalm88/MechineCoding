@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JavaScript Core — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html" aria-current="page">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="javascript-core-interview-reference">JavaScript Core — Interview Reference</h1>
+<hr />
+<h2 id="closures">Closures</h2>
+<p>A closure is a function that <strong>retains access to its outer scope's variables even after the outer function has returned</strong>.</p>
+<pre><code class="language-js">function makeCounter() {
+  let count = 0;          // lives on the heap, not the stack
+  return function() {
+    return ++count;       // inner function closes over `count`
+  };
+}
+
+const counter = makeCounter(); // makeCounter's stack frame is gone
+counter(); // 1 — but count is still alive, referenced by the closure
+counter(); // 2
+counter(); // 3
+</code></pre>
+<p><strong>What gets captured:</strong> The variable <em>binding</em> (reference), not the value at the time of creation.</p>
+<pre><code class="language-js">// Classic trap — all 3 functions close over the SAME `i` binding
+for (var i = 0; i &lt; 3; i++) {
+  setTimeout(() =&gt; console.log(i), 0); // prints 3, 3, 3
+}
+
+// Fix 1 — let creates a new binding per iteration
+for (let i = 0; i &lt; 3; i++) {
+  setTimeout(() =&gt; console.log(i), 0); // prints 0, 1, 2
+}
+
+// Fix 2 — IIFE creates a new scope per iteration
+for (var i = 0; i &lt; 3; i++) {
+  ((j) =&gt; setTimeout(() =&gt; console.log(j), 0))(i);
+}
+</code></pre>
+<p><strong>Why <code>var</code> fails:</strong> <code>var</code> is function-scoped. All 3 closures share the same <code>i</code> — by the time the callbacks run, the loop has finished and <code>i === 3</code>. <code>let</code> is block-scoped — a new <code>i</code> binding is created per iteration.</p>
+<h3 id="closures-and-memory-leaks">Closures and Memory Leaks</h3>
+<pre><code class="language-js">function attachHandler() {
+  const largeData = new Array(1_000_000).fill('x'); // 8MB
+  document.getElementById('btn').addEventListener('click', () =&gt; {
+    console.log('clicked'); // largeData is captured in closure scope
+  });
+}
+attachHandler();
+// btn removed from DOM — but largeData can't be GC'd
+// because the event listener holds a reference to the closure
+// which holds a reference to largeData
+</code></pre>
+<p>Fix: Remove the event listener when the element is removed, or don't capture large data inside event handlers.</p>
+<hr />
+<h2 id="this-binding-4-rules"><code>this</code> Binding — 4 Rules</h2>
+<p><code>this</code> is determined at <strong>call time</strong>, not definition time (except arrow functions).</p>
+<h3 id="rule-1-default-binding-standalone-call">Rule 1 — Default Binding (standalone call)</h3>
+<pre><code class="language-js">function greet() { console.log(this); }
+greet(); // window (non-strict) | undefined (strict mode)
+</code></pre>
+<h3 id="rule-2-implicit-binding-method-call">Rule 2 — Implicit Binding (method call)</h3>
+<pre><code class="language-js">const obj = {
+  name: 'Alice',
+  greet() { console.log(this.name); }
+};
+obj.greet(); // 'Alice' — `this` = obj (left of the dot)
+
+// The trap — losing implicit binding
+const fn = obj.greet;
+fn(); // undefined — no obj before the call, falls back to default
+</code></pre>
+<h3 id="rule-3-explicit-binding-call-apply-bind">Rule 3 — Explicit Binding (call / apply / bind)</h3>
+<pre><code class="language-js">function greet(greeting) { console.log(`${greeting}, ${this.name}`); }
+const user = { name: 'Bob' };
+
+greet.call(user, 'Hello');       // Hello, Bob — call: args comma-separated
+greet.apply(user, ['Hi']);       // Hi, Bob   — apply: args as array
+const bound = greet.bind(user);  // bind: returns new function, doesn't call
+bound('Hey');                    // Hey, Bob
+</code></pre>
+<h3 id="rule-4-new-binding-constructor-call">Rule 4 — <code>new</code> Binding (constructor call)</h3>
+<pre><code class="language-js">function Person(name) {
+  // new does 4 things:
+  // 1. Creates a new empty object: {}
+  // 2. Sets its __proto__ to Person.prototype
+  // 3. Binds `this` to the new object
+  // 4. Returns `this` (unless you return another object)
+  this.name = name;
+}
+const alice = new Person('Alice');
+alice.name; // 'Alice'
+</code></pre>
+<h3 id="priority-new-explicit-implicit-default">Priority: <code>new</code> &gt; explicit &gt; implicit &gt; default</h3>
+<h3 id="arrow-functions-lexical-this">Arrow Functions — Lexical <code>this</code></h3>
+<p>Arrow functions have <strong>no own <code>this</code></strong> — they inherit <code>this</code> from the enclosing lexical scope at <strong>definition time</strong>.</p>
+<pre><code class="language-js">const obj = {
+  name: 'Alice',
+  greet: function() {
+    // `this` = obj (implicit binding on method call)
+    setTimeout(() =&gt; {
+      console.log(this.name); // 'Alice' — arrow captures enclosing `this`
+    }, 100);
+  },
+  greetBroken: function() {
+    setTimeout(function() {
+      console.log(this.name); // undefined — regular function, new `this`
+    }, 100);
+  }
+};
+
+// Arrow functions CANNOT be bound
+const arrow = () =&gt; console.log(this);
+arrow.call({ name: 'Bob' }); // still window/undefined — bind/call/apply ignored
+</code></pre>
+<hr />
+<h2 id="prototype-chain">Prototype Chain</h2>
+<p>JavaScript has no classes at runtime — only objects linked via <code>__proto__</code>.</p>
+<pre><code class="language-js">const animal = { breathe() { return 'breathing'; } };
+const dog = Object.create(animal); // dog.__proto__ === animal
+dog.bark = function() { return 'woof'; };
+
+dog.bark();    // found on dog directly
+dog.breathe(); // not on dog → climb __proto__ → found on animal
+dog.toString();// not on dog → not on animal → found on Object.prototype
+dog.xyz;       // not found anywhere → undefined (chain ends at null)
+</code></pre>
+<div class="mermaid">
+graph TD
+    D["dog\n{ bark }"]
+    A["animal\n{ breathe }"]
+    OP["Object.prototype\n{ toString, hasOwnProperty... }"]
+    N["null"]
+
+    D -->|"__proto__"| A
+    A -->|"__proto__"| OP
+    OP -->|"__proto__"| N
+</div>
+<h3 id="class-is-syntactic-sugar"><code>class</code> is syntactic sugar</h3>
+<pre><code class="language-js">class Animal {
+  constructor(name) { this.name = name; }
+  speak() { return `${this.name} speaks`; }
+}
+
+class Dog extends Animal {
+  bark() { return 'woof'; }
+}
+
+// What actually exists at runtime:
+// Dog.prototype.__proto__ === Animal.prototype
+// dog.__proto__ === Dog.prototype
+</code></pre>
+<h3 id="instanceof-walks-the-prototype-chain"><code>instanceof</code> — walks the prototype chain</h3>
+<pre><code class="language-js">const d = new Dog('Rex');
+d instanceof Dog;    // true — Dog.prototype is in d's chain
+d instanceof Animal; // true — Animal.prototype is in d's chain
+d instanceof Object; // true — Object.prototype is in d's chain
+</code></pre>
+<h3 id="hasownproperty-vs-in"><code>hasOwnProperty</code> vs <code>in</code></h3>
+<pre><code class="language-js">'bark' in d;             // true — searches entire chain
+'speak' in d;            // true — found on Animal.prototype
+d.hasOwnProperty('bark');  // true — on d directly
+d.hasOwnProperty('speak'); // false — inherited, not own
+</code></pre>
+<hr />
+<h2 id="promise-internals">Promise Internals</h2>
+<h3 id="the-microtask-queue">The Microtask Queue</h3>
+<p>Promises don't use the macrotask queue (like <code>setTimeout</code>). Resolved <code>.then</code> callbacks go into the <strong>microtask queue</strong>, which drains completely before the next macrotask.</p>
+<pre><code class="language-js">console.log('1');
+
+setTimeout(() =&gt; console.log('2'), 0);  // macrotask
+
+Promise.resolve().then(() =&gt; console.log('3')); // microtask
+Promise.resolve().then(() =&gt; console.log('4')); // microtask
+
+console.log('5');
+
+// Output: 1, 5, 3, 4, 2
+// Execution: sync → microtasks → macrotasks
+</code></pre>
+<div class="mermaid">
+flowchart TD
+    S["Synchronous code runs\n(call stack)"]
+    M["Microtask queue drains\n(ALL pending microtasks)\nPromise.then · queueMicrotask · MutationObserver"]
+    T["One macrotask runs\n(setTimeout · setInterval · I/O)"]
+    R["Render if needed\n(requestAnimationFrame → paint)"]
+
+    S --> M --> T --> R --> M
+</div>
+<h3 id="promise-states">Promise States</h3>
+<pre><code class="language-js">// A Promise is always in one of 3 states:
+// pending → fulfilled (resolved with value)
+// pending → rejected (rejected with reason)
+// Once settled, state never changes
+
+const p = new Promise((resolve, reject) =&gt; {
+  // executor runs synchronously
+  resolve(42); // settled immediately
+  resolve(99); // ignored — already settled
+  reject('err'); // ignored — already settled
+});
+
+p.then(v =&gt; console.log(v)); // 42
+</code></pre>
+<h3 id="asyncawait-is-sugar-over-promise-generator"><code>async/await</code> is sugar over Promise + generator</h3>
+<pre><code class="language-js">// This:
+async function fetchUser(id) {
+  const res = await fetch(`/users/${id}`);
+  return res.json();
+}
+
+// Compiles to roughly:
+function fetchUser(id) {
+  return fetch(`/users/${id}`)
+    .then(res =&gt; res.json());
+}
+
+// await suspends the async function and schedules the .then callback
+// as a microtask — does NOT block the thread
+</code></pre>
+<h3 id="promise-combinators">Promise combinators</h3>
+<pre><code class="language-js">// All settle to fulfilled — rejects if any rejects
+Promise.all([p1, p2, p3]);
+
+// Resolves/rejects with the FIRST settled promise (race)
+Promise.race([p1, p2, p3]);
+
+// All settle regardless — never rejects, gives {status, value/reason}
+Promise.allSettled([p1, p2, p3]);
+
+// Resolves with FIRST fulfilled — rejects only if ALL reject
+Promise.any([p1, p2, p3]);
+</code></pre>
+<h3 id="unhandled-rejection">Unhandled rejection</h3>
+<pre><code class="language-js">// Danger — rejected promise with no .catch
+const p = Promise.reject(new Error('oops'));
+// → UnhandledPromiseRejection warning (crashes Node, silently lost in browser)
+
+// Always handle:
+p.catch(err =&gt; console.error(err));
+// or
+try { await p; } catch(err) { console.error(err); }
+</code></pre>
+<hr />
+<h2 id="weakmap-and-weakref">WeakMap and WeakRef</h2>
+<h3 id="weakmap-private-data-without-memory-leaks">WeakMap — private data without memory leaks</h3>
+<pre><code class="language-js">// Regular Map — key is a strong reference — prevents GC
+const map = new Map();
+let el = document.getElementById('btn');
+map.set(el, { clicks: 0 });
+el = null; // el removed from code, but Map still holds reference → NOT GC'd
+
+// WeakMap — key is a weak reference — allows GC
+const wm = new WeakMap();
+let el = document.getElementById('btn');
+wm.set(el, { clicks: 0 });
+el = null; // No more strong references → el CAN be GC'd → entry removed from WeakMap
+</code></pre>
+<p><strong>WeakMap constraints:</strong> Keys must be objects (not primitives). Not iterable (no <code>.keys()</code>, <code>.forEach()</code>). No size.</p>
+<p><strong>Use cases:</strong></p>
+<pre><code class="language-js">// 1. Private class fields (before # syntax)
+const _private = new WeakMap();
+class Foo {
+  constructor() { _private.set(this, { secret: 42 }); }
+  getSecret() { return _private.get(this).secret; }
+}
+
+// 2. Caching computed results without preventing GC of the key
+const cache = new WeakMap();
+function process(obj) {
+  if (cache.has(obj)) return cache.get(obj);
+  const result = heavyComputation(obj);
+  cache.set(obj, result);
+  return result;
+}
+</code></pre>
+<h3 id="weakref-observe-without-preventing-gc">WeakRef — observe without preventing GC</h3>
+<pre><code class="language-js">let user = { name: 'Alice' };
+const ref = new WeakRef(user);
+
+user = null; // no more strong references
+
+// Later:
+const u = ref.deref(); // returns the object if still alive, undefined if GC'd
+if (u) {
+  console.log(u.name);
+} else {
+  console.log('user was garbage collected');
+}
+</code></pre>
+<p><strong>FinalizationRegistry — cleanup callback when object is GC'd:</strong></p>
+<pre><code class="language-js">const registry = new FinalizationRegistry((label) =&gt; {
+  console.log(`${label} was collected`);
+});
+
+let obj = { data: 'big array' };
+registry.register(obj, 'myObject');
+obj = null; // → eventually: &quot;myObject was collected&quot;
+</code></pre>
+<hr />
+<h2 id="event-delegation">Event Delegation</h2>
+<p>Instead of attaching a listener to each of N children, attach <strong>one listener to a parent</strong> and check <code>event.target</code>.</p>
+<pre><code class="language-js">// Bad — N listeners, N closures, memory-heavy, breaks on dynamic children
+document.querySelectorAll('.btn').forEach(btn =&gt; {
+  btn.addEventListener('click', handler);
+});
+
+// Good — 1 listener, works for dynamically added children too
+document.getElementById('list').addEventListener('click', (e) =&gt; {
+  const btn = e.target.closest('.btn');
+  if (!btn) return;
+  handler(btn);
+});
+</code></pre>
+<h3 id="bubbling-vs-capturing">Bubbling vs Capturing</h3>
+<pre><code>Capturing phase: document → html → body → parent → target
+Bubbling phase:  target → parent → body → html → document
+
+addEventListener(event, handler, true)  // third arg = true → capturing
+addEventListener(event, handler, false) // default → bubbling
+</code></pre>
+<h3 id="stoppropagation-vs-stopimmediatepropagation"><code>stopPropagation</code> vs <code>stopImmediatePropagation</code></h3>
+<pre><code class="language-js">// stopPropagation — stops event from bubbling/capturing further
+// but other listeners on THIS element still run
+el.addEventListener('click', (e) =&gt; {
+  e.stopPropagation(); // parent won't receive click
+});
+el.addEventListener('click', () =&gt; console.log('still runs'));
+
+// stopImmediatePropagation — stops all listeners on this element too
+el.addEventListener('click', (e) =&gt; {
+  e.stopImmediatePropagation();
+});
+el.addEventListener('click', () =&gt; console.log('NEVER runs'));
+</code></pre>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"A closure captures the variable <em>binding</em>, not the value. The classic <code>var</code> loop trap: all closures share the same <code>i</code> binding. <code>let</code> creates a new binding per iteration — that's the entire fix."</p>
+</li>
+<li>
+<p>"<code>this</code> has 4 rules, checked in priority order: <code>new</code> &gt; explicit (call/apply/bind) &gt; implicit (left of dot) &gt; default (global/undefined). Arrow functions break this — they have no own <code>this</code>, they inherit from the lexical scope at definition time. You cannot bind an arrow function."</p>
+</li>
+<li>
+<p>"JavaScript has no classes — only objects and prototype chains. <code>class</code> is syntax sugar. Property lookup walks <code>__proto__</code> until the value is found or <code>null</code> is reached. <code>instanceof</code> does the same walk."</p>
+</li>
+<li>
+<p>"Promises use the microtask queue, not the macrotask queue. Microtasks drain completely between tasks. That's why <code>Promise.then</code> always runs before <code>setTimeout(0)</code> — even if the setTimeout was registered first."</p>
+</li>
+<li>
+<p>"<code>async/await</code> is syntactic sugar over <code>.then()</code> chains. <code>await</code> doesn't block the thread — it suspends the async function, schedules continuation as a microtask, and returns control to the event loop."</p>
+</li>
+<li>
+<p>"WeakMap vs Map for caches: Map holds a strong reference to keys — objects you think you've discarded stay in memory. WeakMap holds weak references — GC can collect the key and the entry disappears automatically. Use WeakMap whenever your cache key is an object and you don't control its lifecycle."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

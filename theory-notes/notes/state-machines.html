@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State Machines — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html" aria-current="page">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="state-machines-interview-reference">State Machines — Interview Reference</h1>
+<hr />
+<h2 id="what-is-a-state-machine">What is a State Machine?</h2>
+<p>A state machine is a model that defines:
+- A finite set of <strong>states</strong> (what the system can be in)
+- <strong>Events</strong> that trigger transitions between states
+- <strong>Actions</strong> that run on entry, exit, or transition</p>
+<blockquote>
+<p><strong>One-liner:</strong> A state machine makes invalid states impossible by definition — you can only be in one state at a time, and only defined transitions are allowed.</p>
+</blockquote>
+<hr />
+<h2 id="why-state-machines-the-problem-they-solve">Why State Machines — The Problem They Solve</h2>
+<p>Complex UI logic with <code>useState</code> booleans becomes unmaintainable and allows impossible states:</p>
+<pre><code class="language-js">// ❌ Boolean soup — 2^4 = 16 possible combinations, most invalid
+const [isLoading, setIsLoading] = useState(false);
+const [isSuccess, setIsSuccess] = useState(false);
+const [isError, setIsError] = useState(false);
+const [isRetrying, setIsRetrying] = useState(false);
+
+// Can you have isLoading=true AND isSuccess=true? Theoretically yes.
+// Can you have isError=true AND isSuccess=true? Theoretically yes.
+// These are impossible states but nothing prevents them.
+
+// ✅ State machine — exactly ONE state at a time
+type State = 'idle' | 'loading' | 'success' | 'error' | 'retrying';
+// You CANNOT be in &quot;loading&quot; and &quot;success&quot; simultaneously.
+// Impossible states are literally impossible to represent.
+</code></pre>
+<p><strong>The real cost of invalid states:</strong> Every conditional becomes defensive:</p>
+<pre><code class="language-js">// You start writing this everywhere:
+if (isLoading &amp;&amp; !isSuccess &amp;&amp; !isError) { ... }
+if (!isLoading &amp;&amp; isSuccess &amp;&amp; !isError) { ... }
+// This is a state machine implemented badly with booleans.
+</code></pre>
+<hr />
+<h2 id="state-machine-anatomy">State Machine Anatomy</h2>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> idle
+
+    idle --> loading : FETCH
+    loading --> success : RESOLVE
+    loading --> error : REJECT
+    error --> loading : RETRY
+    error --> idle : RESET
+    success --> idle : RESET
+    success --> loading : FETCH
+</div>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Description</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>State</strong></td>
+<td>What the system is currently doing</td>
+<td><code>idle</code>, <code>loading</code>, <code>error</code></td>
+</tr>
+<tr>
+<td><strong>Event</strong></td>
+<td>Something that happens (user action, API response)</td>
+<td><code>FETCH</code>, <code>RESOLVE</code>, <code>REJECT</code></td>
+</tr>
+<tr>
+<td><strong>Transition</strong></td>
+<td>State change triggered by an event</td>
+<td><code>loading</code> + <code>RESOLVE</code> → <code>success</code></td>
+</tr>
+<tr>
+<td><strong>Action</strong></td>
+<td>Side effect that runs during transition</td>
+<td><code>fetchData()</code>, <code>logError()</code></td>
+</tr>
+<tr>
+<td><strong>Guard</strong></td>
+<td>Condition that blocks a transition</td>
+<td>only <code>RETRY</code> if <code>retryCount &lt; 3</code></td>
+</tr>
+<tr>
+<td><strong>Context</strong></td>
+<td>Extended state — data alongside the state</td>
+<td><code>{ data, error, retryCount }</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="xstate-core-api">XState — Core API</h2>
+<pre><code class="language-js">import { createMachine, assign } from 'xstate';
+
+const fetchMachine = createMachine({
+  id: 'fetch',
+  initial: 'idle',
+  context: {
+    data: null,
+    error: null,
+    retryCount: 0,
+  },
+
+  states: {
+    idle: {
+      on: {
+        FETCH: 'loading',  // shorthand transition
+      }
+    },
+
+    loading: {
+      invoke: {
+        src: 'fetchData',              // service name — defined in options
+        onDone: {
+          target: 'success',
+          actions: assign({ data: (ctx, event) =&gt; event.data }) // update context
+        },
+        onError: {
+          target: 'error',
+          actions: assign({ error: (ctx, event) =&gt; event.data })
+        }
+      }
+    },
+
+    success: {
+      on: {
+        RESET: { target: 'idle', actions: assign({ data: null }) },
+        FETCH: 'loading',
+      }
+    },
+
+    error: {
+      on: {
+        RETRY: {
+          target: 'loading',
+          guard: 'canRetry',           // only if retryCount &lt; 3
+          actions: assign({ retryCount: (ctx) =&gt; ctx.retryCount + 1 })
+        },
+        RESET: { target: 'idle', actions: assign({ error: null, retryCount: 0 }) },
+      }
+    }
+  }
+}, {
+  services: {
+    fetchData: async (ctx, event) =&gt; {
+      const res = await fetch(`/api/${event.id}`);
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    }
+  },
+  guards: {
+    canRetry: (ctx) =&gt; ctx.retryCount &lt; 3,
+  }
+});
+</code></pre>
+<h3 id="using-in-react-with-xstatereact">Using in React with <code>@xstate/react</code></h3>
+<pre><code class="language-jsx">import { useMachine } from '@xstate/react';
+
+function FetchComponent({ id }) {
+  const [state, send] = useMachine(fetchMachine);
+
+  return (
+    &lt;div&gt;
+      {state.matches('idle') &amp;&amp; (
+        &lt;button onClick={() =&gt; send({ type: 'FETCH', id })}&gt;Load&lt;/button&gt;
+      )}
+
+      {state.matches('loading') &amp;&amp; &lt;Spinner /&gt;}
+
+      {state.matches('success') &amp;&amp; &lt;Data data={state.context.data} /&gt;}
+
+      {state.matches('error') &amp;&amp; (
+        &lt;div&gt;
+          &lt;p&gt;{state.context.error.message}&lt;/p&gt;
+          {state.context.retryCount &lt; 3 &amp;&amp; (
+            &lt;button onClick={() =&gt; send('RETRY')}&gt;Retry&lt;/button&gt;
+          )}
+          &lt;button onClick={() =&gt; send('RESET')}&gt;Reset&lt;/button&gt;
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="hierarchical-states-nested">Hierarchical States (Nested)</h2>
+<p>Some states have substates. Instead of flattening everything, nest them:</p>
+<pre><code class="language-js">// Without nesting: loading_initial, loading_polling, loading_cancelling
+// With nesting: loading → { initial, polling, cancelling }
+
+const machine = createMachine({
+  initial: 'idle',
+  states: {
+    idle: { on: { START: 'loading' } },
+
+    loading: {
+      initial: 'initial',  // default substate
+      states: {
+        initial: {
+          on: { POLL: 'polling', CANCEL: '#machine.cancelled' }
+        },
+        polling: {
+          on: { DONE: '#machine.success', CANCEL: '#machine.cancelled' }
+        },
+      },
+      // Events that apply to ALL substates of loading:
+      on: {
+        ERROR: 'error'  // works in both loading.initial and loading.polling
+      }
+    },
+
+    success: {},
+    error: {},
+    cancelled: {},
+  }
+});
+</code></pre>
+<p><strong>Why nesting matters:</strong> Without it, you need <code>loading_polling_error</code>, <code>loading_initial_error</code> — N×M states instead of N+M.</p>
+<hr />
+<h2 id="parallel-states">Parallel States</h2>
+<p>Multiple regions of a system can be in independent states simultaneously.</p>
+<pre><code class="language-js">// A form with independently tracked: validity state + submission state
+const formMachine = createMachine({
+  type: 'parallel',  // both regions active simultaneously
+
+  states: {
+    validation: {
+      initial: 'pristine',
+      states: {
+        pristine: { on: { CHANGE: 'dirty' } },
+        dirty: {
+          on: {
+            VALIDATE_SUCCESS: 'valid',
+            VALIDATE_ERROR: 'invalid',
+          }
+        },
+        valid: {},
+        invalid: {},
+      }
+    },
+
+    submission: {
+      initial: 'idle',
+      states: {
+        idle: { on: { SUBMIT: 'submitting' } },
+        submitting: {
+          on: { SUCCESS: 'submitted', FAILURE: 'idle' }
+        },
+        submitted: {},
+      }
+    }
+  }
+});
+
+// Current state: { validation: 'valid', submission: 'idle' }
+// Can check: state.matches({ validation: 'valid', submission: 'idle' })
+</code></pre>
+<hr />
+<h2 id="actor-model">Actor Model</h2>
+<p>XState v5 introduces the <strong>actor model</strong> — machines can spawn child actors, communicate via messages.</p>
+<pre><code class="language-js">import { createMachine, spawn, send } from 'xstate';
+
+// Child actor — handles one upload
+const uploadMachine = createMachine({ /* ... */ });
+
+// Parent actor — manages multiple uploads
+const uploadManagerMachine = createMachine({
+  context: { uploads: [] },
+  states: {
+    idle: {
+      on: {
+        ADD_FILE: {
+          actions: assign({
+            uploads: (ctx, event) =&gt; [
+              ...ctx.uploads,
+              spawn(uploadMachine, { input: { file: event.file } }) // spawn child
+            ]
+          })
+        }
+      }
+    }
+  }
+});
+</code></pre>
+<p>Each upload is an independent actor with its own state. The parent tracks the list; each child handles its own lifecycle. No shared state — actors communicate only via events.</p>
+<hr />
+<h2 id="when-to-use-state-machines-vs-reducers-vs-usestate">When to Use State Machines vs Reducers vs useState</h2>
+<div class="mermaid">
+flowchart TD
+    Q1{"Does the UI have\ndistinct modes/phases?"}
+    Q2{"Can multiple booleans\nbe true simultaneously\ncreating invalid states?"}
+    Q3{"Are there complex\ntransition rules or guards?"}
+    Q4{"Is the state simple\n(toggle, input value)?"}
+
+    USE_MACHINE["✅ State Machine\n(XState)"]
+    USE_REDUCER["✅ useReducer\n(complex but no phases)"]
+    USE_STATE["✅ useState\n(simple)"]
+
+    Q1 -->|Yes| Q3
+    Q1 -->|No| Q2
+    Q2 -->|Yes| USE_MACHINE
+    Q2 -->|No| Q4
+    Q3 -->|Yes| USE_MACHINE
+    Q3 -->|No| USE_REDUCER
+    Q4 -->|Yes| USE_STATE
+    Q4 -->|No| USE_REDUCER
+</div>
+<table>
+<thead>
+<tr>
+<th>Use case</th>
+<th>Tool</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Toggle, counter, simple input</td>
+<td><code>useState</code></td>
+</tr>
+<tr>
+<td>Related state that updates together, no phases</td>
+<td><code>useReducer</code></td>
+</tr>
+<tr>
+<td>Multi-step form wizard</td>
+<td>State machine</td>
+</tr>
+<tr>
+<td>Fetch with loading/error/retry</td>
+<td>State machine</td>
+</tr>
+<tr>
+<td>WebSocket lifecycle (connecting/connected/reconnecting/closed)</td>
+<td>State machine</td>
+</tr>
+<tr>
+<td>Upload with progress, pause, cancel, retry</td>
+<td>State machine</td>
+</tr>
+<tr>
+<td>Authentication flow (logged-out/logging-in/logged-in/expired)</td>
+<td>State machine</td>
+</tr>
+<tr>
+<td>Shopping cart (complex discounts, validation)</td>
+<td>State machine or reducer</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="real-world-example-multi-step-form">Real-world Example: Multi-step Form</h2>
+<pre><code class="language-js">const checkoutMachine = createMachine({
+  id: 'checkout',
+  initial: 'cart',
+  context: {
+    cart: [],
+    shipping: null,
+    payment: null,
+    orderId: null,
+    error: null,
+  },
+
+  states: {
+    cart: {
+      on: {
+        PROCEED: { target: 'shipping', guard: 'cartNotEmpty' }
+      }
+    },
+
+    shipping: {
+      on: {
+        BACK: 'cart',
+        SUBMIT_SHIPPING: {
+          target: 'payment',
+          actions: assign({ shipping: (_, e) =&gt; e.address })
+        }
+      }
+    },
+
+    payment: {
+      on: {
+        BACK: 'shipping',
+        SUBMIT_PAYMENT: {
+          target: 'processing',
+          actions: assign({ payment: (_, e) =&gt; e.details })
+        }
+      }
+    },
+
+    processing: {
+      invoke: {
+        src: 'placeOrder',
+        onDone: {
+          target: 'confirmed',
+          actions: assign({ orderId: (_, e) =&gt; e.data.orderId })
+        },
+        onError: {
+          target: 'payment',  // go back to payment on failure
+          actions: assign({ error: (_, e) =&gt; e.data.message })
+        }
+      }
+    },
+
+    confirmed: {
+      type: 'final'  // terminal state — no transitions out
+    }
+  }
+}, {
+  guards: {
+    cartNotEmpty: (ctx) =&gt; ctx.cart.length &gt; 0,
+  },
+  services: {
+    placeOrder: async (ctx) =&gt; api.orders.create({ ...ctx.shipping, ...ctx.payment })
+  }
+});
+</code></pre>
+<p><strong>What you get for free from the machine:</strong>
+- Back button always works — explicit <code>BACK</code> transitions
+- Can't reach <code>payment</code> without going through <code>shipping</code> first
+- Can't double-submit — <code>processing</code> has no <code>SUBMIT</code> transition
+- Error handling is a transition to a recoverable state, not a flag</p>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"State machines make impossible states impossible by definition. You can't be in <code>loading</code> and <code>success</code> simultaneously — they're mutually exclusive states. Boolean soup (<code>isLoading</code>, <code>isSuccess</code>, <code>isError</code>) allows 2^N combinations, most of which are invalid."</p>
+</li>
+<li>
+<p>"The hierarchy is: <code>useState</code> for simple values → <code>useReducer</code> for related state with no phases → state machine for anything with distinct lifecycle phases (loading/error/retry, multi-step flows, WebSocket lifecycle)."</p>
+</li>
+<li>
+<p>"XState's <code>invoke</code> is the pattern for async — it starts a service (Promise, observable, callback) when the state is entered, routes <code>onDone</code> to success and <code>onError</code> to failure. No manual try/catch in components."</p>
+</li>
+<li>
+<p>"Guards are the state machine equivalent of business rules. <code>canRetry: ctx.retryCount &lt; 3</code> lives in the machine definition, not scattered across components. The UI just sends <code>RETRY</code> and the machine decides whether the transition is allowed."</p>
+</li>
+<li>
+<p>"Hierarchical states prevent state explosion. Instead of <code>loading_polling_error</code>, <code>loading_initial_error</code>, you have <code>loading</code> with substates <code>initial</code> and <code>polling</code>, and <code>error</code> handles both. N substates × M contexts = N+M, not N×M."</p>
+</li>
+<li>
+<p>"The actor model is how you scale — each independent thing (each file upload, each WebSocket connection) is its own actor with its own machine. They communicate only via events — no shared mutable state. The parent just tracks the list of actors."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GraphQL — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html" aria-current="page">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="graphql-interview-reference">GraphQL — Interview Reference</h1>
+<hr />
+<h2 id="what-is-graphql">What is GraphQL?</h2>
+<p>GraphQL is a <strong>query language for APIs and a runtime for executing those queries</strong> against your data. The client describes exactly what data it needs — the server returns exactly that, nothing more.</p>
+<blockquote>
+<p><strong>One-liner:</strong> GraphQL replaces multiple REST endpoints with a single typed endpoint where the client controls the shape of the response.</p>
+</blockquote>
+<hr />
+<h2 id="why-graphql-the-rest-problems-it-solves">Why GraphQL — The REST Problems it Solves</h2>
+<h3 id="over-fetching">Over-fetching</h3>
+<pre><code>GET /users/123
+→ { id, name, email, address, phone, createdAt, updatedAt, preferences, ... }
+// Client only needed: name and email. Got 15 fields.
+</code></pre>
+<h3 id="under-fetching-n1-requests">Under-fetching (N+1 requests)</h3>
+<pre><code>GET /users/123          → { id, name, teamId }
+GET /teams/456          → { id, name, managerId }
+GET /users/789          → { id, name }   ← manager
+// 3 requests to show one user's team info
+</code></pre>
+<h3 id="graphql-solution">GraphQL solution</h3>
+<pre><code class="language-graphql">query {
+  user(id: &quot;123&quot;) {
+    name
+    email
+    team {
+      name
+      manager {
+        name
+      }
+    }
+  }
+}
+# One request. Exactly the fields requested. Server resolves relationships.
+</code></pre>
+<hr />
+<h2 id="core-concepts">Core Concepts</h2>
+<h3 id="schema-the-contract">Schema — the contract</h3>
+<pre><code class="language-graphql">type User {
+  id: ID!           # ! = non-nullable
+  name: String!
+  email: String!
+  team: Team        # nullable — user might have no team
+  posts: [Post!]!   # non-nullable list of non-nullable Posts
+}
+
+type Team {
+  id: ID!
+  name: String!
+  members: [User!]!
+}
+
+type Query {
+  user(id: ID!): User
+  users(limit: Int = 10, offset: Int = 0): [User!]!
+}
+
+type Mutation {
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+  deleteUser(id: ID!): Boolean!
+}
+
+type Subscription {
+  userCreated: User!
+  postAdded(userId: ID!): Post!
+}
+
+input CreateUserInput {
+  name: String!
+  email: String!
+}
+</code></pre>
+<h3 id="resolvers-how-fields-are-fetched">Resolvers — how fields are fetched</h3>
+<pre><code class="language-js">const resolvers = {
+  Query: {
+    user: (parent, { id }, context) =&gt; context.db.users.findById(id),
+    users: (parent, { limit, offset }, context) =&gt;
+      context.db.users.findAll({ limit, offset }),
+  },
+
+  User: {
+    // This runs FOR EACH User returned — classic N+1 problem!
+    team: (user, args, context) =&gt; context.db.teams.findById(user.teamId),
+    posts: (user, args, context) =&gt; context.db.posts.findByUserId(user.id),
+  },
+
+  Mutation: {
+    createUser: (parent, { input }, context) =&gt; context.db.users.create(input),
+  },
+};
+</code></pre>
+<p><strong>Resolver signature:</strong> <code>(parent, args, context, info)</code>
+- <code>parent</code> — result of the parent resolver
+- <code>args</code> — arguments from the query
+- <code>context</code> — shared per-request object (auth user, db connections, DataLoader instances)
+- <code>info</code> — query AST, requested fields, path</p>
+<hr />
+<h2 id="the-n1-problem-graphqls-biggest-pitfall">The N+1 Problem — GraphQL's Biggest Pitfall</h2>
+<pre><code class="language-graphql">query {
+  users {        # 1 query → returns 100 users
+    name
+    team { name } # 100 queries — one per user! → N+1
+  }
+}
+</code></pre>
+<pre><code>DB queries:
+  SELECT * FROM users                    -- 1 query
+  SELECT * FROM teams WHERE id = 1       -- for user 1
+  SELECT * FROM teams WHERE id = 2       -- for user 2
+  SELECT * FROM teams WHERE id = 3       -- for user 3
+  ... × 100
+Total: 101 queries
+</code></pre>
+<h3 id="solution-dataloader-batching-caching">Solution — DataLoader (batching + caching)</h3>
+<p>DataLoader collects all IDs requested within a single event loop tick, then fires a single batched query.</p>
+<pre><code class="language-js">import DataLoader from 'dataloader';
+
+// Create per-request (in context factory)
+const teamLoader = new DataLoader(async (teamIds) =&gt; {
+  // Called once with ALL teamIds collected in this tick
+  const teams = await db.teams.findByIds(teamIds);
+  // Must return results in same order as teamIds
+  return teamIds.map(id =&gt; teams.find(t =&gt; t.id === id));
+});
+
+// In resolver — looks like N calls, batched into 1
+const resolvers = {
+  User: {
+    team: (user) =&gt; teamLoader.load(user.teamId), // schedules, doesn't fetch yet
+  }
+};
+
+// What actually happens:
+// All 100 user.team resolvers call teamLoader.load(id)
+// DataLoader collects all 100 ids in one tick
+// Fires: SELECT * FROM teams WHERE id IN (1, 2, 3, ..., 100) — 1 query!
+</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant R1 as Resolver (user1)
+    participant R2 as Resolver (user2)
+    participant R3 as Resolver (user3)
+    participant DL as DataLoader
+    participant DB as Database
+
+    R1->>DL: load(teamId=1)
+    R2->>DL: load(teamId=2)
+    R3->>DL: load(teamId=3)
+    Note over DL: Collects all IDs in this event loop tick
+    DL->>DB: SELECT * FROM teams WHERE id IN (1,2,3)
+    DB-->>DL: [team1, team2, team3]
+    DL-->>R1: team1
+    DL-->>R2: team2
+    DL-->>R3: team3
+</div>
+<p><strong>DataLoader also caches within a request</strong> — if two resolvers request the same team, the second call hits the in-memory cache. Clear per-request to avoid stale data between requests.</p>
+<hr />
+<h2 id="caching-graphqls-hard-problem">Caching — GraphQL's Hard Problem</h2>
+<p>GraphQL uses a <strong>single POST endpoint</strong> — HTTP caching doesn't work.</p>
+<pre><code>GET /users/123    → CDN caches by URL ✅
+POST /graphql     → CDN can't cache POST ❌ (different query bodies, same URL)
+</code></pre>
+<h3 id="client-side-caching-apollo-urql">Client-side caching (Apollo / urql)</h3>
+<p>Apollo normalizes the cache by type + ID:</p>
+<pre><code class="language-js">// Query 1: fetch user
+{ user(id: &quot;1&quot;) { id name email } }
+// Cached as: User:1 → { name: &quot;Alice&quot;, email: &quot;a@b.com&quot; }
+
+// Query 2: update same user
+mutation { updateUser(id: &quot;1&quot;, input: { name: &quot;Bob&quot; }) { id name } }
+// Apollo automatically updates User:1 in cache → all queries showing user 1 update
+</code></pre>
+<pre><code class="language-js">// Apollo cache config
+const client = new ApolloClient({
+  cache: new InMemoryCache({
+    typePolicies: {
+      User: {
+        keyFields: ['id'],  // normalize by id
+      },
+      Query: {
+        fields: {
+          users: {
+            // Merge paginated results instead of overwriting
+            keyArgs: false,
+            merge(existing = [], incoming) {
+              return [...existing, ...incoming];
+            }
+          }
+        }
+      }
+    }
+  })
+});
+</code></pre>
+<h3 id="persisted-queries-restoring-http-caching">Persisted Queries — restoring HTTP caching</h3>
+<pre><code class="language-js">// Client sends a hash of the query instead of the full query
+// GET /graphql?operationName=GetUser&amp;extensions={&quot;persistedQuery&quot;:{&quot;hash&quot;:&quot;abc123&quot;}}
+
+// Server looks up full query by hash → can be cached by CDN (GET request!)
+// First request: hash miss → client sends full query → server caches it
+// Subsequent: hash hit → CDN serves directly
+
+// Apollo setup
+import { createPersistedQueryLink } from '@apollo/client/link/persisted-queries';
+const link = createPersistedQueryLink().concat(httpLink);
+</code></pre>
+<hr />
+<h2 id="fragments-reusable-field-sets">Fragments — Reusable Field Sets</h2>
+<pre><code class="language-graphql">fragment UserCard on User {
+  id
+  name
+  avatarUrl
+  role
+}
+
+query GetTeam($teamId: ID!) {
+  team(id: $teamId) {
+    name
+    members {
+      ...UserCard    # reuse the fragment
+    }
+    manager {
+      ...UserCard    # reuse again
+    }
+  }
+}
+</code></pre>
+<p><strong>Co-located fragments (Relay pattern)</strong> — each component declares the data it needs:</p>
+<pre><code class="language-jsx">// UserCard.jsx
+const USER_CARD_FRAGMENT = gql`
+  fragment UserCard on User {
+    id
+    name
+    avatarUrl
+  }
+`;
+
+function UserCard({ user }) {
+  return &lt;div&gt;{user.name}&lt;/div&gt;;
+}
+
+// Parent query spreads the fragment — component owns its data requirements
+const TEAM_QUERY = gql`
+  ${USER_CARD_FRAGMENT}
+  query GetTeam($id: ID!) {
+    team(id: $id) {
+      members { ...UserCard }
+    }
+  }
+`;
+</code></pre>
+<p>This is the <strong>Relay compiler pattern</strong> — data requirements live next to the component that uses them. Removes the guessing of what fields each component needs.</p>
+<hr />
+<h2 id="subscriptions-real-time-over-websocket">Subscriptions — Real-time over WebSocket</h2>
+<pre><code class="language-graphql"># Client subscribes
+subscription OnPostAdded($userId: ID!) {
+  postAdded(userId: $userId) {
+    id
+    title
+    createdAt
+  }
+}
+</code></pre>
+<pre><code class="language-js">// Server — subscription resolver
+const resolvers = {
+  Subscription: {
+    postAdded: {
+      subscribe: (parent, { userId }, { pubsub }) =&gt;
+        pubsub.asyncIterator(`POST_ADDED_${userId}`),
+    }
+  },
+  Mutation: {
+    createPost: async (parent, { input }, { pubsub, db }) =&gt; {
+      const post = await db.posts.create(input);
+      // Publish to all subscribers of this user's channel
+      await pubsub.publish(`POST_ADDED_${input.userId}`, { postAdded: post });
+      return post;
+    }
+  }
+};
+</code></pre>
+<p><strong>Transport:</strong> GraphQL subscriptions use WebSocket (via <code>graphql-ws</code> protocol, replacing the deprecated <code>subscriptions-transport-ws</code>).</p>
+<p>At scale: replace in-memory PubSub with Redis PubSub — the subscription server publishes to Redis, all WS server instances subscribed to that channel fan out to connected clients.</p>
+<hr />
+<h2 id="directives">Directives</h2>
+<pre><code class="language-graphql">query GetUser($id: ID!, $showEmail: Boolean!) {
+  user(id: $id) {
+    name
+    email @include(if: $showEmail)   # field included conditionally
+    role @skip(if: $isPublic)        # field skipped conditionally
+    avatar @deprecated(reason: &quot;Use avatarUrl instead&quot;)
+  }
+}
+</code></pre>
+<hr />
+<h2 id="error-handling">Error Handling</h2>
+<p>GraphQL always returns 200 — errors are in the response body alongside data:</p>
+<pre><code class="language-json">{
+  &quot;data&quot;: {
+    &quot;user&quot;: {
+      &quot;name&quot;: &quot;Alice&quot;,
+      &quot;team&quot;: null
+    }
+  },
+  &quot;errors&quot;: [
+    {
+      &quot;message&quot;: &quot;Team not found&quot;,
+      &quot;locations&quot;: [{ &quot;line&quot;: 4, &quot;column&quot;: 5 }],
+      &quot;path&quot;: [&quot;user&quot;, &quot;team&quot;],
+      &quot;extensions&quot;: { &quot;code&quot;: &quot;NOT_FOUND&quot; }
+    }
+  ]
+}
+</code></pre>
+<p><strong>Partial success</strong> — if one resolver fails, other fields still resolve. The error field indicates which paths failed.</p>
+<hr />
+<h2 id="federation-graphql-at-scale-multiple-services">Federation — GraphQL at Scale (Multiple Services)</h2>
+<p>Apollo Federation lets multiple GraphQL services each own part of the schema, composed into one graph.</p>
+<pre><code class="language-graphql"># users-service schema
+type User @key(fields: &quot;id&quot;) {
+  id: ID!
+  name: String!
+  email: String!
+}
+
+# posts-service schema — extends User from another service
+type Post {
+  id: ID!
+  title: String!
+  author: User!  # resolved by users-service via federation
+}
+
+extend type User @key(fields: &quot;id&quot;) {
+  id: ID! @external
+  posts: [Post!]! # resolved by posts-service
+}
+</code></pre>
+<div class="mermaid">
+graph TD
+    Client["Client\nSends one GraphQL query"]
+    GW["Apollo Gateway / Router\n(Supergraph)"]
+    US["Users Service\n(owns User type)"]
+    PS["Posts Service\n(owns Post type)"]
+    TS["Teams Service\n(owns Team type)"]
+
+    Client --> GW
+    GW -->|"sub-query for User fields"| US
+    GW -->|"sub-query for Post fields"| PS
+    GW -->|"sub-query for Team fields"| TS
+    US --> GW
+    PS --> GW
+    TS --> GW
+    GW -->|"merged response"| Client
+</div>
+<p><strong>The Gateway</strong> composes queries into sub-queries per service, executes them in parallel where possible, merges results, returns one response to the client.</p>
+<hr />
+<h2 id="rest-vs-graphql-when-to-choose">REST vs GraphQL — When to Choose</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>REST</th>
+<th>GraphQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HTTP caching</strong></td>
+<td>Native (GET requests, CDN)</td>
+<td>Hard (POST, needs persisted queries)</td>
+</tr>
+<tr>
+<td><strong>Over-fetching</strong></td>
+<td>Common</td>
+<td>Eliminated by design</td>
+</tr>
+<tr>
+<td><strong>Multiple resources</strong></td>
+<td>Multiple requests</td>
+<td>One query</td>
+</tr>
+<tr>
+<td><strong>Schema / type safety</strong></td>
+<td>OpenAPI (optional)</td>
+<td>Built-in, enforced</td>
+</tr>
+<tr>
+<td><strong>Subscriptions</strong></td>
+<td>SSE or WebSocket (manual)</td>
+<td>First-class subscription type</td>
+</tr>
+<tr>
+<td><strong>Learning curve</strong></td>
+<td>Low</td>
+<td>Higher (schema, resolvers, N+1)</td>
+</tr>
+<tr>
+<td><strong>File uploads</strong></td>
+<td>Simple multipart</td>
+<td>Awkward (graphql-multipart)</td>
+</tr>
+<tr>
+<td><strong>Best for</strong></td>
+<td>Public APIs, simple CRUD, CDN-heavy</td>
+<td>Complex data graphs, mobile (bandwidth), micro-services</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"GraphQL solves over-fetching (get only what you ask for) and under-fetching (one request for nested relationships). The trade-off: you move complexity from the client to the server — resolvers, DataLoader, schema design."</p>
+</li>
+<li>
+<p>"The N+1 problem is GraphQL's most common performance pitfall. If you have a list of 100 users and each user resolver fetches its team individually, that's 101 database queries. DataLoader fixes this by batching all team IDs collected within one event loop tick into a single IN query."</p>
+</li>
+<li>
+<p>"HTTP caching doesn't work for GraphQL because everything goes through one POST endpoint. Client-side normalized caching (Apollo InMemoryCache) compensates — it updates all queries that reference the same entity by type+ID when any mutation touches that entity. Persisted queries restore GET-based CDN caching."</p>
+</li>
+<li>
+<p>"Fragments are the mechanism for co-locating data requirements with components. Each component declares its own fragment; the parent query spreads them all. This eliminates the guessing game of which fields each component needs."</p>
+</li>
+<li>
+<p>"Apollo Federation lets multiple teams own separate schemas (users-service, posts-service) while clients see one unified graph. The Gateway composes sub-queries, executes in parallel where possible, merges results. Teams are fully independent — each service can deploy without touching others."</p>
+</li>
+<li>
+<p>"Subscriptions use WebSocket (graphql-ws protocol). At scale, replace in-process PubSub with Redis PubSub so all Gateway instances can publish to the same channel and fan out to their respective connected clients."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

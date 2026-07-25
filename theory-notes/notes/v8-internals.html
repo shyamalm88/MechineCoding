@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V8 Internals — Interview Reference — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html" aria-current="page">V8 Internals</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
+<main><h1 id="v8-internals-interview-reference">V8 Internals — Interview Reference</h1>
+<hr />
+<h2 id="what-is-v8">What is V8?</h2>
+<p>V8 is Google's JavaScript engine — used in Chrome, Node.js, and Deno. It compiles JavaScript to native machine code at runtime using a <strong>multi-tier JIT (Just-In-Time) compilation pipeline</strong>.</p>
+<blockquote>
+<p><strong>One-liner:</strong> V8 parses JS into an AST, interprets it via Ignition, profiles hot code, and compiles hot paths to optimized machine code via TurboFan — then deoptimizes back if assumptions break.</p>
+</blockquote>
+<hr />
+<h2 id="the-compilation-pipeline">The Compilation Pipeline</h2>
+<div class="mermaid">
+flowchart TD
+    S["JS Source Code"]
+    P["Parser\nSource → AST\n(Abstract Syntax Tree)"]
+    I["Ignition\nAST → Bytecode\n(interpreter — runs immediately)"]
+    PR["Profiler / Feedback Vector\nCounts: how often each function runs\nWhat types flow through each operation"]
+    T["TurboFan\nBytecode + Feedback → Optimized Machine Code\n(only for hot functions)"]
+    D["Deoptimization\nAssumption violated →\nback to Ignition bytecode"]
+
+    S --> P --> I --> PR
+    PR -->|"function called 10K+ times\n(hot)"| T
+    T -->|"type changes, hidden class changes"| D
+    D --> I
+</div>
+<p><strong>Why two tiers?</strong>
+- <strong>Ignition</strong> starts executing immediately — no wait for compilation. Bytecode is compact, fast to generate.
+- <strong>TurboFan</strong> optimizes only code that actually runs frequently — compiling everything up front would waste time on code that's called once.</p>
+<hr />
+<h2 id="hidden-classes">Hidden Classes</h2>
+<p>V8 assigns every object an internal <strong>hidden class</strong> (also called "shape" or "map") to describe its structure — which properties it has and their memory offsets.</p>
+<pre><code class="language-js">// Two objects with same properties added in same order
+// → share the same hidden class → fast property access
+const a = {};
+a.x = 1;
+a.y = 2;
+
+const b = {};
+b.x = 10;
+b.y = 20;
+// a and b: same hidden class C2
+</code></pre>
+<div class="mermaid">
+graph LR
+    C0["HiddenClass C0\n(empty object)"]
+    C1["HiddenClass C1\n(has: x at offset 0)"]
+    C2["HiddenClass C2\n(has: x at offset 0\n      y at offset 1)"]
+
+    C0 -->|"add x"| C1
+    C1 -->|"add y"| C2
+</div>
+<p><strong>Every structural change creates a new hidden class transition.</strong></p>
+<pre><code class="language-js">// These look identical but create DIFFERENT hidden class chains
+const a = {};
+a.x = 1; a.y = 2; // → C0 → C1(x) → C2(x,y)
+
+const b = {};
+b.y = 2; b.x = 1; // → C0 → C3(y) → C4(y,x)
+
+// a and b have DIFFERENT hidden classes
+// V8 cannot reuse the same optimized code path for both
+</code></pre>
+<p><strong>What kills hidden class sharing:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Anti-pattern</th>
+<th>Why it breaks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Adding properties in different orders</td>
+<td>Creates divergent hidden class chains</td>
+</tr>
+<tr>
+<td><code>delete obj.prop</code></td>
+<td>Transitions to a "dictionary mode" (slow hash map)</td>
+</tr>
+<tr>
+<td>Adding properties after construction</td>
+<td>Creates new hidden class — old code optimized for old class deoptimizes</td>
+</tr>
+<tr>
+<td>Mixing types for same property</td>
+<td><code>obj.x = 1</code> then <code>obj.x = 'str'</code> — two different type shapes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Best practice:</strong> Always initialize all properties in the constructor in the same order.</p>
+<pre><code class="language-js">// Good — consistent hidden class for all instances
+class Point {
+  constructor(x, y) {
+    this.x = x; // always added first
+    this.y = y; // always added second
+  }
+}
+
+// Bad — hidden class diverges depending on which branch runs
+class Point {
+  constructor(x, y, z) {
+    this.x = x;
+    if (z) this.z = z; // some instances have z, some don't → different shapes
+    this.y = y;
+  }
+}
+</code></pre>
+<hr />
+<h2 id="inline-caching-ic">Inline Caching (IC)</h2>
+<p>When V8 accesses a property (e.g. <code>obj.x</code>), it caches the result of the lookup based on the object's hidden class. Next time it sees the same access on an object with the same hidden class, it skips the lookup entirely.</p>
+<pre><code>obj.x  → first time: look up hidden class, find x at offset 4 → cache it
+obj.x  → second time: hidden class same? → YES → read offset 4 directly
+</code></pre>
+<h3 id="ic-states-from-fast-to-slow">IC States — from fast to slow</h3>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Uninitialized</strong></td>
+<td>Never seen a value here yet</td>
+</tr>
+<tr>
+<td><strong>Monomorphic</strong></td>
+<td>Always seen the same hidden class → fastest</td>
+</tr>
+<tr>
+<td><strong>Polymorphic</strong></td>
+<td>Seen 2-4 different hidden classes → still fast, small dispatch table</td>
+</tr>
+<tr>
+<td><strong>Megamorphic</strong></td>
+<td>Seen 5+ different hidden classes → cache abandoned, generic lookup every time</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-js">function getX(obj) { return obj.x; }
+
+getX({ x: 1 });           // monomorphic — shape A
+getX({ x: 2 });           // still monomorphic — same shape A
+getX({ x: 3, y: 4 });    // polymorphic — shape B added
+getX({ x: 5, y: 4, z: 6 }); // polymorphic — shape C
+getX({ a: 1 });           // megamorphic — too many shapes → slow path
+</code></pre>
+<p><strong>Real-world impact:</strong> A React <code>cloneElement</code> loop over components of different types, or a utility function called with different object shapes, goes megamorphic and is significantly slower than the same loop over same-shaped objects.</p>
+<hr />
+<h2 id="garbage-collection-generational-gc">Garbage Collection — Generational GC</h2>
+<p>V8 divides the heap into two generations based on the observation that <strong>most objects die young</strong> (short-lived allocations like temporaries, closures in event handlers).</p>
+<div class="mermaid">
+graph TD
+    subgraph "Young Generation (Nursery)"
+        NS["New Space\n~1–8 MB\nMost allocations start here"]
+        FROM["From-Space\n(current semi-space)"]
+        TO["To-Space\n(evacuation target)"]
+    end
+
+    subgraph "Old Generation"
+        OS["Old Space\n~hundreds of MB\nObjects that survived 2 GC cycles"]
+        LOS["Large Object Space\n>512KB objects\nNever moved"]
+        CS["Code Space\nJIT compiled code"]
+    end
+
+    NS -->|"allocation"| FROM
+    FROM -->|"Minor GC (Scavenge)\nsurvivors copied to To-Space"| TO
+    TO -->|"survived again → promoted"| OS
+    OS -->|"Major GC (Mark-Sweep-Compact)"| OS
+</div>
+<h3 id="minor-gc-scavenge-fast-frequent">Minor GC (Scavenge) — fast, frequent</h3>
+<ul>
+<li>Runs when New Space fills up (~every few ms in busy apps)</li>
+<li>Copies live objects from From-Space to To-Space</li>
+<li>Dead objects are simply abandoned — no free-list management</li>
+<li>Objects that survive 2 scavenges are <strong>promoted to Old Space</strong></li>
+<li>Pause: <strong>&lt; 1ms</strong> — nearly imperceptible</li>
+</ul>
+<h3 id="major-gc-mark-sweep-compact-slower-less-frequent">Major GC (Mark-Sweep-Compact) — slower, less frequent</h3>
+<ol>
+<li><strong>Mark</strong> — walk all roots (stack, globals), mark reachable objects</li>
+<li><strong>Sweep</strong> — reclaim memory of unmarked objects</li>
+<li><strong>Compact</strong> — move live objects together to eliminate fragmentation</li>
+</ol>
+<p>Pause: can be <strong>10–100ms</strong> in large heaps. V8 mitigates with:
+- <strong>Incremental marking</strong> — spread marking work across multiple small pauses
+- <strong>Concurrent marking</strong> — mark on background thread while JS runs
+- <strong>Parallel compaction</strong> — multiple threads compact simultaneously</p>
+<h3 id="what-causes-memory-leaks-in-js">What causes memory leaks in JS</h3>
+<pre><code class="language-js">// 1. Forgotten event listeners on long-lived elements
+window.addEventListener('resize', () =&gt; { /* holds closure */ });
+// Fix: removeEventListener when component unmounts
+
+// 2. Closures holding large data
+function init() {
+  const cache = new Array(1_000_000).fill(0); // 8MB
+  return () =&gt; cache[0]; // cache can never be GC'd as long as this function lives
+}
+
+// 3. Detached DOM nodes still referenced in JS
+let ref = document.getElementById('modal');
+document.body.removeChild(ref); // removed from DOM
+// but `ref` still holds it → entire DOM subtree stays in memory
+ref = null; // fix
+
+// 4. Timers never cleared
+const id = setInterval(() =&gt; { /* holds closure */ }, 1000);
+// Fix: clearInterval(id) when done
+
+// 5. Global accidental variables
+function foo() {
+  bar = 'oops'; // forgot `let` → window.bar → lives forever
+}
+</code></pre>
+<hr />
+<h2 id="turbofan-optimizations">TurboFan Optimizations</h2>
+<p>When TurboFan compiles a hot function, it makes <strong>speculative optimizations</strong> based on type feedback:</p>
+<h3 id="speculative-optimization">Speculative optimization</h3>
+<pre><code class="language-js">function add(a, b) { return a + b; }
+
+// Called 10,000 times with integers:
+add(1, 2); add(3, 4); // ...
+
+// TurboFan specializes: &quot;a and b are always Smi (small integer)&quot;
+// Emits a single native ADD instruction — no type checks
+
+// Then:
+add('hello', 'world'); // ← type assumption violated!
+// → DEOPTIMIZATION: throw away optimized code, back to bytecode
+// → Ignition re-profiles → TurboFan re-compiles with wider type assumption
+</code></pre>
+<h3 id="common-deoptimization-triggers">Common deoptimization triggers</h3>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Type change</td>
+<td><code>add(1,2)</code> → <code>add('a','b')</code> — type assumption invalidated</td>
+</tr>
+<tr>
+<td>Hidden class change</td>
+<td>Adding property after optimization lock</td>
+</tr>
+<tr>
+<td><code>arguments</code> object</td>
+<td>Accessing <code>arguments</code> in a function forces deopt</td>
+</tr>
+<tr>
+<td><code>try/catch</code></td>
+<td>Used to prevent optimization of entire function (in older V8)</td>
+</tr>
+<tr>
+<td><code>eval()</code></td>
+<td>Can introduce new variables — V8 cannot reason about scope</td>
+</tr>
+<tr>
+<td><code>delete</code></td>
+<td>Transitions object to dictionary mode</td>
+</tr>
+</tbody>
+</table>
+<h3 id="check-for-deoptimizations">Check for deoptimizations</h3>
+<pre><code class="language-bash"># Node.js — log deoptimizations
+node --trace-deopt --trace-opt app.js
+
+# or with v8-natives (in Node with --allow-natives-syntax)
+%OptimizeFunctionOnNextCall(myFn);
+myFn(1, 2);
+%GetOptimizationStatus(myFn); // 1 = optimized, 2 = not optimized
+</code></pre>
+<hr />
+<h2 id="scope-and-memory-how-v8-stores-variables">Scope and Memory — How V8 Stores Variables</h2>
+<table>
+<thead>
+<tr>
+<th>Variable location</th>
+<th>Where stored</th>
+<th>Lifecycle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Local variables (no closure)</td>
+<td>Stack frame</td>
+<td>Freed when function returns</td>
+</tr>
+<tr>
+<td>Closed-over variables</td>
+<td>Heap (Context object)</td>
+<td>Lives as long as any closure referencing it</td>
+</tr>
+<tr>
+<td>Objects</td>
+<td>Heap (New Space or Old Space)</td>
+<td>Lives until GC collects</td>
+</tr>
+<tr>
+<td>Large objects (&gt;512KB)</td>
+<td>Large Object Space</td>
+<td>Never moved by GC</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-js">function outer() {
+  const x = 1;          // x closed over → heap (Context)
+  const big = [];       // big closed over → heap (Context, then promoted)
+  return function inner() {
+    return x + big.length;
+  };
+}
+// outer's stack frame is gone but x and big live on the heap
+// inside a Context object pointed to by inner()
+</code></pre>
+<hr />
+<h2 id="practical-patterns-writing-v8-friendly-code">Practical Patterns — Writing V8-Friendly Code</h2>
+<pre><code class="language-js">// ✅ Initialize all properties in constructor — consistent hidden class
+class Vec2 {
+  constructor(x, y) { this.x = x; this.y = y; }
+}
+
+// ❌ Adding properties conditionally — diverging hidden classes
+class Vec2 {
+  constructor(x, y, label) {
+    this.x = x; this.y = y;
+    if (label) this.label = label; // two shapes
+  }
+}
+
+// ✅ Keep function signatures monomorphic — same types each call
+function process(item) { return item.value * 2; }
+items.forEach(process); // all items have same shape → monomorphic IC
+
+// ❌ Calling same function with wildly different shapes → megamorphic
+[{ value: 1 }, { value: '2', unit: 'px' }, { val: 3 }].forEach(process);
+
+// ✅ Avoid delete — use undefined instead
+obj.key = undefined; // keeps hidden class intact
+// ❌
+delete obj.key;      // transitions to dictionary mode
+
+// ✅ Pre-allocate arrays with known size
+const arr = new Array(1000); // V8 allocates contiguous block
+
+// ❌ Mixed-type arrays (polymorphic elements) — V8 cannot use fast paths
+const arr = [1, 'two', { three: 3 }]; // three different element kinds
+</code></pre>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>
+<p>"V8 uses a two-tier pipeline. Ignition interprets bytecode immediately — no startup delay. TurboFan compiles only hot functions (called frequently) to optimized machine code. This gives you fast startup AND fast steady-state."</p>
+</li>
+<li>
+<p>"Hidden classes are V8's way of making property access as fast as native struct field access. Every object gets a hidden class based on its shape. Objects with the same properties in the same order share a hidden class and can be optimized together. Adding properties in different orders, or using <code>delete</code>, breaks sharing."</p>
+</li>
+<li>
+<p>"Inline caching (IC) caches property lookup results by hidden class. Monomorphic IC — one shape — is fastest. Polymorphic — 2-4 shapes — is still fast. Megamorphic — 5+ shapes — abandons the cache entirely. A utility function called with many different object shapes goes megamorphic and is significantly slower."</p>
+</li>
+<li>
+<p>"V8's GC is generational. New Space is tiny (~a few MB), collected frequently with near-zero pause (Scavenge). Objects that survive two collections promote to Old Space, collected with Mark-Sweep-Compact which is heavier. Concurrent and incremental marking spread the pause across multiple frames."</p>
+</li>
+<li>
+<p>"TurboFan's optimizations are speculative — it assumes types won't change based on profiling. When an assumption is violated (type changes, hidden class changes), it deoptimizes — throws away the compiled code and falls back to bytecode. Repeated deoptimization of a function eventually makes V8 give up on optimizing it."</p>
+</li>
+<li>
+<p>"Common memory leaks: forgotten event listeners holding closures, detached DOM nodes referenced in JS, <code>setInterval</code> never cleared, accidental globals (missed <code>let/const</code>). The fix is always the same: remove the reference so GC can collect."</p>
+</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>
