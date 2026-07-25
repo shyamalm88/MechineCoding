@@ -277,6 +277,37 @@ class TestBuildIntegration(unittest.TestCase):
             self.assertIn("<title>A &amp; B &lt;script&gt;", html_out)
             self.assertNotIn("<title>A & B <script>", html_out)
 
+    def test_rebuild_removes_stale_output_for_deleted_source_file(self):
+        # "output_dir is fully overwritten on every run" is a documented
+        # guarantee: if a note is renamed/removed in source_dir, a
+        # rebuild must not leave its old notes/<slug>.html behind.
+        with tempfile.TemporaryDirectory() as source_dir, \
+                tempfile.TemporaryDirectory() as output_dir, \
+                tempfile.TemporaryDirectory() as assets_dir:
+
+            with open(os.path.join(assets_dir, "style.css"), "w") as f:
+                f.write("/* stub */")
+
+            alpha_path = os.path.join(source_dir, "alpha.md")
+            with open(alpha_path, "w") as f:
+                f.write("# Alpha\n")
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+            self.assertTrue(
+                os.path.exists(os.path.join(output_dir, "notes", "alpha.html"))
+            )
+
+            os.remove(alpha_path)
+            with open(os.path.join(source_dir, "beta.md"), "w") as f:
+                f.write("# Beta\n")
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+            self.assertFalse(
+                os.path.exists(os.path.join(output_dir, "notes", "alpha.html"))
+            )
+            self.assertTrue(
+                os.path.exists(os.path.join(output_dir, "notes", "beta.html"))
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
