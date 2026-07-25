@@ -15,7 +15,8 @@ any note in the left sidebar.
 The source of truth is `../Theory/*.md` and `../Theory/site.config.json`
 (title + category grouping).
 
-To rebuild after editing a note in `Theory/`:
+To rebuild after editing a note in `Theory/` (requires
+`pip3 install -r tools/md-site/requirements.txt` once):
 
 ```bash
 python3 tools/md-site/build.py Theory/ theory-notes/

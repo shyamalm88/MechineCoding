@@ -5,6 +5,12 @@ sidebar-navigable page per note, plus an `index.html` landing page. Used to
 build `theory-notes/` from `Theory/`; written to be reusable against any
 future markdown folder in this repo without modification.
 
+## Requirements
+
+```bash
+pip3 install -r tools/md-site/requirements.txt
+```
+
 ## Usage
 
 ```bash
