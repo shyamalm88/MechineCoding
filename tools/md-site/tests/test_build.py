@@ -325,6 +325,32 @@ class TestBuildIntegration(unittest.TestCase):
                 os.path.exists(os.path.join(output_dir, "notes", "beta.html"))
             )
 
+    def test_rebuild_preserves_hand_authored_files_in_output_dir(self):
+        # A file like theory-notes/README.md is hand-authored, lives in
+        # the same output_dir as the generated notes/ and assets/, and
+        # must survive a rebuild -- only the generated subdirectories get
+        # wiped, not the whole output_dir.
+        with tempfile.TemporaryDirectory() as source_dir, \
+                tempfile.TemporaryDirectory() as output_dir, \
+                tempfile.TemporaryDirectory() as assets_dir:
+
+            with open(os.path.join(assets_dir, "style.css"), "w") as f:
+                f.write("/* stub */")
+            with open(os.path.join(source_dir, "alpha.md"), "w") as f:
+                f.write("# Alpha\n")
+
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+            readme_path = os.path.join(output_dir, "README.md")
+            with open(readme_path, "w") as f:
+                f.write("hand-authored, not generated\n")
+
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+            self.assertTrue(os.path.exists(readme_path))
+            with open(readme_path) as f:
+                self.assertEqual(f.read(), "hand-authored, not generated\n")
+
 
 class TestBundledAssetsExist(unittest.TestCase):
     def test_required_asset_files_are_present(self):

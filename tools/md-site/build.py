@@ -205,17 +205,21 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
             )
         seen_slugs[slug] = filename
 
-    # Wipe output_dir up front so reruns can't leave stale pages behind
-    # (e.g. a note renamed or deleted in source_dir must not leave its
-    # old notes/<slug>.html sitting around) -- "output_dir is fully
-    # overwritten on every run" is a documented guarantee of this tool.
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
-
+    # Wipe the generated subdirectories up front so reruns can't leave
+    # stale pages behind (e.g. a note renamed or deleted in source_dir
+    # must not leave its old notes/<slug>.html sitting around). Scoped to
+    # notes/ and assets/ specifically -- NOT the whole output_dir --
+    # because a hand-authored file may legitimately live alongside the
+    # generated output in the same directory (e.g. theory-notes/README.md)
+    # and must survive a rebuild.
     notes_dir = os.path.join(output_dir, "notes")
+    if os.path.exists(notes_dir):
+        shutil.rmtree(notes_dir)
     os.makedirs(notes_dir, exist_ok=True)
 
     assets_out = os.path.join(output_dir, "assets")
+    if os.path.exists(assets_out):
+        shutil.rmtree(assets_out)
     shutil.copytree(assets_dir, assets_out)
 
     for filename in md_files:
