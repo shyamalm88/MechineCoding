@@ -153,6 +153,12 @@ class TestConvertMarkdown(unittest.TestCase):
         self.assertIn('<div class="mermaid">', result)
         self.assertIn('D["dog"] --> A["animal"]', result)
 
+    def test_rewrites_mixed_case_mermaid_fence_into_div(self):
+        text = '```Mermaid\ngraph TD\n    A --> B\n```\n'
+        result = build.convert_markdown(text)
+        self.assertNotIn("<pre>", result)
+        self.assertIn('<div class="mermaid">', result)
+
     def test_leaves_plain_code_fence_as_pre(self):
         text = "```\nplain text\n```\n"
         result = build.convert_markdown(text)

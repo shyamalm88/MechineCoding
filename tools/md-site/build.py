@@ -88,7 +88,7 @@ def build_sidebar_groups(md_files, config):
 
 
 MERMAID_FENCE_RE = re.compile(
-    r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.S
+    r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.S | re.I
 )
 
 
