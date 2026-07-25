@@ -104,6 +104,28 @@ def convert_markdown(text):
     return MERMAID_FENCE_RE.sub(replace_mermaid, body)
 
 
+def render_sidebar(groups, active_slug, title, link_prefix):
+    parts = [f'<h2 class="brand">{html.escape(title)}</h2>']
+    for category, files in groups:
+        items = []
+        for filename in files:
+            slug = slugify(filename)
+            label = title_from_filename(filename)
+            current = ' aria-current="page"' if slug == active_slug else ""
+            items.append(
+                f'<li><a href="{link_prefix}{slug}.html"{current}>{html.escape(label)}</a></li>'
+            )
+        items_html = "".join(items)
+        if category:
+            parts.append(
+                f'<details open><summary>{html.escape(category)}</summary>'
+                f"<ul>{items_html}</ul></details>"
+            )
+        else:
+            parts.append(f"<ul>{items_html}</ul>")
+    return "".join(parts)
+
+
 def main():
     if len(sys.argv) != 3:
         print("Usage: build.py <source-dir> <output-dir>", file=sys.stderr)

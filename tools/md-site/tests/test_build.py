@@ -170,5 +170,25 @@ class TestConvertMarkdown(unittest.TestCase):
         self.assertIn('<pre><code class="language-js">', result)
 
 
+class TestRenderSidebar(unittest.TestCase):
+    def test_renders_grouped_sidebar_with_active_link(self):
+        groups = [("Group 1", ["a.md"]), ("Group 2", ["b.md"])]
+        result = build.render_sidebar(
+            groups, active_slug="a", title="Theory Notes", link_prefix=""
+        )
+        self.assertIn('<h2 class="brand">Theory Notes</h2>', result)
+        self.assertIn("<summary>Group 1</summary>", result)
+        self.assertIn('<a href="a.html" aria-current="page">A</a>', result)
+        self.assertIn('<a href="b.html">B</a>', result)
+
+    def test_renders_flat_sidebar_when_category_is_none(self):
+        groups = [(None, ["a.md"])]
+        result = build.render_sidebar(
+            groups, active_slug=None, title="T", link_prefix="notes/"
+        )
+        self.assertNotIn("<summary>", result)
+        self.assertIn('<a href="notes/a.html">A</a>', result)
+
+
 if __name__ == "__main__":
     unittest.main()
