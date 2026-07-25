@@ -137,5 +137,32 @@ class TestBuildSidebarGroups(unittest.TestCase):
         self.assertEqual(groups, [(None, ["b.md", "a.md"])])
 
 
+class TestConvertMarkdown(unittest.TestCase):
+    def test_renders_basic_markdown(self):
+        result = build.convert_markdown("**bold** text")
+        self.assertIn("<strong>bold</strong>", result)
+
+    def test_renders_tables(self):
+        result = build.convert_markdown("| a | b |\n|---|---|\n| 1 | 2 |\n")
+        self.assertIn("<table>", result)
+
+    def test_rewrites_mermaid_fence_into_div(self):
+        text = '```mermaid\ngraph TD\n    D["dog"] --> A["animal"]\n```\n'
+        result = build.convert_markdown(text)
+        self.assertNotIn("<pre>", result)
+        self.assertIn('<div class="mermaid">', result)
+        self.assertIn('D["dog"] --> A["animal"]', result)
+
+    def test_leaves_plain_code_fence_as_pre(self):
+        text = "```\nplain text\n```\n"
+        result = build.convert_markdown(text)
+        self.assertIn("<pre><code>plain text", result)
+
+    def test_leaves_language_tagged_fence_as_pre_for_highlightjs(self):
+        text = "```js\nconst x = 1;\n```\n"
+        result = build.convert_markdown(text)
+        self.assertIn('<pre><code class="language-js">', result)
+
+
 if __name__ == "__main__":
     unittest.main()

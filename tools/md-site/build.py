@@ -4,10 +4,13 @@
 Usage:
     python3 build.py <source-dir> <output-dir>
 """
+import html
 import json
 import os
 import re
 import sys
+
+import markdown as md_lib
 
 
 ACRONYM_OVERRIDES = {
@@ -82,6 +85,23 @@ def build_sidebar_groups(md_files, config):
             )
         groups.setdefault(category, []).append(filename)
     return list(groups.items())
+
+
+MERMAID_FENCE_RE = re.compile(
+    r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.S
+)
+
+
+def convert_markdown(text):
+    body = md_lib.markdown(
+        text, extensions=["fenced_code", "tables", "toc", "attr_list"]
+    )
+
+    def replace_mermaid(match):
+        raw = html.unescape(match.group(1)).rstrip("\n")
+        return f'<div class="mermaid">\n{raw}\n</div>'
+
+    return MERMAID_FENCE_RE.sub(replace_mermaid, body)
 
 
 def main():
