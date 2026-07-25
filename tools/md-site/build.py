@@ -4,7 +4,40 @@
 Usage:
     python3 build.py <source-dir> <output-dir>
 """
+import os
+import re
 import sys
+
+
+ACRONYM_OVERRIDES = {
+    "javascript": "JavaScript",
+    "graphql": "GraphQL",
+    "cors": "CORS",
+    "sdk": "SDK",
+    "cdn": "CDN",
+    "v8": "V8",
+}
+
+
+def slugify(filename):
+    name = os.path.splitext(filename)[0]
+    name = name.lower().replace(" ", "-")
+    name = re.sub(r"[^a-z0-9\-]", "", name)
+    return name
+
+
+def title_from_filename(filename):
+    name = os.path.splitext(filename)[0]
+    words = re.split(r"[-_ ]+", name)
+    titled = []
+    for word in words:
+        override = ACRONYM_OVERRIDES.get(word.lower())
+        titled.append(override if override else word[:1].upper() + word[1:])
+    return " ".join(titled)
+
+
+def discover_md_files(source_dir):
+    return sorted(f for f in os.listdir(source_dir) if f.endswith(".md"))
 
 
 def main():
