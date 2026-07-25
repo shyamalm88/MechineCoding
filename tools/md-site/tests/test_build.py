@@ -190,5 +190,90 @@ class TestRenderSidebar(unittest.TestCase):
         self.assertIn('<a href="notes/a.html">A</a>', result)
 
 
+class TestBuildIntegration(unittest.TestCase):
+    def test_generates_index_and_note_pages(self):
+        with tempfile.TemporaryDirectory() as source_dir, \
+                tempfile.TemporaryDirectory() as output_dir, \
+                tempfile.TemporaryDirectory() as assets_dir:
+
+            with open(os.path.join(source_dir, "alpha.md"), "w") as f:
+                f.write("# Alpha Note\n\nHello **world**.\n")
+            with open(os.path.join(source_dir, "beta.md"), "w") as f:
+                f.write("# Beta Note\n\nSecond note.\n")
+            with open(os.path.join(source_dir, "site.config.json"), "w") as f:
+                json.dump(
+                    {
+                        "title": "Test Site",
+                        "categories": {"alpha.md": "Group 1", "beta.md": "Group 1"},
+                    },
+                    f,
+                )
+            with open(os.path.join(assets_dir, "style.css"), "w") as f:
+                f.write("/* stub */")
+
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+            index_path = os.path.join(output_dir, "index.html")
+            alpha_path = os.path.join(output_dir, "notes", "alpha.html")
+            beta_path = os.path.join(output_dir, "notes", "beta.html")
+
+            self.assertTrue(os.path.exists(index_path))
+            self.assertTrue(os.path.exists(alpha_path))
+            self.assertTrue(os.path.exists(beta_path))
+            self.assertTrue(
+                os.path.exists(os.path.join(output_dir, "assets", "style.css"))
+            )
+
+            with open(alpha_path) as f:
+                alpha_html = f.read()
+            self.assertIn("<title>Alpha Note — Test Site</title>", alpha_html)
+            self.assertIn("<strong>world</strong>", alpha_html)
+            self.assertIn('href="../assets/style.css"', alpha_html)
+
+            with open(index_path) as f:
+                index_html = f.read()
+            self.assertIn('href="notes/alpha.html"', index_html)
+            self.assertIn("<summary>Group 1</summary>", index_html)
+
+    def test_raises_on_duplicate_slug_collision(self):
+        # "a.md" and "A.md" both slugify to "a" (slugify lowercases).
+        # build() must fail loudly rather than silently let one file's
+        # output overwrite the other's.
+        with tempfile.TemporaryDirectory() as source_dir, \
+                tempfile.TemporaryDirectory() as output_dir, \
+                tempfile.TemporaryDirectory() as assets_dir:
+
+            with open(os.path.join(source_dir, "a.md"), "w") as f:
+                f.write("# First\n")
+            with open(os.path.join(source_dir, "A.md"), "w") as f:
+                f.write("# Second\n")
+            with open(os.path.join(assets_dir, "style.css"), "w") as f:
+                f.write("/* stub */")
+
+            with self.assertRaises(ValueError):
+                build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+    def test_html_escapes_title_in_title_tag(self):
+        # extract_title() returns raw markdown text (Task 3), not
+        # HTML-escaped. The <title> tag must escape it, or a heading like
+        # "# A & B <script>" would break the page's <head>.
+        with tempfile.TemporaryDirectory() as source_dir, \
+                tempfile.TemporaryDirectory() as output_dir, \
+                tempfile.TemporaryDirectory() as assets_dir:
+
+            with open(os.path.join(source_dir, "weird.md"), "w") as f:
+                f.write("# A & B <script>\n\nBody.\n")
+            with open(os.path.join(assets_dir, "style.css"), "w") as f:
+                f.write("/* stub */")
+
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+            with open(os.path.join(output_dir, "notes", "weird.html")) as f:
+                html_out = f.read()
+
+            self.assertIn("<title>A &amp; B &lt;script&gt;", html_out)
+            self.assertNotIn("<title>A & B <script>", html_out)
+
+
 if __name__ == "__main__":
     unittest.main()
