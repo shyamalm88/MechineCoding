@@ -295,9 +295,11 @@ class TestBuildIntegration(unittest.TestCase):
             self.assertNotIn("<title>A & B <script>", html_out)
 
     def test_rebuild_removes_stale_output_for_deleted_source_file(self):
-        # "output_dir is fully overwritten on every run" is a documented
-        # guarantee: if a note is renamed/removed in source_dir, a
-        # rebuild must not leave its old notes/<slug>.html behind.
+        # notes/ and assets/ are fully regenerated on every run (though
+        # other files placed directly in output_dir are left alone -- see
+        # test_rebuild_preserves_hand_authored_files_in_output_dir below):
+        # if a note is renamed/removed in source_dir, a rebuild must not
+        # leave its old notes/<slug>.html behind.
         with tempfile.TemporaryDirectory() as source_dir, \
                 tempfile.TemporaryDirectory() as output_dir, \
                 tempfile.TemporaryDirectory() as assets_dir:
@@ -397,6 +399,15 @@ class TestRealTheorySmoke(unittest.TestCase):
                 ]
             )
             self.assertEqual(note_count, 24)
+
+            # A typo'd near-duplicate category (e.g. a stray double space)
+            # wouldn't raise an exception anywhere -- it would just
+            # silently render as an extra sidebar group. Pin the real
+            # config down to exactly the 7 intended categories so a typo
+            # like that fails loudly here instead.
+            with open(os.path.join(output_dir, "index.html"), encoding="utf-8") as f:
+                index_html = f.read()
+            self.assertEqual(index_html.count("<details"), 7)
 
 
 if __name__ == "__main__":
