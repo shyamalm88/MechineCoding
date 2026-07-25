@@ -131,14 +131,14 @@ dog.xyz;       // not found anywhere → undefined (chain ends at null)
 </code></pre>
 <div class="mermaid">
 graph TD
-    D["dog\n{ bark }"]
-    A["animal\n{ breathe }"]
-    OP["Object.prototype\n{ toString, hasOwnProperty... }"]
-    N["null"]
+    D[&quot;dog\n{ bark }&quot;]
+    A[&quot;animal\n{ breathe }&quot;]
+    OP[&quot;Object.prototype\n{ toString, hasOwnProperty... }&quot;]
+    N[&quot;null&quot;]
 
-    D -->|"__proto__"| A
-    A -->|"__proto__"| OP
-    OP -->|"__proto__"| N
+    D --&gt;|&quot;__proto__&quot;| A
+    A --&gt;|&quot;__proto__&quot;| OP
+    OP --&gt;|&quot;__proto__&quot;| N
 </div>
 <h3 id="class-is-syntactic-sugar"><code>class</code> is syntactic sugar</h3>
 <pre><code class="language-js">class Animal {
@@ -184,12 +184,12 @@ console.log('5');
 </code></pre>
 <div class="mermaid">
 flowchart TD
-    S["Synchronous code runs\n(call stack)"]
-    M["Microtask queue drains\n(ALL pending microtasks)\nPromise.then · queueMicrotask · MutationObserver"]
-    T["One macrotask runs\n(setTimeout · setInterval · I/O)"]
-    R["Render if needed\n(requestAnimationFrame → paint)"]
+    S[&quot;Synchronous code runs\n(call stack)&quot;]
+    M[&quot;Microtask queue drains\n(ALL pending microtasks)\nPromise.then · queueMicrotask · MutationObserver&quot;]
+    T[&quot;One macrotask runs\n(setTimeout · setInterval · I/O)&quot;]
+    R[&quot;Render if needed\n(requestAnimationFrame → paint)&quot;]
 
-    S --> M --> T --> R --> M
+    S --&gt; M --&gt; T --&gt; R --&gt; M
 </div>
 <h3 id="promise-states">Promise States</h3>
 <pre><code class="language-js">// A Promise is always in one of 3 states:

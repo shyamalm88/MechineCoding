@@ -31,6 +31,8 @@ npm run preview
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
 | `system-design/` | Markdown architecture docs (frontend system design) |
 | `Theory/` | Markdown reference notes (browser internals, JS core, etc.) |
+| `tools/md-site/` | Reusable markdown-to-HTML-site generator (source-agnostic, not tied to `Theory/`) |
+| `theory-notes/` | Generated static site (sidebar + one page per note) built from `Theory/*.md` via `tools/md-site/` — not hand-edited |
 
 ### DSA file format
 Every DSA file follows the same convention: a JSDoc header with problem statement, intuition, and complexity, then the implementation, then test cases as plain `console.log` calls at the bottom. Run any file with Node to execute those tests.
@@ -53,3 +55,10 @@ Solution components must use a **default export** and a `.jsx` extension (Vite c
 
 ### System design docs
 The `system-design/latest & updated/` folder contains the canonical versions. Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.
+
+### Markdown-to-site generator (`tools/md-site/`)
+Converts any folder of `.md` files into a browsable static HTML site — see `tools/md-site/README.md` for full usage. `Theory/` is its first source; `theory-notes/` is the generated output (never hand-edit `theory-notes/index.html`, `notes/`, or `assets/` — only `theory-notes/README.md` is hand-authored). Regenerate after editing a note:
+```bash
+python3 tools/md-site/build.py Theory/ theory-notes/
+```
+Sidebar grouping and title come from `Theory/site.config.json`; category order follows that file's own key order, not alphabetical filename order.

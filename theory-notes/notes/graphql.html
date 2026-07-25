@@ -156,15 +156,15 @@ sequenceDiagram
     participant DL as DataLoader
     participant DB as Database
 
-    R1->>DL: load(teamId=1)
-    R2->>DL: load(teamId=2)
-    R3->>DL: load(teamId=3)
+    R1-&gt;&gt;DL: load(teamId=1)
+    R2-&gt;&gt;DL: load(teamId=2)
+    R3-&gt;&gt;DL: load(teamId=3)
     Note over DL: Collects all IDs in this event loop tick
-    DL->>DB: SELECT * FROM teams WHERE id IN (1,2,3)
-    DB-->>DL: [team1, team2, team3]
-    DL-->>R1: team1
-    DL-->>R2: team2
-    DL-->>R3: team3
+    DL-&gt;&gt;DB: SELECT * FROM teams WHERE id IN (1,2,3)
+    DB--&gt;&gt;DL: [team1, team2, team3]
+    DL--&gt;&gt;R1: team1
+    DL--&gt;&gt;R2: team2
+    DL--&gt;&gt;R3: team3
 </div>
 <p><strong>DataLoader also caches within a request</strong> — if two resolvers request the same team, the second call hits the in-memory cache. Clear per-request to avoid stale data between requests.</p>
 <hr />
@@ -350,20 +350,20 @@ extend type User @key(fields: &quot;id&quot;) {
 </code></pre>
 <div class="mermaid">
 graph TD
-    Client["Client\nSends one GraphQL query"]
-    GW["Apollo Gateway / Router\n(Supergraph)"]
-    US["Users Service\n(owns User type)"]
-    PS["Posts Service\n(owns Post type)"]
-    TS["Teams Service\n(owns Team type)"]
+    Client[&quot;Client\nSends one GraphQL query&quot;]
+    GW[&quot;Apollo Gateway / Router\n(Supergraph)&quot;]
+    US[&quot;Users Service\n(owns User type)&quot;]
+    PS[&quot;Posts Service\n(owns Post type)&quot;]
+    TS[&quot;Teams Service\n(owns Team type)&quot;]
 
-    Client --> GW
-    GW -->|"sub-query for User fields"| US
-    GW -->|"sub-query for Post fields"| PS
-    GW -->|"sub-query for Team fields"| TS
-    US --> GW
-    PS --> GW
-    TS --> GW
-    GW -->|"merged response"| Client
+    Client --&gt; GW
+    GW --&gt;|&quot;sub-query for User fields&quot;| US
+    GW --&gt;|&quot;sub-query for Post fields&quot;| PS
+    GW --&gt;|&quot;sub-query for Team fields&quot;| TS
+    US --&gt; GW
+    PS --&gt; GW
+    TS --&gt; GW
+    GW --&gt;|&quot;merged response&quot;| Client
 </div>
 <p><strong>The Gateway</strong> composes queries into sub-queries per service, executes them in parallel where possible, merges results, returns one response to the client.</p>
 <hr />

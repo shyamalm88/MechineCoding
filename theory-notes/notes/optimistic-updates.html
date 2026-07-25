@@ -123,22 +123,22 @@ sequenceDiagram
     participant QC as Query Cache
     participant API as Server
 
-    U->>UI: clicks Like
-    UI->>QC: cancelQueries (prevent race)
-    UI->>QC: snapshot previous state
-    UI->>QC: setQueryData (optimistic +1)
-    UI-->>U: UI shows liked instantly ✅
+    U-&gt;&gt;UI: clicks Like
+    UI-&gt;&gt;QC: cancelQueries (prevent race)
+    UI-&gt;&gt;QC: snapshot previous state
+    UI-&gt;&gt;QC: setQueryData (optimistic +1)
+    UI--&gt;&gt;U: UI shows liked instantly ✅
 
-    UI->>API: POST /likes (async, in background)
+    UI-&gt;&gt;API: POST /likes (async, in background)
 
     alt Success
-        API-->>UI: 200 OK
-        UI->>QC: invalidateQueries (refetch real data)
-        QC-->>UI: server data confirms
+        API--&gt;&gt;UI: 200 OK
+        UI-&gt;&gt;QC: invalidateQueries (refetch real data)
+        QC--&gt;&gt;UI: server data confirms
     else Failure
-        API-->>UI: 500 Error
-        UI->>QC: setQueryData(previous) — rollback
-        UI-->>U: UI reverts to previous ❌
+        API--&gt;&gt;UI: 500 Error
+        UI-&gt;&gt;QC: setQueryData(previous) — rollback
+        UI--&gt;&gt;U: UI reverts to previous ❌
     end
 </div>
 <hr />

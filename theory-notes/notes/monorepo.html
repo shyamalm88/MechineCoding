@@ -129,18 +129,18 @@ turbo run lint test build          # run multiple tasks
 <h3 id="task-dependency-graph">Task Dependency Graph</h3>
 <div class="mermaid">
 graph TD
-    UB["packages/ui build"]
-    AB["packages/api-client build"]
-    WB["apps/web build"]
-    MB["apps/mobile build"]
-    DB["apps/admin build"]
+    UB[&quot;packages/ui build&quot;]
+    AB[&quot;packages/api-client build&quot;]
+    WB[&quot;apps/web build&quot;]
+    MB[&quot;apps/mobile build&quot;]
+    DB[&quot;apps/admin build&quot;]
 
-    UB --> WB
-    UB --> MB
-    UB --> DB
-    AB --> WB
-    AB --> MB
-    AB --> DB
+    UB --&gt; WB
+    UB --&gt; MB
+    UB --&gt; DB
+    AB --&gt; WB
+    AB --&gt; MB
+    AB --&gt; DB
 
     style UB fill:#f9f,stroke:#333
     style AB fill:#f9f,stroke:#333
@@ -188,15 +188,15 @@ nx affected --target=build --base=main --head=HEAD
 </code></pre>
 <div class="mermaid">
 graph TD
-    UI["packages/ui\n⚠️ CHANGED"]
-    API["packages/api-client\n✅ unchanged"]
-    WEB["apps/web\n🔴 AFFECTED (depends on ui)"]
-    MOB["apps/mobile\n🔴 AFFECTED (depends on ui)"]
-    ADM["apps/admin\n✅ not affected"]
+    UI[&quot;packages/ui\n⚠️ CHANGED&quot;]
+    API[&quot;packages/api-client\n✅ unchanged&quot;]
+    WEB[&quot;apps/web\n🔴 AFFECTED (depends on ui)&quot;]
+    MOB[&quot;apps/mobile\n🔴 AFFECTED (depends on ui)&quot;]
+    ADM[&quot;apps/admin\n✅ not affected&quot;]
 
-    UI --> WEB
-    UI --> MOB
-    API --> WEB
+    UI --&gt; WEB
+    UI --&gt; MOB
+    API --&gt; WEB
 </div>
 <p>Only <code>ui</code>, <code>web</code>, <code>mobile</code> run their tests. <code>admin</code> and <code>api-client</code> skip. On a PR touching only <code>packages/ui</code>, this saves 60% of CI time.</p>
 <h3 id="turborepo-vs-nx">Turborepo vs Nx</h3>
@@ -332,20 +332,20 @@ module.exports = {
 <p><strong>Deployment strategy:</strong> Each app in <code>apps/</code> deploys independently. CI detects which apps were affected, builds only those, deploys only those.</p>
 <div class="mermaid">
 flowchart TD
-    PR["PR merged to main"]
-    DIFF["Git diff — what changed?"]
-    AF["Affected graph\n(changed + downstream)"]
-    B["Build affected apps in parallel"]
-    T["Test affected packages in parallel"]
-    D1["Deploy apps/web → Vercel"]
-    D2["Deploy apps/admin → Vercel"]
-    PUB["Publish @my-org/ui → npm\n(if changesets present)"]
+    PR[&quot;PR merged to main&quot;]
+    DIFF[&quot;Git diff — what changed?&quot;]
+    AF[&quot;Affected graph\n(changed + downstream)&quot;]
+    B[&quot;Build affected apps in parallel&quot;]
+    T[&quot;Test affected packages in parallel&quot;]
+    D1[&quot;Deploy apps/web → Vercel&quot;]
+    D2[&quot;Deploy apps/admin → Vercel&quot;]
+    PUB[&quot;Publish @my-org/ui → npm\n(if changesets present)&quot;]
 
-    PR --> DIFF --> AF --> B
-    AF --> T
-    B --> D1
-    B --> D2
-    T --> PUB
+    PR --&gt; DIFF --&gt; AF --&gt; B
+    AF --&gt; T
+    B --&gt; D1
+    B --&gt; D2
+    T --&gt; PUB
 </div>
 <hr />
 <h2 id="interview-summary">Interview Summary</h2>

@@ -125,26 +125,26 @@ try {
 <h2 id="sdk-architecture">SDK Architecture</h2>
 <div class="mermaid">
 graph TD
-    C["Consumer Code"]
-    SDK["SDK Entry Point\nnew MySDK({ apiKey })"]
-    AUTH["Auth Manager\ntoken storage · refresh · injection"]
-    HTTP["HTTP Client\nbase URL · headers · timeout"]
-    RETRY["Retry Handler\nexponential backoff · jitter"]
-    ERR["Error Normalizer\nHTTP errors → SDKError"]
-    INTER["Interceptors\nrequest/response middleware chain"]
-    RES["Resource Modules\nusers · payments · events"]
-    EVT["Event Emitter\non('request') · on('error') · on('rateLimit')"]
+    C[&quot;Consumer Code&quot;]
+    SDK[&quot;SDK Entry Point\nnew MySDK({ apiKey })&quot;]
+    AUTH[&quot;Auth Manager\ntoken storage · refresh · injection&quot;]
+    HTTP[&quot;HTTP Client\nbase URL · headers · timeout&quot;]
+    RETRY[&quot;Retry Handler\nexponential backoff · jitter&quot;]
+    ERR[&quot;Error Normalizer\nHTTP errors → SDKError&quot;]
+    INTER[&quot;Interceptors\nrequest/response middleware chain&quot;]
+    RES[&quot;Resource Modules\nusers · payments · events&quot;]
+    EVT[&quot;Event Emitter\non('request') · on('error') · on('rateLimit')&quot;]
 
-    C --> SDK
-    SDK --> AUTH
-    SDK --> RES
-    RES --> INTER
-    INTER --> HTTP
-    HTTP --> RETRY
-    RETRY --> ERR
-    SDK --> EVT
-    HTTP --> EVT
-    ERR --> EVT
+    C --&gt; SDK
+    SDK --&gt; AUTH
+    SDK --&gt; RES
+    RES --&gt; INTER
+    INTER --&gt; HTTP
+    HTTP --&gt; RETRY
+    RETRY --&gt; ERR
+    SDK --&gt; EVT
+    HTTP --&gt; EVT
+    ERR --&gt; EVT
 </div>
 <hr />
 <h2 id="package-structure">Package Structure</h2>
@@ -476,17 +476,17 @@ sequenceDiagram
     participant SDK
     participant API
 
-    SDK->>API: Request (attempt 1)
-    API-->>SDK: 503 Service Unavailable (retryable)
+    SDK-&gt;&gt;API: Request (attempt 1)
+    API--&gt;&gt;SDK: 503 Service Unavailable (retryable)
     Note over SDK: wait 500ms + jitter
 
-    SDK->>API: Request (attempt 2)
-    API-->>SDK: 503 Service Unavailable (retryable)
+    SDK-&gt;&gt;API: Request (attempt 2)
+    API--&gt;&gt;SDK: 503 Service Unavailable (retryable)
     Note over SDK: wait 1000ms + jitter
 
-    SDK->>API: Request (attempt 3)
-    API-->>SDK: 200 OK
-    SDK-->>SDK: return result
+    SDK-&gt;&gt;API: Request (attempt 3)
+    API--&gt;&gt;SDK: 200 OK
+    SDK--&gt;&gt;SDK: return result
 </div>
 <hr />
 <h2 id="authentication-patterns">Authentication Patterns</h2>

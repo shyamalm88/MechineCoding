@@ -27,17 +27,17 @@ sequenceDiagram
     participant S as Server
     participant R as React (client)
 
-    B->>S: GET /page
-    S->>S: renderToString(<App />) — React renders to HTML string
-    S-->>B: HTML + <script src="bundle.js">
-    B->>B: Browser paints HTML (FCP — fast, no JS needed)
+    B-&gt;&gt;S: GET /page
+    S-&gt;&gt;S: renderToString(&lt;App /&gt;) — React renders to HTML string
+    S--&gt;&gt;B: HTML + &lt;script src=&quot;bundle.js&quot;&gt;
+    B-&gt;&gt;B: Browser paints HTML (FCP — fast, no JS needed)
     Note over B: Page is VISIBLE but NOT interactive
-    B->>B: Downloads bundle.js
-    B->>R: ReactDOM.hydrateRoot(document, <App />)
-    R->>R: Renders virtual DOM tree (same as server output)
-    R->>B: Walks real DOM, matches nodes, attaches event listeners
+    B-&gt;&gt;B: Downloads bundle.js
+    B-&gt;&gt;R: ReactDOM.hydrateRoot(document, &lt;App /&gt;)
+    R-&gt;&gt;R: Renders virtual DOM tree (same as server output)
+    R-&gt;&gt;B: Walks real DOM, matches nodes, attaches event listeners
     Note over B: Page is NOW interactive (TTI)
-    B->>B: User interactions work
+    B-&gt;&gt;B: User interactions work
 </div>
 <p><strong>The gap between FCP (paint) and TTI (interactive) is the "uncanny valley"</strong> — the page looks complete but buttons don't work.</p>
 <hr />
@@ -124,19 +124,19 @@ function App() {
 <p><strong>Priority hydration:</strong> If the user clicks on <code>&lt;Comments&gt;</code> before it's hydrated, React interrupts hydration of everything else and hydrates <code>&lt;Comments&gt;</code> first to respond to the click.</p>
 <div class="mermaid">
 flowchart TD
-    HTML["Server HTML received\n(Full page visible instantly)"]
-    H1["Hydrate Header\n(no Suspense — eager)"]
-    H2["Hydrate Comments\n(Suspense — waits for data stream)"]
-    H3["Hydrate Sidebar\n(Suspense — waits for data stream)"]
-    U["User clicks Comments\nbefore it's hydrated"]
-    INT["React INTERRUPTS\nSidebar hydration"]
-    PRI["Hydrate Comments FIRST\n(priority bump)"]
-    RES["Resume Sidebar hydration"]
+    HTML[&quot;Server HTML received\n(Full page visible instantly)&quot;]
+    H1[&quot;Hydrate Header\n(no Suspense — eager)&quot;]
+    H2[&quot;Hydrate Comments\n(Suspense — waits for data stream)&quot;]
+    H3[&quot;Hydrate Sidebar\n(Suspense — waits for data stream)&quot;]
+    U[&quot;User clicks Comments\nbefore it's hydrated&quot;]
+    INT[&quot;React INTERRUPTS\nSidebar hydration&quot;]
+    PRI[&quot;Hydrate Comments FIRST\n(priority bump)&quot;]
+    RES[&quot;Resume Sidebar hydration&quot;]
 
-    HTML --> H1
-    H1 --> H2
-    H1 --> H3
-    U --> INT --> PRI --> RES
+    HTML --&gt; H1
+    H1 --&gt; H2
+    H1 --&gt; H3
+    U --&gt; INT --&gt; PRI --&gt; RES
 </div>
 <hr />
 <h2 id="streaming-ssr">Streaming SSR</h2>
@@ -159,13 +159,13 @@ sequenceDiagram
     participant B as Browser
     participant S as Server
 
-    B->>S: GET /
-    S-->>B: <html><head>...</head><body><Header/>... (streams immediately)
-    B->>B: Paints Header (FCP — fast)
-    S-->>B: <main>Loading...</main> (Suspense fallback streamed)
-    B->>B: User sees spinner
-    S-->>B: <script>replaceContent(commentsHTML)</script> (data ready, streamed)
-    B->>B: Spinner replaced with real Comments
+    B-&gt;&gt;S: GET /
+    S--&gt;&gt;B: &lt;html&gt;&lt;head&gt;...&lt;/head&gt;&lt;body&gt;&lt;Header/&gt;... (streams immediately)
+    B-&gt;&gt;B: Paints Header (FCP — fast)
+    S--&gt;&gt;B: &lt;main&gt;Loading...&lt;/main&gt; (Suspense fallback streamed)
+    B-&gt;&gt;B: User sees spinner
+    S--&gt;&gt;B: &lt;script&gt;replaceContent(commentsHTML)&lt;/script&gt; (data ready, streamed)
+    B-&gt;&gt;B: Spinner replaced with real Comments
     Note over B,S: Each piece arrives and paints as it's ready
 </div>
 <p><strong>Why this matters:</strong> TTFB (time to first byte) is instant. FCP is fast. Individual sections appear as their data is ready — no single blocking waterfall.</p>
@@ -229,13 +229,13 @@ function AddToCart({ productId }) {
 <p><strong>The serialization boundary:</strong> Server Components can pass props to Client Components, but only <strong>serializable data</strong> (strings, numbers, objects) — not functions, class instances, or Promises.</p>
 <div class="mermaid">
 graph TD
-    SC["Server Component\n(runs on server only)\nDB queries · secrets · file system"]
-    CC["Client Component\n(ships JS to browser)\nuseState · events · browser APIs"]
-    P["Serializable props only\n(strings · numbers · plain objects)"]
+    SC[&quot;Server Component\n(runs on server only)\nDB queries · secrets · file system&quot;]
+    CC[&quot;Client Component\n(ships JS to browser)\nuseState · events · browser APIs&quot;]
+    P[&quot;Serializable props only\n(strings · numbers · plain objects)&quot;]
 
-    SC -->|P| CC
-    SC -->|"rendered as HTML/JSON\n(no JS bundle)"| Browser
-    CC -->|"JS bundle\n+ hydration"| Browser
+    SC --&gt;|P| CC
+    SC --&gt;|&quot;rendered as HTML/JSON\n(no JS bundle)&quot;| Browser
+    CC --&gt;|&quot;JS bundle\n+ hydration&quot;| Browser
 </div>
 <hr />
 <h2 id="progressive-hydration">Progressive Hydration</h2>

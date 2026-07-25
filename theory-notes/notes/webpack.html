@@ -186,35 +186,35 @@ entry: { app: './src/app.js', admin: './src/admin.js' }
 <h2 id="how-webpack-works-internally">How Webpack Works — Internally</h2>
 <div class="mermaid">
 flowchart TD
-    E["📄 Entry Point\nindex.js"]
-    R["🔍 Resolver\nFind file on disk"]
-    L["⚙️ Loaders\nTransform file → JS module\nbabel-loader · css-loader · ts-loader"]
-    G["🕸️ Dependency Graph\nRecursively follow all imports"]
-    P["🔌 Plugins\nOperate on full compilation\nMinify · Extract CSS · Inject HTML"]
-    C["📦 Chunks\nGroup modules into output files\ninitial · async · runtime"]
-    O["💾 Output\ndist/app.[hash].js\ndist/vendors.[hash].js\ndist/styles.[hash].css"]
+    E[&quot;📄 Entry Point\nindex.js&quot;]
+    R[&quot;🔍 Resolver\nFind file on disk&quot;]
+    L[&quot;⚙️ Loaders\nTransform file → JS module\nbabel-loader · css-loader · ts-loader&quot;]
+    G[&quot;🕸️ Dependency Graph\nRecursively follow all imports&quot;]
+    P[&quot;🔌 Plugins\nOperate on full compilation\nMinify · Extract CSS · Inject HTML&quot;]
+    C[&quot;📦 Chunks\nGroup modules into output files\ninitial · async · runtime&quot;]
+    O[&quot;💾 Output\ndist/app.[hash].js\ndist/vendors.[hash].js\ndist/styles.[hash].css&quot;]
 
-    E --> R --> L --> G
-    G -->|"import('./Dashboard')\nasync chunk"| G
-    G --> P --> C --> O
+    E --&gt; R --&gt; L --&gt; G
+    G --&gt;|&quot;import('./Dashboard')\nasync chunk&quot;| G
+    G --&gt; P --&gt; C --&gt; O
 </div>
 <p><strong>Dependency graph example:</strong></p>
 <div class="mermaid">
 graph TD
-    idx["index.js\n(entry)"]
-    app["App.jsx\nbabel-loader → JS"]
-    hdr["Header.jsx\nbabel-loader → JS"]
-    css["styles.css\ncss-loader → JS module\nMiniCssExtractPlugin → .css file"]
-    utl["utils.js"]
-    lod["lodash\nnode_modules"]
-    img["logo.png\nasset/resource → URL"]
+    idx[&quot;index.js\n(entry)&quot;]
+    app[&quot;App.jsx\nbabel-loader → JS&quot;]
+    hdr[&quot;Header.jsx\nbabel-loader → JS&quot;]
+    css[&quot;styles.css\ncss-loader → JS module\nMiniCssExtractPlugin → .css file&quot;]
+    utl[&quot;utils.js&quot;]
+    lod[&quot;lodash\nnode_modules&quot;]
+    img[&quot;logo.png\nasset/resource → URL&quot;]
 
-    idx --> app
-    app --> hdr
-    app --> css
-    idx --> utl
-    utl --> lod
-    hdr --> img
+    idx --&gt; app
+    app --&gt; hdr
+    app --&gt; css
+    idx --&gt; utl
+    utl --&gt; lod
+    hdr --&gt; img
 </div>
 <p>Everything is a module — CSS, images, fonts. Webpack handles them all through loaders.</p>
 <hr />
@@ -247,22 +247,22 @@ graph TD
 <p>Without it, 1 giant bundle → user downloads all code upfront even for pages they never visit.</p>
 <div class="mermaid">
 flowchart LR
-    subgraph "Without splitting"
-        B1["bundle.js\n2 MB\n(Home + Dashboard + Admin\n+ React + Lodash)"]
+    subgraph &quot;Without splitting&quot;
+        B1[&quot;bundle.js\n2 MB\n(Home + Dashboard + Admin\n+ React + Lodash)&quot;]
     end
 
-    subgraph "With splitting"
-        B2["vendors.js\n1.8 MB\ncached long-term"]
-        B3["app.js\n150 KB\nre-downloaded on deploy"]
-        B4["dashboard.chunk.js\n50 KB\nlazy — loaded on /dashboard only"]
-        B5["admin.chunk.js\n40 KB\nlazy — loaded on /admin only"]
+    subgraph &quot;With splitting&quot;
+        B2[&quot;vendors.js\n1.8 MB\ncached long-term&quot;]
+        B3[&quot;app.js\n150 KB\nre-downloaded on deploy&quot;]
+        B4[&quot;dashboard.chunk.js\n50 KB\nlazy — loaded on /dashboard only&quot;]
+        B5[&quot;admin.chunk.js\n40 KB\nlazy — loaded on /admin only&quot;]
     end
 
-    U1["👤 User visits /home"] -->|"downloads everything\n2 MB"| B1
-    U2["👤 User visits /home"] -->|"downloads\n1.95 MB"| B2
-    U2 --> B3
-    U2 -.->|"NOT downloaded\nuntil user navigates"| B4
-    U2 -.->|"NOT downloaded\nuntil user navigates"| B5
+    U1[&quot;👤 User visits /home&quot;] --&gt;|&quot;downloads everything\n2 MB&quot;| B1
+    U2[&quot;👤 User visits /home&quot;] --&gt;|&quot;downloads\n1.95 MB&quot;| B2
+    U2 --&gt; B3
+    U2 -.-&gt;|&quot;NOT downloaded\nuntil user navigates&quot;| B4
+    U2 -.-&gt;|&quot;NOT downloaded\nuntil user navigates&quot;| B5
 </div>
 <h3 id="dynamic-import-lazy-loading">Dynamic Import (lazy loading)</h3>
 <pre><code class="language-js">// Loaded only when user navigates to /dashboard
@@ -438,22 +438,22 @@ sequenceDiagram
     participant HeaderCDN as header.example.com
     participant SharedScope as window.__webpack_share_scopes__
 
-    Browser->>Shell: loads shell/index.html
-    Shell->>Shell: registers own modules in shared scope
-    Shell->>SharedScope: { react: "18.2.0", loaded: true, from: "shell" }
+    Browser-&gt;&gt;Shell: loads shell/index.html
+    Shell-&gt;&gt;Shell: registers own modules in shared scope
+    Shell-&gt;&gt;SharedScope: { react: &quot;18.2.0&quot;, loaded: true, from: &quot;shell&quot; }
 
-    Browser->>HeaderCDN: fetch remoteEntry.js
-    HeaderCDN-->>Browser: remoteEntry.js (container manifest)
-    Browser->>Browser: window.headerApp = container
+    Browser-&gt;&gt;HeaderCDN: fetch remoteEntry.js
+    HeaderCDN--&gt;&gt;Browser: remoteEntry.js (container manifest)
+    Browser-&gt;&gt;Browser: window.headerApp = container
 
     Note over Browser: import('headerApp/Header') triggered
 
-    Browser->>Browser: container.init(sharedScope)
-    Browser->>SharedScope: check if React already loaded
-    SharedScope-->>Browser: ✅ React 18.2.0 already there — reuse it
-    Browser->>HeaderCDN: fetch Header.chunk.js only
-    HeaderCDN-->>Browser: Header component module
-    Browser->>Shell: Header renders inside Shell tree
+    Browser-&gt;&gt;Browser: container.init(sharedScope)
+    Browser-&gt;&gt;SharedScope: check if React already loaded
+    SharedScope--&gt;&gt;Browser: ✅ React 18.2.0 already there — reuse it
+    Browser-&gt;&gt;HeaderCDN: fetch Header.chunk.js only
+    HeaderCDN--&gt;&gt;Browser: Header component module
+    Browser-&gt;&gt;Shell: Header renders inside Shell tree
 </div>
 <hr />
 <h2 id="passing-data-host-remote-module-federation">Passing Data: Host → Remote (Module Federation)</h2>
@@ -628,20 +628,20 @@ const { user } = useContext(UserContext);
 </table>
 <div class="mermaid">
 flowchart TD
-    H["🏠 Host App"]
-    R["📦 Remote App"]
+    H[&quot;🏠 Host App&quot;]
+    R[&quot;📦 Remote App&quot;]
 
-    H -->|"1 · props\nhost → remote"| P["Remote Component\nreceives props\nfrom host"]
-    R -->|"2 · exposed hook/API\nremote → host"| A["Host imports\nuseCart · cartStore\nRemote owns the data"]
-    H <-->|"3 · shared store\nbidirectional"| S["Zustand / Redux\nsingleton instance\nboth read + write"]
-    H <-->|"4 · CustomEvent\nany direction"| E["window.dispatchEvent\nzero coupling\ncross-framework"]
-    H <-->|"5 · shared context\nany direction"| C["React.createContext\nexposed by host\nsame fiber tree"]
+    H --&gt;|&quot;1 · props\nhost → remote&quot;| P[&quot;Remote Component\nreceives props\nfrom host&quot;]
+    R --&gt;|&quot;2 · exposed hook/API\nremote → host&quot;| A[&quot;Host imports\nuseCart · cartStore\nRemote owns the data&quot;]
+    H &lt;--&gt;|&quot;3 · shared store\nbidirectional&quot;| S[&quot;Zustand / Redux\nsingleton instance\nboth read + write&quot;]
+    H &lt;--&gt;|&quot;4 · CustomEvent\nany direction&quot;| E[&quot;window.dispatchEvent\nzero coupling\ncross-framework&quot;]
+    H &lt;--&gt;|&quot;5 · shared context\nany direction&quot;| C[&quot;React.createContext\nexposed by host\nsame fiber tree&quot;]
 
-    P --> T1["✅ Simple\n❌ One-way only"]
-    A --> T2["✅ Remote owns domain\n❌ Two hook instances\nif not singleton store"]
-    S --> T3["✅ Read + Write\n❌ Shared contract\nbetween teams"]
-    E --> T4["✅ Cross-framework\n❌ Misses past events"]
-    C --> T5["✅ Tree-wide\n❌ React only"]
+    P --&gt; T1[&quot;✅ Simple\n❌ One-way only&quot;]
+    A --&gt; T2[&quot;✅ Remote owns domain\n❌ Two hook instances\nif not singleton store&quot;]
+    S --&gt; T3[&quot;✅ Read + Write\n❌ Shared contract\nbetween teams&quot;]
+    E --&gt; T4[&quot;✅ Cross-framework\n❌ Misses past events&quot;]
+    C --&gt; T5[&quot;✅ Tree-wide\n❌ React only&quot;]
 </div>
 <hr />
 <h2 id="content-hashing-caching">Content Hashing &amp; Caching</h2>

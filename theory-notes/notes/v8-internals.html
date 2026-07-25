@@ -21,17 +21,17 @@
 <h2 id="the-compilation-pipeline">The Compilation Pipeline</h2>
 <div class="mermaid">
 flowchart TD
-    S["JS Source Code"]
-    P["Parser\nSource → AST\n(Abstract Syntax Tree)"]
-    I["Ignition\nAST → Bytecode\n(interpreter — runs immediately)"]
-    PR["Profiler / Feedback Vector\nCounts: how often each function runs\nWhat types flow through each operation"]
-    T["TurboFan\nBytecode + Feedback → Optimized Machine Code\n(only for hot functions)"]
-    D["Deoptimization\nAssumption violated →\nback to Ignition bytecode"]
+    S[&quot;JS Source Code&quot;]
+    P[&quot;Parser\nSource → AST\n(Abstract Syntax Tree)&quot;]
+    I[&quot;Ignition\nAST → Bytecode\n(interpreter — runs immediately)&quot;]
+    PR[&quot;Profiler / Feedback Vector\nCounts: how often each function runs\nWhat types flow through each operation&quot;]
+    T[&quot;TurboFan\nBytecode + Feedback → Optimized Machine Code\n(only for hot functions)&quot;]
+    D[&quot;Deoptimization\nAssumption violated →\nback to Ignition bytecode&quot;]
 
-    S --> P --> I --> PR
-    PR -->|"function called 10K+ times\n(hot)"| T
-    T -->|"type changes, hidden class changes"| D
-    D --> I
+    S --&gt; P --&gt; I --&gt; PR
+    PR --&gt;|&quot;function called 10K+ times\n(hot)&quot;| T
+    T --&gt;|&quot;type changes, hidden class changes&quot;| D
+    D --&gt; I
 </div>
 <p><strong>Why two tiers?</strong>
 - <strong>Ignition</strong> starts executing immediately — no wait for compilation. Bytecode is compact, fast to generate.
@@ -52,12 +52,12 @@ b.y = 20;
 </code></pre>
 <div class="mermaid">
 graph LR
-    C0["HiddenClass C0\n(empty object)"]
-    C1["HiddenClass C1\n(has: x at offset 0)"]
-    C2["HiddenClass C2\n(has: x at offset 0\n      y at offset 1)"]
+    C0[&quot;HiddenClass C0\n(empty object)&quot;]
+    C1[&quot;HiddenClass C1\n(has: x at offset 0)&quot;]
+    C2[&quot;HiddenClass C2\n(has: x at offset 0\n      y at offset 1)&quot;]
 
-    C0 -->|"add x"| C1
-    C1 -->|"add y"| C2
+    C0 --&gt;|&quot;add x&quot;| C1
+    C1 --&gt;|&quot;add y&quot;| C2
 </div>
 <p><strong>Every structural change creates a new hidden class transition.</strong></p>
 <pre><code class="language-js">// These look identical but create DIFFERENT hidden class chains
@@ -162,22 +162,22 @@ getX({ a: 1 });           // megamorphic — too many shapes → slow path
 <p>V8 divides the heap into two generations based on the observation that <strong>most objects die young</strong> (short-lived allocations like temporaries, closures in event handlers).</p>
 <div class="mermaid">
 graph TD
-    subgraph "Young Generation (Nursery)"
-        NS["New Space\n~1–8 MB\nMost allocations start here"]
-        FROM["From-Space\n(current semi-space)"]
-        TO["To-Space\n(evacuation target)"]
+    subgraph &quot;Young Generation (Nursery)&quot;
+        NS[&quot;New Space\n~1–8 MB\nMost allocations start here&quot;]
+        FROM[&quot;From-Space\n(current semi-space)&quot;]
+        TO[&quot;To-Space\n(evacuation target)&quot;]
     end
 
-    subgraph "Old Generation"
-        OS["Old Space\n~hundreds of MB\nObjects that survived 2 GC cycles"]
-        LOS["Large Object Space\n>512KB objects\nNever moved"]
-        CS["Code Space\nJIT compiled code"]
+    subgraph &quot;Old Generation&quot;
+        OS[&quot;Old Space\n~hundreds of MB\nObjects that survived 2 GC cycles&quot;]
+        LOS[&quot;Large Object Space\n&gt;512KB objects\nNever moved&quot;]
+        CS[&quot;Code Space\nJIT compiled code&quot;]
     end
 
-    NS -->|"allocation"| FROM
-    FROM -->|"Minor GC (Scavenge)\nsurvivors copied to To-Space"| TO
-    TO -->|"survived again → promoted"| OS
-    OS -->|"Major GC (Mark-Sweep-Compact)"| OS
+    NS --&gt;|&quot;allocation&quot;| FROM
+    FROM --&gt;|&quot;Minor GC (Scavenge)\nsurvivors copied to To-Space&quot;| TO
+    TO --&gt;|&quot;survived again → promoted&quot;| OS
+    OS --&gt;|&quot;Major GC (Mark-Sweep-Compact)&quot;| OS
 </div>
 <h3 id="minor-gc-scavenge-fast-frequent">Minor GC (Scavenge) — fast, frequent</h3>
 <ul>

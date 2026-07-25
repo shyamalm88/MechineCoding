@@ -112,7 +112,18 @@ def convert_markdown(text):
     )
 
     def replace_mermaid(match):
-        raw = html.unescape(match.group(1)).rstrip("\n")
+        # Deliberately NOT html.unescape()-d. A diagram label can contain
+        # illustrative HTML/script-looking text (e.g. a sequence diagram
+        # showing a server response of `<script src="bundle.js">`) --
+        # unescaping that would inject a REAL, live <script> tag into the
+        # page, which browsers then parse in raw-text mode until the next
+        # literal "</script>" anywhere later in the document, silently
+        # swallowing everything in between as inert script content. Kept
+        # entity-escaped, this text stays safe/inert in the HTML source;
+        # mermaid.js still gets the correct decoded string at runtime
+        # because browsers automatically decode entities when JS reads a
+        # text node's .textContent, so nothing is lost for rendering.
+        raw = match.group(1).rstrip("\n")
         return f'<div class="mermaid">\n{raw}\n</div>'
 
     return MERMAID_FENCE_RE.sub(replace_mermaid, body)

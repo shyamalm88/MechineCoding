@@ -48,15 +48,15 @@ if (!isLoading &amp;&amp; isSuccess &amp;&amp; !isError) { ... }
 <h2 id="state-machine-anatomy">State Machine Anatomy</h2>
 <div class="mermaid">
 stateDiagram-v2
-    [*] --> idle
+    [*] --&gt; idle
 
-    idle --> loading : FETCH
-    loading --> success : RESOLVE
-    loading --> error : REJECT
-    error --> loading : RETRY
-    error --> idle : RESET
-    success --> idle : RESET
-    success --> loading : FETCH
+    idle --&gt; loading : FETCH
+    loading --&gt; success : RESOLVE
+    loading --&gt; error : REJECT
+    error --&gt; loading : RETRY
+    error --&gt; idle : RESET
+    success --&gt; idle : RESET
+    success --&gt; loading : FETCH
 </div>
 <table>
 <thead>
@@ -298,23 +298,23 @@ const uploadManagerMachine = createMachine({
 <h2 id="when-to-use-state-machines-vs-reducers-vs-usestate">When to Use State Machines vs Reducers vs useState</h2>
 <div class="mermaid">
 flowchart TD
-    Q1{"Does the UI have\ndistinct modes/phases?"}
-    Q2{"Can multiple booleans\nbe true simultaneously\ncreating invalid states?"}
-    Q3{"Are there complex\ntransition rules or guards?"}
-    Q4{"Is the state simple\n(toggle, input value)?"}
+    Q1{&quot;Does the UI have\ndistinct modes/phases?&quot;}
+    Q2{&quot;Can multiple booleans\nbe true simultaneously\ncreating invalid states?&quot;}
+    Q3{&quot;Are there complex\ntransition rules or guards?&quot;}
+    Q4{&quot;Is the state simple\n(toggle, input value)?&quot;}
 
-    USE_MACHINE["✅ State Machine\n(XState)"]
-    USE_REDUCER["✅ useReducer\n(complex but no phases)"]
-    USE_STATE["✅ useState\n(simple)"]
+    USE_MACHINE[&quot;✅ State Machine\n(XState)&quot;]
+    USE_REDUCER[&quot;✅ useReducer\n(complex but no phases)&quot;]
+    USE_STATE[&quot;✅ useState\n(simple)&quot;]
 
-    Q1 -->|Yes| Q3
-    Q1 -->|No| Q2
-    Q2 -->|Yes| USE_MACHINE
-    Q2 -->|No| Q4
-    Q3 -->|Yes| USE_MACHINE
-    Q3 -->|No| USE_REDUCER
-    Q4 -->|Yes| USE_STATE
-    Q4 -->|No| USE_REDUCER
+    Q1 --&gt;|Yes| Q3
+    Q1 --&gt;|No| Q2
+    Q2 --&gt;|Yes| USE_MACHINE
+    Q2 --&gt;|No| Q4
+    Q3 --&gt;|Yes| USE_MACHINE
+    Q3 --&gt;|No| USE_REDUCER
+    Q4 --&gt;|Yes| USE_STATE
+    Q4 --&gt;|No| USE_REDUCER
 </div>
 <table>
 <thead>

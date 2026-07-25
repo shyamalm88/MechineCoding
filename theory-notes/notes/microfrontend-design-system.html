@@ -20,18 +20,18 @@
 <p><strong>The organizational problem they solve:</strong></p>
 <div class="mermaid">
 graph LR
-    subgraph mono["Monolith — one release train"]
-        TC["Team Chat"] --> M["One giant repo"]
-        TCA["Team Calendar"] --> M
-        TS["Team Search"] --> M
-        M -->|"blocked by each other"| D["Deploy together"]
+    subgraph mono[&quot;Monolith — one release train&quot;]
+        TC[&quot;Team Chat&quot;] --&gt; M[&quot;One giant repo&quot;]
+        TCA[&quot;Team Calendar&quot;] --&gt; M
+        TS[&quot;Team Search&quot;] --&gt; M
+        M --&gt;|&quot;blocked by each other&quot;| D[&quot;Deploy together&quot;]
     end
 
-    subgraph mfe["Micro-Frontend — independent deploys"]
-        TC2["Team Chat"] -->|deploy independently| RC["chat.example.com/remoteEntry.js"]
-        TCA2["Team Calendar"] -->|deploy independently| RCA["calendar.example.com/remoteEntry.js"]
-        TS2["Team Search"] -->|deploy independently| RS["search.example.com/remoteEntry.js"]
-        SH["Shell (auth + nav)"] --> RC & RCA & RS
+    subgraph mfe[&quot;Micro-Frontend — independent deploys&quot;]
+        TC2[&quot;Team Chat&quot;] --&gt;|deploy independently| RC[&quot;chat.example.com/remoteEntry.js&quot;]
+        TCA2[&quot;Team Calendar&quot;] --&gt;|deploy independently| RCA[&quot;calendar.example.com/remoteEntry.js&quot;]
+        TS2[&quot;Team Search&quot;] --&gt;|deploy independently| RS[&quot;search.example.com/remoteEntry.js&quot;]
+        SH[&quot;Shell (auth + nav)&quot;] --&gt; RC &amp; RCA &amp; RS
     end
 </div>
 <blockquote>
@@ -42,17 +42,17 @@ graph LR
 <p>Unlike horizontal layers (UI / Logic / Data), vertical slices give one team full ownership from UI to database for their domain.</p>
 <div class="mermaid">
 graph TD
-    subgraph "Horizontal (Monolith)"
-        UL["UI Layer — all teams commit here"]
-        LL["Logic Layer — all teams commit here"]
-        DL["Data Layer — all teams commit here"]
+    subgraph &quot;Horizontal (Monolith)&quot;
+        UL[&quot;UI Layer — all teams commit here&quot;]
+        LL[&quot;Logic Layer — all teams commit here&quot;]
+        DL[&quot;Data Layer — all teams commit here&quot;]
     end
 
-    subgraph "Vertical (Micro-Frontend)"
-        CA["Chat Team\nUI + API + DB"]
-        CAL["Calendar Team\nUI + API + DB"]
-        SE["Search Team\nUI + API + DB"]
-        SH["Shell Team\nAuth + Nav + Orchestration"]
+    subgraph &quot;Vertical (Micro-Frontend)&quot;
+        CA[&quot;Chat Team\nUI + API + DB&quot;]
+        CAL[&quot;Calendar Team\nUI + API + DB&quot;]
+        SE[&quot;Search Team\nUI + API + DB&quot;]
+        SH[&quot;Shell Team\nAuth + Nav + Orchestration&quot;]
     end
 </div>
 <table>
@@ -130,17 +130,17 @@ sequenceDiagram
     participant CAS as calendar-service
     participant SS as search-service
 
-    B->>N: GET /dashboard
+    B-&gt;&gt;N: GET /dashboard
     par Parallel fragment requests
-        N->>CS: GET /fragment
-        N->>CAS: GET /fragment
-        N->>SS: GET /fragment
+        N-&gt;&gt;CS: GET /fragment
+        N-&gt;&gt;CAS: GET /fragment
+        N-&gt;&gt;SS: GET /fragment
     end
-    CS-->>N: Chat HTML fragment
-    CAS-->>N: Calendar HTML fragment
-    SS-->>N: Search HTML fragment
-    N->>N: Assemble into one HTML response
-    N-->>B: Complete HTML
+    CS--&gt;&gt;N: Chat HTML fragment
+    CAS--&gt;&gt;N: Calendar HTML fragment
+    SS--&gt;&gt;N: Search HTML fragment
+    N-&gt;&gt;N: Assemble into one HTML response
+    N--&gt;&gt;B: Complete HTML
 </div>
 <table>
 <thead>
@@ -179,19 +179,19 @@ sequenceDiagram
     participant CH as chat.example.com
     participant CA as calendar.example.com
 
-    U->>SH: Opens app
-    SH->>SH: Loads Shell bundle (auth, nav)
-    U->>SH: Navigates to /chat
-    SH->>CH: fetch remoteEntry.js
-    CH-->>SH: module map + container
-    SH->>SH: init(sharedScope) — negotiate React version
-    SH->>CH: get('ChatApp')
-    CH-->>SH: Chat component chunk
-    SH->>SH: Mount ChatApp into DOM
-    U->>SH: Navigates to /calendar
-    SH->>CA: fetch remoteEntry.js (parallel to user interaction)
-    CA-->>SH: Calendar component chunk
-    SH->>SH: Mount CalendarApp into DOM
+    U-&gt;&gt;SH: Opens app
+    SH-&gt;&gt;SH: Loads Shell bundle (auth, nav)
+    U-&gt;&gt;SH: Navigates to /chat
+    SH-&gt;&gt;CH: fetch remoteEntry.js
+    CH--&gt;&gt;SH: module map + container
+    SH-&gt;&gt;SH: init(sharedScope) — negotiate React version
+    SH-&gt;&gt;CH: get('ChatApp')
+    CH--&gt;&gt;SH: Chat component chunk
+    SH-&gt;&gt;SH: Mount ChatApp into DOM
+    U-&gt;&gt;SH: Navigates to /calendar
+    SH-&gt;&gt;CA: fetch remoteEntry.js (parallel to user interaction)
+    CA--&gt;&gt;SH: Calendar component chunk
+    SH-&gt;&gt;SH: Mount CalendarApp into DOM
 </div>
 <table>
 <thead>
@@ -374,15 +374,15 @@ const { user, token } = useAuth();
 <h3 id="communication-matrix">Communication Matrix</h3>
 <div class="mermaid">
 flowchart LR
-    SH["Shell"]
-    CH["Chat Remote"]
-    CA["Calendar Remote"]
+    SH[&quot;Shell&quot;]
+    CH[&quot;Chat Remote&quot;]
+    CA[&quot;Calendar Remote&quot;]
 
-    SH <-->|"Custom Events\napp:notification"| CH
-    SH <-->|"Custom Events\napp:calendar-update"| CA
-    CH <-->|"Custom Events\napp:mention-in-chat"| CA
-    SH -->|"Shared store\n(singleton)"| CH
-    SH -->|"Shared store\n(singleton)"| CA
+    SH &lt;--&gt;|&quot;Custom Events\napp:notification&quot;| CH
+    SH &lt;--&gt;|&quot;Custom Events\napp:calendar-update&quot;| CA
+    CH &lt;--&gt;|&quot;Custom Events\napp:mention-in-chat&quot;| CA
+    SH --&gt;|&quot;Shared store\n(singleton)&quot;| CH
+    SH --&gt;|&quot;Shared store\n(singleton)&quot;| CA
 </div>
 <hr />
 <h2 id="6-authentication-session-sharing">6. Authentication &amp; Session Sharing</h2>
@@ -394,22 +394,22 @@ sequenceDiagram
     participant IDP as Identity Provider
     participant CH as Chat Remote
 
-    U->>SH: Navigate to app
-    SH->>IDP: Check session (cookie/token)
-    IDP-->>SH: Access token + refresh token
-    SH->>SH: Store access token in memory
-    SH->>SH: Store refresh token in HttpOnly cookie
+    U-&gt;&gt;SH: Navigate to app
+    SH-&gt;&gt;IDP: Check session (cookie/token)
+    IDP--&gt;&gt;SH: Access token + refresh token
+    SH-&gt;&gt;SH: Store access token in memory
+    SH-&gt;&gt;SH: Store refresh token in HttpOnly cookie
 
-    U->>SH: Navigate to /chat
-    SH->>CH: Load remoteEntry.js
-    SH->>CH: Mount <ChatApp token={accessToken} />
+    U-&gt;&gt;SH: Navigate to /chat
+    SH-&gt;&gt;CH: Load remoteEntry.js
+    SH-&gt;&gt;CH: Mount &lt;ChatApp token={accessToken} /&gt;
     Note over CH: Chat never handles login
     Note over CH: Receives token via prop or shared context
 
-    CH->>CH: API calls use token from context
-    CH->>SH: Token expired → dispatch 'app:token-expired'
-    SH->>IDP: Refresh token (silent)
-    SH->>SH: Update shared scope with new token
+    CH-&gt;&gt;CH: API calls use token from context
+    CH-&gt;&gt;SH: Token expired → dispatch 'app:token-expired'
+    SH-&gt;&gt;IDP: Refresh token (silent)
+    SH-&gt;&gt;SH: Update shared scope with new token
 </div>
 <p><strong>Patterns for token sharing:</strong>
 - <strong>Props</strong> — Shell passes <code>token</code> prop to remote components (simplest, but prop-drilling)
@@ -530,19 +530,19 @@ remotes: {
 <h3 id="blue-green-deployment">Blue-Green Deployment</h3>
 <div class="mermaid">
 flowchart TD
-    START["CDN: remoteEntry.js → BLUE (stable)"]
-    SMOKE{"Smoke tests pass?"}
-    SWITCH["CDN switches pointer to GREEN"]
-    GREEN["remoteEntry.js → GREEN (new version)"]
-    NEW["New sessions → GREEN"]
-    OLD["In-progress sessions finish on BLUE (graceful)"]
-    RB["Rollback: pointer stays on BLUE"]
+    START[&quot;CDN: remoteEntry.js → BLUE (stable)&quot;]
+    SMOKE{&quot;Smoke tests pass?&quot;}
+    SWITCH[&quot;CDN switches pointer to GREEN&quot;]
+    GREEN[&quot;remoteEntry.js → GREEN (new version)&quot;]
+    NEW[&quot;New sessions → GREEN&quot;]
+    OLD[&quot;In-progress sessions finish on BLUE (graceful)&quot;]
+    RB[&quot;Rollback: pointer stays on BLUE&quot;]
 
-    START --> SMOKE
-    SMOKE -->|"✅ pass"| SWITCH --> GREEN
-    SMOKE -->|"❌ fail"| RB
-    GREEN --> NEW
-    GREEN --> OLD
+    START --&gt; SMOKE
+    SMOKE --&gt;|&quot;✅ pass&quot;| SWITCH --&gt; GREEN
+    SMOKE --&gt;|&quot;❌ fail&quot;| RB
+    GREEN --&gt; NEW
+    GREEN --&gt; OLD
 </div>
 <h3 id="rollback-strategy">Rollback Strategy</h3>
 <pre><code>Problem: Chat team deployed v2.1.0 with a bug.
@@ -626,19 +626,19 @@ test('user can send a chat message', async ({ page }) =&gt; {
 <h2 id="11-cicd-pipeline">11. CI/CD Pipeline</h2>
 <div class="mermaid">
 flowchart TD
-    PR["PR raised by Chat Team"]
-    LT["Lint + Unit Tests\n(Chat repo only)"]
-    CT["Contract Tests\n(Chat exports vs Shell expectations)"]
-    BLD["Build Chat Remote\nchat.example.com/remoteEntry.js"]
-    CC["Canary Deploy\n10% traffic → new Chat"]
-    SM["Smoke Tests\n(E2E against canary)"]
-    FD["Full Deploy\n100% traffic"]
-    SN["Notify Shell team\n(Slack/Webhook)"]
-    RB["Rollback\n(CDN pointer flip)"]
+    PR[&quot;PR raised by Chat Team&quot;]
+    LT[&quot;Lint + Unit Tests\n(Chat repo only)&quot;]
+    CT[&quot;Contract Tests\n(Chat exports vs Shell expectations)&quot;]
+    BLD[&quot;Build Chat Remote\nchat.example.com/remoteEntry.js&quot;]
+    CC[&quot;Canary Deploy\n10% traffic → new Chat&quot;]
+    SM[&quot;Smoke Tests\n(E2E against canary)&quot;]
+    FD[&quot;Full Deploy\n100% traffic&quot;]
+    SN[&quot;Notify Shell team\n(Slack/Webhook)&quot;]
+    RB[&quot;Rollback\n(CDN pointer flip)&quot;]
 
-    PR --> LT --> CT --> BLD --> CC --> SM
-    SM -->|"✅ pass"| FD --> SN
-    SM -->|"❌ fail"| RB
+    PR --&gt; LT --&gt; CT --&gt; BLD --&gt; CC --&gt; SM
+    SM --&gt;|&quot;✅ pass&quot;| FD --&gt; SN
+    SM --&gt;|&quot;❌ fail&quot;| RB
 </div>
 <p><strong>Key principle:</strong> Chat team CI never touches Shell repo. Shell team is notified via webhook after Chat deploys successfully. Shell re-fetches <code>remoteEntry.js</code> on next user session — zero Shell redeployment needed.</p>
 <hr />
@@ -669,11 +669,11 @@ sequenceDiagram
     participant CDN as Remote CDN
 
     Note over SH: Shell bundle loaded (200ms)
-    U->>SH: Clicks Chat link
-    SH->>CDN: fetch remoteEntry.js
-    CDN-->>SH: module map (50ms RTT)
-    SH->>CDN: fetch chat.chunk.js
-    CDN-->>SH: Chat bundle (100ms)
+    U-&gt;&gt;SH: Clicks Chat link
+    SH-&gt;&gt;CDN: fetch remoteEntry.js
+    CDN--&gt;&gt;SH: module map (50ms RTT)
+    SH-&gt;&gt;CDN: fetch chat.chunk.js
+    CDN--&gt;&gt;SH: Chat bundle (100ms)
     Note over SH: parse + execute (50ms)
     Note over SH: render (16ms)
     Note over U,CDN: Total extra time to interactive: ~416ms
@@ -852,14 +852,14 @@ sequenceDiagram
     participant MAN as Manifest API
     participant REG as Remote CDNs
 
-    U->>SH: App loads
-    SH->>MAN: GET /api/remote-manifest
-    MAN-->>SH: { chatApp: "...", calendarApp: "..." }
-    SH->>SH: Cache manifest in memory
-    U->>SH: Navigate to /chat
-    SH->>REG: fetch manifest[chatApp]
-    REG-->>SH: remoteEntry.js
-    SH->>SH: Mount ChatApp
+    U-&gt;&gt;SH: App loads
+    SH-&gt;&gt;MAN: GET /api/remote-manifest
+    MAN--&gt;&gt;SH: { chatApp: &quot;...&quot;, calendarApp: &quot;...&quot; }
+    SH-&gt;&gt;SH: Cache manifest in memory
+    U-&gt;&gt;SH: Navigate to /chat
+    SH-&gt;&gt;REG: fetch manifest[chatApp]
+    REG--&gt;&gt;SH: remoteEntry.js
+    SH-&gt;&gt;SH: Mount ChatApp
 </div>
 <hr />
 <h2 id="16-observability-monitoring">16. Observability &amp; Monitoring</h2>

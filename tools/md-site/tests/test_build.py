@@ -168,7 +168,26 @@ class TestConvertMarkdown(unittest.TestCase):
         result = build.convert_markdown(text)
         self.assertNotIn("<pre>", result)
         self.assertIn('<div class="mermaid">', result)
-        self.assertIn('D["dog"] --> A["animal"]', result)
+        # Content stays HTML-entity-escaped (see test below for why) --
+        # mermaid.js still gets the correct decoded string at runtime via
+        # the DOM's .textContent, which auto-decodes entities.
+        self.assertIn('D[&quot;dog&quot;] --&gt; A[&quot;animal&quot;]', result)
+
+    def test_mermaid_label_containing_script_tag_stays_escaped(self):
+        # Regression test: a diagram label illustrating a real script tag
+        # (e.g. a sequence diagram showing a server response) must NOT
+        # become a live <script> tag in the output. A previous version of
+        # this function called html.unescape() on the diagram body, which
+        # turned `&lt;script src="bundle.js"&gt;` back into a real,
+        # unescaped <script src="bundle.js"> -- browsers then parse
+        # everything after that as inert raw script text until the next
+        # literal "</script>" string anywhere later in the page, silently
+        # swallowing real content in between. Verified against the actual
+        # bug in Theory/hydration.md before this fix.
+        text = '```mermaid\nsequenceDiagram\n    S-->>B: HTML + <script src="bundle.js">\n```\n'
+        result = build.convert_markdown(text)
+        self.assertNotIn('<script src="bundle.js">', result)
+        self.assertIn("&lt;script src=&quot;bundle.js&quot;&gt;", result)
 
     def test_rewrites_mixed_case_mermaid_fence_into_div(self):
         text = '```Mermaid\ngraph TD\n    A --> B\n```\n'
