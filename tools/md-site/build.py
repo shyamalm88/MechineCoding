@@ -44,6 +44,14 @@ def discover_md_files(source_dir):
     )
 
 
+H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
+
+
+def extract_title(markdown_text, fallback):
+    match = H1_RE.search(markdown_text)
+    return match.group(1).strip() if match else fallback
+
+
 def main():
     if len(sys.argv) != 3:
         print("Usage: build.py <source-dir> <output-dir>", file=sys.stderr)

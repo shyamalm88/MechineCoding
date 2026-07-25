@@ -65,5 +65,18 @@ class TestDiscoverMdFiles(unittest.TestCase):
             self.assertEqual(build.discover_md_files(tmp), ["real.md"])
 
 
+class TestExtractTitle(unittest.TestCase):
+    def test_extracts_first_h1(self):
+        text = "# JavaScript Core — Interview Reference\n\nSome intro.\n"
+        self.assertEqual(
+            build.extract_title(text, fallback="Fallback"),
+            "JavaScript Core — Interview Reference",
+        )
+
+    def test_falls_back_when_no_h1(self):
+        text = "No heading here.\n"
+        self.assertEqual(build.extract_title(text, fallback="Fallback"), "Fallback")
+
+
 if __name__ == "__main__":
     unittest.main()
