@@ -117,6 +117,21 @@ class TestBuildSidebarGroups(unittest.TestCase):
         with self.assertRaises(ValueError):
             build.build_sidebar_groups(["a.md", "b.md"], config)
 
+    def test_raises_when_category_value_is_null(self):
+        config = {"categories": {"a.md": None}}
+        with self.assertRaises(ValueError):
+            build.build_sidebar_groups(["a.md"], config)
+
+    def test_raises_when_category_value_is_not_a_string(self):
+        config = {"categories": {"a.md": 42}}
+        with self.assertRaises(ValueError):
+            build.build_sidebar_groups(["a.md"], config)
+
+    def test_raises_when_categories_is_not_an_object(self):
+        config = {"categories": ["a.md"]}
+        with self.assertRaises(ValueError):
+            build.build_sidebar_groups(["a.md"], config)
+
     def test_flat_fallback_when_no_config(self):
         groups = build.build_sidebar_groups(["b.md", "a.md"], None)
         self.assertEqual(groups, [(None, ["b.md", "a.md"])])

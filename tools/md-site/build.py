@@ -66,6 +66,9 @@ def build_sidebar_groups(md_files, config):
         return [(None, list(md_files))]
 
     categories = config["categories"]
+    if not isinstance(categories, dict):
+        raise ValueError(f"site.config.json 'categories' must be an object, got: {categories!r}")
+
     missing = [f for f in md_files if f not in categories]
     if missing:
         raise ValueError(f"site.config.json is missing categories for: {missing}")
@@ -73,6 +76,10 @@ def build_sidebar_groups(md_files, config):
     groups = {}
     for filename in md_files:
         category = categories[filename]
+        if not isinstance(category, str) or not category.strip():
+            raise ValueError(
+                f"site.config.json has an invalid category for {filename!r}: {category!r}"
+            )
         groups.setdefault(category, []).append(filename)
     return list(groups.items())
 
