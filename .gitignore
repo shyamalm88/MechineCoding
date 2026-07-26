@@ -19,6 +19,9 @@ graphify-out
 # Git worktrees (superpowers workflow)
 .worktrees/
 
+# Superpowers visual brainstorming companion (ephemeral session state)
+.superpowers/
+
 # Python
 __pycache__/
 *.pyc
