@@ -1,0 +1,1733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trello / Issue Manager System Design — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html" aria-current="page">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="trello-issue-manager-system-design">Trello / Issue Manager System Design</h1>
+<hr />
+<h2 id="core-problem">🧠 Core Problem</h2>
+<blockquote>
+<p><strong>Trello is NOT a task CRUD system. It is a real-time collaborative state synchronization system.</strong></p>
+</blockquote>
+<pre><code>Collaborative system = shared state + ordering + real-time sync
+
+Maintain consistent ordering and state of tasks (cards)
+across multiple users in real time, while supporting
+frequent mutations: drag, reorder, edit — all concurrently.
+</code></pre>
+<p><strong>Three hard problems that make this non-trivial:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Why hard</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card ordering</td>
+<td>Naive integer index requires renumbering N cards per insert = N fan-out events</td>
+<td>Fractional indexing — one UPDATE per move</td>
+</tr>
+<tr>
+<td>Real-time conflict</td>
+<td>Two users drag same card simultaneously — whose move wins?</td>
+<td>Optimistic locking + LWW + client revert</td>
+</tr>
+<tr>
+<td>Fanout at scale</td>
+<td>8M open boards × 4 members = 400K WS pushes/sec across N servers</td>
+<td>Redis Pub/Sub per-board channel — one PUBLISH fans to all WS servers</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design a real-time collaborative kanban board system (Trello/Jira-lite) where multiple users can manage boards, lists, and cards simultaneously, with changes propagating to all active collaborators in real time.</p>
+<blockquote>
+<p><strong>Core problem:</strong> Maintain consistent ordering and state of tasks across multiple concurrent users while supporting frequent positional mutations (drag, reorder, edit) with &lt;200ms propagation to all board members.</p>
+<p><strong>This is NOT a document editor (no OT/CRDT needed).</strong> It is a board state machine. Each mutation (move card, rename, comment) is a discrete event applied to shared state. The challenge is ordering, fanout, and conflict handling for concurrent positional mutations — not character-level merge.</p>
+</blockquote>
+<p><strong>In scope:</strong> Boards, Lists, Cards (CRUD + drag-and-drop reorder), real-time multi-user sync, comments, labels, due dates, assignments, activity feed, file attachments, notifications, role-based access control.
+<strong>Out of scope:</strong> Gantt charts, advanced reporting/analytics, time-tracking, billing/subscription management.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Number</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DAU</td>
+<td>50M</td>
+</tr>
+<tr>
+<td>Boards per user (avg)</td>
+<td>5 active</td>
+</tr>
+<tr>
+<td>Cards per board (avg)</td>
+<td>40</td>
+</tr>
+<tr>
+<td>Active boards at peak</td>
+<td>~5M concurrent boards</td>
+</tr>
+<tr>
+<td>Concurrent WebSocket connections</td>
+<td>~8–10M (users × avg open tabs)</td>
+</tr>
+<tr>
+<td>Card mutations/sec (moves, edits)</td>
+<td>~100K/sec peak</td>
+</tr>
+<tr>
+<td>Comments/sec</td>
+<td>~20K/sec</td>
+</tr>
+<tr>
+<td>Attachment uploads/day</td>
+<td>~10M files</td>
+</tr>
+<tr>
+<td>Board state read (on open)</td>
+<td>Full board snapshot — lists + cards + members</td>
+</tr>
+<tr>
+<td>Fanout per card move</td>
+<td>avg 4 other members per board watching</td>
+</tr>
+<tr>
+<td>Activity events/day</td>
+<td>~2B (every card move, comment, label = 1 event)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Hardest flow:</strong> Concurrent card drag — two users move the same card simultaneously. Which wins? The board must converge to a consistent state for all members.</p>
+<p><strong>Fanout math:</strong> 100K card moves/sec × avg 4 other members = <strong>400K WebSocket pushes/sec</strong>. Must be handled via Redis Pub/Sub fan-out, not direct server-to-server calls.</p>
+<p><strong>Primary bottleneck at scale:</strong> WebSocket connection management and fan-out throughput — not storage.</p>
+<p><em>These numbers drive: WebSocket servers behind sticky-session load balancer, Redis Pub/Sub per board for fan-out, PostgreSQL for board state with optimistic locking, S3 for attachments.</em></p>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ul>
+<li>Create / update / delete boards, lists, and cards</li>
+<li><strong>Drag-and-drop cards within and across lists</strong> — the ordering problem: naive integer index requires renumbering N cards per insert. Solved with fractional indexing (float64) — every drag = 1 DB write, not N</li>
+<li><strong>Real-time sync</strong> — all board members see mutations within ~200ms, across concurrent users</li>
+<li>Card details: title, description, labels, due date, assignees, checklist, attachments</li>
+<li>Comments on cards with @mentions</li>
+<li>Activity feed per card and per board (audit log)</li>
+<li>Board member management (invite, role: admin/member/viewer) — with enforced permissions per role</li>
+<li>Notifications (mention, due date reminder, card assigned)</li>
+</ul>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Requirement</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Real-time sync latency</td>
+<td>&lt;200ms for board mutations</td>
+<td>Collaborative feel — lag above 200ms breaks the "same room" illusion</td>
+</tr>
+<tr>
+<td>Availability</td>
+<td>99.99% (AP)</td>
+<td>Board state must be readable even during partial failures</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Eventual for display, strong for card position</td>
+<td>Two users can't persist the same card position — last-write-wins with vector clock</td>
+</tr>
+<tr>
+<td>Read latency</td>
+<td>&lt;100ms for board load</td>
+<td>Full board snapshot on open must feel instant</td>
+</tr>
+<tr>
+<td>Attachment upload</td>
+<td>Async, direct-to-S3</td>
+<td>Never block board interactivity on file upload</td>
+</tr>
+<tr>
+<td>Notification delivery</td>
+<td>At-least-once, &lt;5s</td>
+<td>Missed @mention is bad UX; &lt;5s is acceptable</td>
+</tr>
+</tbody>
+</table>
+<h3 id="consistency-model">Consistency Model</h3>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Model</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card position (order within list)</td>
+<td>Last-write-wins with server timestamp</td>
+<td>Concurrent moves are rare; simple LWW is sufficient — no financial consequence</td>
+</tr>
+<tr>
+<td>Card content (title, description)</td>
+<td>Eventual (last write wins per field)</td>
+<td>Two users editing description simultaneously → last save wins; acceptable</td>
+</tr>
+<tr>
+<td>Board membership</td>
+<td>Strong (CP)</td>
+<td>Must not allow access after removal; stale member list = security issue</td>
+</tr>
+<tr>
+<td>Activity feed</td>
+<td>Eventual, append-only</td>
+<td>Order within same second doesn't matter</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mental-model">🧠 Mental Model</h2>
+<p><strong>Trello is a real-time collaborative state synchronization system</strong> — not a task manager. The UI is a kanban board, but the engineering problem is: how do you keep shared mutable state (card positions, card content) consistent across concurrent users in real time?</p>
+<pre><code>Board state = a tree:
+  Board
+    └── List[]  ← ordered by position (float64)
+          └── Card[]  ← ordered by position (float64) within list
+                └── Comment[], Attachment[], Checklist[], Activity[]
+
+Every user action = an event applied to this tree.
+Every event must be:
+  1. Persisted in DB (source of truth)
+  2. Fanned out to all board members via WebSocket
+  3. Idempotent — safe to replay on reconnect
+</code></pre>
+<p><strong>E2E flow in one line:</strong></p>
+<pre><code>User drags card → optimistic UI → POST mutation → DB write →
+  Redis PUBLISH board:{id} → WS fan-out → all members update
+</code></pre>
+<p><strong>⚡ Core Design Principles</strong></p>
+<table>
+<thead>
+<tr>
+<th>Fast Path (optimistic)</th>
+<th>Reliable Path (sync)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Optimistic UI — card moves instantly in user's browser</td>
+<td>DB write before Redis publish — no publish without persistence</td>
+</tr>
+<tr>
+<td>WebSocket delta push — only the changed card, not full board</td>
+<td>Activity event appended for every mutation (audit trail)</td>
+</tr>
+<tr>
+<td>Client reconciles on WS reconnect (full snapshot diff)</td>
+<td>Conflict: server LWW wins, client receives correction event</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="event-driven-model">⚡ Event-Driven Model</h2>
+<blockquote>
+<p><strong>This system is reactive, not CRUD.</strong> Every user action produces a named event. That event is stored, broadcast, and applied to all clients. No direct DB-to-UI path exists.</p>
+</blockquote>
+<h3 id="event-catalog">Event Catalog</h3>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Trigger</th>
+<th>Payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CARD_CREATED</code></td>
+<td>User adds a card</td>
+<td><code>board_id, list_id, card_id, title, position, actor_id</code></td>
+</tr>
+<tr>
+<td><code>CARD_MOVED</code></td>
+<td>User drags card to new list or position</td>
+<td><code>board_id, card_id, from_list, to_list, position, actor_id</code></td>
+</tr>
+<tr>
+<td><code>CARD_UPDATED</code></td>
+<td>User edits title, description, due date, labels, assignees</td>
+<td><code>board_id, card_id, changed_fields: {field: new_value}, actor_id</code></td>
+</tr>
+<tr>
+<td><code>CARD_DELETED</code></td>
+<td>User archives a card</td>
+<td><code>board_id, card_id, actor_id</code></td>
+</tr>
+<tr>
+<td><code>LIST_CREATED</code></td>
+<td>User adds a list</td>
+<td><code>board_id, list_id, name, position, actor_id</code></td>
+</tr>
+<tr>
+<td><code>LIST_UPDATED</code></td>
+<td>User renames or moves a list</td>
+<td><code>board_id, list_id, changed_fields, actor_id</code></td>
+</tr>
+<tr>
+<td><code>COMMENT_ADDED</code></td>
+<td>User posts a comment</td>
+<td><code>board_id, card_id, comment_id, body, mentions[], actor_id</code></td>
+</tr>
+<tr>
+<td><code>MEMBER_ADDED</code></td>
+<td>Admin invites a user</td>
+<td><code>board_id, user_id, role, actor_id</code></td>
+</tr>
+<tr>
+<td><code>MEMBER_REMOVED</code></td>
+<td>Admin removes a user</td>
+<td><code>board_id, user_id, actor_id</code></td>
+</tr>
+</tbody>
+</table>
+<p>Every event carries: <code>event_id</code> (UUID, idempotency key), <code>board_id</code> (routing key), <code>actor_id</code>, <code>ts</code> (millisecond timestamp).</p>
+<h3 id="event-lifecycle">Event Lifecycle</h3>
+<pre><code>User action (e.g. drag card)
+    ↓
+[Optimistic UI] ← event applied to local state immediately (0ms)
+    ↓
+HTTP POST mutation to Board Service
+    ↓
+Board Service writes to PostgreSQL (source of truth)
+    ↓
+Board Service publishes event to Redis channel board:{boardId}
+    ↓
+All WS servers subscribed to board:{boardId} receive event
+    ↓
+Each WS server pushes event delta to its connected members
+    ↓
+Each client applies event to board state (&lt;200ms end-to-end)
+    ↓
+Async: event also published to Kafka → Activity Service → BigQuery
+</code></pre>
+<pre><code>User A drags Card-42 from List-1 to List-2
+          |
+    [Optimistic UI] ← CARD_MOVED applied locally (0ms)
+          |
+    POST /cards/42/move {list_id, position}
+          |
+    PostgreSQL UPDATE cards SET list_id, position WHERE id=42
+          |
+    Redis PUBLISH board:{boardId}
+      { event: &quot;CARD_MOVED&quot;, card_id: &quot;c_42&quot;,
+        from_list: &quot;l_1&quot;, to_list: &quot;l_2&quot;,
+        position: 16384.0, actor_id: &quot;u_A&quot;,
+        event_id: &quot;evt_xyz&quot;, ts: 1712000000 }
+          |
+    ┌─────┴──────────────────────┐
+  WS Server 1               WS Server 2
+  (User B)                   (User C)
+     ↓                           ↓
+  CARD_MOVED applied         CARD_MOVED applied
+  to local board state       to local board state
+  (&lt; 200ms total)            (&lt; 200ms total)
+</code></pre>
+<p><strong>Why events, not direct DB sync?</strong>
+- DB is slow (disk I/O) — can't serve as real-time broadcast channel
+- Events decouple mutation from fanout — Board Service doesn't know which WS servers are connected
+- Events are replayable — reconnecting clients can catch up from <code>last_event_id</code>
+- Events are the audit log — Activity Service consumes the same stream</p>
+<hr />
+<h2 id="consistency-model_1">🧠 Consistency Model</h2>
+<blockquote>
+<p><strong>System uses eventual consistency with the server as the single source of truth. Clients apply optimistic updates locally and reconcile with server state via events.</strong></p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Consistency model</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Card position (ordering)</td>
+<td>Eventual → strong on conflict</td>
+<td>Optimistic locking (<code>WHERE updated_at=?</code>); conflict → 409 → client reverts to server state</td>
+</tr>
+<tr>
+<td>Card content (title, description)</td>
+<td>Eventual</td>
+<td>Last write wins per field; no character-level merge</td>
+</tr>
+<tr>
+<td>Board membership (add/remove)</td>
+<td>Strong (CP)</td>
+<td>DB write + immediate Redis cache invalidation; access revocation is a security event</td>
+</tr>
+<tr>
+<td>Activity feed</td>
+<td>Eventual, append-only</td>
+<td>Kafka consumer lag is acceptable; feed catches up within seconds</td>
+</tr>
+<tr>
+<td>Board snapshot (initial load)</td>
+<td>Eventual (max 60s stale)</td>
+<td>Redis TTL=60s + explicit invalidation on every mutation</td>
+</tr>
+</tbody>
+</table>
+<h3 id="conflict-resolution-two-users-move-the-same-card">Conflict Resolution: Two Users Move the Same Card</h3>
+<p>Three strategies exist — this system uses LWW:</p>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>How it works</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Last-write-wins (chosen)</strong></td>
+<td>Server serializes writes via optimistic lock. First write commits. Second write sees stale <code>updated_at</code> → rejected. Loser's client receives correction event and reverts.</td>
+<td>Correct for discrete positional events. Simple.</td>
+</tr>
+<tr>
+<td><strong>Version-based merge</strong></td>
+<td>Each client sends a version vector. Server merges conflicting positions deterministically.</td>
+<td>Over-engineered for card position — conflict rate &lt;0.1%</td>
+</tr>
+<tr>
+<td><strong>Server-assigned ordering</strong></td>
+<td>Server ignores client position, assigns its own monotonic sequence.</td>
+<td>Breaks optimistic UI — clients can't predict position</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Last-write-wins with optimistic locking.</p>
+<pre><code>User A: POST /cards/42/move { position: 16384, updated_at: T1 }
+User B: POST /cards/42/move { position: 32768, updated_at: T1 }
+                                    ↑ same stale version
+
+DB executes:
+  UPDATE cards SET position=16384, updated_at=NOW()
+  WHERE id=42 AND updated_at=T1   ← User A wins (arrives first)
+  → 1 row affected → 200 OK → Redis PUBLISH CARD_MOVED (position=16384)
+
+  UPDATE cards SET position=32768, updated_at=NOW()
+  WHERE id=42 AND updated_at=T1   ← User B, already updated
+  → 0 rows affected → 409 Conflict
+
+User B's client:
+  → receives CARD_MOVED correction event (position=16384)
+  → reverts optimistic UI: card animates to position 16384
+  → board converges — all members see same state
+</code></pre>
+<p><strong>Why not pessimistic locking?</strong> <code>SELECT FOR UPDATE</code> holds a row lock for the duration of the drag (hundreds of ms). At 100K drags/sec this serialises all concurrent drags globally — instant bottleneck.</p>
+<hr />
+<hr />
+<h2 id="45-permissions-access-control">4.5 Permissions &amp; Access Control</h2>
+<blockquote>
+<p><strong>Trello is a private-first system.</strong> Boards are private by default. Access control is enforced at the API layer — the UI cannot be trusted to restrict access. Every mutation checks the caller's role before touching the DB.</p>
+</blockquote>
+<h3 id="board-visibility">Board Visibility</h3>
+<table>
+<thead>
+<tr>
+<th>Visibility</th>
+<th>Who can view</th>
+<th>Who can mutate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>private</code> (default)</td>
+<td>Only board members</td>
+<td>Only admin/member roles</td>
+</tr>
+<tr>
+<td><code>public</code></td>
+<td>Any authenticated user (read-only)</td>
+<td>Only board members</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Why private-first matters architecturally:</strong> GET /boards/{id} must check membership before returning any data. A public board returns data for any authenticated request; a private board returns 403 if the requester has no <code>board_members</code> row.</p>
+</blockquote>
+<h3 id="role-matrix">Role Matrix</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Admin</th>
+<th>Member</th>
+<th>Viewer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>View board (read all lists + cards)</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Create card</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Edit card (title, description, due date)</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Move card (drag-and-drop)</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Delete card (archive)</td>
+<td>✅</td>
+<td>✅ (own cards only)</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Comment on card</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Upload attachment</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Create / rename list</td>
+<td>✅</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Delete list</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Invite members</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Change member role</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Remove member</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Delete / archive board</td>
+<td>✅ (board owner only)</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Change board visibility (public/private)</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table>
+<h3 id="how-enforcement-works">How Enforcement Works</h3>
+<pre><code>Every API request:
+  1. API Gateway validates JWT → extracts user_id
+  2. Board Service looks up board_members for (board_id, user_id)
+     → fetches role (cached in Redis, TTL=30s)
+  3. Middleware checks role against action's required permission
+  4. Permitted → proceed  |  Denied → 403 Forbidden
+
+Board membership changes (remove member, role downgrade):
+  → Invalidate Redis cache entry immediately (strong consistency required)
+  → User loses access on next request (max 30s stale window for TTL,
+     0s for explicit invalidation)
+</code></pre>
+<p><strong>Why cache the role lookup?</strong> Every single API call and WS event must check permissions. At 100K mutations/sec, a DB lookup per request = bottleneck. Redis role cache with 30s TTL reduces DB load by ~100×.</p>
+<p><strong>Why 30s TTL (not 60s like snapshot)?</strong> Role removal is a security event — a removed member must not see board events. 30s is the acceptable stale window. (For enterprise/compliance boards, this would drop to 0 with direct DB check on every mutation.)</p>
+<p><strong>Public boards:</strong> <code>visibility=public</code> boards grant <code>viewer</code> role to any authenticated user who requests them. The middleware treats absence of a <code>board_members</code> row as <code>viewer</code> if <code>boards.visibility = 'public'</code>.</p>
+<hr />
+<h2 id="5-api-design">5. API Design</h2>
+<p><strong>Boards</strong></p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Key Params / Body</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/boards</code></td>
+<td>GET</td>
+<td>—</td>
+<td>List boards for authenticated user (from their workspaces)</td>
+</tr>
+<tr>
+<td><code>/boards</code></td>
+<td>POST</td>
+<td><code>name, workspace_id, visibility</code></td>
+<td>Create board; visibility = public/private</td>
+</tr>
+<tr>
+<td><code>/boards/{id}</code></td>
+<td>GET</td>
+<td>—</td>
+<td>Full board snapshot: <code>{ board, lists: [{…, cards:[…]}], members }</code></td>
+</tr>
+<tr>
+<td><code>/boards/{id}</code></td>
+<td>DELETE</td>
+<td>—</td>
+<td>Soft delete (set <code>is_archived=true</code>)</td>
+</tr>
+<tr>
+<td><code>/boards/{id}/members</code></td>
+<td>POST</td>
+<td><code>user_id, role</code></td>
+<td>Invite member</td>
+</tr>
+<tr>
+<td><code>/boards/{id}/members/{userId}</code></td>
+<td>PATCH</td>
+<td><code>role</code></td>
+<td>Change member role</td>
+</tr>
+<tr>
+<td><code>/boards/{id}/members/{userId}</code></td>
+<td>DELETE</td>
+<td>—</td>
+<td>Remove member (strong consistency required)</td>
+</tr>
+<tr>
+<td><code>/boards/{id}/activity</code></td>
+<td>GET</td>
+<td><code>cursor, limit=20</code></td>
+<td>Cursor-paginated board activity feed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Lists</strong></p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Key Params / Body</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/boards/{id}/lists</code></td>
+<td>POST</td>
+<td><code>name, position</code></td>
+<td>Add list</td>
+</tr>
+<tr>
+<td><code>/lists/{id}</code></td>
+<td>PATCH</td>
+<td><code>name, position</code></td>
+<td>Rename or reorder list</td>
+</tr>
+<tr>
+<td><code>/lists/{id}</code></td>
+<td>DELETE</td>
+<td>—</td>
+<td>Soft delete list (sets <code>is_archived=true</code>); archives all cards in list</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Cards</strong></p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Key Params / Body</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/lists/{id}/cards</code></td>
+<td>POST</td>
+<td><code>title, position</code></td>
+<td>Create card</td>
+</tr>
+<tr>
+<td><code>/cards/{id}</code></td>
+<td>GET</td>
+<td>—</td>
+<td>Full card detail: title, description, labels, checklists, attachments, comments, activity</td>
+</tr>
+<tr>
+<td><code>/cards/{id}</code></td>
+<td>PATCH</td>
+<td><code>title, description, due_date, assignee_ids, label_ids</code></td>
+<td>Update card fields</td>
+</tr>
+<tr>
+<td><code>/cards/{id}</code></td>
+<td>DELETE</td>
+<td>—</td>
+<td>Soft delete (set <code>is_archived=true</code>)</td>
+</tr>
+<tr>
+<td><code>/cards/{id}/move</code></td>
+<td>POST</td>
+<td><code>list_id, position, updated_at</code></td>
+<td>Move card; <code>updated_at</code> is client's last-known version (optimistic lock check)</td>
+</tr>
+<tr>
+<td><code>/cards/{id}/comments</code></td>
+<td>POST</td>
+<td><code>body, mentions[]</code></td>
+<td>Add comment; triggers @mention notifications async</td>
+</tr>
+<tr>
+<td><code>/cards/{id}/attachments</code></td>
+<td>POST</td>
+<td><code>filename, content_type</code></td>
+<td>Returns pre-signed S3 URL for direct upload</td>
+</tr>
+</tbody>
+</table>
+<p><strong>WebSocket message contract:</strong></p>
+<pre><code class="language-json">// Server → Client (event push)
+{
+  &quot;event&quot;: &quot;CARD_MOVED&quot;,
+  &quot;board_id&quot;: &quot;b_123&quot;,
+  &quot;card_id&quot;: &quot;c_456&quot;,
+  &quot;from_list&quot;: &quot;l_1&quot;,
+  &quot;to_list&quot;: &quot;l_2&quot;,
+  &quot;position&quot;: 16384.0,
+  &quot;actor_id&quot;: &quot;u_789&quot;,
+  &quot;event_id&quot;: &quot;evt_abc&quot;,   ← idempotency key
+  &quot;ts&quot;: 1712000000000
+}
+
+// Client → Server (subscribe)
+{ &quot;action&quot;: &quot;subscribe&quot;, &quot;board_id&quot;: &quot;b_123&quot; }
+{ &quot;action&quot;: &quot;unsubscribe&quot;, &quot;board_id&quot;: &quot;b_123&quot; }
+</code></pre>
+<hr />
+<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Real-time Fanout via Redis Pub/Sub</strong></p>
+<p><strong>Why Redis Pub/Sub (not Kafka) for board events:</strong>
+Board mutations must reach all connected members in &lt;200ms. Kafka's throughput is massive but adds 10–100ms broker latency. Redis Pub/Sub is in-memory, sub-millisecond publish, and perfectly suited for small-group real-time fanout (avg 4 recipients per board).</p>
+<p><strong>Delivery guarantee:</strong> At-least-once. WebSocket connections can drop; clients reconnect and fetch a full snapshot diff to catch up on missed events. <code>event_id</code> (UUID) on every event prevents duplicate application on client.</p>
+<p><strong>The mutation pipeline is a correctness requirement:</strong> DB write must succeed before Redis publish. If Redis publish fails after DB write, client reconnects and snapshot diff delivers the missed event. If DB write fails, Redis is never published — no phantom updates.</p>
+</blockquote>
+<h3 id="61-card-move-happy-path">6.1 Card Move — Happy Path</h3>
+<ol>
+<li>
+<p>User A drags Card-42 from List-1 to position 2 in List-2. Browser applies <strong>optimistic UI update immediately</strong> — card visually moves before any server response. I chose optimistic UI because 99%+ of moves succeed; the perceived latency drops from 200ms to 0ms.</p>
+</li>
+<li>
+<p>Client fires <code>POST /cards/42/move { list_id: "l_2", position: 16384.0 }</code>. Position is a <strong>fractional index</strong> (float) — I'll explain this in Deep Dive 9.1.</p>
+</li>
+<li>
+<p><strong>Board Service</strong> receives the request. Before writing, it checks the <code>event_id</code> in the request — if this event was already applied (client retry after timeout), return the existing result immediately (idempotent).</p>
+</li>
+<li>
+<p>Board Service executes a DB transaction:
+   <code>sql
+   UPDATE cards SET list_id='l_2', position=16384.0,
+                    updated_at=NOW(), updated_by='u_A'
+   WHERE id='c_42'</code>
+   Returns 200 OK to User A.</p>
+</li>
+<li>
+<p>Board Service publishes to Redis channel <code>board:b_123</code>:
+   <code>json
+   { "event": "CARD_MOVED", "card_id": "c_42", "list_id": "l_2",
+     "position": 16384.0, "actor_id": "u_A", "event_id": "evt_xyz", "ts": ... }</code></p>
+</li>
+<li>
+<p><strong>WS Server 1</strong> (where User B is connected) and <strong>WS Server 2</strong> (User C) are both subscribed to <code>board:b_123</code> channel. Both receive the Redis message and push it over their respective WebSocket connections to Users B and C.</p>
+</li>
+<li>
+<p>Users B and C update their board state from the event delta. Card-42 moves in their browsers — total latency from User A's drag to B/C seeing it: <strong>~150–200ms</strong>.</p>
+</li>
+<li>
+<p>Async: Board Service appends an activity event to the Activity DB (BigQuery/append-only table): <code>{board_id, card_id, actor, event_type: CARD_MOVED, ts}</code>.</p>
+</li>
+</ol>
+<h3 id="62-conflict-two-users-move-same-card-simultaneously">6.2 Conflict — Two Users Move Same Card Simultaneously</h3>
+<ol>
+<li>User A and User B both drag Card-42 at the same instant.</li>
+<li>Both clients send <code>POST /cards/42/move</code> with their target positions.</li>
+<li>DB serializes writes. Whichever request arrives first gets written. Second request sees a conflicting <code>updated_at</code> timestamp (optimistic lock check: <code>WHERE updated_at = {client_known_ts}</code>).</li>
+<li>Second write is rejected with <code>409 Conflict</code>.</li>
+<li>Board Service publishes the winning move to Redis → all members (including the loser) receive the correction event.</li>
+<li>The losing client's optimistic update is <strong>reverted</strong> — card snaps to the server-correct position. I chose last-write-wins because: board conflicts are rare, reversing a card move has zero consequence (unlike financial double-spend), and the complexity of CRDT for position is not justified.</li>
+</ol>
+<h3 id="63-board-load-user-opens-board">6.3 Board Load — User Opens Board</h3>
+<ol>
+<li>Client opens board <code>b_123</code>. Fires <code>GET /boards/b_123</code>.</li>
+<li><strong>Board Service</strong> checks Redis cache: <code>board:snapshot:{b_123}</code> (TTL=60s).</li>
+<li>Cache hit → return full snapshot (lists + cards + members) in ~5ms.</li>
+<li>Cache miss → query PostgreSQL:
+   <code>sql
+   SELECT lists.*, cards.* FROM lists
+   JOIN cards ON cards.list_id = lists.id
+   WHERE lists.board_id = 'b_123'
+   ORDER BY lists.position, cards.position</code>
+   Write result to Redis cache. Return to client.</li>
+<li>Client renders board, then immediately opens WebSocket <code>WS /boards/b_123/sync</code> to subscribe to future events.</li>
+<li>From this point, all mutations arrive as delta events over WebSocket — client never re-fetches the full board.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant UA as User A (dragger)
+    participant UB as User B (viewer)
+    participant BS as Board Service
+    participant DB as PostgreSQL
+    participant RP as Redis Pub/Sub
+    participant WS as WS Server
+
+    UA-&gt;&gt;UA: optimistic UI (card moves instantly)
+    UA-&gt;&gt;BS: POST /cards/42/move {list_id, position}
+    BS-&gt;&gt;DB: UPDATE cards SET list_id, position WHERE id=42
+    DB--&gt;&gt;BS: OK
+    BS--&gt;&gt;UA: 200 OK
+    BS-&gt;&gt;RP: PUBLISH board:b_123 {CARD_MOVED, card_id:42...}
+    RP-&gt;&gt;WS: event delivered to WS server(s)
+    WS-&gt;&gt;UB: WS push {CARD_MOVED, card_id:42, position:16384}
+    UB-&gt;&gt;UB: board state updated, card moves in UI
+    BS-&gt;&gt;BS: async: append to Activity DB
+</div>
+<div class="mermaid">
+sequenceDiagram
+    participant UA as User A
+    participant UB as User B
+    participant BS as Board Service
+    participant DB as PostgreSQL
+    participant RP as Redis Pub/Sub
+
+    UA-&gt;&gt;BS: POST /cards/42/move {position: 16384} (t=0ms)
+    UB-&gt;&gt;BS: POST /cards/42/move {position: 32768} (t=1ms)
+    BS-&gt;&gt;DB: UPDATE cards... WHERE updated_at=T1 (User A wins)
+    DB--&gt;&gt;BS: OK (User A's write committed)
+    BS-&gt;&gt;RP: PUBLISH {CARD_MOVED, position: 16384, actor: A}
+    BS-&gt;&gt;DB: UPDATE cards... WHERE updated_at=T1 (User B, stale)
+    DB--&gt;&gt;BS: 0 rows affected (optimistic lock miss)
+    BS--&gt;&gt;UB: 409 Conflict
+    RP--&gt;&gt;UB: receives correction event {position: 16384}
+    UB-&gt;&gt;UB: revert optimistic UI to position 16384
+</div>
+<hr />
+<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    U[&quot;Browser Client&quot;]
+    AG[&quot;API Gateway + LB&quot;]
+    BS[&quot;Board Service&quot;]
+    WS[&quot;WebSocket Server&quot;]
+    DB[(&quot;PostgreSQL\nBoard State&quot;)]
+    RP[(&quot;Redis\nPub/Sub + Cache&quot;)]
+    S3[&quot;S3\nAttachments&quot;]
+
+    U--&gt;AG
+    AG--&gt;BS
+    BS--&gt;DB
+    BS--&gt;RP
+    RP--&gt;WS
+    WS--&gt;U
+    U--&gt;|direct upload|S3
+</div>
+<h3 id="evolved-design">Evolved Design</h3>
+<div class="mermaid">
+graph TD
+    U[&quot;Browser Client&quot;]
+    CDN[&quot;CDN\nStatic Assets&quot;]
+    AG[&quot;API Gateway\nAuth + Rate Limit&quot;]
+    BS1[&quot;Board Service 1&quot;]
+    BS2[&quot;Board Service 2&quot;]
+    WS1[&quot;WS Server 1\nsticky sessions&quot;]
+    WS2[&quot;WS Server 2\nsticky sessions&quot;]
+    DB[(&quot;PostgreSQL\nSharded by board_id&quot;)]
+    RC[(&quot;Redis Cache\nBoard Snapshots TTL=60s&quot;)]
+    RP[(&quot;Redis Pub/Sub\nboard:{id} channels&quot;)]
+    NS[&quot;Notification Service&quot;]
+    AS[&quot;Activity Service\nAppend-only&quot;]
+    BQ[(&quot;BigQuery\nActivity Log&quot;)]
+    S3[&quot;S3\nAttachments&quot;]
+    K[[&quot;Kafka\nAsync events&quot;]]
+
+    U--&gt;CDN
+    U--&gt;AG
+    AG--&gt;BS1
+    AG--&gt;BS2
+    BS1--&gt;DB
+    BS2--&gt;DB
+    BS1--&gt;RC
+    BS1--&gt;RP
+    BS2--&gt;RP
+    RP--&gt;WS1
+    RP--&gt;WS2
+    WS1--&gt;U
+    WS2--&gt;U
+    BS1--&gt;K
+    K--&gt;NS
+    K--&gt;AS
+    AS--&gt;BQ
+    U--&gt;|pre-signed URL|S3
+</div>
+<hr />
+<h2 id="8-data-model">8. Data Model</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Storage Separation</strong></p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Board state (boards, lists, cards)</td>
+<td>PostgreSQL (sharded by board_id)</td>
+<td>Relational, ACID transactions for positional consistency</td>
+</tr>
+<tr>
+<td>Board snapshot cache</td>
+<td>Redis (TTL=60s)</td>
+<td>Sub-ms board load; invalidated on any mutation</td>
+</tr>
+<tr>
+<td>Real-time event fanout</td>
+<td>Redis Pub/Sub (channel per board)</td>
+<td>Sub-ms publish; ephemeral — no persistence needed</td>
+</tr>
+<tr>
+<td>File attachments</td>
+<td>S3</td>
+<td>Never store binary in DB; direct client-to-S3 upload via pre-signed URL</td>
+</tr>
+<tr>
+<td>Activity / audit log</td>
+<td>BigQuery (append-only)</td>
+<td>2B events/day; analytical queries, never OLTP</td>
+</tr>
+<tr>
+<td>Notification queue</td>
+<td>Kafka</td>
+<td>Async, durable; at-least-once delivery to Notification Service</td>
+</tr>
+</tbody>
+</table>
+</blockquote>
+<h3 id="core-tables-postgresql-sharded-by-board_id">Core Tables (PostgreSQL, sharded by <code>board_id</code>)</h3>
+<p><strong>users</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| email | text (unique) | login identity |
+| display_name | text | |
+| avatar_url | text | S3 key |
+| created_at | timestamp | |</p>
+<p><strong>workspaces</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| name | text | |
+| owner_id | UUID (FK → users) | |
+| created_at | timestamp | |</p>
+<p><strong>boards</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| workspace_id | UUID (FK → workspaces) | |
+| name | text | |
+| visibility | enum | public / private |
+| is_archived | boolean | soft delete |
+| created_by | UUID (FK → users) | |
+| created_at | timestamp | |</p>
+<p><strong>lists</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| board_id | UUID (FK, shard key) | |
+| name | text | |
+| position | float8 | fractional index — see Deep Dive 9.1 |
+| is_archived | boolean | |
+| created_by | UUID (FK → users) | |
+| created_at | timestamp | |</p>
+<p><strong>cards</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| board_id | UUID (shard key) | denormalized for query efficiency |
+| list_id | UUID (FK) | current list |
+| title | text | |
+| description | text | |
+| position | float8 | fractional index within list |
+| due_date | timestamp | nullable |
+| assignee_ids | UUID[] | PostgreSQL array |
+| label_ids | UUID[] | FK array → labels.id |
+| is_archived | boolean | soft delete |
+| created_by | UUID (FK → users) | |
+| created_at | timestamp | |
+| reminded_24h | boolean | set true after due-date reminder sent — see Deep Dive 9.7 |
+| updated_at | timestamp | <strong>optimistic lock version field</strong> |
+| updated_by | UUID (FK → users) | |</p>
+<p><strong>board_members</strong>
+| Column | Type | Note |
+|---|---|---|
+| board_id | UUID (PK, FK → boards) | composite PK |
+| user_id | UUID (PK, FK → users) | composite PK |
+| role | enum | admin / member / viewer |
+| joined_at | timestamp | |</p>
+<p><strong>labels</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| board_id | UUID (FK, shard key) | labels are board-scoped |
+| name | text | e.g. "Bug", "Feature" |
+| color | text | hex color string |</p>
+<p><strong>attachments</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| card_id | UUID (FK) | |
+| board_id | UUID (shard key) | |
+| uploader_id | UUID (FK → users) | |
+| filename | text | original file name |
+| s3_key | text | S3 object key |
+| size_bytes | bigint | |
+| status | enum | PENDING / UPLOADED / DELETED |
+| created_at | timestamp | |</p>
+<p><strong>checklists</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| card_id | UUID (FK) | |
+| board_id | UUID (shard key) | |
+| title | text | e.g. "Acceptance Criteria" |
+| position | float8 | fractional index within card |</p>
+<p><strong>checklist_items</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| checklist_id | UUID (FK → checklists) | |
+| board_id | UUID (shard key) | |
+| title | text | |
+| is_checked | boolean | |
+| position | float8 | fractional index within checklist |
+| due_date | timestamp | nullable |
+| assignee_id | UUID (FK → users) | nullable |</p>
+<p><strong>comments</strong>
+| Column | Type | Note |
+|---|---|---|
+| id | UUID (PK) | |
+| card_id | UUID (FK) | |
+| board_id | UUID (shard key) | |
+| author_id | UUID (FK → users) | |
+| body | text | |
+| mentions | UUID[] | parsed from @mentions |
+| is_edited | boolean | true if body was edited post-creation |
+| created_at | timestamp | |
+| updated_at | timestamp | |</p>
+<h3 id="indexes-postgresql">Indexes (PostgreSQL)</h3>
+<pre><code class="language-sql">-- Hot path: board load (lists + cards ordered by position)
+CREATE INDEX idx_lists_board_pos    ON lists    (board_id, position);
+CREATE INDEX idx_cards_list_pos     ON cards    (list_id, position);
+CREATE INDEX idx_cards_board        ON cards    (board_id);          -- shard fan-out
+
+-- Card detail
+CREATE INDEX idx_comments_card      ON comments (card_id, created_at DESC);
+CREATE INDEX idx_attachments_card   ON attachments (card_id);
+CREATE INDEX idx_checklists_card    ON checklists (card_id, position);
+CREATE INDEX idx_items_checklist    ON checklist_items (checklist_id, position);
+
+-- Membership
+CREATE UNIQUE INDEX idx_members_pk  ON board_members (board_id, user_id);
+CREATE INDEX idx_members_user       ON board_members (user_id);      -- &quot;user's boards&quot; query
+
+-- Labels
+CREATE INDEX idx_labels_board       ON labels (board_id);
+
+-- Attachments cleanup job
+CREATE INDEX idx_attachments_status ON attachments (status, created_at) WHERE status = 'PENDING';
+
+-- Due date reminder job (partial index — only non-reminded, non-archived cards with due dates)
+CREATE INDEX idx_cards_due_date     ON cards (due_date) WHERE reminded_24h = false AND is_archived = false;
+</code></pre>
+<hr />
+<h2 id="9-deep-dives">9. Deep Dives</h2>
+<h3 id="91-card-position-fractional-indexing">9.1 Card Position — Fractional Indexing</h3>
+<p><strong>Problem:</strong> Cards have an order within a list. User drags Card-42 between Card-10 (position=100) and Card-20 (position=200). How do we store the new position without renumbering all cards?</p>
+<p><strong>Naive solution — integer index:</strong>
+Card-42 gets position=150. Fine. But what if the user drags again between position=100 and position=150? We need 125. Eventually: positions 100, 112, 113, 113 — we run out of integers between adjacent values and must renumber all cards in the list. Renumber = N writes + N WebSocket push events = expensive fan-out.</p>
+<p><strong>Chosen solution — fractional indexing (float64):</strong>
+Each position is a float64. Inserting between positions A and B → <code>new_position = (A + B) / 2</code>.</p>
+<pre><code>Initial:  A=10000, B=20000
+Insert:   new = 15000
+Insert again between 10000 and 15000: new = 12500
+Insert again: new = 11250
+...
+</code></pre>
+<p>Float64 gives ~15 decimal digits of precision. In practice, after ~50 consecutive inserts between the same two positions, precision degrades. <strong>Rebalancing trigger:</strong> if <code>|A - B| &lt; 0.01</code>, rebalance the entire list (assign evenly-spaced positions 10000, 20000, 30000...). Rebalancing is rare — triggered for &lt;0.01% of moves.</p>
+<p>The trade-off I accept: float precision edge cases require a rebalance job. Acceptable because rebalancing a list of 40 cards = 40 writes, once in every ~50 consecutive inserts to the same gap.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Fractional indexing makes 99.9% of card moves a single-row UPDATE with zero fan-out to other cards. Integer indexing makes every insert an N-row UPDATE that fans out to all N board members. Wrong at scale.</p>
+</blockquote>
+<hr />
+<h3 id="92-real-time-sync-websocket-redis-pubsub">9.2 Real-time Sync — WebSocket + Redis Pub/Sub</h3>
+<p><strong>Problem:</strong> 8–10M concurrent WebSocket connections. A card move on board B must reach all members of board B — but those members may be connected to different WS servers. How does WS Server 1 know to push to User B on WS Server 2?</p>
+<p><strong>Naive solution — broadcast to all WS servers:</strong>
+Every WS server holds all connections. Any mutation broadcasts to all servers. Each server checks if any of its connections care about this board. At 8M connections × 100K mutations/sec = wasteful.</p>
+<p><strong>Chosen solution — Redis Pub/Sub with per-board channels:</strong></p>
+<ol>
+<li>When User B's browser opens board <code>b_123</code>, WS Server 2 subscribes to Redis channel <code>board:b_123</code>.</li>
+<li>Board Service publishes every mutation to <code>board:{boardId}</code> — one Redis PUBLISH command, regardless of how many members are watching.</li>
+<li>All WS servers subscribed to that channel receive the event and push it to their respective connected users.</li>
+</ol>
+<p><strong>Connection routing:</strong> Load balancer uses <strong>sticky sessions</strong> (consistent hash on <code>userId</code>) to ensure a user's WebSocket always reconnects to the same WS server — simplifies per-user state management (pending ACKs, subscription list).</p>
+<p><strong>Scale check:</strong> 8M connections / 10 WS servers = 800K connections per server. Each server manages 800K WebSocket connections + subscribes to ~200K active board channels (users watching many boards simultaneously). Redis handles this: one PUBLISH = fan-out to all subscribers across all WS servers.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: WebSocket vs SSE here is a subscription management problem, not a performance problem. I chose WebSocket (not SSE) because clients also send events to the server (subscribe/unsubscribe messages). SSE is read-only — can't send from client.</p>
+</blockquote>
+<hr />
+<h3 id="93-conflict-resolution-optimistic-locking-for-card-moves">9.3 Conflict Resolution — Optimistic Locking for Card Moves</h3>
+<blockquote>
+<p>See the full conflict resolution strategy comparison in <a href="#-consistency-model">🧠 Consistency Model</a> above. Summary here focuses on the implementation mechanics.</p>
+</blockquote>
+<p><strong>Problem:</strong> Two users drag the same card simultaneously. Both send <code>POST /cards/42/move</code>. Without coordination, the second write silently overwrites the first — the "winner" depends on network race, not intent.</p>
+<p><strong>Chosen: Last-write-wins via optimistic locking on <code>updated_at</code>.</strong></p>
+<p>Client always sends its last-known <code>updated_at</code> with every move request:</p>
+<pre><code class="language-sql">UPDATE cards
+SET list_id = $1, position = $2, updated_at = NOW(), updated_by = $3
+WHERE id = $4
+  AND updated_at = $5    ← client's last-known version
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Outcome</th>
+<th>What happened</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 row affected</td>
+<td>Write committed, no conflict</td>
+<td>200 OK → Redis PUBLISH CARD_MOVED</td>
+</tr>
+<tr>
+<td>0 rows affected</td>
+<td>Another write committed between client's read and this write</td>
+<td>409 Conflict → client reverts optimistic UI</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Client reconciliation on 409:</strong>
+1. Client receives the correction <code>CARD_MOVED</code> event from Redis (the winning version)
+2. Client discards its pending move from the <code>pendingEvents</code> Map
+3. Client applies the server's event — card animates to server-correct position (CSS transition, 300ms)
+4. Board state converges across all members</p>
+<p><strong>Why not pessimistic locking?</strong> <code>SELECT FOR UPDATE</code> holds a row lock for the entire drag duration (hundreds of ms). At 100K drags/sec this serialises all concurrent drags globally — instant bottleneck.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Optimistic locking is correct because card conflicts are rare (&lt;0.1% of moves). Pessimistic locking punishes the 99.9% of non-conflicting moves to protect against a conflict that almost never occurs. Wrong trade-off.</p>
+</blockquote>
+<hr />
+<h3 id="94-board-snapshot-fast-initial-load">9.4 Board Snapshot — Fast Initial Load</h3>
+<p><strong>Problem:</strong> Opening a board must feel instant. A board with 200 cards across 6 lists needs full state — lists, cards, members, labels. PostgreSQL query with joins over millions of boards = slow cold read.</p>
+<p><strong>Naive solution:</strong> <code>SELECT * FROM cards JOIN lists WHERE board_id=?</code> on every board open.
+At 5M concurrent boards × opens/day → PostgreSQL overwhelmed.</p>
+<p><strong>Chosen solution — Redis snapshot cache (TTL=60s):</strong>
+- Board Service caches serialized full board state in Redis at key <code>board:snapshot:{boardId}</code>.
+- Cache hit → return in ~5ms (Redis in-memory).
+- Cache miss → query DB, populate cache.
+- <strong>Invalidation:</strong> Every mutation calls <code>DEL board:snapshot:{boardId}</code> before publishing the Redis Pub/Sub event. Next board open rebuilds from DB.</p>
+<p>Why TTL=60s even with explicit invalidation? Safety net — if invalidation misses (service crash mid-mutation), cache auto-expires in 60s. Stale board state for max 60s is acceptable.</p>
+<p><strong>Board open + WebSocket:</strong> Client fetches snapshot, then opens WebSocket subscription. There's a small race window (between snapshot fetch and WS subscribe) where events might be missed. Fix: snapshot response includes a <code>last_event_id</code>. WS server buffers events for 5 seconds; client catches up from <code>last_event_id</code> on subscribe.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Board snapshot in Redis = O(1) board load for 99% of opens. The 1% cache miss pays the DB query cost — acceptable. Without the cache, every board open = a multi-table JOIN over a DB that also handles 100K mutations/sec.</p>
+</blockquote>
+<hr />
+<h3 id="95-file-attachments-direct-s3-upload">9.5 File Attachments — Direct S3 Upload</h3>
+<p><strong>Problem:</strong> Cards can have file attachments. Files can be large (up to 100MB). If the client uploads via our API server, the file transits through our servers — wasted bandwidth, wasted CPU, added latency.</p>
+<p><strong>Chosen solution — pre-signed S3 URL:</strong>
+1. Client requests <code>POST /cards/{id}/attachments { filename, content_type }</code>.
+2. Board Service generates a pre-signed S3 URL (valid 10 min), saves attachment metadata (card_id, filename, s3_key, status=PENDING) to DB.
+3. Returns pre-signed URL to client.
+4. Client uploads directly to S3 (no traffic through our servers).
+5. S3 fires an event notification → Lambda/webhook updates attachment status to UPLOADED → publishes to Kafka → Notification Service and WS event fanout ("User A attached file.pdf").</p>
+<p>Trade-off I accept: if client upload fails, attachment row stays in PENDING state. Background cleanup job deletes PENDING rows older than 24 hours and revokes the S3 key.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Never route binary file uploads through your API servers. Pre-signed S3 URL = zero server bandwidth for attachments. 10M uploads/day at avg 2MB = 20TB/day. Routing that through API servers would require 50+ servers just for upload I/O.</p>
+</blockquote>
+<hr />
+<h3 id="96-mentions-notification-flow">9.6 @Mentions — Notification Flow</h3>
+<p><strong>Problem:</strong> When a user types <code>@alice</code> in a comment, Alice must receive a notification within 5 seconds — in-app, email, or push — without blocking the comment POST response.</p>
+<p><strong>Flow:</strong>
+1. Client sends <code>POST /cards/{id}/comments { body: "check this @alice", mentions: ["u_alice"] }</code>.
+2. Board Service saves the comment row (mentions = <code>[u_alice]</code>), returns 200 OK immediately.
+3. Board Service publishes two events asynchronously to Kafka:
+   - <code>board.events</code> topic → Redis Pub/Sub fan-out (so all board members see the new comment in real-time via WS)
+   - <code>notification.mentions</code> topic → Notification Service
+4. <strong>Notification Service</strong> consumes <code>notification.mentions</code>:
+   - Looks up Alice's notification preferences (push / email / in-app)
+   - Checks rate limit: no more than 10 notifications/min per user
+   - Dispatches to the appropriate channel(s)</p>
+<p><strong>Delivery guarantee:</strong> At-least-once from Kafka. Idempotency key = <code>comment_id + user_id</code>. <code>ON CONFLICT DO NOTHING</code> in the notifications table prevents duplicate in-app alerts.</p>
+<pre><code>User types @alice in comment
+  → POST /cards/{id}/comments
+  → DB write (mentions=[u_alice])
+  → Kafka: board.events + notification.mentions (async, non-blocking)
+  → Kafka → Notification Service → push/email/in-app to Alice (&lt;5s)
+</code></pre>
+<blockquote>
+<p>[!NOTE]
+Key Insight: @mention notification is fire-and-forget from the comment write path. Never block the comment save on notification delivery. Kafka decouples the two concerns — comment is persisted first, notification dispatched async.</p>
+</blockquote>
+<hr />
+<h3 id="97-due-date-reminders-scheduled-job">9.7 Due Date Reminders — Scheduled Job</h3>
+<p><strong>Problem:</strong> Cards have due dates. Users expect a reminder notification before a card is due (e.g., 24h before). This is not triggered by a user action — it must be proactively scheduled.</p>
+<p><strong>Chosen solution — polling job with distributed lock:</strong></p>
+<ol>
+<li>A <strong>Due Date Reminder Worker</strong> runs every 5 minutes (cron).</li>
+<li>Queries PostgreSQL for cards where <code>due_date BETWEEN NOW() AND NOW() + 25h</code> and <code>reminded_24h = false</code>.
+   <code>sql
+   SELECT id, assignee_ids, due_date FROM cards
+   WHERE due_date BETWEEN NOW() AND NOW() + INTERVAL '25 hours'
+     AND reminded_24h = false
+     AND is_archived = false</code>
+   (This query runs against a dedicated replica to avoid impacting write throughput.)</li>
+<li>For each card, publishes a <code>notification.due_date</code> event to Kafka with <code>card_id</code>, <code>assignee_ids</code>, <code>due_date</code>.</li>
+<li>Marks <code>reminded_24h = true</code> on the card row (UPDATE).</li>
+<li>Notification Service consumes and dispatches to each assignee's preferred channel.</li>
+</ol>
+<p><strong>Distributed lock:</strong> Multiple worker instances could run the same job simultaneously. Use Redis <code>SET NX EX 270</code> (270s = 4.5min) on key <code>due_date_job_lock</code> — only one worker acquires the lock and runs the job per 5-min window.</p>
+<p><strong>Why not event-driven (set a timer at card creation)?</strong> Timer-based approach (e.g., SQS delay queue) requires canceling and rescheduling on every due_date change. Polling is simpler and a 5-min poll interval is well within the 24h reminder tolerance.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Due date reminders are a scheduling problem, not a real-time problem. A 5-minute polling job with a distributed lock is simpler than a timer queue that must be maintained across every due_date edit/delete.</p>
+</blockquote>
+<hr />
+<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
+<p>We're designing for <strong>50M DAU</strong>, <strong>8M concurrent WebSocket connections</strong>, <strong>100K card mutations/sec peak</strong>, <strong>5M active boards</strong>. Primary bottleneck: <strong>WebSocket fan-out throughput</strong> — not DB write throughput.</p>
+<p><strong>What breaks first at 10× scale (500M DAU, 80M concurrent WS):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Bottleneck</th>
+<th>Problem</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WebSocket servers</td>
+<td>800K→8M connections per server</td>
+<td>Scale WS servers horizontally; Redis Cluster for Pub/Sub channel distribution</td>
+</tr>
+<tr>
+<td>Redis Pub/Sub throughput</td>
+<td>1M publish events/sec at 10×</td>
+<td>Redis Cluster shards channels by <code>board_id</code> hash</td>
+</tr>
+<tr>
+<td>PostgreSQL write throughput</td>
+<td>100K→1M mutations/sec</td>
+<td>Shard by <code>board_id</code> (consistent hashing); each shard owns a range of boards</td>
+</tr>
+<tr>
+<td>Board snapshot cache (Redis)</td>
+<td>5M→50M active boards × 60s TTL</td>
+<td>Redis Cluster; each shard owns a slice of board_id space</td>
+</tr>
+<tr>
+<td>Activity DB</td>
+<td>20B events/day at 10×</td>
+<td>BigQuery handles petabyte-scale natively; increase Kafka partition count</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Peak spike scenario — end of sprint (all teams updating boards simultaneously):</strong>
+- Mutation rate spikes 5× over baseline
+- Redis Pub/Sub absorbs the burst (in-memory, no disk I/O)
+- Board snapshot cache hit rate drops as many boards mutate simultaneously (more invalidations)
+- WS servers auto-scale on connection count metric</p>
+<p><strong>Sharding strategy for PostgreSQL:</strong>
+Shard key = <code>board_id</code>. All tables include <code>board_id</code> as a denormalized shard key. A board's entire data (lists, cards, comments) lives on one shard — no cross-shard joins for any board operation.</p>
+<h3 id="hot-board-problem">Hot Board Problem</h3>
+<p>Some boards are <strong>extremely hot</strong> — a company-wide sprint board with 500 members all viewing simultaneously. This breaks the avg 4-member fanout assumption.</p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>At 500 members</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Redis Pub/Sub fan-out</td>
+<td>1 PUBLISH → 500 WS pushes per event, all from 1 channel</td>
+<td>Acceptable — Redis handles millions of subscribers per channel</td>
+</tr>
+<tr>
+<td>PostgreSQL contention</td>
+<td>500 concurrent readers for same board snapshot</td>
+<td>Snapshot cache absorbs this — 1 DB read per 60s regardless of reader count</td>
+</tr>
+<tr>
+<td>Cache invalidation storm</td>
+<td>200 mutations/sec on a hot board → 200 Redis snapshot invalidations/sec</td>
+<td>Apply debounce: batch invalidations within a 500ms window; snapshot rebuilds at most 2/sec per board</td>
+</tr>
+<tr>
+<td>WS server hotspot</td>
+<td>All 500 members on the same WS server (sticky sessions)</td>
+<td>Sticky sessions are per-user, not per-board — 500 users spread across all WS servers naturally</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Isolated hot board treatment:</strong> Boards exceeding a mutation-rate threshold (&gt;100 mutations/min) are tagged as <code>hot</code>. For hot boards: snapshot TTL drops to 10s (trade freshness for cache hit rate); Redis Pub/Sub channel gets dedicated a connection pool priority.</p>
+<hr />
+<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WS Server crash</td>
+<td>Connected users lose real-time updates</td>
+<td>Clients detect disconnect (WS <code>onclose</code>), reconnect to new WS server (LB re-routes), fetch snapshot diff from <code>last_event_id</code></td>
+</tr>
+<tr>
+<td>Redis Pub/Sub node down</td>
+<td>Events not fanned out to WS servers</td>
+<td>Redis Cluster promotes replica; during failover (~10s), WS clients see no updates. On reconnect, snapshot diff catches up missed events</td>
+</tr>
+<tr>
+<td>Board Service crashes mid-mutation</td>
+<td>DB write may or may not have committed</td>
+<td>Client retries with same <code>event_id</code>; idempotent write via <code>ON CONFLICT DO NOTHING</code> on event_id unique index</td>
+</tr>
+<tr>
+<td>PostgreSQL shard unresponsive</td>
+<td>Boards on that shard can't be loaded/mutated</td>
+<td>Route reads to replica; writes fail with 503 until primary recovered; user sees "Unable to save changes"</td>
+</tr>
+<tr>
+<td>Redis snapshot cache OOM</td>
+<td>Board opens go to DB directly</td>
+<td>DB handles the load (degraded but functional); alert fires; increase Redis memory or add shards</td>
+</tr>
+<tr>
+<td>S3 upload fails</td>
+<td>Attachment status stays PENDING</td>
+<td>Background cleanup job after 24h; user can retry upload via new pre-signed URL</td>
+</tr>
+<tr>
+<td>Kafka consumer (Activity Service) lag</td>
+<td>Activity feed delayed</td>
+<td>Kafka 7-day retention; consumer catches up; activity feed shows "loading" until caught up</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="real-time-protocol-websocket-vs-sse-vs-polling">Real-time Protocol: WebSocket vs SSE vs Polling</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Long Polling</th>
+<th>SSE</th>
+<th>WebSocket (chosen)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Direction</td>
+<td>Request-response</td>
+<td>Server → Client only</td>
+<td>Full-duplex</td>
+</tr>
+<tr>
+<td>Latency</td>
+<td>500ms–2s</td>
+<td>&lt;200ms</td>
+<td>&lt;200ms</td>
+</tr>
+<tr>
+<td>Server state</td>
+<td>Stateless</td>
+<td>Stateful (connection held)</td>
+<td>Stateful</td>
+</tr>
+<tr>
+<td>Client can send</td>
+<td>Yes (new request)</td>
+<td>No</td>
+<td>Yes (same connection)</td>
+</tr>
+<tr>
+<td>Scaling</td>
+<td>Easy (stateless)</td>
+<td>Medium</td>
+<td>Hard (sticky sessions)</td>
+</tr>
+<tr>
+<td>Use case</td>
+<td>Legacy fallback</td>
+<td>Notifications (no client send)</td>
+<td>Collaborative boards</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> WebSocket — clients must send subscribe/unsubscribe messages as they navigate between boards. SSE is read-only and can't support this.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: WebSocket vs SSE is a subscription management problem, not a performance problem. Both have similar latency. WebSocket wins because collaborative boards need bidirectional communication for subscription control.</p>
+</blockquote>
+<hr />
+<h3 id="conflict-resolution-lww-vs-crdt-vs-ot">Conflict Resolution: LWW vs CRDT vs OT</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Last-Write-Wins (chosen)</th>
+<th>OT (Operational Transformation)</th>
+<th>CRDT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complexity</td>
+<td>Low</td>
+<td>Very high</td>
+<td>High</td>
+</tr>
+<tr>
+<td>Card move conflicts</td>
+<td>Loser reverts (UX: small jerk)</td>
+<td>Merge both moves</td>
+<td>Automatic merge</td>
+</tr>
+<tr>
+<td>When conflicts happen</td>
+<td>&lt;0.1% of moves</td>
+<td>Every character edit</td>
+<td>Every character edit</td>
+</tr>
+<tr>
+<td>Right tool for</td>
+<td>Discrete position updates</td>
+<td>Real-time text editing (Google Docs)</td>
+<td>Eventually-consistent counters</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> LWW — board position conflicts are discrete and rare (&lt;0.1%). OT/CRDT are built for character-level merging in real-time text editors. Bringing that complexity to card position updates (which happen ~once/minute per active user) is massive over-engineering.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Trello is NOT Google Docs. Card moves are discrete events, not character streams. LWW with optimistic lock + client revert is the correct, simple solution. CRDT for position management solves a problem that barely exists.</p>
+</blockquote>
+<hr />
+<h3 id="card-position-fractional-vs-integer-index">Card Position: Fractional vs Integer Index</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Integer (gap-based)</th>
+<th>Fractional float64 (chosen)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Insert between two cards</td>
+<td>Renumber N cards</td>
+<td>One UPDATE, new midpoint</td>
+</tr>
+<tr>
+<td>Fan-out per insert</td>
+<td>N card events to all members</td>
+<td>1 card event</td>
+</tr>
+<tr>
+<td>Precision limit</td>
+<td>Never</td>
+<td>After ~50 consecutive inserts to same gap — rebalance</td>
+</tr>
+<tr>
+<td>Implementation</td>
+<td>Simple</td>
+<td>Slightly more complex (rebalance trigger)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Fractional indexing — single-row UPDATE per move. Integer rebalancing at 100K moves/sec would generate N fan-out events per move, overwhelming WS servers.</p>
+<hr />
+<h3 id="storage-postgresql-vs-cassandra-for-board-state">Storage: PostgreSQL vs Cassandra for Board State</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>PostgreSQL (chosen)</th>
+<th>Cassandra</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Optimistic locking</td>
+<td>Native (<code>WHERE updated_at=?</code>)</td>
+<td>No multi-row transactions</td>
+</tr>
+<tr>
+<td>Shard by board_id</td>
+<td>Manual sharding</td>
+<td>Native partition key</td>
+</tr>
+<tr>
+<td>Complex queries</td>
+<td>Joins, ORDER BY, array ops</td>
+<td>Partition-key + cluster key only</td>
+</tr>
+<tr>
+<td>Board load (lists + cards join)</td>
+<td>O(1) with index</td>
+<td>Cross-partition = scatter-gather</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> PostgreSQL — optimistic locking requires atomic row-level versioning. Cassandra's eventual consistency model makes conflict detection unreliable. Manual sharding by <code>board_id</code> gives linear scale without sacrificing ACID per-board.</p>
+<hr />
+<h2 id="13-frontend-notes">13. Frontend Notes</h2>
+<p><em>Trello is a balanced system — 50% backend / 50% frontend. The frontend problem is drag-and-drop, optimistic UI, and real-time reconciliation.</em></p>
+<h3 id="drag-and-drop">Drag-and-Drop</h3>
+<ul>
+<li>Use a library (react-beautiful-dnd or dnd-kit) for native drag semantics + keyboard accessibility</li>
+<li>On drag start: clone card to drag layer; original card becomes a placeholder (ghost)</li>
+<li>On drop: compute new fractional position client-side (<code>(prev.position + next.position) / 2</code>); apply optimistic update; fire <code>POST /cards/{id}/move</code></li>
+<li>On 409 conflict: animate card back to server-correct position (CSS transition, 300ms)</li>
+</ul>
+<h3 id="optimistic-ui">Optimistic UI</h3>
+<ul>
+<li>Every mutation (move, rename, comment, label toggle) applies to local state immediately</li>
+<li>Pending mutations tracked in a <code>pendingEvents</code> Map keyed by <code>event_id</code></li>
+<li>On WS event received: if <code>event_id</code> is in pending → it's our own echo, skip (idempotent)</li>
+<li>On 409 or WS correction event: revert specific card/list to server state</li>
+</ul>
+<h3 id="websocket-lifecycle">WebSocket Lifecycle</h3>
+<pre><code class="language-js">// One WS connection per open board tab
+const ws = new WebSocket(`/boards/${boardId}/sync`);
+
+ws.onopen = () =&gt; ws.send(JSON.stringify({ action: 'subscribe', board_id: boardId }));
+ws.onmessage = ({ data }) =&gt; applyBoardEvent(JSON.parse(data));
+ws.onclose = () =&gt; {
+  // Reconnect with exponential backoff
+  setTimeout(() =&gt; reconnect(), backoff.next());
+  // On reconnect: fetch snapshot diff from last_event_id
+};
+</code></pre>
+<h3 id="board-state-reconciliation-on-reconnect">Board State Reconciliation on Reconnect</h3>
+<ul>
+<li>On WS reconnect, client sends its <code>last_event_id</code></li>
+<li>Server returns all events after that ID (buffered for 30s)</li>
+<li>Client applies diffs in order → board state catches up without full reload</li>
+<li>If <code>last_event_id</code> is older than 30s buffer: fetch full snapshot (board reload)</li>
+</ul>
+<h3 id="virtual-list-for-large-boards">Virtual List for Large Boards</h3>
+<ul>
+<li>Boards with 500+ cards (e.g., sprint backlog) render all cards → 7,500+ DOM nodes → 8fps</li>
+<li>Use virtual list within each column: render only visible cards + 5 buffer above/below</li>
+<li>Height of each card must be known upfront (or estimated) to maintain scroll position</li>
+</ul>
+<h3 id="skeleton-loading">Skeleton Loading</h3>
+<ul>
+<li>Board load shows skeleton columns with grey card placeholders</li>
+<li><code>aspect-ratio</code> CSS on card containers prevents CLS when real cards load</li>
+<li>Data arrives in ~100ms; skeleton visible for &lt;100ms — barely noticeable</li>
+</ul>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem it solves</th>
+<th>Trade-off accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WebSocket + Redis Pub/Sub fanout</td>
+<td>8M connections across N servers; sub-200ms delivery to all board members</td>
+<td>Sticky sessions required; WS servers are stateful</td>
+</tr>
+<tr>
+<td>Fractional indexing (float64) for positions</td>
+<td>Card move = 1 DB write, 1 WS event (not N rewrites)</td>
+<td>Precision degrades after ~50 inserts to same gap → rebalance needed</td>
+</tr>
+<tr>
+<td>Optimistic locking (updated_at) for conflicts</td>
+<td>Prevent silent overwrites on concurrent card moves</td>
+<td>Losing client's optimistic UI reverts (small UX jerk)</td>
+</tr>
+<tr>
+<td>LWW conflict resolution (not CRDT/OT)</td>
+<td>Board card moves are discrete, rare conflicts — not character streams</td>
+<td>Loser's move lost; acceptable because conflicts are &lt;0.1% of moves</td>
+</tr>
+<tr>
+<td>Redis snapshot cache (TTL=60s) + invalidation</td>
+<td>Board load &lt;100ms despite complex multi-table joins</td>
+<td>60s max staleness on cache miss; snapshot rebuild on every mutation</td>
+</tr>
+<tr>
+<td>Pre-signed S3 for attachments</td>
+<td>10M uploads/day — can't route 20TB/day through API servers</td>
+<td>Upload failure leaves PENDING row; cleanup job required</td>
+</tr>
+<tr>
+<td>Shard PostgreSQL by board_id</td>
+<td>All board data (lists, cards, comments) on one shard — no cross-shard joins</td>
+<td>Manual resharding on topology change</td>
+</tr>
+<tr>
+<td>@mention notification via Kafka (async)</td>
+<td>Comment save must not block on notification delivery</td>
+<td>At-least-once; deduped by <code>comment_id + user_id</code> idempotency key</td>
+</tr>
+<tr>
+<td>Due date reminder via 5-min polling job + Redis lock</td>
+<td>Timer queues require cancel/reschedule on every due_date edit</td>
+<td>5-min polling interval is well within 24h tolerance</td>
+</tr>
+<tr>
+<td>Role-based permissions cached in Redis (TTL=30s)</td>
+<td>Every API call needs a role check — DB lookup per request at 100K/sec would bottleneck</td>
+<td>30s stale window; explicit invalidation on role removal for security</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>Fast Path (card move, happy path):
+  User drags card
+    → Optimistic UI (0ms)
+    → POST /cards/{id}/move
+    → PostgreSQL UPDATE (optimistic lock check)
+    → 200 OK to actor
+    → Redis PUBLISH board:{id}
+    → WS servers push to all members
+    Total: ~150–200ms actor-to-viewer
+
+Reliable Path (reconnect + catch-up):
+  WS disconnects
+    → Client reconnects (exponential backoff)
+    → Sends last_event_id
+    → Server replays buffered events (30s window)
+    → Client applies diffs in order
+    → Board state fully reconciled
+    (If &gt;30s gap: full snapshot reload)
+</code></pre>
+<h3 id="key-insights-checklist">Key Insights Checklist</h3>
+<blockquote>
+<p>[!TIP]
+Say these out loud in the interview:</p>
+</blockquote>
+<ol>
+<li>"This system is NOT a task CRUD app. It is a reactive, event-driven collaborative state synchronization system. Every user action produces a named event — CARD_MOVED, CARD_CREATED, CARD_UPDATED. That event is stored, broadcast, and applied to all clients. There is no direct DB-to-UI path."</li>
+<li>"My consistency model is: eventual consistency with the server as single source of truth. Clients apply optimistic updates locally for instant feedback, then reconcile against server events. On conflict, server wins — client reverts. Every client always converges."</li>
+<li>"Conflict resolution is last-write-wins via optimistic locking on <code>updated_at</code>. Client sends its last-known version with every write. If the version is stale (another write already committed), DB returns 0 rows → 409 → client gets the correction event and reverts. No silent overwrite."</li>
+<li>"I use fractional indexing (float64) for card positions. Moving a card is a single-row UPDATE. Integer-based ordering requires renumbering N cards per insert — N fan-out events to all board members. Wrong at 100K moves/sec."</li>
+<li>"Real-time fanout uses Redis Pub/Sub, not Kafka. Board mutations must reach all connected members in &lt;200ms. Redis is in-memory sub-millisecond publish. Kafka adds 10–100ms broker latency — too slow for this use case."</li>
+<li>"WebSocket over SSE because board clients must send subscribe/unsubscribe messages as they navigate between boards. SSE is read-only. That single requirement forces WebSocket."</li>
+<li>"Optimistic UI is the right default — 99%+ of card moves succeed. The user sees instant feedback. On the rare 409 conflict, the card animates back to server position. The latency cost of waiting for server confirmation before rendering would make the board feel broken."</li>
+<li>"Every WS server subscribes to the same Redis Pub/Sub channel per board. One Redis PUBLISH fans out to all WS servers simultaneously. This is how a user on WS Server 1 sees a move made by a user on WS Server 3 in &lt;200ms without any server-to-server calls."</li>
+<li>"Hot boards — boards with 500+ members all active simultaneously — break the avg 4-member fanout assumption. I handle them with debounced snapshot invalidation and tagged priority in Redis, not a completely different architecture."</li>
+<li>"Permissions are enforced at the API layer — boards are private by default. Every mutation checks the caller's role (admin/member/viewer) against a permission matrix. Roles are cached in Redis at TTL=30s, but I invalidate immediately on member removal because access revocation is a security event, not a UX event."</li>
+<li>"I never route file uploads through API servers. Pre-signed S3 URL means 10M files/day (potentially 20TB) goes directly client-to-S3. My API servers handle metadata only."</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

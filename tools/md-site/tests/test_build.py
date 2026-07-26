@@ -395,19 +395,25 @@ class TestBundledAssetsExist(unittest.TestCase):
             self.assertGreater(os.path.getsize(path), min_size, name)
 
 
-class TestRealTheorySmoke(unittest.TestCase):
-    def test_builds_against_real_theory_folder(self):
+class TestRealSystemDesignSmoke(unittest.TestCase):
+    def test_builds_against_real_system_design_folder(self):
+        # Theory/ (this suite's original real-data corpus) was
+        # deliberately removed from the repo after theory-notes/ was
+        # generated, committed, and pushed -- system-design/ is now the
+        # live real-data corpus this tool is actually used against, so
+        # this test targets that instead of a folder that no longer
+        # exists.
         repo_root = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..")
         )
-        theory_dir = os.path.join(repo_root, "Theory")
+        source_dir = os.path.join(repo_root, "system-design")
         with tempfile.TemporaryDirectory() as output_dir:
-            build.build(theory_dir, output_dir)
+            build.build(source_dir, output_dir)
 
             self.assertTrue(os.path.exists(os.path.join(output_dir, "index.html")))
             self.assertTrue(
                 os.path.exists(
-                    os.path.join(output_dir, "notes", "javascript-core.html")
+                    os.path.join(output_dir, "notes", "rate-limiter.html")
                 )
             )
             note_count = len(
@@ -417,16 +423,16 @@ class TestRealTheorySmoke(unittest.TestCase):
                     if f.endswith(".html")
                 ]
             )
-            self.assertEqual(note_count, 24)
+            self.assertEqual(note_count, 25)
 
             # A typo'd near-duplicate category (e.g. a stray double space)
             # wouldn't raise an exception anywhere -- it would just
             # silently render as an extra sidebar group. Pin the real
-            # config down to exactly the 7 intended categories so a typo
+            # config down to exactly the 8 intended categories so a typo
             # like that fails loudly here instead.
             with open(os.path.join(output_dir, "index.html"), encoding="utf-8") as f:
                 index_html = f.read()
-            self.assertEqual(index_html.count("<details"), 7)
+            self.assertEqual(index_html.count("<details"), 8)
 
 
 if __name__ == "__main__":

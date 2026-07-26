@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design: Config-Driven Homepage (Amazon / Flipkart / eBay) — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html" aria-current="page">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="system-design-config-driven-homepage-amazon-flipkart-ebay">System Design: Config-Driven Homepage (Amazon / Flipkart / eBay)</h1>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design a configurable homepage platform (like Amazon/Flipkart) where the UI is driven entirely by backend configuration. Business teams change layouts 5-10x/week without code deploys. Different users (cohorts, geographies, device types, A/B experiments) see different templates. Pages must load fast: FCP under 1s, LCP under 2.5s, CLS under 0.1.</p>
+<p><strong>In scope:</strong> Config Service (versioning, validation, staged rollout), Personalization Engine (segment resolution, experiment assignment), Rendering Engine (component registry, fallback, lazy loading), BFF data aggregation, SSR + GraphQL streaming pipeline, CDN/edge caching strategy.</p>
+<p><strong>Out of scope:</strong> Product catalog service internals, recommendation ML model training, ads auction engine, user authentication.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<pre><code>Users:
+  100M DAU
+  Average 10 homepage loads/day = 1B page loads/day
+
+Traffic:
+  1B / 86,400s = ~11,574 req/sec average
+  Peak (2x): ~23,000 req/sec
+
+CDN cache hit ratio:
+  Config template: ~90% hit (cohort-static, TTL 5 min)
+  Origin hits after CDN: ~2,300 req/sec
+
+Data per page:
+  5-8 data sources in parallel (hero, recs, ads, categories)
+  Each source: ~10-50 KB -- total ~200 KB per page
+
+Bandwidth at peak:
+  23,000 req/sec x 200 KB = ~4.6 GB/sec (mostly CDN + S3)
+  App servers: ~2,300 req/sec x 50 KB = ~115 MB/sec
+
+Config storage:
+  ~10,000 templates (device x locale x segment x variants)
+  Each template: ~5 KB -- total ~50 MB -- fits entirely in Redis
+  ~20 versions per template -- ~1 GB PostgreSQL -- trivial
+</code></pre>
+<blockquote>
+<p><em>These numbers drive every decision below: CDN absorbs 90% of traffic, personalization must resolve in under 50ms, config must fit in Redis, SSR must complete above-fold in under 400ms.</em></p>
+</blockquote>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ol>
+<li><strong>Config-driven layout</strong> — backend sends template JSON defining sections, types, and order; clients render without knowing the layout at build time</li>
+<li><strong>Personalization</strong> — different users (cohorts, geo, device) see different templates resolved server-side before the first byte is sent</li>
+<li><strong>A/B testing</strong> — experiment variants assigned consistently per user without code deploys or frontend changes</li>
+<li><strong>Progressive loading</strong> — above-fold renders immediately; below-fold sections stream in as data arrives</li>
+<li><strong>Skeleton placeholders</strong> — every section reserves fixed pixel space before data loads, preventing layout shift</li>
+<li><strong>Business team control</strong> — non-engineers modify homepage layout via config dashboard; no engineer required for layout changes</li>
+<li><strong>Config rollout</strong> — new templates staged (canary to 10% to 100%) with instant rollback capability</li>
+</ol>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Target</th>
+<th>Reasoning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Throughput</td>
+<td>23,000 req/sec peak</td>
+<td>Amazon-scale; CDN absorbs 90%</td>
+</tr>
+<tr>
+<td>FCP (First Contentful Paint)</td>
+<td>Under 1s</td>
+<td>User sees content immediately; SSR + CDN</td>
+</tr>
+<tr>
+<td>LCP (Largest Contentful Paint)</td>
+<td>Under 2.5s</td>
+<td>Google Core Web Vital threshold</td>
+</tr>
+<tr>
+<td>CLS (Cumulative Layout Shift)</td>
+<td>Under 0.1</td>
+<td>Fixed heights in config; skeletons fill reserved space</td>
+</tr>
+<tr>
+<td>TTI (Time to Interactive)</td>
+<td>Under 3s</td>
+<td>Critical JS bundle under 100 KB; deferred hydration</td>
+</tr>
+<tr>
+<td>Config availability</td>
+<td>99.99%</td>
+<td>Stale-config CDN fallback; no blank pages</td>
+</tr>
+<tr>
+<td>Personalization latency</td>
+<td>Under 50ms</td>
+<td>Must not block the critical path to FCP</td>
+</tr>
+<tr>
+<td>Config propagation</td>
+<td>Under 30s after publish</td>
+<td>Kafka to CDN purge + Redis invalidation</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> This is primarily a performance problem, not a storage problem. The challenge is not storing page configs — it is delivering them fast enough that the user sees content in under 1s on a slow connection. Every architectural decision (CDN, SSR, @defer, fixed heights) targets one of the Core Web Vitals.</p>
+</blockquote>
+<hr />
+<h2 id="5-mental-model">5. Mental Model</h2>
+<p>A homepage is not rendered by code — it is <strong>assembled dynamically from configuration, data, and experiment assignments at runtime.</strong> Three systems collaborate to produce what the user sees:</p>
+<ul>
+<li><strong>Config Service</strong> decides <em>what</em> to show: which sections, in what order, with what layout — versioned, validated, and gradually rolled out.</li>
+<li><strong>Personalization Engine</strong> decides <em>for whom</em>: maps <code>user_id → segment → experiment variant → templateId</code> in under 50ms.</li>
+<li><strong>Rendering Engine</strong> decides <em>how</em>: maps <code>section.type → React component</code>, with graceful fallback for unknown types.</li>
+</ul>
+<pre><code>                    +-------------------------------------------------------------+
+                    |                       FAST PATH                             |
+  +--------+  req   |  +----------+  template  +----------+  SSR HTML            |
+  | Client | ------&gt;|  |   CDN    | ----------&gt;| SSR Layer| ---------&gt; browser   |
+  +--------+        |  +----------+  (cached)  +----------+  (above fold ready)  |
+                    |                                  |  stream below-fold       |
+                    +----------------------------------|--------------------------+
+                                                       |  GraphQL @defer patches
+                    +----------------------------------v--------------------------+
+                    |                    RELIABLE PATH                            |
+                    |  Personalization Engine --&gt; correct template for this user  |
+                    |  Config Service --&gt; versioned, validated template JSON      |
+                    |  Rendering Engine --&gt; section.type --&gt; React component      |
+                    +-------------------------------------------------------------+
+</code></pre>
+<h3 id="core-design-principles">Core Design Principles</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Optimized For</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast Path</td>
+<td>Latency (FCP under 1s)</td>
+<td>CDN serves cached config by cohort; SSR renders above-fold HTML immediately</td>
+</tr>
+<tr>
+<td>Reliable Path</td>
+<td>Correctness and consistency</td>
+<td>Config validated before publish; experiment assignment via consistent hash; stale-config fallback always available</td>
+</tr>
+<tr>
+<td>Progressive Path</td>
+<td>Perceived performance</td>
+<td>GraphQL @defer streams below-fold data as patches after above-fold renders</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-api-design">6. API Design</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td>/api/v1/homepage?user_id=&amp;platform=&amp;version=</td>
+<td>Fetch personalized page config — returns ordered section list with component types and data</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/config/{page_id}?experiment_id=</td>
+<td>Fetch specific page config for A/B experiment variant</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/cart/items</td>
+<td product_id_="product_id," quantity_="quantity," seller_id="seller_id">Add item</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/cart</td>
+<td>Fetch current cart with prices re-validated</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/cart/checkout</td>
+<td order_id="order_id">Convert cart to order, returns</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/config (admin)</td>
+<td>Publish new page config version</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<code>GET /homepage</code> is the most architecturally interesting endpoint — it drives the entire server-driven UI pattern. The response is a config payload (section types + data URLs), not HTML or components. The client renders whatever sections the server returns, which means new section types can be deployed without app updates.</p>
+</blockquote>
+<hr />
+<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
+<h3 id="71-page-load-config-render">7.1 Page Load &amp; Config Render</h3>
+<p>App launch to config fetch to render sections:</p>
+<p><strong>The story in plain English:</strong></p>
+<ol>
+<li>User opens the app. The client requests the homepage from the CDN edge node.</li>
+<li>CDN cache miss — request forwards to the SSR layer.</li>
+<li>SSR calls the Personalization Engine: "what user segment is this?" Returns in &lt; 10ms from Redis — frequent buyer, mobile, India.</li>
+<li>SSR calls the Experiment Service: "which A/B variant does this user get?" Resolved via a deterministic hash — same user always gets the same variant. Returns in &lt; 5ms.</li>
+<li>SSR fetches the validated page template for this variant from the Config Service (also Redis-backed). The template is a JSON config: an ordered list of section types with their data sources.</li>
+<li>SSR fetches above-the-fold data (hero banner, categories, user context) in parallel via the BFF. Target: &lt; 150ms.</li>
+<li>SSR returns the fully rendered HTML for above-the-fold content. User sees the page — First Contentful Paint achieved.</li>
+<li>Browser then progressively fetches below-the-fold sections (recommendations, ads) via GraphQL streaming. They fill in as data arrives.
+   Key insight: the client renders whatever sections the server config says — no app update needed to add a new section type.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant Client as Client Browser
+    participant CDN as CDN Edge Node
+    participant SSR as SSR Layer
+    participant PersonSvc as Personalization Engine
+    participant ExpSvc as Experiment Service
+    participant ConfigSvc as Config Service
+    participant BFF as BFF GraphQL Gateway
+    participant DataSvcs as Data Services
+
+    Client-&gt;&gt;CDN: GET / with device and locale headers
+    CDN--&gt;&gt;SSR: cache miss - forward request
+
+    Note over SSR,PersonSvc: Step 1 - Resolve user segment under 10ms via Redis
+    SSR-&gt;&gt;PersonSvc: get_segment(user_id)
+    PersonSvc--&gt;&gt;SSR: segment=frequent_buyer, geo=IN, device=mobile
+
+    Note over SSR,ExpSvc: Step 2 - Resolve experiment variant under 5ms via deterministic hash
+    SSR-&gt;&gt;ExpSvc: resolve_experiment(user_id, page=homepage)
+    ExpSvc--&gt;&gt;SSR: variant=B, templateId=home_v4_test
+
+    Note over SSR,ConfigSvc: Step 3 - Fetch validated template under 5ms via Redis
+    SSR-&gt;&gt;ConfigSvc: get_template(templateId=home_v4_test)
+    ConfigSvc--&gt;&gt;SSR: sections array with layoutMeta and dataSource fields
+
+    Note over SSR,BFF: Step 4 - Fetch above-fold data in parallel under 150ms
+    SSR-&gt;&gt;BFF: fetch hero, nav, user context
+    BFF-&gt;&gt;DataSvcs: parallel calls to Hero, Category, User services
+    DataSvcs--&gt;&gt;BFF: above-fold data
+    BFF--&gt;&gt;SSR: hero and nav data
+
+    SSR--&gt;&gt;Client: SSR HTML with above-fold content and skeleton placeholders
+    Note over Client: FCP achieved - above-fold visible
+
+    Client-&gt;&gt;BFF: POST /graphql streaming on single connection
+    BFF-&gt;&gt;DataSvcs: fetch recommendations and ads in parallel
+    BFF--&gt;&gt;Client: incremental @defer patches for below-fold sections
+    Note over Client: Below-fold sections fill in progressively
+</div>
+<h3 id="72-add-to-cart-checkout">7.2 Add to Cart &amp; Checkout</h3>
+<p><strong>The story in plain English:</strong></p>
+<ol>
+<li>User taps "Add to Cart" on a product. Client sends <code>POST /cart/items {product_id, quantity}</code>.</li>
+<li>Cart Service re-fetches the current price from Product Service — the homepage config may have shown a cached/stale price. Always validate before adding to cart.</li>
+<li>Cart is stored in Redis <code>cart:{user_id}</code> with a 24-hour TTL. Not in a database — carts are ephemeral and high-write.</li>
+<li>User proceeds to checkout. Client calls <code>GET /cart</code> — Cart Service re-validates prices one final time.</li>
+<li>If any price has changed since the item was added: return 409 Conflict with updated prices. Client shows a "Price changed" toast. User must confirm before proceeding.</li>
+<li>User confirms → <code>POST /cart/checkout {address_id, payment_method}</code>.</li>
+<li>Cart Service hands off to Order Service → Payment Service. This is a synchronous chain — we block until payment is confirmed.</li>
+<li>On payment success: Redis cart is cleared, <code>order.placed</code> event is published to Kafka, and <code>{order_id}</code> is returned to the client.</li>
+<li>On payment failure: 402 returned, Redis cart is preserved — user can retry without re-adding items.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant Client as Client Browser
+    participant CartSvc as Cart Service
+    participant ProductSvc as Product Service
+    participant Redis as Redis cart:user_id TTL 24h
+    participant OrderSvc as Order Service
+    participant PaymentSvc as Payment Service
+    participant Kafka as Kafka
+
+    Note over Client,CartSvc: User taps Add to Cart on a product section
+    Client-&gt;&gt;CartSvc: POST /cart/items with product_id, quantity, seller_id
+
+    Note over CartSvc,ProductSvc: Re-fetch current price - price can change after config was cached
+    CartSvc-&gt;&gt;ProductSvc: get_item(product_id, seller_id) - availability and current price
+    ProductSvc--&gt;&gt;CartSvc: available=true, current_price=499
+
+    CartSvc-&gt;&gt;Redis: HSET cart:user_id item with current_price, quantity - TTL 24h
+    Redis--&gt;&gt;CartSvc: updated cart stored
+
+    CartSvc--&gt;&gt;Client: updated cart total
+
+    Note over Client,CartSvc: User proceeds to checkout - prices re-validated one more time
+    Client-&gt;&gt;CartSvc: GET /cart
+
+    CartSvc-&gt;&gt;ProductSvc: re-validate prices for all items in cart
+    ProductSvc--&gt;&gt;CartSvc: prices confirmed or updated
+
+    alt price changed since item was added
+        CartSvc--&gt;&gt;Client: 409 Conflict with updated_price in body
+        Note over Client: Shows price changed toast - user must confirm
+    else prices unchanged
+        CartSvc--&gt;&gt;Client: cart with confirmed prices
+
+        Note over Client,CartSvc: User confirms and submits checkout
+        Client-&gt;&gt;CartSvc: POST /cart/checkout with address_id, payment_method
+
+        CartSvc-&gt;&gt;OrderSvc: create_order with cart items and confirmed prices
+        OrderSvc-&gt;&gt;PaymentSvc: charge with amount, payment_method
+
+        alt payment success
+            PaymentSvc--&gt;&gt;OrderSvc: payment_id confirmed
+            OrderSvc--&gt;&gt;CartSvc: order_id created
+            CartSvc-&gt;&gt;Redis: DEL cart:user_id - cart is cleared
+            CartSvc-&gt;&gt;Kafka: publish order.placed with order_id and user_id
+            CartSvc--&gt;&gt;Client: order_id
+        else payment failure
+            PaymentSvc--&gt;&gt;OrderSvc: payment failed
+            OrderSvc--&gt;&gt;CartSvc: order failed
+            CartSvc--&gt;&gt;Client: 402 Payment Required - cart preserved in Redis
+        end
+    end
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Price re-validation at checkout (step 6) is mandatory — the config-driven homepage may have shown a price from a cached section. The cart checkout is the system boundary where you must read fresh from the source of truth, not from the config cache.</p>
+</blockquote>
+<hr />
+<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Client Browser&quot;]
+    CDN[&quot;CDN Edge - Cloudflare or Akamai&quot;]
+    SSR[&quot;SSR Layer - Next.js&quot;]
+    BFF[&quot;BFF GraphQL Gateway&quot;]
+    ConfigSvc[&quot;Config Service&quot;]
+    PersonSvc[&quot;Personalization Engine&quot;]
+    DataSvcs[&quot;Data Services - Products, Recs, Ads&quot;]
+    ConfigDB[(&quot;PostgreSQL - Templates and Versions&quot;)]
+    Redis[(&quot;Redis - Template Cache and User Segments&quot;)]
+
+    Client --&gt;|&quot;GET /&quot;| CDN
+    CDN --&gt;|cache miss| SSR
+    SSR --&gt;|resolve segment and experiment| PersonSvc
+    SSR --&gt;|fetch validated template| ConfigSvc
+    SSR --&gt;|fetch above-fold data| BFF
+    BFF --&gt; DataSvcs
+    ConfigSvc --&gt; Redis
+    ConfigSvc --&gt; ConfigDB
+    PersonSvc --&gt; Redis
+    SSR --&gt;|SSR HTML above-fold| Client
+    Client --&gt;|GraphQL streaming| BFF
+    BFF --&gt;|&quot;@defer patches&quot;| Client
+</div>
+<h3 id="evolved-design-ab-testing-edge-personalization-streaming">Evolved Design - A/B Testing + Edge Personalization + Streaming</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Client Browser&quot;]
+    CDN[&quot;CDN Edge - cohort-aware cache&quot;]
+    SSR[&quot;SSR Service - above-fold HTML&quot;]
+    BFF[&quot;BFF GraphQL Gateway&quot;]
+    ConfigSvc[&quot;Config Service - CRUD, versioning, validation, rollout&quot;]
+    ExpSvc[&quot;A/B Experiment Service - consistent hash&quot;]
+    PersonSvc[&quot;Personalization Engine - segment resolver&quot;]
+    RenderEngine[&quot;Rendering Engine - component registry and fallback&quot;]
+    HeroSvc[&quot;Hero Banner Service&quot;]
+    RecSvc[&quot;Recommendation Service&quot;]
+    AdSvc[&quot;Ad Service&quot;]
+    ConfigDB[(&quot;PostgreSQL - Templates, Experiments, Versions&quot;)]
+    Redis[(&quot;Redis - Template Cache, Segment Cache, Experiment Cache&quot;)]
+    Kafka[[&quot;Kafka - Config Change Events&quot;]]
+
+    Client --&gt;|&quot;GET /&quot;| CDN
+    CDN --&gt;|cohort cache hit| Client
+    CDN --&gt;|cache miss| SSR
+    SSR --&gt;|resolve experiment| ExpSvc
+    SSR --&gt;|resolve segment| PersonSvc
+    PersonSvc --&gt; Redis
+    SSR --&gt;|fetch template| ConfigSvc
+    ConfigSvc --&gt; Redis
+    ConfigSvc --&gt; ConfigDB
+    SSR --&gt;|fetch above-fold| BFF
+    BFF --&gt; HeroSvc
+    SSR --&gt;|SSR HTML and stream start| Client
+    Client --&gt;|hydrate| RenderEngine
+    Client --&gt;|continue streaming| BFF
+    BFF --&gt; RecSvc
+    BFF --&gt; AdSvc
+    BFF --&gt;|&quot;@defer patches&quot;| Client
+    ConfigDB --&gt;|config change event| Kafka
+    Kafka --&gt;|CDN purge| CDN
+    Kafka --&gt;|cache invalidate| Redis
+</div>
+<hr />
+<h2 id="9-data-model">9. Data Model</h2>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns</th>
+<th>Why This Store</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Page Template</td>
+<td>PostgreSQL</td>
+<td>template_id, version, status, cohort, sections JSON, created_at</td>
+<td>ACID + versioning history; rollback = status flip; ~1 GB total — trivial</td>
+</tr>
+<tr>
+<td>Template Cache</td>
+<td>Redis</td>
+<td>template:{templateId}:{version} to sections JSON, TTL 10 min</td>
+<td>Under 5ms reads; entire 50 MB fits in memory; invalidated on publish or rollback</td>
+</tr>
+<tr>
+<td>User Segment</td>
+<td>Redis</td>
+<td>segment:{user_id} to segment, geo, device, TTL 10 min</td>
+<td>Ephemeral; ML assigns offline; cache miss falls back to default segment</td>
+</tr>
+<tr>
+<td>Experiment Assignment</td>
+<td>Redis</td>
+<td>exp:{user_id}:{experiment_id} to variant and templateId, TTL 10 min</td>
+<td>Deterministic hash means no persistent state needed; Redis is a warm cache layer</td>
+</tr>
+<tr>
+<td>Experiment Config</td>
+<td>PostgreSQL</td>
+<td>experiment_id, buckets JSON, variant to templateId mapping, status</td>
+<td>Durable; bucket ranges rarely change; must survive restarts</td>
+</tr>
+<tr>
+<td>Config Audit Log</td>
+<td>PostgreSQL</td>
+<td>template_id, version, actor, action, timestamp</td>
+<td>Compliance + rollback investigation; append-only</td>
+</tr>
+<tr>
+<td>Section Render Registry</td>
+<td>In-memory on frontend</td>
+<td>type to React component reference</td>
+<td>Client-side map; updated on frontend deploy; unknown types fall through to empty reserved space</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Config versioning is not for history — it is for rollback speed. Rollback must be instant: a status flip in PostgreSQL, a Redis key delete, and a Kafka event to purge CDN. No re-upload, no re-deploy. Keeping the previous LIVE version in Redis means rollback completes in under 30 seconds.</p>
+</blockquote>
+<hr />
+<h2 id="10-deep-dives">10. Deep Dives</h2>
+<h3 id="101-config-schema-design-ab-testing">10.1 Config Schema Design + A/B Testing</h3>
+<p>Here's the problem: a homepage layout change sounds simple — "move the carousel above the banner." Done wrong, it causes a production incident. Bad config = blank sections for millions of users at 11,500 req/sec. The Config Service is not a JSON blob store — it is a production system with schema validation and controlled rollout.</p>
+<p><strong>Config lifecycle:</strong></p>
+<pre><code>DRAFT --&gt; REVIEW --&gt; STAGED (canary, 10%) --&gt; LIVE (100%) --&gt; DEPRECATED
+</code></pre>
+<p><strong>Key fields in a section object:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>id</td>
+<td>Yes</td>
+<td>Unique identifier for deduplication and telemetry</td>
+</tr>
+<tr>
+<td>type</td>
+<td>Yes</td>
+<td>Maps to component in Rendering Engine registry</td>
+</tr>
+<tr>
+<td>position</td>
+<td>Yes</td>
+<td>Ordering on page; duplicate positions block publish</td>
+</tr>
+<tr>
+<td>layoutMeta.height</td>
+<td>Yes</td>
+<td>Pixel height for skeleton — missing causes CLS in production</td>
+</tr>
+<tr>
+<td>layoutMeta.aboveTheFold</td>
+<td>Yes</td>
+<td>Whether section must be in initial SSR response</td>
+</tr>
+<tr>
+<td>dataSource.field</td>
+<td>Yes</td>
+<td>Which GraphQL field provides data for this section</td>
+</tr>
+<tr>
+<td>targetCohort</td>
+<td>No</td>
+<td>If absent, section shows to all users</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Validation rules enforced at publish time:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Validation</th>
+<th>Error if violated</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>All sections have layoutMeta.height</td>
+<td>Block publish — missing height causes CLS</td>
+</tr>
+<tr>
+<td>All type values exist in component registry</td>
+<td>Block publish — unknown type = blank section</td>
+</tr>
+<tr>
+<td>All dataSource.field values are valid GraphQL fields</td>
+<td>Block publish — bad field = no data for section</td>
+</tr>
+<tr>
+<td>No two sections share the same position</td>
+<td>Block publish — ordering conflict</td>
+</tr>
+<tr>
+<td>targetCohort exists in Personalization Service</td>
+<td>Warn only — allow publish with warning</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rollout + A/B assignment:</strong></p>
+<div class="mermaid">
+sequenceDiagram
+    participant PM as Business Team
+    participant AdminAPI as Config Admin API
+    participant ConfigSvc as Config Service
+    participant Kafka as Kafka
+    participant CDN as CDN Edge
+    participant Redis as Redis
+
+    PM-&gt;&gt;AdminAPI: POST /admin/v1/templates with status DRAFT
+    PM-&gt;&gt;AdminAPI: POST /admin/v1/templates/id/validate
+    AdminAPI-&gt;&gt;ConfigSvc: run 5 validation rules
+    ConfigSvc--&gt;&gt;PM: valid=true or errors list
+
+    PM-&gt;&gt;AdminAPI: POST /admin/v1/templates/id/publish with rolloutPercent=10
+    ConfigSvc-&gt;&gt;Kafka: config_staged event
+    Kafka-&gt;&gt;CDN: purge affected cohort keys
+    Kafka-&gt;&gt;Redis: invalidate template cache
+
+    Note over PM,Redis: Monitor error rate and CLS for 10% cohort
+
+    PM-&gt;&gt;AdminAPI: POST /admin/v1/templates/id/publish with rolloutPercent=100
+    ConfigSvc-&gt;&gt;Kafka: config_live event
+    Note over ConfigSvc: Previous version status set to DEPRECATED
+</div>
+<p><strong>Consistent hashing for stable A/B assignment:</strong></p>
+<pre><code>bucket = consistent_hash(user_id) mod 100
+
+Experiment: variant_A = buckets 0-49, variant_B = buckets 50-99
+User &quot;u_abc123&quot; always hashes to bucket 37 -- always variant_A
+</code></pre>
+<p>Without consistent hashing, the same user sees a different variant each page load — polluting experiment data and breaking UX. Consistent hash is deterministic with no state storage required.</p>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Config Service is a production system, not a feature.</strong> A template with type "FlashSaleTimer" that the Rendering Engine does not know about will render a blank section for every user in that cohort. Schema validation at publish time is far cheaper than a rollback drill at 11,500 req/sec.</p>
+</blockquote>
+<hr />
+<h3 id="102-server-driven-ui-rendering-pipeline">10.2 Server-Driven UI Rendering Pipeline</h3>
+<p>Here's the problem: the backend sends <code>"type": "HeroBanner"</code> in the config JSON. The client must render it without knowing the full list of types at build time. And when it receives a type it has never seen, it must not crash.</p>
+<p><strong>The Rendering Engine contract:</strong></p>
+<div class="mermaid">
+flowchart TD
+    A[&quot;Config JSON section arrives&quot;] --&gt; B[&quot;Component Registry lookup by type&quot;]
+    B --&gt; C[&quot;Is type known in registry?&quot;]
+    C --&gt;|Yes| D[&quot;Render component inside height-reserved container&quot;]
+    C --&gt;|No| E[&quot;Render empty div at layoutMeta.height - no CLS, no crash&quot;]
+    D --&gt; F[&quot;Is data loaded from BFF?&quot;]
+    F --&gt;|No| G[&quot;Show skeleton at exact layoutMeta.height&quot;]
+    F --&gt;|Yes| H[&quot;Render component with data&quot;]
+    D --&gt; I[&quot;Does component throw at runtime?&quot;]
+    I --&gt;|Yes| J[&quot;ErrorBoundary catches - show section error state at reserved height&quot;]
+</div>
+<p><strong>Three failure modes the Rendering Engine must handle:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>What Happens</th>
+<th>Recovery Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unknown section.type</td>
+<td>New type in config, old client build</td>
+<td>Render empty reserved space — no crash, no CLS</td>
+</tr>
+<tr>
+<td>Component throws runtime error</td>
+<td>ErrorBoundary wraps every section</td>
+<td>Show error state at reserved height; rest of page unaffected</td>
+</tr>
+<tr>
+<td>Data timeout — section data never arrives</td>
+<td>Skeleton stays visible beyond threshold</td>
+<td>Show refresh prompt after 5s; section-level retry</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Lazy loading:</strong> Above-fold components (HeroBanner, NavigationBar) are eagerly bundled — must be available at FCP. Below-fold components use lazy loading with Suspense triggered by an IntersectionObserver with 200px rootMargin, pre-loading before the section scrolls into view. This reduces initial JS bundle by ~40%.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The component registry is a versioning boundary. Config and frontend components deploy independently. Unknown types must degrade gracefully — not crash. A new section type can be added to config during gradual rollout; old clients ignore it cleanly while new clients render it.</p>
+</blockquote>
+<hr />
+<h3 id="103-config-caching-invalidation">10.3 Config Caching + Invalidation</h3>
+<p>Here's the problem: 11,500 req/sec for a homepage that is 90% identical across users in the same cohort. Hitting the origin for every config fetch wastes compute and adds latency.</p>
+<p><strong>Cache layers and TTLs:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Content</th>
+<th>Cache Layer</th>
+<th>TTL</th>
+<th>Cache Key</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Template JSON per cohort</td>
+<td>CDN edge node</td>
+<td>5 min</td>
+<td>device + locale + segment</td>
+</tr>
+<tr>
+<td>Hero banner image</td>
+<td>CDN</td>
+<td>1 hour</td>
+<td>URL hash</td>
+</tr>
+<tr>
+<td>Non-personalized section data (nav, categories)</td>
+<td>CDN</td>
+<td>5 min</td>
+<td>locale + device</td>
+</tr>
+<tr>
+<td>User-specific data (recs, cart)</td>
+<td>Not cached at CDN</td>
+<td>-</td>
+<td>Never CDN-cached</td>
+</tr>
+<tr>
+<td>Experiment assignment</td>
+<td>Redis</td>
+<td>10 min</td>
+<td>user_id + experiment_id</td>
+</tr>
+<tr>
+<td>User segment</td>
+<td>Redis</td>
+<td>10 min</td>
+<td>user_id</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Cache invalidation on config change:</strong></p>
+<div class="mermaid">
+sequenceDiagram
+    participant ConfigSvc as Config Service
+    participant Kafka as Kafka
+    participant InvalidationWorker as CDN Invalidation Worker
+    participant CDN as CDN Edge
+    participant Redis as Redis
+
+    ConfigSvc-&gt;&gt;Kafka: publish config_changed event with templateId and affected cohorts
+    Kafka-&gt;&gt;InvalidationWorker: consume event
+    InvalidationWorker-&gt;&gt;CDN: purge cache keys for affected cohorts
+    InvalidationWorker-&gt;&gt;Redis: DEL template cache keys immediately
+    Note over CDN: Edge nodes cleared within 30s
+    Note over Redis: Instant invalidation - next request re-fetches from PostgreSQL
+</div>
+<p><strong>Cache stampede on config invalidation:</strong> When a popular config key expires or is purged, thousands of requests hit the origin simultaneously. Mitigation: Redis mutex lock — first request acquires a short-lived lock and repopulates the cache; all others serve the stale value (if available) or wait under 100ms for the lock to release.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Personalized data (recs, ads, cart) must never be cached at CDN. CDN keys can only vary by coarse dimensions. User-specific data is always fetched and streamed server-side. The split between "cacheable template" and "non-cacheable data" is the fundamental architecture of this system.</p>
+</blockquote>
+<hr />
+<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
+<h3 id="config-cache-stampede">Config Cache Stampede</h3>
+<p><strong>What breaks:</strong> A popular config key expires or is purged after publish. Thousands of SSR requests simultaneously miss the Redis cache and hammer PostgreSQL.</p>
+<p><strong>Fix:</strong> Redis mutex (distributed lock). First request acquires a short TTL lock, fetches from PostgreSQL, and repopulates the cache. All other requests either get a slightly stale value (jitter window) or wait under 100ms for the lock to clear. Config reads never reach PostgreSQL in steady state after warmup.</p>
+<h3 id="personalization-at-scale">Personalization at Scale</h3>
+<p><strong>What breaks:</strong> At 2,300 SSR req/sec (after CDN), if each request does a cold ML inference for segment resolution, latency blows the 50ms budget.</p>
+<p><strong>Fix:</strong> ML runs offline in a nightly batch job, writing <code>user_id → segment</code> assignments to Redis with a 10-min TTL. At request time, the Personalization Engine is a Redis lookup — under 5ms. On cache miss, the fallback is the default template (never block render). The 10-min TTL means segment changes propagate within a reasonable window without real-time ML per request.</p>
+<h3 id="config-propagation-latency">Config Propagation Latency</h3>
+<p><strong>What breaks:</strong> A rollback is triggered, but CDN edge nodes still serve the bad config for up to 5 minutes (TTL window). Users see the broken layout during the propagation window.</p>
+<p><strong>Fix:</strong> Kafka-driven CDN purge with a target SLA of 30s. For critical rollbacks, a "purge all" command bypasses TTL immediately. Accepting up to 5 min stale for normal changes is a deliberate trade-off — the CDN cache hit rate benefit (90%) justifies it, since layout changes are not time-critical for the user.</p>
+<blockquote>
+<p>[!TIP]
+In an interview: say "I would reduce CDN TTL from 5 min to 30s for experiment-related templates to tighten the A/B invalidation window, at the cost of a ~20% increase in origin requests for experiment cohorts." This shows you understand the TTL vs freshness trade-off precisely.</p>
+</blockquote>
+<hr />
+<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Config Service down</td>
+<td>No new config fetches; in-flight SSR misses Redis</td>
+<td>Serve stale CDN-cached config (TTL 5 min); Redis TTL extended to 30 min as circuit breaker</td>
+</tr>
+<tr>
+<td>Redis cache fully down</td>
+<td>Every SSR request hits PostgreSQL directly</td>
+<td>PostgreSQL can handle ~2,300 req/sec burst; degrade gracefully; page still loads</td>
+</tr>
+<tr>
+<td>Kafka partition lag (slow CDN invalidation)</td>
+<td>Stale config served at edge beyond TTL window</td>
+<td>Short CDN TTL (5 min) limits blast radius; manual purge command for emergencies</td>
+</tr>
+<tr>
+<td>SSR service down</td>
+<td>No server-rendered HTML</td>
+<td>CDN serves last-known good HTML (stale SSR cache, 5 min); client-side fallback renders minimal layout</td>
+</tr>
+<tr>
+<td>Personalization Engine unavailable</td>
+<td>Cannot resolve user segment</td>
+<td>Fallback: serve global default template (no personalization); no blank page</td>
+</tr>
+<tr>
+<td>Below-fold data service timeout (Recs, Ads)</td>
+<td>Section never fills; skeleton persists</td>
+<td>Client shows retry prompt after 5s timeout; above-fold unaffected; section-level retry</td>
+</tr>
+<tr>
+<td>Config publish with bad schema</td>
+<td>Broken layout for 10% canary cohort</td>
+<td>Detect via error rate spike (CLS over 0.1 or blank section rate); rollback = status flip in PostgreSQL to Kafka to CDN purge within 30s</td>
+</tr>
+<tr>
+<td>Frontend rendering crash (unknown type)</td>
+<td>Section blank</td>
+<td>Rendering Engine fallback: empty reserved space at layoutMeta.height; ErrorBoundary catches runtime errors</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-trade-offs">13. Trade-offs</h2>
+<h3 id="server-driven-ui-vs-client-driven-hardcoded-ui">Server-Driven UI vs Client-Driven (Hardcoded) UI</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Server-Driven UI (chosen)</th>
+<th>Hardcoded Frontend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Layout changes</td>
+<td>Config update — no deploy</td>
+<td>Frontend code change + deploy</td>
+</tr>
+<tr>
+<td>A/B testing</td>
+<td>Template variants — instant</td>
+<td>Feature flags in code</td>
+</tr>
+<tr>
+<td>Performance overhead</td>
+<td>Extra config fetch (~5ms Redis)</td>
+<td>No overhead</td>
+</tr>
+<tr>
+<td>Debugging complexity</td>
+<td>Higher — layout from server at runtime</td>
+<td>Lower — layout visible in code</td>
+</tr>
+<tr>
+<td>Client robustness requirement</td>
+<td>Must handle unknown types gracefully</td>
+<td>Only known types rendered</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Server-Driven UI.</strong> Business velocity is the primary driver — product teams change homepage layouts 5-10x/week at Amazon scale. Requiring an engineer and a deploy for each layout change is not viable. The trade-off we accept is debugging complexity, mitigated by a config dashboard showing the resolved template for any user segment.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Server-Driven UI shifts page ownership from engineering to product. The frontend becomes a rendering substrate — it must handle any layout the backend sends, including layouts it has never seen. The Rendering Engine's fallback handling is what makes this safe.</p>
+</blockquote>
+<hr />
+<h3 id="cdn-vs-redis-for-config-delivery">CDN vs Redis for Config Delivery</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>CDN (chosen for templates)</th>
+<th>Redis Only</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Geographic latency</td>
+<td>Under 10ms from edge node</td>
+<td>50-100ms cross-region</td>
+</tr>
+<tr>
+<td>Cache hit ratio</td>
+<td>90% (cohort-static templates)</td>
+<td>100% if keys populated</td>
+</tr>
+<tr>
+<td>Invalidation control</td>
+<td>Kafka-driven purge, 30s SLA</td>
+<td>Instant DEL</td>
+</tr>
+<tr>
+<td>Cost at 23K req/sec</td>
+<td>Low — edge absorbs traffic</td>
+<td>Higher — Redis cluster under full load</td>
+</tr>
+<tr>
+<td>User-specific data</td>
+<td>Not suitable</td>
+<td>Ideal</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: CDN for cohort-level templates; Redis for user-specific segments and experiment assignments.</strong> CDN absorbs 90% of template traffic with under 10ms global latency. Redis handles the dynamic, user-specific lookups that CDN cannot vary on.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> CDN caches cohorts, not users. User-level CDN caching has near-zero hit rate at scale. Cohort-level (device + locale + segment) achieves 90% hit rate. Truly personalized data (recs, cart) bypasses CDN entirely and is streamed server-side.</p>
+</blockquote>
+<hr />
+<h3 id="static-sections-vs-dynamic-sections">Static Sections vs Dynamic Sections</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Fully Static Sections</th>
+<th>Fully Dynamic config-driven (chosen)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Page load</td>
+<td>Fastest — no config fetch</td>
+<td>+5ms Redis lookup</td>
+</tr>
+<tr>
+<td>A/B testing</td>
+<td>Requires code change</td>
+<td>Config variant swap — instant</td>
+</tr>
+<tr>
+<td>Business control</td>
+<td>Engineering required</td>
+<td>Business team via dashboard</td>
+</tr>
+<tr>
+<td>Deployment coupling</td>
+<td>Frontend owns layout</td>
+<td>Config Service owns layout</td>
+</tr>
+<tr>
+<td>Incident risk</td>
+<td>Low (known layouts)</td>
+<td>Schema validation required to prevent bad config</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Fully dynamic config-driven sections.</strong> At Amazon scale, "static sections require an engineer" is a bottleneck that blocks product velocity. Dynamic config with validation gates is the correct trade-off — the risk of bad config is mitigated by schema validation at publish time, not by avoiding config-driven UI.</p>
+<hr />
+<h2 id="14-interview-summary">14. Interview Summary</h2>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem It Solves</th>
+<th>Trade-off Accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Server-Driven UI with config JSON</td>
+<td>Layout changes without code deploys</td>
+<td>Debugging complexity; component registry must be maintained</td>
+</tr>
+<tr>
+<td>Config Service with validation and versioning</td>
+<td>Bad config = production incident; rollback must be instant</td>
+<td>Config schema is a production contract — additions require care</td>
+</tr>
+<tr>
+<td>Rendering Engine with graceful fallback</td>
+<td>Unknown component types must not crash</td>
+<td>Frontend is a dumb rendering substrate; must handle any type</td>
+</tr>
+<tr>
+<td>Personalization Engine via Redis lookup</td>
+<td>100M users, segment resolution in under 50ms</td>
+<td>ML runs offline; cache miss falls back to default template</td>
+</tr>
+<tr>
+<td>Consistent hash for A/B</td>
+<td>User sees same variant every session; clean experiment data</td>
+<td>Cannot change experiment bucket boundaries while it runs</td>
+</tr>
+<tr>
+<td>Fixed layoutMeta.height in every section</td>
+<td>CLS = 0 — no layout shift when data loads</td>
+<td>Backend must know pixel heights; inflexible for fluid responsive design</td>
+</tr>
+<tr>
+<td>Cohort-level CDN caching</td>
+<td>90% traffic absorbed at edge</td>
+<td>Personalization only at cohort granularity, not per-user</td>
+</tr>
+<tr>
+<td>GraphQL @defer for below-fold</td>
+<td>Above-fold renders in under 200ms; rest streams progressively</td>
+<td>Complex streaming client; patch merge logic required</td>
+</tr>
+<tr>
+<td>Kafka for cache invalidation</td>
+<td>Config change propagates to CDN + Redis within 30s</td>
+<td>Up to 5 min stale during CDN TTL window</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>FAST PATH (optimized for FCP under 1s):
+  Client --&gt; CDN edge (cohort cache hit) --&gt; SSR HTML delivered
+  CDN hit: 90% of requests never reach origin
+  Remaining 10%: SSR resolves segment (Redis under 10ms) + template (Redis under 5ms)
+               + fetches above-fold data (parallel, under 150ms)
+               --&gt; HTML sent --&gt; FCP under 400ms total
+
+RELIABLE PATH (optimized for correctness):
+  Config validated before publish (5 schema rules block bad templates)
+  Experiment assignment via consistent hash -- same bucket every session
+  Personalization fallback: cache miss --&gt; global default (never blank page)
+  Config rollback: status flip --&gt; Kafka --&gt; CDN purge --&gt; 30s propagation
+  Rendering Engine fallback: unknown type --&gt; reserved empty space (no crash)
+</code></pre>
+<h3 id="key-insights-checklist">Key Insights Checklist</h3>
+<ul>
+<li><strong>A homepage is assembled, not rendered.</strong> Config decides structure. Personalization Engine decides which config. Rendering Engine decides how to paint it. No single system owns the page.</li>
+<li><strong>Config is a first-class production system.</strong> Every template is versioned, validated before publish, and staged gradually. A bad template at 11,500 req/sec is a production incident — schema validation at publish time is cheaper than a rollback drill.</li>
+<li><strong>The Rendering Engine must handle unknowns.</strong> Config and client deploy independently. Unknown section.type must degrade gracefully — empty reserved space, never a crash. This is what makes config and frontend truly decoupled.</li>
+<li><strong>Personalization is a lookup, not inference.</strong> ML runs offline. At request time, the engine maps user_id to Redis to segment to templateId in under 50ms. Real-time ML inference per request would blow the FCP budget.</li>
+<li><strong>Layout before data — always.</strong> Template JSON with fixed section heights must arrive before any data. CLS = 0 requires every skeleton to occupy the same pixel space as the real component.</li>
+<li><strong>CDN caches cohorts, not users.</strong> User-level CDN caching has near-zero hit rate. Cohort-level (device + locale + segment) achieves 90% hit rate. Truly personalized data bypasses CDN entirely.</li>
+</ul></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

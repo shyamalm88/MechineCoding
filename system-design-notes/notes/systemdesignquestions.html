@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SystemDesignQuestions — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html" aria-current="page">SystemDesignQuestions</a></li></ul></details></nav>
+<main><hr />
+<p>Question 1: Design a Distributed Metrics Logging and Aggregation System
+Company(s) asked: Google, Facebook, Amazon, eBay, Datadog, Atlassian</p>
+<hr />
+<p>--
+Question 2: Design a Distributed Stream Processing System like Kafka
+Company(s) asked: Amazon, Microsoft, Wise, Confluent</p>
+<hr />
+<p>Question 3: Design a Key-Value Store
+Company(s) asked: Apple, Google, Canva, Avalara, Rubrik, OpenDoor</p>
+<hr />
+<p>Question 4: Identify the K Most Shared Articles in Various Time Windows (24 hours, 1 hour, 5 minutes)
+Company(s) asked: LinkedIn, Facebook, Twitter</p>
+<hr />
+<p>Question 5: Design an API Rate Limiter
+Company(s) asked: Amazon, Atlassian, Uber, Patreon, Microsoft, Stripe, Headway, Reputation dot com, Pinterest</p>
+<hr />
+<p>Question 6: System to Collect Performance Metrics from Thousands of Servers
+Company(s) asked: Google, Datadog, Amazon, eBay, LinkedIn</p>
+<hr />
+<p>Question 7: Design Google Calendar
+Company(s) asked: Google, LinkedIn</p>
+<hr />
+<p>Question 8: Design a Distributed Queue like RabbitMQ
+Company(s) asked: Amazon, Apple, Instacart</p>
+<hr />
+<p>Question 9: Design Google Analytics - User Analytics Dashboard and Pipeline
+Company(s) asked: Microsoft, Facebook, Qualtrics, Google</p>
+<hr />
+<p>Question 10: Design a System for Sorting Large Data Sets
+Company(s) asked: Google, Microsoft</p>
+<hr />
+<p>Question 11: Top K Elements: App Store Rankings, Amazon Bestsellers, etc.
+Company(s) asked: Amazon, Bloomberg, Facebook, Pinterest</p>
+<hr />
+<p>Question 12: Design Dropbox or Google Drive
+Company(s) asked: Dropbox, Facebook, Google, Amazon, Microsoft, OCI</p>
+<hr />
+<p>Question 13: Design a Job Scheduler
+Company(s) asked: Google, Amazon, Microsoft, Doordash, Netflix, Atlassian</p>
+<hr />
+<p>Question 14: Design a Notification Service at Scale
+Company(s) asked: Google, Pinterest, OCI, Stubhub, Amazon, Airbnb, Instacart</p>
+<hr />
+<p>Question 15: Surge Pricing System: Uber - Stream Processing, etc.
+Company(s) asked: Uber, Lyft</p>
+<hr />
+<p>Question 16: Netflix: Limit the Number of Screens Each User Can Watch
+Company(s) asked: Some FAANG</p>
+<hr />
+<p>Question 17: Design an ETA Service and Location Sharing Between Driver and Rider
+Company(s) asked: Uber, Some FAANG</p>
+<hr />
+<p>Question 18: Design a Hotel Booking System: Room Availability, Reservation, Booking
+Company(s) asked: Amazon, Square, Booking dot com</p>
+<hr />
+<p>Question 19: Design an A/B Testing System (like Optimizely)
+Company(s) asked: Affirm, Some FAANG</p>
+<hr />
+<p>Question 20: Design a Price Alert System for Amazon (or for Stock prices)
+Company(s) asked: Facebook, Bloomberg, Coinbase, Swyftx, Trade Republic</p>
+<hr />
+<p>Question 21: Design an IoC/Dependency Injection Framework
+Company(s) asked: ADP, Some FAANG</p>
+<hr />
+<p>Question 22: Design a Credit Card Processing System
+Company(s) asked: Stripe, Paytm, Paypal, Databricks, Capital One</p>
+<hr />
+<p>Question 23: Count Facebook Likes, Especially for High-Profile Users
+Company(s) asked: Facebook, Amazon, Twitter</p>
+<hr />
+<p>Question 24: Design a Control Plane for a Distributed Database
+Company(s) asked: Netflix</p>
+<hr />
+<p>Question 25: Design a User Login and Authentication System for a Website
+Company(s) asked: Google, Visa, Gusto</p>
+<hr />
+<p>Question 26: Develop a Weather Application
+Company(s) asked: Amazon, Chime, Facebook, Hubspot, Uber, Klaviyo</p>
+<hr />
+<p>Question 27: Create a Document Management System like Wikipedia, Notion or Google Docs
+Company(s) asked: Google, Flipkart, Notion, Amazon</p>
+<hr />
+<p>Question 28: Build a Marketplace Feature for Facebook
+Company(s) asked: Facebook, Roblox</p>
+<hr />
+<p>Question 29: Design a System to Monitor the Health of a Cluster
+Company(s) asked: Uber, Lacework, Amazon, Google</p>
+<hr />
+<p>Question 30: Find a Rider for Uber or Uber Eats
+Company(s) asked: Facebook, Uber, Google, Microsoft</p>
+<hr />
+<p>Question 31: Design a Distributed Tracing System
+Company(s) asked: Uber, Amazon</p>
+<hr />
+<p>Question 32: Design Backend for an App to Distribute 6 Million Free Burgers in One Hour
+Company(s) asked: Google, Deliveroo</p>
+<hr />
+<p>Question 33: Design a File Downloader Library
+Company(s) asked: Facebook</p>
+<hr />
+<p>Question 34: Design a System to View Latest Stock Prices Worldwide
+Company(s) asked: Google, Bloomberg, Amazon</p>
+<hr />
+<p>Question 35: Develop a Photo Sharing Platform like Flickr or Google Photos
+Company(s) asked: Google, Doordash, Amazon, Uber, Facebook</p>
+<hr />
+<p>Question 36: Design an On-Call Escalation System
+Company(s) asked: Uber</p>
+<hr />
+<p>Question 37: Design and Implement a Wire Transfer API
+Company(s) asked: Google, Capital One, Revolut</p>
+<hr />
+<p>Question 38: Design a Live Comments Feature for Facebook
+Company(s) asked: Facebook</p>
+<hr />
+<p>Question 39: Design a Feature to Show the Number of Users Viewing a Page
+Company(s) asked: Booking dot com</p>
+<hr />
+<p>Question 40: Design Facebook Likes Feature with Live Updates
+Company(s) asked: Facebook, Coinbase</p>
+<hr />
+<p>Question 41: Create a System to Migrate Large Data to Google Cloud
+Company(s) asked: Google, OCI</p>
+<hr />
+<p>Question 42: Design a Distributed Botnet
+Company(s) asked: Facebook, Lyft</p>
+<hr />
+<p>Question 43: Create a Distributed File Transfer System like Bittorrent
+Company(s) asked: Google, Atlassian, Twitch</p>
+<hr />
+<p>Question 44: Design a Parts Compatibility Feature for an eCommerce Site
+Company(s) asked: Some FAANG</p>
+<hr />
+<p>Question 45: Develop an Ads Management and Display System for a Social Feed
+Company(s) asked: Facebook, Google, Amazon, Pinterest</p></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

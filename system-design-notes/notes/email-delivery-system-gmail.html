@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Delivery System — Gmail / Outlook — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html" aria-current="page">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="email-delivery-system-gmail-outlook">Email Delivery System — Gmail / Outlook</h1>
+<blockquote>
+<p><strong>Backend / Frontend Split: 90% Backend · 10% Frontend</strong>
+The interesting engineering is entirely on the backend: transactional outbox pattern for zero email loss, SMTP protocol handshake for cross-domain delivery, async parallel validation pipeline, consistent hashing for sharding 1.5B user records, and routing logic to split internal vs external delivery. Frontend is a standard SPA — worth mentioning but not a deep focus.</p>
+</blockquote>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design an email delivery platform like Gmail. Users register with a unique email address, compose and send emails to one or multiple recipients (with CC/BCC and attachments), receive emails from other users across different domains, and search their mailbox by keyword.</p>
+<p><strong>In scope:</strong> User registration (unique email ID guarantee), compose + draft, send email (internal Gmail-to-Gmail + external cross-domain via SMTP), receive email from external domains, attachments, email threading, search.</p>
+<p><strong>Out of scope:</strong> Calendar integration, Google Meet, spam ML model training, email marketing bulk send, DKIM/SPF key management internals.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Daily Active Users</td>
+<td>1.5B</td>
+</tr>
+<tr>
+<td>Emails sent per day</td>
+<td>~300B (200 emails/user/day at peak)</td>
+</tr>
+<tr>
+<td>Peak email send rate</td>
+<td>~3.5M emails/sec</td>
+</tr>
+<tr>
+<td>Avg email size (body + metadata)</td>
+<td>75KB</td>
+</tr>
+<tr>
+<td>Avg attachment size</td>
+<td>2MB</td>
+</tr>
+<tr>
+<td>Emails with attachments</td>
+<td>~20%</td>
+</tr>
+<tr>
+<td>Storage per user/year</td>
+<td>~15GB</td>
+</tr>
+<tr>
+<td>Total storage</td>
+<td>1.5B × 15GB = 22.5 exabytes</td>
+</tr>
+<tr>
+<td>Search QPS</td>
+<td>~10M/sec</td>
+</tr>
+<tr>
+<td>User DB lookup QPS</td>
+<td>~50M/sec (autocomplete + auth)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Write path math:</strong></p>
+<p>3.5M emails/sec × 75KB body = ~260GB/sec of email body writes. This cannot land on a single DB. We need horizontally sharded storage for the mailbox, separated from metadata (for search optimization).</p>
+<p><em>These numbers drive: sharded user DB (consistent hashing), separate mailbox body vs metadata tables, Elasticsearch with pre-joined aggregator, S3 for attachments (not DB), Kafka decoupled delivery pipeline.</em></p>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ul>
+<li>User registration with globally unique email ID</li>
+<li>Compose and auto-save email as draft (body + attachments)</li>
+<li>Send email to one or multiple recipients (To, CC, BCC)</li>
+<li>Receive email — both from Gmail users (internal) and other domains (Outlook, Yahoo) via SMTP</li>
+<li>View inbox, drafts, sent items folder structure</li>
+<li>Reply to email maintaining conversation thread</li>
+<li>Attach files (PDF, images, documents) — up to 25MB</li>
+<li>Search email by keyword (subject, body, sender)</li>
+</ul>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Email send latency</td>
+<td>&lt; 2 seconds for internal delivery</td>
+</tr>
+<tr>
+<td>Cross-domain delivery</td>
+<td>&lt; 30 seconds (SMTP handshake + DNS lookup)</td>
+</tr>
+<tr>
+<td>Availability</td>
+<td>99.99% (email is business-critical)</td>
+</tr>
+<tr>
+<td>Durability</td>
+<td>Zero email loss — at-least-once delivery guaranteed</td>
+</tr>
+<tr>
+<td>Search latency</td>
+<td>&lt; 500ms</td>
+</tr>
+<tr>
+<td>Attachment upload</td>
+<td>Non-blocking (async, pre-scanned before send)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Consistency Model — CAP Theorem applied per domain:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Model</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User registration</td>
+<td>Strong (CP)</td>
+<td>No two users can share an email ID — uniqueness must be enforced globally</td>
+</tr>
+<tr>
+<td>Email send/receive</td>
+<td>Eventual (AP)</td>
+<td>1–2 second delay reaching recipient's inbox is acceptable</td>
+</tr>
+<tr>
+<td>Draft autosave</td>
+<td>Eventual</td>
+<td>Losing a draft keystroke is acceptable; losing a sent email is not</td>
+</tr>
+<tr>
+<td>Validation pipeline</td>
+<td>Eventual</td>
+<td>Async parallel validation — email queued until all pass</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!IMPORTANT]
+The consistency split is an interview favourite. Registration must be strongly consistent (unique email = primary key, DB constraint). Everything after that — send, receive, search — can be eventually consistent. This is why the write path goes through a queue, not a direct DB insert.</p>
+</blockquote>
+<hr />
+<h2 id="mental-model">🧠 Mental Model</h2>
+<p>Email delivery has <strong>four distinct flows</strong> worth knowing cold:</p>
+<ol>
+<li><strong>Registration flow</strong> — User picks an email ID → system must guarantee no duplicate globally → consistent DB write with email as primary key</li>
+<li><strong>Compose + Send flow</strong> — User drafts email → attachments pre-uploaded to S3 → on Send: email saved to outbox table → Kafka consumer picks it up → validation pipeline (spam, malware, policy) → route to internal delivery or SMTP relay</li>
+<li><strong>Internal delivery flow</strong> — Recipient is a Gmail user → delivery consumer moves email from outbox table into recipient's mailbox items table → push notification</li>
+<li><strong>External delivery flow</strong> — Recipient is Outlook/Yahoo → SMTP relay worker does DNS/MX lookup → opens TCP connection to recipient's SMTP server → 15-step SMTP handshake → email delivered cross-domain</li>
+</ol>
+<pre><code> User Composes Email
+        │
+        ▼
+  Draft DB + S3 (attachments)
+        │
+   User clicks Send
+        │
+        ▼
+  Mail Send Service
+  (fetch from draft DB)
+        │
+        ▼
+  Outbox Table (persisted first — never lose)
+        │
+  CDC / Outbox Consumer
+        │
+        ▼
+     Kafka Broker
+        │
+  Delivery Orchestrator
+  (spam + malware + policy — async parallel)
+        │
+   ┌────┴────────────┐
+   ▼                 ▼
+Inbound Topic    Outbound Topic
+(Gmail→Gmail)    (Gmail→Outlook/Yahoo)
+   │                 │
+   ▼                 ▼
+Delivery         SMTP Relay Worker
+Consumer         (DNS/MX → TCP → handshake)
+   │                 │
+   ▼                 ▼
+Mailbox DB      Recipient SMTP Server
+</code></pre>
+<p><strong>⚡ Core Design Principles</strong></p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Optimized For</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast Path</td>
+<td>Perceived send latency</td>
+<td>Optimistic: email saved to outbox immediately, UI shows "Sent" — delivery happens async</td>
+</tr>
+<tr>
+<td>Reliable Path</td>
+<td>Zero email loss</td>
+<td>Transactional outbox pattern: email persisted before Kafka publish — survives any service crash</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-api-design">5. API Design</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/accounts</code></td>
+<td>Register new user. Email ID in body. DB enforces uniqueness via primary key constraint.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/emails/draft</code></td>
+<td>Autosave draft. Called on every keystroke with debounce. Returns <code>draftId</code>.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/emails/send</code></td>
+<td>Send email. Body contains only <code>draftId</code> + recipients (To/CC/BCC) — NOT the content. Mail Send Service fetches content from Draft DB using <code>draftId</code>.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/emails/:emailId</code></td>
+<td>Fetch full email (body + attachment URLs). Attachment URLs are pre-signed S3 URLs, not raw bytes.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/emails?folder=inbox&amp;page=</code></td>
+<td>Paginated mailbox listing. Returns metadata only (subject, sender, preview snippet).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/attachments</code></td>
+<td>Upload attachment. Returns <code>attachmentId</code>. Client passes this ID in the draft — not the file bytes. Two-step upload: client → S3 signed URL (direct), then registers <code>attachmentId</code> here.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/search?q=&amp;page=</code></td>
+<td>Full-text search across subject + body. Hits Elasticsearch.</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!TIP]
+<strong>Interview tip on send API design:</strong> The <code>POST /emails/send</code> body should contain <code>draftId</code>, not the full email payload. Say: "If we pass the entire email content + 25MB attachment in the send request, we get timeouts and heavy payload. We decouple: attachments are pre-uploaded to S3, body is pre-saved as draft. The send request is lightweight — just 'send draft X to these recipients.'"</p>
+</blockquote>
+<hr />
+<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Email is a queue-first system.</strong> Every send operation is asynchronous. The client never waits for delivery — it waits only for acknowledgement that the email has been durably queued. Delivery, validation, and routing happen independently in the background. This is not a performance choice — it is a correctness choice. Without a queue, any crash between "send clicked" and "email delivered" loses the email permanently.</p>
+</blockquote>
+<p><strong>⚡ Async Architecture Principles (say these out loud):</strong>
+- All email sending goes through Kafka — never direct DB or direct SMTP call
+- At-least-once delivery via Kafka offset commit — consumers can crash and replay
+- Idempotency via <code>message_id</code> — consumers deduplicate on re-processing
+- Retry with exponential backoff — SMTP failures retry for up to 4 days before bouncing
+- Dead Letter Queue — emails that exhaust retries are archived, never silently dropped</p>
+<hr />
+<h3 id="61-send-email-quick-reference-speak-this-out-loud-in-the-interview">6.1 Send Email — Quick Reference (speak this out loud in the interview)</h3>
+<p><strong>Internal flow (Gmail → Gmail):</strong></p>
+<pre><code>1. Client clicks Send
+   → POST /emails/send {draftId, recipients}
+   → API Gateway authenticates + routes
+
+2. Mail Send Service fetches draft content from Draft DB
+   → validates recipients exist (User DB lookup)
+   → I chose to separate draft storage from send to keep the send request lightweight
+
+3. Email written to Outbox Table (PENDING)
+   → This is the durability guarantee — crash after this = email survives
+   → I chose the Transactional Outbox Pattern because DB write + Kafka publish
+     cannot be made atomic any other way
+
+4. Outbox Consumer (CDC) detects new row → publishes to Kafka
+   → The queue absorbs burst — 3.5M emails/sec cannot hit storage directly
+
+5. Delivery Orchestrator consumes from Kafka
+   → Fires spam check + policy check + attachment check IN PARALLEL
+   → Each validation service writes result to Validation DB independently
+   → I run these in parallel because sequential = 3 × 200ms = 600ms per email
+
+6. All checks pass → Orchestrator routes by recipient domain
+   → @gmail.com → inbound-send-request topic
+   → @outlook.com → outbound-send-request topic
+
+7. Delivery Consumer picks up inbound event
+   → Copies email to recipient's Mailbox Items table (Cassandra, partitioned by user_id)
+   → Updates Outbox row status = DELIVERED
+   → Triggers push notification
+
+On failure at any step → Kafka consumer retries from last offset
+On SMTP failure (external) → exponential backoff, try next MX record
+After 4 days of failure → Dead Letter Queue → bounce email to sender
+</code></pre>
+<p><strong>Receive flow (Outlook → Gmail):</strong></p>
+<pre><code>1. Outlook SMTP server opens TCP connection to Gmail Inbound SMTP Service (port 25)
+   → Gmail's MX record points here
+
+2. SMTP handshake
+   → Gmail validates: SPF (is this IP authorised to send for outlook.com?)
+   → Gmail validates: DKIM (is the cryptographic signature valid?)
+   → Gmail checks: does the recipient exist in User DB?
+   → If recipient not found → 550 No such user → Outlook notifies its sender
+
+3. Gmail accepts message off the wire → sends 250 Message accepted
+   → This commits Gmail's responsibility — email is now durably ours
+   → Outlook's responsibility ends here
+
+4. Email published to Kafka inbound-receive topic
+   → Spam Filter Service scores the email (layered: IP reputation → SPF/DKIM → ML model)
+   → Score &lt; 0.3 → folder = INBOX, score &gt; 0.3 → folder = SPAM
+
+5. Inbound Consumer writes to Cassandra mailbox_items
+   → Partition key = recipient user_id → all inbox writes for one user go to one node
+   → Aggregator Service indexes email body + metadata in Elasticsearch for search
+
+6. Notification Service pushes to recipient's WebSocket connection
+   → &quot;New email from alice@outlook.com&quot;
+   → If no active WebSocket → mobile push notification (FCM/APNs)
+</code></pre>
+<hr />
+<h3 id="62-send-email-internal-gmail-to-gmail-sequence-diagram">6.2 Send Email (Internal — Gmail to Gmail, Sequence Diagram)</h3>
+<ol>
+<li>User clicks <strong>Send</strong>. Client calls <code>POST /emails/send</code> with <code>{ draftId, to: ["bob@gmail.com"], cc: [], bcc: [] }</code>.</li>
+<li>Mail Send Service fetches full email content from Draft DB using <code>draftId</code> (body + S3 attachment references).</li>
+<li>Mail Send Service writes the email to the <strong>Outbox Table</strong> in Mailbox DB. Status = <code>PENDING</code>. This write is the durability guarantee — if anything crashes after this, the email is not lost.</li>
+<li><strong>Outbox Consumer</strong> (CDC pipeline watching Outbox Table) detects the new row and publishes the event to <strong>Kafka</strong>.</li>
+<li><strong>Delivery Orchestrator</strong> consumes from Kafka. Fires async parallel validation:</li>
+<li>Spam checker (content analysis)</li>
+<li>Policy checker (enterprise rules)</li>
+<li>Attachment check (reads pre-computed result from S3 Validation DB — scan already done at upload time)</li>
+<li>All validations write their result to the <strong>Validation DB</strong> (one row per email, one column per check).</li>
+<li>Once all validation columns are green: Orchestrator checks recipient domain. <code>bob@gmail.com</code> = internal → publishes to <code>inbound-send-request</code> Kafka topic.</li>
+<li><strong>Delivery Consumer</strong> picks up the inbound event. Copies email from Outbox Table → <strong>Mailbox Items Table</strong> for <code>bob@gmail.com</code>. Updates Outbox row status = <code>DELIVERED</code>.</li>
+<li>Notification Service pushes "New email from alice@gmail.com" to Bob's connected WebSocket / push notification.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant Alice
+    participant MailSendSvc as Mail Send Service
+    participant DraftDB as Draft DB
+    participant OutboxTable as Outbox Table
+    participant Kafka
+    participant Orchestrator as Delivery Orchestrator
+    participant DeliveryConsumer as Delivery Consumer
+    participant MailboxDB as Mailbox DB
+    participant NotifSvc as Notification Service
+
+    Alice-&gt;&gt;MailSendSvc: POST /emails/send - draftId + recipients
+    MailSendSvc-&gt;&gt;DraftDB: Fetch email content by draftId
+    DraftDB--&gt;&gt;MailSendSvc: Email body + attachment refs
+    MailSendSvc-&gt;&gt;OutboxTable: INSERT email - status=PENDING
+    OutboxTable--&gt;&gt;Kafka: CDC event published
+    Kafka-&gt;&gt;Orchestrator: Consume event
+    Orchestrator-&gt;&gt;Orchestrator: Parallel validation - spam + policy + attachment check
+    Orchestrator-&gt;&gt;Kafka: Publish to inbound-send-request
+    Kafka-&gt;&gt;DeliveryConsumer: Consume inbound event
+    DeliveryConsumer-&gt;&gt;MailboxDB: Copy to Bob mailbox_items
+    DeliveryConsumer-&gt;&gt;OutboxTable: Update status=DELIVERED
+    DeliveryConsumer-&gt;&gt;NotifSvc: Trigger push notification
+    NotifSvc--&gt;&gt;Alice: Email sent confirmation
+</div>
+<h3 id="63-send-email-external-gmail-to-outlook-sequence-diagram">6.3 Send Email (External — Gmail to Outlook, Sequence Diagram)</h3>
+<p>Steps 1–6 same as above. At step 7, recipient domain = <code>outlook.com</code> → Orchestrator publishes to <code>outbound-send-request</code> topic.</p>
+<h3 id="64-receive-email-external-outlook-to-gmail-sequence-diagram">6.4 Receive Email (External — Outlook to Gmail, Sequence Diagram)</h3>
+<p>This is the reverse of 6.2 — Outlook's SMTP server initiates the connection to Gmail's servers.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant OutlookSMTP as Outlook SMTP Server
+    participant GmailSMTP as Gmail Inbound SMTP Service
+    participant SpamFilter as Spam Filter Service
+    participant K as Kafka inbound-receive
+    participant IC as Inbound Consumer
+    participant MailboxDB as Cassandra Mailbox
+    participant NotifSvc as Notification Service
+
+    OutlookSMTP-&gt;&gt;GmailSMTP: TCP connect port 25 + SMTP handshake
+    GmailSMTP-&gt;&gt;GmailSMTP: Validate sender domain (SPF/DKIM check)
+    GmailSMTP-&gt;&gt;GmailSMTP: Check recipient exists in User DB
+    GmailSMTP-&gt;&gt;SpamFilter: Route email content for scoring
+    SpamFilter-&gt;&gt;SpamFilter: ML model + rule engine scoring
+    alt Score below spam threshold
+        SpamFilter-&gt;&gt;K: Publish to inbound-receive topic (folder=INBOX)
+    else Score above threshold
+        SpamFilter-&gt;&gt;K: Publish to inbound-receive topic (folder=SPAM)
+    end
+    GmailSMTP--&gt;&gt;OutlookSMTP: 250 Message accepted
+    K-&gt;&gt;IC: Inbound Consumer processes
+    IC-&gt;&gt;MailboxDB: Write to mailbox_items (partition = recipient user_id)
+    IC-&gt;&gt;NotifSvc: Push notification to recipient
+</div>
+<p><strong>Key steps:</strong>
+1. Outlook's SMTP server opens TCP connection to Gmail's <strong>Inbound SMTP Service</strong> (port 25 — the publicly exposed MX record for <code>gmail.com</code>)
+2. Gmail's Inbound SMTP Service validates: SPF (is this IP authorised to send for outlook.com?), DKIM (is the signature valid?), does the recipient email exist in User DB?
+3. If recipient doesn't exist → <code>550 No such user here</code> → Outlook notifies its sender
+4. Email passed to <strong>Spam Filter Service</strong> for scoring (see Deep Dive 9.5)
+5. Based on spam score: published to Kafka <code>inbound-receive</code> with <code>folder = INBOX</code> or <code>folder = SPAM</code>
+6. Inbound Consumer writes to Cassandra mailbox, partitioned by <code>user_id</code>
+7. Notification Service pushes to recipient's connected WebSocket or mobile push</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Gmail acknowledges <code>250 Message accepted</code> to Outlook's SMTP server <strong>before</strong> the email is fully processed and in the inbox. This is intentional — once we've accepted the message off the wire, it's in our Kafka/DB pipeline and we own the delivery guarantee. The sender's responsibility ends at <code>250</code>.</p>
+</blockquote>
+<ol>
+<li><strong>SMTP Relay Worker</strong> consumes from <code>outbound-send-request</code>.</li>
+<li>DNS/MX lookup: queries MX resolver for <code>outlook.com</code> → gets list of Outlook SMTP server addresses with priority order. Result cached in <strong>MX Cache</strong> (TTL = 1 hour) — avoids DNS round-trip on every email.</li>
+<li>SMTP Relay Worker opens TCP connection to Outlook SMTP server on <strong>port 25</strong>.</li>
+<li>SMTP handshake:<ul>
+<li>Gmail sends <code>EHLO</code> → Outlook responds <code>250</code> + supported extensions</li>
+<li>Gmail sends <code>MAIL FROM: alice@gmail.com</code> → Outlook responds <code>250 OK</code></li>
+<li>Gmail sends <code>RCPT TO: bob@outlook.com</code> → Outlook validates bob exists in its DB → <code>250 OK</code> (or <code>550 No such user</code>)</li>
+<li>Gmail sends <code>DATA</code> → streams headers + body → Outlook responds <code>250 Message accepted</code></li>
+<li>Gmail sends <code>QUIT</code></li>
+</ul>
+</li>
+<li>Outlook's own delivery system routes email to Bob's inbox.</li>
+<li>SMTP Relay Worker receives <code>250</code> success → updates Outbox Table status = <code>DELIVERED_EXTERNAL</code>.</li>
+</ol>
+<hr />
+<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Web / Mobile Client&quot;]
+    API[&quot;API Gateway + Auth&quot;]
+    UserSvc[&quot;User Service&quot;]
+    MailSvc[&quot;Mail Send Service&quot;]
+    DraftDB[(&quot;Draft DB&quot;)]
+    UserDB[(&quot;User DB - Sharded&quot;)]
+    MailboxDB[(&quot;Mailbox DB&quot;)]
+
+    Client --&gt; API
+    API --&gt; UserSvc
+    API --&gt; MailSvc
+    UserSvc --&gt; UserDB
+    MailSvc --&gt; DraftDB
+    MailSvc --&gt; MailboxDB
+</div>
+<h3 id="evolved-design-full-pipeline">Evolved Design (Full Pipeline)</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Web / Mobile&quot;]
+    API[&quot;API Gateway&quot;]
+    UserSvc[&quot;User Service&quot;]
+    UserCache[(&quot;User Cache - Redis&quot;)]
+    UserDB[(&quot;User DB - Consistent Hash Sharded&quot;)]
+    ComposeSvc[&quot;Compose Service&quot;]
+    DraftDB[(&quot;Draft DB&quot;)]
+    S3[&quot;S3 - Attachments&quot;]
+    AttachScanner[&quot;Attachment Scanner&quot;]
+    S3ValDB[(&quot;S3 Validation DB&quot;)]
+    MailSvc[&quot;Mail Send Service&quot;]
+    OutboxTable[(&quot;Mailbox DB - Outbox Table&quot;)]
+    OutboxConsumer[&quot;Outbox Consumer - CDC&quot;]
+    Kafka1[[&quot;Kafka - Inbound + Outbound Topics&quot;]]
+    Orchestrator[&quot;Delivery Orchestrator&quot;]
+    SpamSvc[&quot;Spam Checker&quot;]
+    PolicySvc[&quot;Policy Checker&quot;]
+    AttachCheck[&quot;Attachment Check&quot;]
+    ValDB[(&quot;Validation DB&quot;)]
+    InboundConsumer[&quot;Inbound Delivery Consumer&quot;]
+    SMTPWorker[&quot;SMTP Relay Worker&quot;]
+    MXCache[(&quot;MX Cache&quot;)]
+    MXResolver[&quot;MX Resolver - DNS&quot;]
+    MailboxItems[(&quot;Mailbox Items + Metadata DB&quot;)]
+    InboundSMTP[&quot;Inbound SMTP Service&quot;]
+    SearchSvc[&quot;Search Service&quot;]
+    ESEngine[(&quot;Elasticsearch&quot;)]
+    Aggregator[&quot;Aggregator Service&quot;]
+    NotifSvc[&quot;Notification Service&quot;]
+    ExternalSMTP[&quot;External SMTP Server - Outlook / Yahoo&quot;]
+
+    Client --&gt; API
+    API --&gt; UserSvc
+    API --&gt; ComposeSvc
+    API --&gt; MailSvc
+    API --&gt; SearchSvc
+    UserSvc --&gt; UserCache
+    UserCache --&gt; UserDB
+    ComposeSvc --&gt; DraftDB
+    ComposeSvc --&gt; S3
+    S3 --&gt; AttachScanner
+    AttachScanner --&gt; S3ValDB
+    MailSvc --&gt; DraftDB
+    MailSvc --&gt; OutboxTable
+    OutboxTable --&gt; OutboxConsumer
+    OutboxConsumer --&gt; Kafka1
+    Kafka1 --&gt; Orchestrator
+    Orchestrator --&gt; SpamSvc
+    Orchestrator --&gt; PolicySvc
+    Orchestrator --&gt; AttachCheck
+    AttachCheck --&gt; S3ValDB
+    SpamSvc --&gt; ValDB
+    PolicySvc --&gt; ValDB
+    Orchestrator --&gt; Kafka1
+    Kafka1 --&gt; InboundConsumer
+    Kafka1 --&gt; SMTPWorker
+    SMTPWorker --&gt; MXCache
+    MXCache --&gt; MXResolver
+    SMTPWorker --&gt; ExternalSMTP
+    InboundConsumer --&gt; MailboxItems
+    MailboxItems --&gt; Aggregator
+    Aggregator --&gt; ESEngine
+    SearchSvc --&gt; ESEngine
+    InboundConsumer --&gt; NotifSvc
+    InboundSMTP --&gt; Kafka1
+    NotifSvc --&gt; Client
+</div>
+<hr />
+<h2 id="8-data-model">8. Data Model</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Gmail uses three separate storage systems — never one.</strong> This is the most important storage design insight and interviewers always probe it:</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Email bodies + mailbox</strong></td>
+<td>Cassandra (NoSQL)</td>
+<td>3.5M writes/sec — multi-master, partitioned by <code>user_id</code>. SQL primary would be first bottleneck.</td>
+</tr>
+<tr>
+<td><strong>Attachments</strong></td>
+<td>S3 / Blob Storage</td>
+<td>Binary files (up to 25MB) never go in a DB. S3 = infinite scale, cheap, CDN-compatible. Emails store only the S3 reference URL.</td>
+</tr>
+<tr>
+<td><strong>Search index</strong></td>
+<td>Elasticsearch</td>
+<td>Full-text search with inverted index. Pre-joined at write time by Aggregator Service. Never query Cassandra for search — it has no full-text capability.</td>
+</tr>
+</tbody>
+</table>
+<p>"I chose three separate stores because each has a fundamentally different access pattern. One store trying to do all three would fail at scale."</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns</th>
+<th>Why this store</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User</td>
+<td>PostgreSQL (sharded)</td>
+<td><code>email_id</code> (PK), <code>user_id</code>, <code>password_hash</code>, <code>status</code>, <code>created_at</code></td>
+<td>ACID — <code>email_id</code> as PK enforces uniqueness. Sharded by consistent hashing on <code>email_id</code>.</td>
+</tr>
+<tr>
+<td>Draft</td>
+<td>PostgreSQL</td>
+<td><code>draft_id</code>, <code>user_id</code>, <code>to</code>, <code>cc</code>, <code>bcc</code>, <code>subject</code>, <code>body</code>, <code>attachment_ids[]</code>, <code>updated_at</code></td>
+<td>ACID — drafts are personal, low-write-volume. Simple relational structure.</td>
+</tr>
+<tr>
+<td>Outbox Table</td>
+<td>PostgreSQL</td>
+<td><code>message_id</code>, <code>sender_id</code>, <code>recipient_ids[]</code>, <code>draft_id</code>, <code>status</code> (PENDING/DELIVERED), <code>created_at</code></td>
+<td>Transactional outbox — must be in same DB as other mail writes for atomicity. CDC triggers Kafka.</td>
+</tr>
+<tr>
+<td>Mailbox Items</td>
+<td>Cassandra</td>
+<td><code>user_id</code> (partition key), <code>message_id</code> (clustering key, TIMEUUID), <code>sender_id</code>, <code>subject</code>, <code>body_ref</code>, <code>folder</code>, <code>is_read</code></td>
+<td>3.5M writes/sec inbox delivery — Cassandra multi-master handles linear scale. Partition by <code>user_id</code> for fast inbox queries.</td>
+</tr>
+<tr>
+<td>Mailbox Metadata</td>
+<td>Cassandra</td>
+<td><code>message_id</code>, <code>sender_id</code>, <code>recipient_ids[]</code>, <code>subject</code>, <code>attachment_type</code>, <code>folder</code>, <code>timestamp</code></td>
+<td>Separated from body — search aggregator joins metadata + body ref. Avoids loading full email bodies for search index.</td>
+</tr>
+<tr>
+<td>Validation DB</td>
+<td>PostgreSQL</td>
+<td><code>message_id</code>, <code>spam_check</code> (bool), <code>policy_check</code> (bool), <code>attachment_check</code> (bool), <code>updated_at</code></td>
+<td>Small table, low volume — one row per in-flight email. Ephemeral (deleted post-delivery).</td>
+</tr>
+<tr>
+<td>S3 Validation</td>
+<td>Redis</td>
+<td><code>attachmentId → {status, scanned_at}</code></td>
+<td>Pre-computed at upload time. TTL = 7 days. Fast lookup at validation time — O(1).</td>
+</tr>
+<tr>
+<td>MX Cache</td>
+<td>Redis</td>
+<td><code>domain → [smtp_server_address, priority]</code></td>
+<td>DNS is slow (~100ms). MX records change rarely. TTL = 1 hour.</td>
+</tr>
+<tr>
+<td>Attachments</td>
+<td>S3</td>
+<td>Binary blob, referenced by <code>attachmentId</code></td>
+<td>Binary files don't belong in DB. Pre-signed URLs for secure client access.</td>
+</tr>
+<tr>
+<td>Search Index</td>
+<td>Elasticsearch</td>
+<td><code>message_id</code>, <code>sender</code>, <code>recipients</code>, <code>subject</code>, <code>body_snippet</code>, <code>timestamp</code></td>
+<td>Full-text search with inverted index. Pre-joined by Aggregator service — avoids runtime joins.</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Mailbox body and metadata are stored in separate Cassandra tables. Aggregator pre-joins them into Elasticsearch documents at write time — not at search time. Runtime joins at 10M search QPS = latency disaster.</p>
+</blockquote>
+<hr />
+<h2 id="9-deep-dives">9. Deep Dives</h2>
+<h3 id="91-transactional-outbox-pattern-zero-email-loss">9.1 Transactional Outbox Pattern — Zero Email Loss</h3>
+<p><strong>Here's the problem we're solving:</strong> When a user clicks Send, we need to both save the email to DB AND publish to Kafka. If we publish to Kafka first and the service crashes before DB write — email appears sent but is lost. If we write to DB first and crash before Kafka publish — email stuck in DB, never delivered. How do we guarantee at-least-once delivery?</p>
+<p><strong>Naive solution:</strong> Write to DB and publish to Kafka in sequence. Problem: not atomic — any crash between the two leaves the system in an inconsistent state.</p>
+<p><strong>Chosen solution — Transactional Outbox Pattern:</strong>
+1. Mail Send Service writes the email to the <strong>Outbox Table</strong> in the same DB transaction as any other state update. DB write = durability guarantee.
+2. A separate <strong>Outbox Consumer</strong> (Change Data Capture — watches the Outbox Table for new rows via Postgres logical replication or polling) publishes to Kafka.
+3. The Outbox Consumer runs independently. If it crashes, it resumes from the last committed offset — Kafka publish is retried. Email is never lost.
+4. Once delivered, Outbox Table row is updated to <code>DELIVERED</code> (or archived).</p>
+<p><strong>Trade-off accepted:</strong> Adds operational complexity (CDC pipeline, extra table). Delivery is at-least-once — if Outbox Consumer crashes mid-publish, the same email may be published twice. Handle with idempotency key (<code>message_id</code>) at the consumer side.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The Outbox Table is a correctness requirement, not a performance optimization. It makes DB write and Kafka publish atomic by using the DB as the source of truth, not Kafka.</p>
+</blockquote>
+<hr />
+<h3 id="92-async-parallel-validation-pipeline">9.2 Async Parallel Validation Pipeline</h3>
+<p><strong>Here's the problem we're solving:</strong> Before delivering an email, we must run spam check, policy check, and attachment scan. If we run these sequentially: 3 services × 200ms each = 600ms minimum per email at 3.5M emails/sec = billions of seconds of latency stacked up. If one validation service goes down for 15 minutes, every in-flight email blocks forever.</p>
+<p><strong>Naive solution:</strong> Sequential synchronous calls from Orchestrator to each validation service. Service downtime = full pipeline stall.</p>
+<p><strong>Chosen solution — Async parallel with Validation DB:</strong></p>
+<ol>
+<li>Orchestrator consumes email from Kafka. Creates a row in <strong>Validation DB</strong> with all check columns set to <code>NULL</code> (not-yet-checked).</li>
+<li>Orchestrator fires all validation services <strong>simultaneously</strong> (async, non-blocking).</li>
+<li>Each service independently reads the email, runs its check, and updates its column in Validation DB (e.g., <code>spam_check = true</code>).</li>
+<li><strong>Attachment check</strong> is special — it reads from the pre-computed <strong>S3 Validation DB</strong> (scan was done at upload time, not send time). Scanning a 25MB PDF at send time = too slow.</li>
+<li>Orchestrator polls Validation DB (or uses a trigger) until all columns are non-NULL. If all green → route to delivery topic. If any red → reject + notify sender.</li>
+<li>If a validation service is down: that column stays NULL. After a timeout, email moves to <strong>Delay Queue</strong> and is retried later — pipeline never blocks permanently.</li>
+</ol>
+<p><strong>Trade-off accepted:</strong> Eventual consistency in validation — a service returning after a delay means email delivery is delayed, not blocked. This is acceptable; blocking is not.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Attachment scanning is pre-computed at upload time, not at send time. By send time, the result is already in S3 Validation DB — the check is O(1) Redis lookup. This is the only way to keep the validation pipeline fast.</p>
+</blockquote>
+<hr />
+<h3 id="93-smtp-cross-domain-delivery-15-step-handshake">9.3 SMTP Cross-Domain Delivery — 15-Step Handshake</h3>
+<p><strong>Here's the problem we're solving:</strong> Gmail doesn't know how to deliver to Outlook. They're separate networks. How do two mail servers that have never met communicate?</p>
+<p><strong>The answer is SMTP (Simple Mail Transfer Protocol)</strong> — a standardized set of rules all mail servers follow. SMTP is not a service or a server; it is a protocol.</p>
+<p><strong>SMTP Relay Worker flow:</strong></p>
+<ol>
+<li>Consumes email from <code>outbound-send-request</code> Kafka topic.</li>
+<li><strong>MX Lookup:</strong> Queries DNS MX resolver for recipient domain (e.g., <code>outlook.com</code>). Gets list of Outlook SMTP server addresses with priority (lower number = higher priority). Caches result in <strong>MX Cache</strong> (Redis, TTL = 1 hour).</li>
+<li>Opens <strong>TCP connection</strong> to Outlook SMTP server on <strong>port 25</strong>.</li>
+<li>Outlook responds: <code>220 outlook.com ESMTP ready</code></li>
+<li>Gmail sends: <code>EHLO gmail.com</code> (identify ourselves)</li>
+<li>Outlook responds: <code>250</code> + list of supported extensions (TLS, size limits, etc.)</li>
+<li>Gmail sends: <code>MAIL FROM: alice@gmail.com</code> — Outlook logs the sender</li>
+<li>Outlook responds: <code>250 OK</code></li>
+<li>Gmail sends: <code>RCPT TO: bob@outlook.com</code> — <strong>critical validation step</strong></li>
+<li>Outlook checks if <code>bob@outlook.com</code> exists in its own user DB. If not: <code>550 No such user here</code> — delivery fails, Gmail notifies Alice. If yes: <code>250 OK</code></li>
+<li>Gmail sends: <code>DATA</code> — signals start of email content</li>
+<li>Outlook responds: <code>354 Start mail input</code></li>
+<li>Gmail streams: headers + body + attachment references</li>
+<li>Gmail sends: <code>.</code> (single period = end of message)</li>
+<li>Outlook responds: <code>250 Message accepted for delivery</code> — email is in Outlook's inbox pipeline</li>
+<li>Gmail sends: <code>QUIT</code> → TCP connection closed</li>
+<li>SMTP Relay Worker receives <code>250</code> → updates Outbox Table <code>status = DELIVERED_EXTERNAL</code></li>
+</ol>
+<p><strong>Trade-off accepted:</strong> If Outlook's SMTP server is temporarily unreachable, SMTP Relay Worker retries with exponential backoff using the next-priority MX record. Email may be delayed minutes. This is expected behaviour and standard in SMTP.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> SMTP is the lingua franca of email servers. Every mail server — Gmail, Outlook, Yahoo — speaks it. The MX cache is critical: DNS lookup adds ~100ms. At 3.5M cross-domain emails/sec, skipping DNS for cached domains saves ~350K CPU-seconds per second.</p>
+</blockquote>
+<hr />
+<h3 id="94-spam-filtering-design">9.4 Spam Filtering Design</h3>
+<p><strong>Here's the problem we're solving:</strong> Gmail receives ~3.5M emails/sec from external senders. ~45% of global email is spam. Without filtering, user inboxes are unusable. Filtering must be fast enough to not block the inbound pipeline and accurate enough that legitimate emails don't land in spam.</p>
+<p><strong>Naive solution — keyword blocklist:</strong></p>
+<pre><code>if email.body contains &quot;free money&quot; → mark as spam
+</code></pre>
+<p>Fails: spammers trivially evade keyword lists. Recall is low, false-positive rate is high.</p>
+<p><strong>Chosen solution — layered scoring system:</strong></p>
+<div class="mermaid">
+flowchart TD
+    Email[&quot;Inbound Email&quot;] --&gt; L1[&quot;Layer 1: Sender Reputation\n(IP/domain blocklist + reputation score)&quot;]
+    L1 --&gt;|Score &gt; hard threshold| REJECT[&quot;Reject immediately\n(don't even score content)&quot;]
+    L1 --&gt;|Continue| L2[&quot;Layer 2: Authentication\n(SPF check + DKIM signature verify)&quot;]
+    L2 --&gt;|Fail| PENALISE[&quot;Add penalty score&quot;]
+    L2 --&gt; L3[&quot;Layer 3: Content Analysis\n(ML model: TF-IDF + neural classifier)&quot;]
+    L3 --&gt; L4[&quot;Layer 4: Behavioral Signals\n(user reports, unsubscribes, read rate)&quot;]
+    L4 --&gt; SCORE[&quot;Final Score 0.0 - 1.0&quot;]
+    SCORE --&gt;|score &lt; 0.3| INBOX[&quot;Route to INBOX&quot;]
+    SCORE --&gt;|0.3 to 0.7| REVIEW[&quot;Route to SPAM folder&quot;]
+    SCORE --&gt;|score &gt; 0.7| BLOCK[&quot;Block + notify sender&quot;]
+</div>
+<p><strong>Layer breakdown:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>What it checks</th>
+<th>Speed</th>
+<th>Impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sender Reputation</td>
+<td>IP blocklist, domain reputation score, past abuse reports</td>
+<td>&lt; 1ms (Redis lookup)</td>
+<td>Blocks ~60% of spam before content is read</td>
+</tr>
+<tr>
+<td>Authentication</td>
+<td>SPF: is sending IP authorised for this domain? DKIM: is cryptographic signature valid?</td>
+<td>&lt; 5ms (DNS cached)</td>
+<td>Eliminates spoofed sender domains</td>
+</tr>
+<tr>
+<td>Content Analysis</td>
+<td>ML classifier (trained on billions of labelled emails); features: TF-IDF, URL reputation, attachment type, link density</td>
+<td>50–100ms</td>
+<td>Catches novel spam patterns</td>
+</tr>
+<tr>
+<td>Behavioral Signals</td>
+<td>How often do recipients mark similar emails as spam? Do users who receive this sender's mail read it or delete unread?</td>
+<td>Async (pre-computed daily)</td>
+<td>Adapts to user-specific preferences</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Scoring thresholds:</strong>
+- Score &lt; 0.3 → <code>INBOX</code>
+- Score 0.3–0.7 → <code>SPAM</code> folder (user can recover)
+- Score &gt; 0.7 → rejected at SMTP layer before <code>250</code> is sent (sender gets bounce)</p>
+<p><strong>Why the layered approach:</strong>
+- Layer 1 (sender reputation) eliminates 60% of spam in &lt; 1ms — cheap. Don't spend ML compute on obvious spam.
+- Only emails that pass Layer 1+2 get the expensive ML content scan
+- At 3.5M emails/sec × 100ms ML scan = impossible if applied to all. After Layer 1 filtering, only ~40% need ML = 1.4M/sec — manageable with horizontal scaling of the ML inference fleet</p>
+<p><strong>Trade-off accepted:</strong> Probabilistic scoring means some spam reaches inboxes and some legitimate email lands in spam. No spam filter achieves 100% accuracy. The threshold (0.3/0.7) is tunable — Gmail adjusts per-user based on their "Mark as not spam" actions.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Spam filtering is a cost optimisation problem as much as an accuracy problem. Layer cheap filters first (IP blocklist = 1ms), expensive filters last (ML = 100ms). Only ~40% of mail needs the ML model after reputation filtering. This is the difference between 1.4M ML inferences/sec and 3.5M.</p>
+</blockquote>
+<hr />
+<h3 id="95-rate-limiting-and-abuse-protection">9.5 Rate Limiting and Abuse Protection</h3>
+<p><strong>Here's the problem we're solving:</strong> A compromised Gmail account or a bulk-sender service can send millions of emails in seconds — spamming recipient inboxes and abusing our SMTP relay infrastructure. Without rate limiting, one bad actor can degrade delivery for all other users.</p>
+<p><strong>Two surfaces to protect:</strong>
+1. <strong>Send rate per user</strong> — prevent a single account from sending bulk spam
+2. <strong>Inbound SMTP rate per source IP</strong> — prevent external servers from flooding our inbound pipeline</p>
+<p><strong>Send rate limiting (per user):</strong></p>
+<pre><code>Redis key: rate:{userId}:{window}
+Type: sliding window counter (token bucket)
+
+Limits (configurable by account tier):
+  - Free account:    500 emails/day, 25 emails/minute
+  - Google Workspace: 2,000 emails/day, 100 emails/minute
+  - API (Gmail API): configurable, with abuse monitoring
+</code></pre>
+<p>Implementation:
+1. Mail Send Service checks Redis rate counter before writing to Outbox Table
+2. <code>INCR rate:{userId}:{windowBucket}</code> with <code>EXPIRE = window_duration</code>
+3. If counter &gt; limit → <code>429 Too Many Requests</code> to client; email not queued
+4. Sliding window: separate counters per minute-bucket, aggregate last 60 buckets for per-hour limit</p>
+<p><strong>Inbound SMTP rate limiting (per source IP):</strong>
+1. Inbound SMTP Service tracks connection count per source IP in Redis
+2. If source IP opens &gt; 100 connections/sec → temporary <code>421 Service not available, try again later</code>
+3. If source IP has high spam score (from Sender Reputation layer) → blackhole connections silently
+4. IP reputation updated by Spam Filter Service feedback loop — IPs that consistently send spam get progressively lower connection limits</p>
+<p><strong>Abuse signals that trigger automatic throttling:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&gt; 1% bounce rate on sent emails</td>
+<td>Throttle send rate by 50%</td>
+</tr>
+<tr>
+<td>&gt; 0.1% spam reports from recipients</td>
+<td>Flag account for review</td>
+</tr>
+<tr>
+<td>Sudden 10× spike in send volume</td>
+<td>Require re-authentication (2FA)</td>
+</tr>
+<tr>
+<td>Email content matches known spam pattern</td>
+<td>Block send immediately</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Dead Letter Queue (DLQ) for undeliverable emails:</strong>
+- Emails that fail all SMTP retry attempts (4 days) → moved to DLQ
+- DLQ worker sends <strong>non-delivery report (NDR)</strong> bounce email to original sender
+- Email is then archived (not deleted) for compliance audit trail</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Rate limiting is a correctness requirement for email, not just a performance guard. An email platform without rate limits becomes a free spam cannon. The sliding window counter in Redis costs &lt; 1ms per send — there is no reason not to check it on every send request.</p>
+</blockquote>
+<hr />
+<h3 id="96-user-registration-uniqueness-at-15b-scale">9.6 User Registration — Uniqueness at 1.5B Scale</h3>
+<p><strong>Here's the problem we're solving:</strong> No two users can register with the same email ID. At 1.5B users, a single PostgreSQL instance can't hold all records or serve 50M autocomplete lookups/sec. How do we enforce global uniqueness while sharding?</p>
+<p><strong>Naive solution:</strong> Single DB, email as primary key. Enforces uniqueness trivially. Fails at scale — table too large, single point of failure.</p>
+<p><strong>Chosen solution — Consistent Hashing + Primary Key constraint:</strong></p>
+<ol>
+<li>Hash the email ID → modulo assigns it to a shard.</li>
+<li><strong>Consistent hashing ring</strong> (not simple modulo): adding a shard only redistributes a fraction of keys, not all of them. Simple modulo with 10 shards → if you add shard 11, all <code>hash % 10 ≠ hash % 11</code> entries must be remapped. Consistent hashing: only keys on the affected arc move.</li>
+<li>Each shard has <code>email_id</code> as PRIMARY KEY — DB-level uniqueness enforced within the shard.</li>
+<li><strong>Concurrent registration race condition:</strong> Two users try <code>alice@gmail.com</code> simultaneously on the same shard. PRIMARY KEY constraint rejects the second insert. First commit wins — ACID guarantee.</li>
+</ol>
+<p><strong>User Cache for autocomplete:</strong></p>
+<ul>
+<li>Redis cache per user: stores top 50 recently-contacted email IDs + all contact book entries. TTL = session duration.</li>
+<li>On typing in To/CC field: check user cache first. Cache hit → show autocomplete. Cache miss (unknown email) → no suggestion until user presses Enter → DB lookup only on explicit intent.</li>
+<li>Why cache? 50M QPS autocomplete hits against a sharded DB at 50M lookups/sec × 10ms per lookup = 500K seconds of compute/sec. Cache brings this to &lt; 1ms.</li>
+</ul>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Uniqueness is enforced at the shard level via PRIMARY KEY, not via a global lock or cross-shard lookup. Consistent hashing guarantees each email maps to exactly one shard. Two registrations for the same email ID always land on the same shard — DB constraint handles the race.</p>
+</blockquote>
+<hr />
+<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
+<p><strong>Scale we're designing for (say this explicitly in the interview):</strong>
+- 1.5 billion users. ~300 billion emails/day. 3.5 million emails/sec at peak.
+- 22.5 exabytes total storage. 260 GB/sec of mailbox write throughput.
+- The sharding strategy for this scale: <strong>partition mailbox by <code>user_id</code></strong>. Every inbox query and every inbox write is <code>WHERE user_id = ?</code> — so every operation hits exactly one Cassandra partition. No scatter-gather. No cross-shard joins. This is intentional by design, not coincidence.</p>
+<p><strong>What breaks first at 10× scale:</strong></p>
+<ol>
+<li><strong>Mailbox writes (35M emails/sec):</strong></li>
+<li>Cassandra sharded by <code>user_id</code> handles this. Add nodes horizontally — Cassandra rebalances automatically.</li>
+<li>
+<p>Read path: <code>SELECT * FROM mailbox_items WHERE user_id = ? ORDER BY message_id DESC LIMIT 50</code> — single partition scan, fast.</p>
+</li>
+<li>
+<p><strong>Search at 100M QPS:</strong></p>
+</li>
+<li>Elasticsearch cluster with data nodes sharded by <code>user_id</code>. Each user's emails live on the same shard — no scatter-gather.</li>
+<li>Aggregator Service pre-joins body + metadata before indexing. Never join at query time.</li>
+<li>
+<p>Cache recent search results in Redis: <code>search:{userId}:{queryHash} → result</code> TTL = 5 min.</p>
+</li>
+<li>
+<p><strong>SMTP Relay Worker saturation:</strong></p>
+</li>
+<li>Stateless workers — scale horizontally. Each worker handles its own TCP connection pool to external SMTP servers.</li>
+<li>Per-domain connection pooling: opening a new TCP + TLS connection to Outlook per email is expensive. Maintain persistent connection pools per domain.</li>
+<li>
+<p>MX Cache hit rate target: &gt; 99% (most emails go to top 10 domains — Gmail, Outlook, Yahoo, corporate domains).</p>
+</li>
+<li>
+<p><strong>User DB autocomplete (50M QPS):</strong></p>
+</li>
+<li>Served from User Cache (Redis) for 95%+ of requests.</li>
+<li>User DB only hit on cache miss (unknown email + Enter key). Read replicas absorb the remaining load.</li>
+</ol>
+<hr />
+<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mail Send Service crashes after Outbox write</td>
+<td>No impact</td>
+<td>Outbox Consumer retries Kafka publish. Email not lost — it's in the DB.</td>
+</tr>
+<tr>
+<td>Kafka broker goes down</td>
+<td>Email delivery stalls</td>
+<td>Outbox Consumer retries with backoff. Emails queue up in Outbox Table. Kafka cluster is multi-broker — single broker failure doesn't down the cluster.</td>
+</tr>
+<tr>
+<td>Validation service (spam/policy) goes down</td>
+<td>Emails pile up in Delay Queue</td>
+<td>After timeout, moved to Delay Queue, retried on recovery. Does not block all emails — only those awaiting that specific check.</td>
+</tr>
+<tr>
+<td>SMTP Relay Worker can't reach Outlook</td>
+<td>External email delayed</td>
+<td>Exponential backoff retry. Try next-priority MX record. Industry-standard: retry for up to 4 days before bouncing.</td>
+</tr>
+<tr>
+<td>Cassandra node fails</td>
+<td>Partial inbox unavailability for affected partition range</td>
+<td>Replication factor = 3. Reads/writes rerouted to replicas. No data loss.</td>
+</tr>
+<tr>
+<td>Elasticsearch node fails</td>
+<td>Search degraded</td>
+<td>ES cluster rebalances shards to healthy nodes. Search may be slow during rebalance but never fully down.</td>
+</tr>
+<tr>
+<td>S3 outage</td>
+<td>Attachment upload fails</td>
+<td>Client retries. Draft saves without attachment. Email can't be sent until attachment upload succeeds — enforced client-side.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="cassandra-vs-postgresql-for-mailbox">Cassandra vs PostgreSQL for Mailbox</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Cassandra</th>
+<th>PostgreSQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Write throughput</td>
+<td>Multi-master, linear scale (35M writes/sec)</td>
+<td>Single primary ~100K writes/sec ceiling</td>
+</tr>
+<tr>
+<td>Query flexibility</td>
+<td>Limited — must know partition key</td>
+<td>Full SQL, joins, complex queries</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Eventual (tunable quorum)</td>
+<td>Strong ACID</td>
+</tr>
+<tr>
+<td>Operational complexity</td>
+<td>Higher — tuning compaction, GC</td>
+<td>Lower</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Cassandra — mailbox is write-heavy (every email = inbox write), append-only, always queried by <code>user_id</code>. No joins needed. PostgreSQL primary would be the first bottleneck at scale.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Mailbox is an append-only, partition-by-user workload. Cassandra's partition model is a perfect fit — every query is <code>WHERE user_id = ?</code> and every write is to a known partition. No cross-partition queries ever needed.</p>
+</blockquote>
+<hr />
+<h3 id="sync-vs-async-delivery-pipeline">Sync vs Async Delivery Pipeline</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Sync (direct call)</th>
+<th>Async (Kafka + Outbox)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simplicity</td>
+<td>Simple — no queue</td>
+<td>Complex — CDC + Kafka + consumers</td>
+</tr>
+<tr>
+<td>Durability</td>
+<td>Email lost if service crashes</td>
+<td>Zero loss — email persisted before Kafka</td>
+</tr>
+<tr>
+<td>Validation</td>
+<td>Blocks send response</td>
+<td>Non-blocking — UI shows "Sent" immediately</td>
+</tr>
+<tr>
+<td>Scale</td>
+<td>Each service must scale with send rate</td>
+<td>Each stage scales independently</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Async — at 3.5M emails/sec, synchronous validation would require every validation service to handle 3.5M req/sec simultaneously or become the bottleneck. Async decouples each stage.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The queue is not a performance optimization — it's a correctness requirement. Without the Outbox Table + Kafka, a service crash between "email saved" and "email delivered" loses the email permanently.</p>
+</blockquote>
+<hr />
+<h3 id="pre-scan-attachments-vs-scan-at-send-time">Pre-scan Attachments vs Scan at Send Time</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Pre-scan at upload</th>
+<th>Scan at send time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Send latency</td>
+<td>Zero — result pre-computed</td>
+<td>+200–500ms per attachment</td>
+</tr>
+<tr>
+<td>Resource usage</td>
+<td>Scanning at low-traffic upload time</td>
+<td>Scanning during high-traffic send window</td>
+</tr>
+<tr>
+<td>Stale scan risk</td>
+<td>Attachment modified after scan? No — S3 is immutable</td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Pre-scan at upload — scanning a 25MB PDF at send time adds unacceptable latency to the hot send path. S3 objects are immutable — a scan result at upload time is always valid.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Move expensive work out of the critical path. Attachment scanning is O(file_size) — it belongs at upload time (low frequency, user is waiting anyway) not at send time (high frequency, user expects instant delivery).</p>
+</blockquote>
+<hr />
+<h2 id="frontend-notes-10-of-design">Frontend Notes (10% of design)</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Pattern</th>
+<th>Why it matters in an interview</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Inbox list</td>
+<td>Cursor-based pagination; metadata only (no body)</td>
+<td>3.5M emails/sec × full body = 260GB/sec read traffic. Only load body on open.</td>
+</tr>
+<tr>
+<td>Virtual scroll</td>
+<td>Virtualise DOM — only render visible email rows</td>
+<td>A user with 50K emails in inbox = 50K DOM nodes if fully rendered. Browser crashes.</td>
+</tr>
+<tr>
+<td>New email notification</td>
+<td>WebSocket connection to Notification Service</td>
+<td>Long-poll alternative = wasted requests every 15 seconds. WebSocket = server-pushed on new delivery event.</td>
+</tr>
+<tr>
+<td>Inbox caching</td>
+<td>Cache first 2 pages of inbox in IndexedDB (client)</td>
+<td>Gmail opens instantly because the last-seen inbox is stored locally. Background refresh fetches newer emails.</td>
+</tr>
+<tr>
+<td>Optimistic send</td>
+<td>Mark email as "Sent" in UI immediately on <code>202 Accepted</code></td>
+<td>Async pipeline means server can't confirm delivery synchronously. Show optimistic state; handle errors on webhook.</td>
+</tr>
+<tr>
+<td>Draft autosave</td>
+<td>Debounce 2 seconds after last keystroke → <code>PATCH /draft/:id</code></td>
+<td>Without debounce: typing at 60 WPM × autosave per keystroke = ~5 API calls/sec per composer window.</td>
+</tr>
+<tr>
+<td>Attachment upload</td>
+<td>Direct client → S3 via pre-signed URL; progress bar from S3 multipart upload events</td>
+<td>Don't route 25MB files through your API servers — direct S3 upload offloads bandwidth entirely.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Debounce search input 300ms; show skeleton loaders</td>
+<td>Elasticsearch at &lt; 500ms feels instant if UI provides loading feedback. Don't block compose on search.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem it solves</th>
+<th>Trade-off accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Transactional Outbox Pattern</td>
+<td>Zero email loss on service crash</td>
+<td>CDC pipeline complexity; at-least-once delivery (idempotency needed at consumer)</td>
+</tr>
+<tr>
+<td>Cassandra for Mailbox Items</td>
+<td>35M writes/sec inbox delivery</td>
+<td>Eventual consistency; limited query flexibility (no joins)</td>
+</tr>
+<tr>
+<td>Pre-computed attachment scans</td>
+<td>Keep send path fast</td>
+<td>S3 Validation DB must be maintained; small storage overhead</td>
+</tr>
+<tr>
+<td>Consistent hashing for User DB</td>
+<td>Shard 1.5B users without remapping all keys on scale-out</td>
+<td>More complex routing layer vs simple modulo sharding</td>
+</tr>
+<tr>
+<td>Async parallel validation</td>
+<td>Avoid blocking send on slow/down validation services</td>
+<td>Eventual delivery (email delayed, not blocked, on service outage)</td>
+</tr>
+<tr>
+<td>Separate mailbox body + metadata</td>
+<td>Elasticsearch aggregator pre-joins at index time</td>
+<td>Two tables to maintain; aggregator service adds complexity</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>FAST PATH (optimized for perceived send latency)
+  User clicks Send
+      │
+      ▼
+  Mail Send Service writes to Outbox Table (DB write = durable)
+      │
+  UI immediately shows &quot;Message Sent&quot; ← user feedback is instant
+      │
+  Outbox Consumer detects CDC event → Kafka (async, non-blocking)
+
+
+RELIABLE PATH (optimized for zero email loss)
+  If Kafka publish fails → Outbox Consumer retries from DB
+  If Delivery Orchestrator crashes → resumes from Kafka offset
+  If Validation service down → email moves to Delay Queue, retried on recovery
+  If SMTP handshake fails → exponential backoff, try next MX record, retry up to 4 days
+  Final state: email always reaches DELIVERED or BOUNCED — never silently lost
+</code></pre>
+<h3 id="key-insights-checklist">Key Insights Checklist</h3>
+<ul>
+<li>"The Outbox Table makes DB write and Kafka publish effectively atomic. DB is the source of truth, not Kafka. Email is never lost because the persistent record exists before any async work begins."</li>
+<li>"Attachment scanning is pre-computed at upload time. By send time, the result is a single Redis lookup. Scanning at send time would add 200–500ms to every email on the hot path."</li>
+<li>"Cassandra partition key is <code>user_id</code>. Every inbox query and every inbox write maps to a single partition. No scatter-gather, no joins. This is why Cassandra is the right choice here — not for its write speed generally, but for this specific access pattern."</li>
+<li>"SMTP is a protocol, not a server. Every mail server speaks it. The MX cache avoids DNS lookup per email — at 3.5M cross-domain emails/sec, that's the difference between functional and overloaded."</li>
+<li>"Registration must be strongly consistent — email ID as PRIMARY KEY in each DB shard. Consistent hashing guarantees two registrations for the same email ID always land on the same shard. DB constraint handles the race without a global lock."</li>
+<li>"The validation pipeline runs in parallel, not serially. Each service writes its result to Validation DB independently. The orchestrator checks when all columns are set — no service blocks another."</li>
+<li>"Spam filtering is layered cheapest-first: IP reputation at 1ms eliminates 60% of spam before the ML model ever sees it. Only ~40% of mail needs the 100ms ML inference — this makes the economics work at 3.5M emails/sec."</li>
+<li>"Gmail acknowledges <code>250 Message accepted</code> to external senders before the email reaches the inbox. Once we own the message off the wire, Kafka + Cassandra guarantee delivery. The sender's responsibility ends at <code>250</code>."</li>
+<li>"Rate limiting is a correctness requirement for email. Without it, one compromised account becomes a spam cannon for the entire platform. A Redis sliding window counter at &lt; 1ms cost per send is the cheapest correctness guarantee in the system."</li>
+</ul></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,2472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ecommerce Marketplace (Amazon) - Frontend System Design — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html" aria-current="page">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="ecommerce-marketplace-amazon-frontend-system-design">Ecommerce Marketplace (Amazon) - Frontend System Design</h1>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-requirements-overview">Requirements Overview</a></li>
+<li><a href="#2-high-level-architecture">High-Level Architecture</a></li>
+<li><a href="#3-core-data-types">Core Data Types</a></li>
+<li><a href="#4-cart-store-zustand">Cart Store (Zustand)</a></li>
+<li><a href="#5-product-list-data-fetching">Product List Data Fetching</a></li>
+<li><a href="#6-product-card-component">Product Card Component</a></li>
+<li><a href="#7-product-grid-component">Product Grid Component</a></li>
+<li><a href="#8-search-with-autocomplete">Search with Autocomplete</a></li>
+<li><a href="#9-filter-sidebar-component">Filter Sidebar Component</a></li>
+<li><a href="#10-price-range-filter">Price Range Filter</a></li>
+<li><a href="#11-rating-filter">Rating Filter</a></li>
+<li><a href="#12-facet-filter-dynamic">Facet Filter (Dynamic)</a></li>
+<li><a href="#13-product-detail-page">Product Detail Page</a></li>
+<li><a href="#14-product-image-gallery">Product Image Gallery</a></li>
+<li><a href="#15-variant-selector">Variant Selector</a></li>
+<li><a href="#16-cart-drawer">Cart Drawer</a></li>
+<li><a href="#17-cart-item-component">Cart Item Component</a></li>
+<li><a href="#18-multi-step-checkout">Multi-Step Checkout</a></li>
+<li><a href="#19-review--rating-system">Review &amp; Rating System</a></li>
+<li><a href="#20-review-card-component">Review Card Component</a></li>
+<li><a href="#21-product-recommendations-carousel">Product Recommendations Carousel</a></li>
+<li><a href="#22-wishlist-management">Wishlist Management</a></li>
+<li><a href="#23-url-based-filter-state">URL-Based Filter State</a></li>
+<li><a href="#24-performance-optimizations">Performance Optimizations</a></li>
+<li><a href="#25-recently-viewed-products">Recently Viewed Products</a></li>
+<li><a href="#26-accessibility-considerations">Accessibility Considerations</a></li>
+</ol>
+<hr />
+<h2 id="1-requirements-overview">1. Requirements Overview</h2>
+<h3 id="functional-requirements">Functional Requirements</h3>
+<ul>
+<li><strong>Product Catalog</strong>: Browse, search, filter products</li>
+<li><strong>Product Details</strong>: Images, descriptions, reviews, Q&amp;A</li>
+<li><strong>Shopping Cart</strong>: Add, update, remove items</li>
+<li><strong>Checkout</strong>: Multi-step checkout with payment</li>
+<li><strong>User Account</strong>: Orders, addresses, payment methods</li>
+<li><strong>Search</strong>: Autocomplete, filters, faceted search</li>
+<li><strong>Reviews &amp; Ratings</strong>: Write and browse reviews</li>
+<li><strong>Wishlist</strong>: Save products for later</li>
+<li><strong>Recommendations</strong>: Personalized product suggestions</li>
+</ul>
+<h3 id="non-functional-requirements">Non-Functional Requirements</h3>
+<ul>
+<li><strong>Performance</strong>: &lt; 3s LCP, instant cart updates</li>
+<li><strong>SEO</strong>: Server-side rendering for product pages</li>
+<li><strong>Scalability</strong>: Handle millions of products</li>
+<li><strong>Accessibility</strong>: WCAG 2.1 AA compliance</li>
+<li><strong>Mobile-first</strong>: Responsive across all devices</li>
+</ul>
+<hr />
+<h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                     Ecommerce Application                        │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────────┐  ┌─────────────────────────┐   │
+│  │  Header  │  │   Product    │  │      Sidebar            │   │
+│  │  Search  │  │   Grid/List  │  │      Filters            │   │
+│  │  Cart    │  │              │  │      Categories         │   │
+│  └──────────┘  └──────────────┘  └─────────────────────────┘   │
+├─────────────────────────────────────────────────────────────────┤
+│                      State Management (Zustand)                  │
+├─────────────────────────────────────────────────────────────────┤
+│  Cart Store  │  User Store  │  Search Store  │  Filter Store   │
+├─────────────────────────────────────────────────────────────────┤
+│                    Data Layer (TanStack Query)                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Products API  │  Cart API  │  Orders API  │  Search API       │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="3-core-data-types">3. Core Data Types</h2>
+<pre><code class="language-typescript">// types/product.ts
+interface Product {
+  id: string;
+  sku: string;
+  title: string;
+  slug: string;
+  description: string;
+  brand: Brand;
+  category: Category;
+  images: ProductImage[];
+  price: Price;
+  variants: ProductVariant[];
+  inventory: InventoryStatus;
+  rating: Rating;
+  reviewCount: number;
+  specifications: Specification[];
+  tags: string[];
+  isFeatured: boolean;
+  createdAt: string;
+}
+
+interface Price {
+  amount: number;
+  currency: string;
+  compareAt?: number; // Original price for discounts
+  discount?: Discount;
+}
+
+interface Discount {
+  type: 'percentage' | 'fixed';
+  value: number;
+  validUntil?: string;
+}
+
+interface ProductImage {
+  id: string;
+  url: string;
+  alt: string;
+  width: number;
+  height: number;
+  isPrimary: boolean;
+}
+
+interface ProductVariant {
+  id: string;
+  sku: string;
+  name: string;
+  options: VariantOption[];
+  price: Price;
+  inventory: InventoryStatus;
+  image?: ProductImage;
+}
+
+interface VariantOption {
+  name: string; // e.g., &quot;Color&quot;, &quot;Size&quot;
+  value: string; // e.g., &quot;Red&quot;, &quot;XL&quot;
+}
+
+interface InventoryStatus {
+  inStock: boolean;
+  quantity: number;
+  lowStockThreshold: number;
+  backorderAllowed: boolean;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  parentId?: string;
+  children?: Category[];
+  image?: string;
+  productCount: number;
+}
+
+interface Brand {
+  id: string;
+  name: string;
+  slug: string;
+  logo?: string;
+}
+
+// types/cart.ts
+interface Cart {
+  id: string;
+  items: CartItem[];
+  subtotal: number;
+  tax: number;
+  shipping: number;
+  discount: number;
+  total: number;
+  currency: string;
+  itemCount: number;
+}
+
+interface CartItem {
+  id: string;
+  productId: string;
+  variantId?: string;
+  title: string;
+  image: string;
+  price: number;
+  quantity: number;
+  maxQuantity: number;
+  variant?: VariantOption[];
+}
+</code></pre>
+<hr />
+<h2 id="4-cart-store-zustand">4. Cart Store (Zustand)</h2>
+<pre><code class="language-typescript">// stores/cartStore.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface CartState {
+  cart: Cart | null;
+  isOpen: boolean;
+  isLoading: boolean;
+
+  // Actions
+  openCart: () =&gt; void;
+  closeCart: () =&gt; void;
+  addItem: (product: Product, quantity: number, variantId?: string) =&gt; Promise&lt;void&gt;;
+  updateQuantity: (itemId: string, quantity: number) =&gt; Promise&lt;void&gt;;
+  removeItem: (itemId: string) =&gt; Promise&lt;void&gt;;
+  clearCart: () =&gt; Promise&lt;void&gt;;
+  applyCoupon: (code: string) =&gt; Promise&lt;boolean&gt;;
+}
+
+export const useCartStore = create&lt;CartState&gt;()(
+  persist(
+    (set, get) =&gt; ({
+      cart: null,
+      isOpen: false,
+      isLoading: false,
+
+      openCart: () =&gt; set({ isOpen: true }),
+      closeCart: () =&gt; set({ isOpen: false }),
+
+      addItem: async (product, quantity, variantId) =&gt; {
+        set({ isLoading: true });
+        try {
+          const res = await fetch('/api/cart/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId: product.id, quantity, variantId }),
+          });
+          const cart = await res.json();
+          set({ cart, isOpen: true });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      updateQuantity: async (itemId, quantity) =&gt; {
+        const prevCart = get().cart;
+        // Optimistic update
+        set((state) =&gt; ({
+          cart: state.cart ? {
+            ...state.cart,
+            items: state.cart.items.map((item) =&gt;
+              item.id === itemId ? { ...item, quantity } : item
+            ),
+          } : null,
+        }));
+
+        try {
+          const res = await fetch(`/api/cart/items/${itemId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quantity }),
+          });
+          const cart = await res.json();
+          set({ cart });
+        } catch {
+          set({ cart: prevCart }); // Rollback on error
+        }
+      },
+
+      removeItem: async (itemId) =&gt; {
+        const prevCart = get().cart;
+        // Optimistic update
+        set((state) =&gt; ({
+          cart: state.cart ? {
+            ...state.cart,
+            items: state.cart.items.filter((item) =&gt; item.id !== itemId),
+          } : null,
+        }));
+
+        try {
+          const res = await fetch(`/api/cart/items/${itemId}`, { method: 'DELETE' });
+          const cart = await res.json();
+          set({ cart });
+        } catch {
+          set({ cart: prevCart });
+        }
+      },
+
+      clearCart: async () =&gt; {
+        await fetch('/api/cart', { method: 'DELETE' });
+        set({ cart: null });
+      },
+
+      applyCoupon: async (code) =&gt; {
+        const res = await fetch('/api/cart/coupon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        if (res.ok) {
+          const cart = await res.json();
+          set({ cart });
+          return true;
+        }
+        return false;
+      },
+    }),
+    { name: 'cart-storage' }
+  )
+);
+</code></pre>
+<hr />
+<h2 id="5-product-list-data-fetching">5. Product List Data Fetching</h2>
+<pre><code class="language-typescript">// hooks/useProducts.ts
+import { useInfiniteQuery } from '@tanstack/react-query';
+
+interface ProductsResponse {
+  products: Product[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  facets: Facet[];
+}
+
+interface Facet {
+  field: string;
+  label: string;
+  values: FacetValue[];
+}
+
+interface FacetValue {
+  value: string;
+  count: number;
+  selected: boolean;
+}
+
+interface ProductFilters {
+  category?: string;
+  brand?: string[];
+  priceMin?: number;
+  priceMax?: number;
+  rating?: number;
+  inStock?: boolean;
+  sort?: 'price_asc' | 'price_desc' | 'rating' | 'newest' | 'bestselling';
+  search?: string;
+}
+
+export function useProducts(filters: ProductFilters) {
+  return useInfiniteQuery({
+    queryKey: ['products', filters],
+    queryFn: async ({ pageParam = 1 }) =&gt; {
+      const params = new URLSearchParams({
+        page: String(pageParam),
+        pageSize: '24',
+        ...Object.fromEntries(
+          Object.entries(filters).filter(([_, v]) =&gt; v !== undefined)
+        ),
+      });
+
+      const res = await fetch(`/api/products?${params}`);
+      return res.json() as Promise&lt;ProductsResponse&gt;;
+    },
+    getNextPageParam: (lastPage) =&gt;
+      lastPage.hasMore ? lastPage.page + 1 : undefined,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+</code></pre>
+<hr />
+<h2 id="6-product-card-component">6. Product Card Component</h2>
+<pre><code class="language-tsx">// components/ProductCard.tsx
+import { memo } from 'react';
+import { Heart, Star, ShoppingCart } from 'lucide-react';
+import { formatPrice } from '@/utils/format';
+
+interface ProductCardProps {
+  product: Product;
+  variant?: 'grid' | 'list';
+}
+
+export const ProductCard = memo(function ProductCard({
+  product,
+  variant = 'grid',
+}: ProductCardProps) {
+  const { addItem, isLoading } = useCartStore();
+  const { toggleWishlist, isInWishlist } = useWishlistStore();
+  const inWishlist = isInWishlist(product.id);
+
+  const primaryImage = product.images.find((i) =&gt; i.isPrimary) || product.images[0];
+  const hasDiscount = product.price.compareAt &amp;&amp; product.price.compareAt &gt; product.price.amount;
+  const discountPercent = hasDiscount
+    ? Math.round((1 - product.price.amount / product.price.compareAt!) * 100)
+    : 0;
+
+  if (variant === 'list') {
+    return &lt;ProductCardList product={product} /&gt;;
+  }
+
+  return (
+    &lt;div className=&quot;group relative bg-white rounded-lg border hover:shadow-lg transition-shadow&quot;&gt;
+      {/* Image */}
+      &lt;Link href={`/product/${product.slug}`} className=&quot;block aspect-square overflow-hidden rounded-t-lg&quot;&gt;
+        &lt;img
+          src={primaryImage.url}
+          alt={primaryImage.alt}
+          className=&quot;w-full h-full object-cover group-hover:scale-105 transition-transform&quot;
+          loading=&quot;lazy&quot;
+        /&gt;
+      &lt;/Link&gt;
+
+      {/* Badges */}
+      &lt;div className=&quot;absolute top-2 left-2 flex flex-col gap-1&quot;&gt;
+        {hasDiscount &amp;&amp; (
+          &lt;span className=&quot;px-2 py-0.5 bg-red-500 text-white text-xs font-medium rounded&quot;&gt;
+            -{discountPercent}%
+          &lt;/span&gt;
+        )}
+        {!product.inventory.inStock &amp;&amp; (
+          &lt;span className=&quot;px-2 py-0.5 bg-gray-500 text-white text-xs rounded&quot;&gt;
+            Out of Stock
+          &lt;/span&gt;
+        )}
+      &lt;/div&gt;
+
+      {/* Wishlist button */}
+      &lt;button
+        onClick={() =&gt; toggleWishlist(product.id)}
+        className=&quot;absolute top-2 right-2 p-2 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity&quot;
+      &gt;
+        &lt;Heart
+          className={cn('w-4 h-4', inWishlist ? 'fill-red-500 text-red-500' : 'text-gray-400')}
+        /&gt;
+      &lt;/button&gt;
+
+      {/* Content */}
+      &lt;div className=&quot;p-4&quot;&gt;
+        &lt;Link href={`/product/${product.slug}`}&gt;
+          &lt;h3 className=&quot;font-medium text-gray-900 line-clamp-2 hover:text-blue-600&quot;&gt;
+            {product.title}
+          &lt;/h3&gt;
+        &lt;/Link&gt;
+
+        {/* Rating */}
+        &lt;div className=&quot;flex items-center gap-1 mt-1&quot;&gt;
+          &lt;div className=&quot;flex&quot;&gt;
+            {[1, 2, 3, 4, 5].map((star) =&gt; (
+              &lt;Star
+                key={star}
+                className={cn(
+                  'w-4 h-4',
+                  star &lt;= product.rating.average
+                    ? 'fill-yellow-400 text-yellow-400'
+                    : 'text-gray-300'
+                )}
+              /&gt;
+            ))}
+          &lt;/div&gt;
+          &lt;span className=&quot;text-sm text-gray-500&quot;&gt;({product.reviewCount})&lt;/span&gt;
+        &lt;/div&gt;
+
+        {/* Price */}
+        &lt;div className=&quot;mt-2 flex items-baseline gap-2&quot;&gt;
+          &lt;span className=&quot;text-lg font-bold text-gray-900&quot;&gt;
+            {formatPrice(product.price.amount, product.price.currency)}
+          &lt;/span&gt;
+          {hasDiscount &amp;&amp; (
+            &lt;span className=&quot;text-sm text-gray-500 line-through&quot;&gt;
+              {formatPrice(product.price.compareAt!, product.price.currency)}
+            &lt;/span&gt;
+          )}
+        &lt;/div&gt;
+
+        {/* Add to Cart */}
+        &lt;button
+          onClick={() =&gt; addItem(product, 1)}
+          disabled={!product.inventory.inStock || isLoading}
+          className=&quot;mt-3 w-full py-2 bg-yellow-400 hover:bg-yellow-500 text-sm font-medium rounded disabled:bg-gray-200 disabled:cursor-not-allowed&quot;
+        &gt;
+          Add to Cart
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+});
+</code></pre>
+<hr />
+<h2 id="7-product-grid-component">7. Product Grid Component</h2>
+<pre><code class="language-tsx">// components/ProductGrid.tsx
+import { useMemo } from 'react';
+
+interface ProductGridProps {
+  filters: ProductFilters;
+  viewMode: 'grid' | 'list';
+}
+
+export function ProductGrid({ filters, viewMode }: ProductGridProps) {
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useProducts(filters);
+
+  const products = useMemo(
+    () =&gt; data?.pages.flatMap((p) =&gt; p.products) ?? [],
+    [data]
+  );
+
+  const totalCount = data?.pages[0]?.totalCount ?? 0;
+
+  if (isLoading) {
+    return &lt;ProductGridSkeleton count={12} viewMode={viewMode} /&gt;;
+  }
+
+  if (products.length === 0) {
+    return (
+      &lt;div className=&quot;text-center py-12&quot;&gt;
+        &lt;p className=&quot;text-gray-500&quot;&gt;No products found&lt;/p&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div&gt;
+      {/* Results count */}
+      &lt;p className=&quot;text-sm text-gray-500 mb-4&quot;&gt;
+        Showing {products.length} of {totalCount} products
+      &lt;/p&gt;
+
+      {/* Grid/List */}
+      &lt;div
+        className={cn(
+          viewMode === 'grid'
+            ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4'
+            : 'flex flex-col gap-4'
+        )}
+      &gt;
+        {products.map((product) =&gt; (
+          &lt;ProductCard key={product.id} product={product} variant={viewMode} /&gt;
+        ))}
+      &lt;/div&gt;
+
+      {/* Load More */}
+      {hasNextPage &amp;&amp; (
+        &lt;div className=&quot;mt-8 text-center&quot;&gt;
+          &lt;button
+            onClick={() =&gt; fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className=&quot;px-6 py-2 bg-white border rounded-lg hover:bg-gray-50&quot;
+          &gt;
+            {isFetchingNextPage ? 'Loading...' : 'Load More'}
+          &lt;/button&gt;
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+
+function ProductGridSkeleton({ count, viewMode }: { count: number; viewMode: 'grid' | 'list' }) {
+  return (
+    &lt;div
+      className={cn(
+        viewMode === 'grid'
+          ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4'
+          : 'flex flex-col gap-4'
+      )}
+    &gt;
+      {Array.from({ length: count }).map((_, i) =&gt; (
+        &lt;div key={i} className=&quot;bg-white rounded-lg border p-4 animate-pulse&quot;&gt;
+          &lt;div className=&quot;aspect-square bg-gray-200 rounded mb-4&quot; /&gt;
+          &lt;div className=&quot;h-4 bg-gray-200 rounded w-3/4 mb-2&quot; /&gt;
+          &lt;div className=&quot;h-4 bg-gray-200 rounded w-1/2&quot; /&gt;
+        &lt;/div&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="8-search-with-autocomplete">8. Search with Autocomplete</h2>
+<pre><code class="language-tsx">// components/SearchBar.tsx
+import { useState, useRef, useEffect } from 'react';
+import { Search, X, Clock, TrendingUp } from 'lucide-react';
+import { useDebounce } from '@/hooks/useDebounce';
+
+export function SearchBar() {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const inputRef = useRef&lt;HTMLInputElement&gt;(null);
+  const debouncedQuery = useDebounce(query, 200);
+
+  const { data: suggestions } = useSearchSuggestions(debouncedQuery);
+  const { data: recentSearches } = useRecentSearches();
+  const { data: trendingSearches } = useTrendingSearches();
+
+  const handleSearch = (searchQuery: string) =&gt; {
+    saveRecentSearch(searchQuery);
+    router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
+    setIsOpen(false);
+  };
+
+  return (
+    &lt;div className=&quot;relative flex-1 max-w-2xl&quot;&gt;
+      &lt;div className=&quot;flex items-center bg-white border rounded-lg focus-within:ring-2 focus-within:ring-yellow-400&quot;&gt;
+        &lt;input
+          ref={inputRef}
+          type=&quot;text&quot;
+          value={query}
+          onChange={(e) =&gt; setQuery(e.target.value)}
+          onFocus={() =&gt; setIsOpen(true)}
+          onKeyDown={(e) =&gt; e.key === 'Enter' &amp;&amp; handleSearch(query)}
+          placeholder=&quot;Search products...&quot;
+          className=&quot;flex-1 px-4 py-2 outline-none rounded-l-lg&quot;
+        /&gt;
+        {query &amp;&amp; (
+          &lt;button onClick={() =&gt; setQuery('')} className=&quot;p-2&quot;&gt;
+            &lt;X className=&quot;w-4 h-4 text-gray-400&quot; /&gt;
+          &lt;/button&gt;
+        )}
+        &lt;button
+          onClick={() =&gt; handleSearch(query)}
+          className=&quot;px-4 py-2 bg-yellow-400 hover:bg-yellow-500 rounded-r-lg&quot;
+        &gt;
+          &lt;Search className=&quot;w-5 h-5&quot; /&gt;
+        &lt;/button&gt;
+      &lt;/div&gt;
+
+      {/* Dropdown */}
+      {isOpen &amp;&amp; (
+        &lt;div className=&quot;absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg z-50&quot;&gt;
+          {debouncedQuery.length &gt;= 2 &amp;&amp; suggestions ? (
+            &lt;SuggestionsList
+              suggestions={suggestions}
+              query={debouncedQuery}
+              onSelect={handleSearch}
+            /&gt;
+          ) : (
+            &lt;&gt;
+              {/* Recent Searches */}
+              {recentSearches?.length &gt; 0 &amp;&amp; (
+                &lt;div className=&quot;p-2 border-b&quot;&gt;
+                  &lt;h4 className=&quot;text-xs font-medium text-gray-500 mb-2&quot;&gt;Recent&lt;/h4&gt;
+                  {recentSearches.map((search) =&gt; (
+                    &lt;button
+                      key={search}
+                      onClick={() =&gt; handleSearch(search)}
+                      className=&quot;flex items-center gap-2 w-full px-2 py-1.5 hover:bg-gray-50 rounded&quot;
+                    &gt;
+                      &lt;Clock className=&quot;w-4 h-4 text-gray-400&quot; /&gt;
+                      &lt;span&gt;{search}&lt;/span&gt;
+                    &lt;/button&gt;
+                  ))}
+                &lt;/div&gt;
+              )}
+
+              {/* Trending */}
+              {trendingSearches?.length &gt; 0 &amp;&amp; (
+                &lt;div className=&quot;p-2&quot;&gt;
+                  &lt;h4 className=&quot;text-xs font-medium text-gray-500 mb-2&quot;&gt;Trending&lt;/h4&gt;
+                  {trendingSearches.map((search) =&gt; (
+                    &lt;button
+                      key={search}
+                      onClick={() =&gt; handleSearch(search)}
+                      className=&quot;flex items-center gap-2 w-full px-2 py-1.5 hover:bg-gray-50 rounded&quot;
+                    &gt;
+                      &lt;TrendingUp className=&quot;w-4 h-4 text-orange-500&quot; /&gt;
+                      &lt;span&gt;{search}&lt;/span&gt;
+                    &lt;/button&gt;
+                  ))}
+                &lt;/div&gt;
+              )}
+            &lt;/&gt;
+          )}
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="9-filter-sidebar-component">9. Filter Sidebar Component</h2>
+<pre><code class="language-tsx">// components/FilterSidebar.tsx
+import { useState } from 'react';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
+
+interface FilterSidebarProps {
+  facets: Facet[];
+  filters: ProductFilters;
+  onChange: (filters: ProductFilters) =&gt; void;
+  onClose?: () =&gt; void;
+}
+
+export function FilterSidebar({ facets, filters, onChange, onClose }: FilterSidebarProps) {
+  const activeFilterCount = Object.values(filters).filter(
+    (v) =&gt; v !== undefined &amp;&amp; (Array.isArray(v) ? v.length &gt; 0 : true)
+  ).length;
+
+  const clearAllFilters = () =&gt; {
+    onChange({});
+  };
+
+  return (
+    &lt;aside className=&quot;w-64 bg-white border-r h-full overflow-y-auto&quot;&gt;
+      {/* Header */}
+      &lt;div className=&quot;flex items-center justify-between p-4 border-b sticky top-0 bg-white&quot;&gt;
+        &lt;h2 className=&quot;font-semibold&quot;&gt;Filters&lt;/h2&gt;
+        &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+          {activeFilterCount &gt; 0 &amp;&amp; (
+            &lt;button
+              onClick={clearAllFilters}
+              className=&quot;text-sm text-blue-600 hover:underline&quot;
+            &gt;
+              Clear all
+            &lt;/button&gt;
+          )}
+          {onClose &amp;&amp; (
+            &lt;button onClick={onClose} className=&quot;lg:hidden p-1&quot;&gt;
+              &lt;X className=&quot;w-5 h-5&quot; /&gt;
+            &lt;/button&gt;
+          )}
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Price Range */}
+      &lt;FilterSection title=&quot;Price&quot; defaultOpen&gt;
+        &lt;PriceRangeFilter
+          min={filters.priceMin}
+          max={filters.priceMax}
+          onChange={(min, max) =&gt; onChange({ ...filters, priceMin: min, priceMax: max })}
+        /&gt;
+      &lt;/FilterSection&gt;
+
+      {/* Rating */}
+      &lt;FilterSection title=&quot;Rating&quot; defaultOpen&gt;
+        &lt;RatingFilter
+          value={filters.rating}
+          onChange={(rating) =&gt; onChange({ ...filters, rating })}
+        /&gt;
+      &lt;/FilterSection&gt;
+
+      {/* Dynamic Facets */}
+      {facets.map((facet) =&gt; (
+        &lt;FilterSection key={facet.field} title={facet.label}&gt;
+          &lt;FacetFilter
+            facet={facet}
+            selected={filters[facet.field as keyof ProductFilters] as string[] | undefined}
+            onChange={(values) =&gt;
+              onChange({ ...filters, [facet.field]: values.length &gt; 0 ? values : undefined })
+            }
+          /&gt;
+        &lt;/FilterSection&gt;
+      ))}
+
+      {/* In Stock Only */}
+      &lt;div className=&quot;p-4 border-b&quot;&gt;
+        &lt;label className=&quot;flex items-center gap-2 cursor-pointer&quot;&gt;
+          &lt;input
+            type=&quot;checkbox&quot;
+            checked={filters.inStock ?? false}
+            onChange={(e) =&gt; onChange({ ...filters, inStock: e.target.checked || undefined })}
+            className=&quot;rounded&quot;
+          /&gt;
+          &lt;span className=&quot;text-sm&quot;&gt;In Stock Only&lt;/span&gt;
+        &lt;/label&gt;
+      &lt;/div&gt;
+    &lt;/aside&gt;
+  );
+}
+
+// Collapsible filter section
+function FilterSection({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    &lt;div className=&quot;border-b&quot;&gt;
+      &lt;button
+        onClick={() =&gt; setIsOpen(!isOpen)}
+        className=&quot;flex items-center justify-between w-full p-4 text-left hover:bg-gray-50&quot;
+      &gt;
+        &lt;span className=&quot;font-medium&quot;&gt;{title}&lt;/span&gt;
+        {isOpen ? (
+          &lt;ChevronUp className=&quot;w-4 h-4&quot; /&gt;
+        ) : (
+          &lt;ChevronDown className=&quot;w-4 h-4&quot; /&gt;
+        )}
+      &lt;/button&gt;
+      {isOpen &amp;&amp; &lt;div className=&quot;px-4 pb-4&quot;&gt;{children}&lt;/div&gt;}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="10-price-range-filter">10. Price Range Filter</h2>
+<pre><code class="language-tsx">// components/filters/PriceRangeFilter.tsx
+import { useState, useEffect } from 'react';
+import { useDebounce } from '@/hooks/useDebounce';
+
+interface PriceRangeFilterProps {
+  min?: number;
+  max?: number;
+  onChange: (min?: number, max?: number) =&gt; void;
+  minLimit?: number;
+  maxLimit?: number;
+}
+
+export function PriceRangeFilter({
+  min,
+  max,
+  onChange,
+  minLimit = 0,
+  maxLimit = 10000,
+}: PriceRangeFilterProps) {
+  const [localMin, setLocalMin] = useState(min ?? minLimit);
+  const [localMax, setLocalMax] = useState(max ?? maxLimit);
+
+  const debouncedMin = useDebounce(localMin, 300);
+  const debouncedMax = useDebounce(localMax, 300);
+
+  useEffect(() =&gt; {
+    const newMin = debouncedMin === minLimit ? undefined : debouncedMin;
+    const newMax = debouncedMax === maxLimit ? undefined : debouncedMax;
+    onChange(newMin, newMax);
+  }, [debouncedMin, debouncedMax]);
+
+  // Preset price ranges
+  const presets = [
+    { label: 'Under $25', min: 0, max: 25 },
+    { label: '$25 - $50', min: 25, max: 50 },
+    { label: '$50 - $100', min: 50, max: 100 },
+    { label: '$100 - $200', min: 100, max: 200 },
+    { label: 'Over $200', min: 200, max: maxLimit },
+  ];
+
+  return (
+    &lt;div className=&quot;space-y-4&quot;&gt;
+      {/* Dual Range Slider */}
+      &lt;div className=&quot;relative h-2&quot;&gt;
+        &lt;div className=&quot;absolute inset-0 bg-gray-200 rounded&quot; /&gt;
+        &lt;div
+          className=&quot;absolute h-full bg-yellow-400 rounded&quot;
+          style={{
+            left: `${((localMin - minLimit) / (maxLimit - minLimit)) * 100}%`,
+            right: `${100 - ((localMax - minLimit) / (maxLimit - minLimit)) * 100}%`,
+          }}
+        /&gt;
+        &lt;input
+          type=&quot;range&quot;
+          min={minLimit}
+          max={maxLimit}
+          value={localMin}
+          onChange={(e) =&gt; setLocalMin(Math.min(Number(e.target.value), localMax - 10))}
+          className=&quot;absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&amp;::-webkit-slider-thumb]:pointer-events-auto [&amp;::-webkit-slider-thumb]:w-4 [&amp;::-webkit-slider-thumb]:h-4 [&amp;::-webkit-slider-thumb]:rounded-full [&amp;::-webkit-slider-thumb]:bg-white [&amp;::-webkit-slider-thumb]:border-2 [&amp;::-webkit-slider-thumb]:border-yellow-400 [&amp;::-webkit-slider-thumb]:appearance-none&quot;
+        /&gt;
+        &lt;input
+          type=&quot;range&quot;
+          min={minLimit}
+          max={maxLimit}
+          value={localMax}
+          onChange={(e) =&gt; setLocalMax(Math.max(Number(e.target.value), localMin + 10))}
+          className=&quot;absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&amp;::-webkit-slider-thumb]:pointer-events-auto [&amp;::-webkit-slider-thumb]:w-4 [&amp;::-webkit-slider-thumb]:h-4 [&amp;::-webkit-slider-thumb]:rounded-full [&amp;::-webkit-slider-thumb]:bg-white [&amp;::-webkit-slider-thumb]:border-2 [&amp;::-webkit-slider-thumb]:border-yellow-400 [&amp;::-webkit-slider-thumb]:appearance-none&quot;
+        /&gt;
+      &lt;/div&gt;
+
+      {/* Input Fields */}
+      &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+        &lt;div className=&quot;flex-1&quot;&gt;
+          &lt;label className=&quot;text-xs text-gray-500&quot;&gt;Min&lt;/label&gt;
+          &lt;input
+            type=&quot;number&quot;
+            value={localMin}
+            onChange={(e) =&gt; setLocalMin(Number(e.target.value))}
+            className=&quot;w-full px-2 py-1 border rounded text-sm&quot;
+          /&gt;
+        &lt;/div&gt;
+        &lt;span className=&quot;text-gray-400 mt-4&quot;&gt;-&lt;/span&gt;
+        &lt;div className=&quot;flex-1&quot;&gt;
+          &lt;label className=&quot;text-xs text-gray-500&quot;&gt;Max&lt;/label&gt;
+          &lt;input
+            type=&quot;number&quot;
+            value={localMax}
+            onChange={(e) =&gt; setLocalMax(Number(e.target.value))}
+            className=&quot;w-full px-2 py-1 border rounded text-sm&quot;
+          /&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Presets */}
+      &lt;div className=&quot;space-y-1&quot;&gt;
+        {presets.map((preset) =&gt; (
+          &lt;button
+            key={preset.label}
+            onClick={() =&gt; {
+              setLocalMin(preset.min);
+              setLocalMax(preset.max);
+            }}
+            className={cn(
+              'block w-full text-left text-sm px-2 py-1 rounded hover:bg-gray-100',
+              localMin === preset.min &amp;&amp; localMax === preset.max &amp;&amp; 'bg-yellow-50 text-yellow-700'
+            )}
+          &gt;
+            {preset.label}
+          &lt;/button&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="11-rating-filter">11. Rating Filter</h2>
+<pre><code class="language-tsx">// components/filters/RatingFilter.tsx
+import { Star } from 'lucide-react';
+
+interface RatingFilterProps {
+  value?: number;
+  onChange: (rating?: number) =&gt; void;
+}
+
+export function RatingFilter({ value, onChange }: RatingFilterProps) {
+  const ratings = [4, 3, 2, 1];
+
+  return (
+    &lt;div className=&quot;space-y-2&quot;&gt;
+      {ratings.map((rating) =&gt; (
+        &lt;button
+          key={rating}
+          onClick={() =&gt; onChange(value === rating ? undefined : rating)}
+          className={cn(
+            'flex items-center gap-2 w-full px-2 py-1.5 rounded text-sm hover:bg-gray-100',
+            value === rating &amp;&amp; 'bg-yellow-50'
+          )}
+        &gt;
+          &lt;div className=&quot;flex&quot;&gt;
+            {[1, 2, 3, 4, 5].map((star) =&gt; (
+              &lt;Star
+                key={star}
+                className={cn(
+                  'w-4 h-4',
+                  star &lt;= rating
+                    ? 'fill-yellow-400 text-yellow-400'
+                    : 'text-gray-300'
+                )}
+              /&gt;
+            ))}
+          &lt;/div&gt;
+          &lt;span className=&quot;text-gray-600&quot;&gt;&amp; Up&lt;/span&gt;
+        &lt;/button&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="12-facet-filter-dynamic">12. Facet Filter (Dynamic)</h2>
+<pre><code class="language-tsx">// components/filters/FacetFilter.tsx
+import { useState } from 'react';
+import { Search } from 'lucide-react';
+
+interface FacetFilterProps {
+  facet: Facet;
+  selected?: string[];
+  onChange: (values: string[]) =&gt; void;
+}
+
+export function FacetFilter({ facet, selected = [], onChange }: FacetFilterProps) {
+  const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  const filteredValues = facet.values.filter((v) =&gt;
+    v.value.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const displayValues = showAll ? filteredValues : filteredValues.slice(0, 5);
+  const hasMore = filteredValues.length &gt; 5;
+
+  const toggleValue = (value: string) =&gt; {
+    if (selected.includes(value)) {
+      onChange(selected.filter((v) =&gt; v !== value));
+    } else {
+      onChange([...selected, value]);
+    }
+  };
+
+  return (
+    &lt;div className=&quot;space-y-2&quot;&gt;
+      {/* Search within facet */}
+      {facet.values.length &gt; 10 &amp;&amp; (
+        &lt;div className=&quot;relative&quot;&gt;
+          &lt;Search className=&quot;absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400&quot; /&gt;
+          &lt;input
+            type=&quot;text&quot;
+            value={search}
+            onChange={(e) =&gt; setSearch(e.target.value)}
+            placeholder={`Search ${facet.label}...`}
+            className=&quot;w-full pl-8 pr-2 py-1.5 text-sm border rounded&quot;
+          /&gt;
+        &lt;/div&gt;
+      )}
+
+      {/* Values */}
+      &lt;div className=&quot;space-y-1&quot;&gt;
+        {displayValues.map((item) =&gt; (
+          &lt;label
+            key={item.value}
+            className=&quot;flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded&quot;
+          &gt;
+            &lt;input
+              type=&quot;checkbox&quot;
+              checked={selected.includes(item.value)}
+              onChange={() =&gt; toggleValue(item.value)}
+              className=&quot;rounded text-yellow-500&quot;
+            /&gt;
+            &lt;span className=&quot;text-sm flex-1 truncate&quot;&gt;{item.value}&lt;/span&gt;
+            &lt;span className=&quot;text-xs text-gray-400&quot;&gt;({item.count})&lt;/span&gt;
+          &lt;/label&gt;
+        ))}
+      &lt;/div&gt;
+
+      {/* Show more/less */}
+      {hasMore &amp;&amp; (
+        &lt;button
+          onClick={() =&gt; setShowAll(!showAll)}
+          className=&quot;text-sm text-blue-600 hover:underline&quot;
+        &gt;
+          {showAll ? 'Show less' : `Show all ${filteredValues.length}`}
+        &lt;/button&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="13-product-detail-page">13. Product Detail Page</h2>
+<pre><code class="language-tsx">// pages/product/[slug].tsx
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+
+export default function ProductDetailPage({ slug }: { slug: string }) {
+  const { data: product, isLoading } = useQuery({
+    queryKey: ['product', slug],
+    queryFn: () =&gt; fetch(`/api/products/${slug}`).then((r) =&gt; r.json()),
+  });
+
+  const [selectedVariant, setSelectedVariant] = useState&lt;string | null&gt;(null);
+  const [quantity, setQuantity] = useState(1);
+
+  if (isLoading) return &lt;ProductDetailSkeleton /&gt;;
+  if (!product) return &lt;NotFound /&gt;;
+
+  const currentVariant = product.variants.find((v) =&gt; v.id === selectedVariant);
+  const currentPrice = currentVariant?.price ?? product.price;
+  const currentInventory = currentVariant?.inventory ?? product.inventory;
+
+  return (
+    &lt;div className=&quot;max-w-7xl mx-auto px-4 py-8&quot;&gt;
+      &lt;div className=&quot;grid grid-cols-1 lg:grid-cols-2 gap-8&quot;&gt;
+        {/* Image Gallery */}
+        &lt;ProductImageGallery
+          images={product.images}
+          selectedVariantImage={currentVariant?.image}
+        /&gt;
+
+        {/* Product Info */}
+        &lt;div className=&quot;space-y-6&quot;&gt;
+          &lt;div&gt;
+            &lt;p className=&quot;text-sm text-blue-600 hover:underline&quot;&gt;{product.brand.name}&lt;/p&gt;
+            &lt;h1 className=&quot;text-2xl font-bold text-gray-900 mt-1&quot;&gt;{product.title}&lt;/h1&gt;
+
+            {/* Rating */}
+            &lt;div className=&quot;flex items-center gap-2 mt-2&quot;&gt;
+              &lt;StarRating rating={product.rating.average} /&gt;
+              &lt;a href=&quot;#reviews&quot; className=&quot;text-sm text-blue-600 hover:underline&quot;&gt;
+                {product.reviewCount.toLocaleString()} reviews
+              &lt;/a&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+
+          {/* Price */}
+          &lt;div className=&quot;border-t border-b py-4&quot;&gt;
+            &lt;div className=&quot;flex items-baseline gap-2&quot;&gt;
+              &lt;span className=&quot;text-3xl font-bold&quot;&gt;
+                {formatPrice(currentPrice.amount, currentPrice.currency)}
+              &lt;/span&gt;
+              {currentPrice.compareAt &amp;&amp; (
+                &lt;&gt;
+                  &lt;span className=&quot;text-lg text-gray-500 line-through&quot;&gt;
+                    {formatPrice(currentPrice.compareAt, currentPrice.currency)}
+                  &lt;/span&gt;
+                  &lt;span className=&quot;text-red-600 font-medium&quot;&gt;
+                    Save {Math.round((1 - currentPrice.amount / currentPrice.compareAt) * 100)}%
+                  &lt;/span&gt;
+                &lt;/&gt;
+              )}
+            &lt;/div&gt;
+          &lt;/div&gt;
+
+          {/* Variants */}
+          {product.variants.length &gt; 0 &amp;&amp; (
+            &lt;VariantSelector
+              variants={product.variants}
+              selected={selectedVariant}
+              onSelect={setSelectedVariant}
+            /&gt;
+          )}
+
+          {/* Add to Cart */}
+          &lt;div className=&quot;space-y-4&quot;&gt;
+            &lt;div className=&quot;flex items-center gap-4&quot;&gt;
+              &lt;QuantitySelector
+                value={quantity}
+                onChange={setQuantity}
+                max={currentInventory.quantity}
+              /&gt;
+              &lt;span className={currentInventory.inStock ? 'text-green-600' : 'text-red-600'}&gt;
+                {currentInventory.inStock
+                  ? currentInventory.quantity &lt; 10
+                    ? `Only ${currentInventory.quantity} left`
+                    : 'In Stock'
+                  : 'Out of Stock'}
+              &lt;/span&gt;
+            &lt;/div&gt;
+
+            &lt;div className=&quot;flex gap-3&quot;&gt;
+              &lt;button
+                onClick={() =&gt; addToCart(product, quantity, selectedVariant)}
+                disabled={!currentInventory.inStock}
+                className=&quot;flex-1 py-3 bg-yellow-400 hover:bg-yellow-500 font-medium rounded-lg disabled:bg-gray-200&quot;
+              &gt;
+                Add to Cart
+              &lt;/button&gt;
+              &lt;button
+                onClick={() =&gt; buyNow(product, quantity, selectedVariant)}
+                disabled={!currentInventory.inStock}
+                className=&quot;flex-1 py-3 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg disabled:bg-gray-200&quot;
+              &gt;
+                Buy Now
+              &lt;/button&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="14-product-image-gallery">14. Product Image Gallery</h2>
+<pre><code class="language-tsx">// components/ProductImageGallery.tsx
+import { useState, useRef } from 'react';
+import { ChevronLeft, ChevronRight, ZoomIn } from 'lucide-react';
+
+interface ProductImageGalleryProps {
+  images: ProductImage[];
+  selectedVariantImage?: ProductImage;
+}
+
+export function ProductImageGallery({ images, selectedVariantImage }: ProductImageGalleryProps) {
+  const allImages = selectedVariantImage
+    ? [selectedVariantImage, ...images.filter((i) =&gt; i.id !== selectedVariantImage.id)]
+    : images;
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomPosition, setZoomPosition] = useState({ x: 0, y: 0 });
+  const imageRef = useRef&lt;HTMLDivElement&gt;(null);
+
+  const activeImage = allImages[activeIndex];
+
+  const handleMouseMove = (e: React.MouseEvent) =&gt; {
+    if (!imageRef.current || !isZoomed) return;
+
+    const rect = imageRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setZoomPosition({ x, y });
+  };
+
+  const goToPrev = () =&gt; setActiveIndex((i) =&gt; (i &gt; 0 ? i - 1 : allImages.length - 1));
+  const goToNext = () =&gt; setActiveIndex((i) =&gt; (i &lt; allImages.length - 1 ? i + 1 : 0));
+
+  return (
+    &lt;div className=&quot;space-y-4&quot;&gt;
+      {/* Main Image */}
+      &lt;div
+        ref={imageRef}
+        className=&quot;relative aspect-square bg-white rounded-lg overflow-hidden cursor-zoom-in&quot;
+        onMouseEnter={() =&gt; setIsZoomed(true)}
+        onMouseLeave={() =&gt; setIsZoomed(false)}
+        onMouseMove={handleMouseMove}
+      &gt;
+        &lt;img
+          src={activeImage.url}
+          alt={activeImage.alt}
+          className={cn(
+            'w-full h-full object-contain transition-transform duration-200',
+            isZoomed &amp;&amp; 'scale-150'
+          )}
+          style={
+            isZoomed
+              ? { transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%` }
+              : undefined
+          }
+        /&gt;
+
+        {/* Navigation arrows */}
+        {allImages.length &gt; 1 &amp;&amp; (
+          &lt;&gt;
+            &lt;button
+              onClick={goToPrev}
+              className=&quot;absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-white/80 rounded-full shadow hover:bg-white&quot;
+            &gt;
+              &lt;ChevronLeft className=&quot;w-5 h-5&quot; /&gt;
+            &lt;/button&gt;
+            &lt;button
+              onClick={goToNext}
+              className=&quot;absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-white/80 rounded-full shadow hover:bg-white&quot;
+            &gt;
+              &lt;ChevronRight className=&quot;w-5 h-5&quot; /&gt;
+            &lt;/button&gt;
+          &lt;/&gt;
+        )}
+
+        {/* Zoom indicator */}
+        &lt;div className=&quot;absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 bg-black/50 text-white text-xs rounded&quot;&gt;
+          &lt;ZoomIn className=&quot;w-3 h-3&quot; /&gt;
+          Hover to zoom
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Thumbnails */}
+      &lt;div className=&quot;flex gap-2 overflow-x-auto pb-2&quot;&gt;
+        {allImages.map((image, index) =&gt; (
+          &lt;button
+            key={image.id}
+            onClick={() =&gt; setActiveIndex(index)}
+            className={cn(
+              'flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2',
+              index === activeIndex ? 'border-yellow-400' : 'border-transparent hover:border-gray-300'
+            )}
+          &gt;
+            &lt;img
+              src={image.url}
+              alt={image.alt}
+              className=&quot;w-full h-full object-cover&quot;
+            /&gt;
+          &lt;/button&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="15-variant-selector">15. Variant Selector</h2>
+<pre><code class="language-tsx">// components/VariantSelector.tsx
+import { useMemo } from 'react';
+
+interface VariantSelectorProps {
+  variants: ProductVariant[];
+  selected: string | null;
+  onSelect: (variantId: string) =&gt; void;
+}
+
+export function VariantSelector({ variants, selected, onSelect }: VariantSelectorProps) {
+  // Group options by type (e.g., Color, Size)
+  const optionGroups = useMemo(() =&gt; {
+    const groups = new Map&lt;string, Set&lt;string&gt;&gt;();
+
+    variants.forEach((variant) =&gt; {
+      variant.options.forEach((opt) =&gt; {
+        if (!groups.has(opt.name)) {
+          groups.set(opt.name, new Set());
+        }
+        groups.get(opt.name)!.add(opt.value);
+      });
+    });
+
+    return Array.from(groups.entries()).map(([name, values]) =&gt; ({
+      name,
+      values: Array.from(values),
+    }));
+  }, [variants]);
+
+  // Get selected options
+  const selectedVariant = variants.find((v) =&gt; v.id === selected);
+  const selectedOptions = new Map(
+    selectedVariant?.options.map((o) =&gt; [o.name, o.value]) ?? []
+  );
+
+  // Check if option combination is available
+  const isOptionAvailable = (optionName: string, value: string): boolean =&gt; {
+    return variants.some(
+      (v) =&gt;
+        v.inventory.inStock &amp;&amp;
+        v.options.some((o) =&gt; o.name === optionName &amp;&amp; o.value === value) &amp;&amp;
+        Array.from(selectedOptions.entries())
+          .filter(([name]) =&gt; name !== optionName)
+          .every(([name, val]) =&gt; v.options.some((o) =&gt; o.name === name &amp;&amp; o.value === val))
+    );
+  };
+
+  // Select option and find matching variant
+  const selectOption = (optionName: string, value: string) =&gt; {
+    const newOptions = new Map(selectedOptions);
+    newOptions.set(optionName, value);
+
+    const matchingVariant = variants.find((v) =&gt;
+      Array.from(newOptions.entries()).every(([name, val]) =&gt;
+        v.options.some((o) =&gt; o.name === name &amp;&amp; o.value === val)
+      )
+    );
+
+    if (matchingVariant) {
+      onSelect(matchingVariant.id);
+    }
+  };
+
+  return (
+    &lt;div className=&quot;space-y-4&quot;&gt;
+      {optionGroups.map((group) =&gt; (
+        &lt;div key={group.name}&gt;
+          &lt;label className=&quot;block text-sm font-medium text-gray-700 mb-2&quot;&gt;
+            {group.name}: &lt;span className=&quot;font-normal&quot;&gt;{selectedOptions.get(group.name)}&lt;/span&gt;
+          &lt;/label&gt;
+
+          &lt;div className=&quot;flex flex-wrap gap-2&quot;&gt;
+            {group.values.map((value) =&gt; {
+              const isSelected = selectedOptions.get(group.name) === value;
+              const isAvailable = isOptionAvailable(group.name, value);
+              const isColor = group.name.toLowerCase() === 'color';
+
+              if (isColor) {
+                return (
+                  &lt;button
+                    key={value}
+                    onClick={() =&gt; selectOption(group.name, value)}
+                    disabled={!isAvailable}
+                    className={cn(
+                      'w-10 h-10 rounded-full border-2 relative',
+                      isSelected ? 'border-yellow-400' : 'border-transparent',
+                      !isAvailable &amp;&amp; 'opacity-50 cursor-not-allowed'
+                    )}
+                    style={{ backgroundColor: value.toLowerCase() }}
+                    title={value}
+                  &gt;
+                    {!isAvailable &amp;&amp; (
+                      &lt;div className=&quot;absolute inset-0 flex items-center justify-center&quot;&gt;
+                        &lt;div className=&quot;w-full h-0.5 bg-gray-400 rotate-45&quot; /&gt;
+                      &lt;/div&gt;
+                    )}
+                  &lt;/button&gt;
+                );
+              }
+
+              return (
+                &lt;button
+                  key={value}
+                  onClick={() =&gt; selectOption(group.name, value)}
+                  disabled={!isAvailable}
+                  className={cn(
+                    'px-4 py-2 border rounded-lg text-sm',
+                    isSelected
+                      ? 'border-yellow-400 bg-yellow-50'
+                      : 'border-gray-300 hover:border-gray-400',
+                    !isAvailable &amp;&amp; 'opacity-50 line-through cursor-not-allowed'
+                  )}
+                &gt;
+                  {value}
+                &lt;/button&gt;
+              );
+            })}
+          &lt;/div&gt;
+        &lt;/div&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="16-cart-drawer">16. Cart Drawer</h2>
+<pre><code class="language-tsx">// components/CartDrawer.tsx
+import { useEffect } from 'react';
+import { X, Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
+import { useCartStore } from '@/stores/cartStore';
+
+export function CartDrawer() {
+  const { cart, isOpen, closeCart, updateQuantity, removeItem } = useCartStore();
+
+  // Close on escape key
+  useEffect(() =&gt; {
+    const handleEscape = (e: KeyboardEvent) =&gt; {
+      if (e.key === 'Escape') closeCart();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () =&gt; document.removeEventListener('keydown', handleEscape);
+  }, [closeCart]);
+
+  // Prevent body scroll when open
+  useEffect(() =&gt; {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () =&gt; { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    &lt;&gt;
+      {/* Backdrop */}
+      &lt;div
+        className=&quot;fixed inset-0 bg-black/50 z-40&quot;
+        onClick={closeCart}
+      /&gt;
+
+      {/* Drawer */}
+      &lt;div className=&quot;fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-xl z-50 flex flex-col&quot;&gt;
+        {/* Header */}
+        &lt;div className=&quot;flex items-center justify-between p-4 border-b&quot;&gt;
+          &lt;h2 className=&quot;text-lg font-semibold flex items-center gap-2&quot;&gt;
+            &lt;ShoppingBag className=&quot;w-5 h-5&quot; /&gt;
+            Cart ({cart?.itemCount ?? 0})
+          &lt;/h2&gt;
+          &lt;button onClick={closeCart} className=&quot;p-2 hover:bg-gray-100 rounded-full&quot;&gt;
+            &lt;X className=&quot;w-5 h-5&quot; /&gt;
+          &lt;/button&gt;
+        &lt;/div&gt;
+
+        {/* Items */}
+        &lt;div className=&quot;flex-1 overflow-y-auto p-4 space-y-4&quot;&gt;
+          {!cart?.items.length ? (
+            &lt;div className=&quot;text-center py-12 text-gray-500&quot;&gt;
+              Your cart is empty
+            &lt;/div&gt;
+          ) : (
+            cart.items.map((item) =&gt; (
+              &lt;CartItem
+                key={item.id}
+                item={item}
+                onUpdateQuantity={(qty) =&gt; updateQuantity(item.id, qty)}
+                onRemove={() =&gt; removeItem(item.id)}
+              /&gt;
+            ))
+          )}
+        &lt;/div&gt;
+
+        {/* Footer */}
+        {cart?.items.length &gt; 0 &amp;&amp; (
+          &lt;div className=&quot;border-t p-4 space-y-4&quot;&gt;
+            &lt;div className=&quot;space-y-2&quot;&gt;
+              &lt;div className=&quot;flex justify-between text-sm&quot;&gt;
+                &lt;span&gt;Subtotal&lt;/span&gt;
+                &lt;span&gt;{formatPrice(cart.subtotal, cart.currency)}&lt;/span&gt;
+              &lt;/div&gt;
+              {cart.discount &gt; 0 &amp;&amp; (
+                &lt;div className=&quot;flex justify-between text-sm text-green-600&quot;&gt;
+                  &lt;span&gt;Discount&lt;/span&gt;
+                  &lt;span&gt;-{formatPrice(cart.discount, cart.currency)}&lt;/span&gt;
+                &lt;/div&gt;
+              )}
+              &lt;div className=&quot;flex justify-between font-semibold text-lg border-t pt-2&quot;&gt;
+                &lt;span&gt;Total&lt;/span&gt;
+                &lt;span&gt;{formatPrice(cart.total, cart.currency)}&lt;/span&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;button
+              onClick={() =&gt; router.push('/checkout')}
+              className=&quot;w-full py-3 bg-yellow-400 hover:bg-yellow-500 font-medium rounded-lg&quot;
+            &gt;
+              Proceed to Checkout
+            &lt;/button&gt;
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+    &lt;/&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="17-cart-item-component">17. Cart Item Component</h2>
+<pre><code class="language-tsx">// components/CartItem.tsx
+import { Minus, Plus, Trash2 } from 'lucide-react';
+
+interface CartItemProps {
+  item: CartItem;
+  onUpdateQuantity: (quantity: number) =&gt; void;
+  onRemove: () =&gt; void;
+}
+
+export function CartItem({ item, onUpdateQuantity, onRemove }: CartItemProps) {
+  return (
+    &lt;div className=&quot;flex gap-4 p-3 bg-gray-50 rounded-lg&quot;&gt;
+      {/* Image */}
+      &lt;img
+        src={item.image}
+        alt={item.title}
+        className=&quot;w-20 h-20 object-cover rounded&quot;
+      /&gt;
+
+      {/* Details */}
+      &lt;div className=&quot;flex-1 min-w-0&quot;&gt;
+        &lt;h4 className=&quot;font-medium text-sm line-clamp-2&quot;&gt;{item.title}&lt;/h4&gt;
+
+        {/* Variant */}
+        {item.variant &amp;&amp; (
+          &lt;p className=&quot;text-xs text-gray-500 mt-1&quot;&gt;
+            {item.variant.map((v) =&gt; v.value).join(' / ')}
+          &lt;/p&gt;
+        )}
+
+        {/* Price */}
+        &lt;p className=&quot;font-semibold mt-1&quot;&gt;
+          {formatPrice(item.price * item.quantity, 'USD')}
+        &lt;/p&gt;
+
+        {/* Quantity Controls */}
+        &lt;div className=&quot;flex items-center gap-3 mt-2&quot;&gt;
+          &lt;div className=&quot;flex items-center border rounded&quot;&gt;
+            &lt;button
+              onClick={() =&gt; onUpdateQuantity(Math.max(1, item.quantity - 1))}
+              disabled={item.quantity &lt;= 1}
+              className=&quot;p-1 hover:bg-gray-100 disabled:opacity-50&quot;
+            &gt;
+              &lt;Minus className=&quot;w-4 h-4&quot; /&gt;
+            &lt;/button&gt;
+            &lt;span className=&quot;px-3 text-sm font-medium&quot;&gt;{item.quantity}&lt;/span&gt;
+            &lt;button
+              onClick={() =&gt; onUpdateQuantity(Math.min(item.maxQuantity, item.quantity + 1))}
+              disabled={item.quantity &gt;= item.maxQuantity}
+              className=&quot;p-1 hover:bg-gray-100 disabled:opacity-50&quot;
+            &gt;
+              &lt;Plus className=&quot;w-4 h-4&quot; /&gt;
+            &lt;/button&gt;
+          &lt;/div&gt;
+
+          &lt;button
+            onClick={onRemove}
+            className=&quot;p-1 text-red-500 hover:bg-red-50 rounded&quot;
+          &gt;
+            &lt;Trash2 className=&quot;w-4 h-4&quot; /&gt;
+          &lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="18-multi-step-checkout">18. Multi-Step Checkout</h2>
+<pre><code class="language-tsx">// pages/checkout/index.tsx
+import { useState } from 'react';
+import { Check } from 'lucide-react';
+
+type CheckoutStep = 'shipping' | 'payment' | 'review';
+
+const STEPS: { key: CheckoutStep; label: string }[] = [
+  { key: 'shipping', label: 'Shipping' },
+  { key: 'payment', label: 'Payment' },
+  { key: 'review', label: 'Review' },
+];
+
+export default function CheckoutPage() {
+  const [currentStep, setCurrentStep] = useState&lt;CheckoutStep&gt;('shipping');
+  const [completedSteps, setCompletedSteps] = useState&lt;Set&lt;CheckoutStep&gt;&gt;(new Set());
+
+  const [shippingData, setShippingData] = useState&lt;ShippingData | null&gt;(null);
+  const [paymentData, setPaymentData] = useState&lt;PaymentData | null&gt;(null);
+
+  const currentStepIndex = STEPS.findIndex((s) =&gt; s.key === currentStep);
+
+  const goToStep = (step: CheckoutStep) =&gt; {
+    const stepIndex = STEPS.findIndex((s) =&gt; s.key === step);
+    // Can only go to completed steps or the next uncompleted one
+    if (stepIndex &lt;= currentStepIndex || completedSteps.has(STEPS[stepIndex - 1]?.key)) {
+      setCurrentStep(step);
+    }
+  };
+
+  const completeStep = (step: CheckoutStep, data: any) =&gt; {
+    if (step === 'shipping') setShippingData(data);
+    if (step === 'payment') setPaymentData(data);
+
+    setCompletedSteps((prev) =&gt; new Set([...prev, step]));
+
+    const nextStep = STEPS[currentStepIndex + 1];
+    if (nextStep) {
+      setCurrentStep(nextStep.key);
+    }
+  };
+
+  return (
+    &lt;div className=&quot;max-w-4xl mx-auto px-4 py-8&quot;&gt;
+      {/* Progress Steps */}
+      &lt;nav className=&quot;mb-8&quot;&gt;
+        &lt;ol className=&quot;flex items-center&quot;&gt;
+          {STEPS.map((step, index) =&gt; (
+            &lt;li key={step.key} className=&quot;flex items-center&quot;&gt;
+              &lt;button
+                onClick={() =&gt; goToStep(step.key)}
+                className={cn(
+                  'flex items-center gap-2',
+                  currentStep === step.key &amp;&amp; 'text-yellow-600',
+                  completedSteps.has(step.key) &amp;&amp; 'text-green-600'
+                )}
+              &gt;
+                &lt;span
+                  className={cn(
+                    'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium border-2',
+                    currentStep === step.key &amp;&amp; 'border-yellow-500 bg-yellow-50',
+                    completedSteps.has(step.key) &amp;&amp; 'border-green-500 bg-green-500 text-white'
+                  )}
+                &gt;
+                  {completedSteps.has(step.key) ? &lt;Check className=&quot;w-4 h-4&quot; /&gt; : index + 1}
+                &lt;/span&gt;
+                &lt;span className=&quot;font-medium&quot;&gt;{step.label}&lt;/span&gt;
+              &lt;/button&gt;
+
+              {index &lt; STEPS.length - 1 &amp;&amp; (
+                &lt;div className={cn(
+                  'w-24 h-0.5 mx-4',
+                  completedSteps.has(step.key) ? 'bg-green-500' : 'bg-gray-200'
+                )} /&gt;
+              )}
+            &lt;/li&gt;
+          ))}
+        &lt;/ol&gt;
+      &lt;/nav&gt;
+
+      {/* Step Content */}
+      &lt;div className=&quot;grid grid-cols-1 lg:grid-cols-3 gap-8&quot;&gt;
+        &lt;div className=&quot;lg:col-span-2&quot;&gt;
+          {currentStep === 'shipping' &amp;&amp; (
+            &lt;ShippingForm
+              initialData={shippingData}
+              onSubmit={(data) =&gt; completeStep('shipping', data)}
+            /&gt;
+          )}
+          {currentStep === 'payment' &amp;&amp; (
+            &lt;PaymentForm
+              initialData={paymentData}
+              onSubmit={(data) =&gt; completeStep('payment', data)}
+              onBack={() =&gt; setCurrentStep('shipping')}
+            /&gt;
+          )}
+          {currentStep === 'review' &amp;&amp; (
+            &lt;OrderReview
+              shipping={shippingData!}
+              payment={paymentData!}
+              onEdit={(step) =&gt; setCurrentStep(step)}
+              onSubmit={handlePlaceOrder}
+            /&gt;
+          )}
+        &lt;/div&gt;
+
+        {/* Order Summary */}
+        &lt;div className=&quot;lg:col-span-1&quot;&gt;
+          &lt;OrderSummary /&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="19-review-rating-system">19. Review &amp; Rating System</h2>
+<pre><code class="language-tsx">// components/ProductReviews.tsx
+import { useState } from 'react';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Star, ThumbsUp, ThumbsDown, Image as ImageIcon } from 'lucide-react';
+
+interface ProductReviewsProps {
+  productId: string;
+  rating: Rating;
+}
+
+export function ProductReviews({ productId, rating }: ProductReviewsProps) {
+  const [sortBy, setSortBy] = useState&lt;'recent' | 'helpful' | 'rating_high' | 'rating_low'&gt;('helpful');
+  const [filterRating, setFilterRating] = useState&lt;number | null&gt;(null);
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['reviews', productId, sortBy, filterRating],
+    queryFn: ({ pageParam = 1 }) =&gt;
+      fetch(`/api/products/${productId}/reviews?page=${pageParam}&amp;sort=${sortBy}${filterRating ? `&amp;rating=${filterRating}` : ''}`).then((r) =&gt; r.json()),
+    getNextPageParam: (lastPage) =&gt; lastPage.hasMore ? lastPage.page + 1 : undefined,
+  });
+
+  const reviews = data?.pages.flatMap((p) =&gt; p.reviews) ?? [];
+
+  return (
+    &lt;div id=&quot;reviews&quot; className=&quot;space-y-6&quot;&gt;
+      &lt;h2 className=&quot;text-xl font-bold&quot;&gt;Customer Reviews&lt;/h2&gt;
+
+      {/* Summary */}
+      &lt;div className=&quot;flex gap-8 p-6 bg-gray-50 rounded-lg&quot;&gt;
+        {/* Overall Rating */}
+        &lt;div className=&quot;text-center&quot;&gt;
+          &lt;div className=&quot;text-5xl font-bold&quot;&gt;{rating.average.toFixed(1)}&lt;/div&gt;
+          &lt;StarRating rating={rating.average} size=&quot;lg&quot; /&gt;
+          &lt;p className=&quot;text-sm text-gray-500 mt-1&quot;&gt;{rating.count.toLocaleString()} reviews&lt;/p&gt;
+        &lt;/div&gt;
+
+        {/* Rating Distribution */}
+        &lt;div className=&quot;flex-1 space-y-1&quot;&gt;
+          {[5, 4, 3, 2, 1].map((stars) =&gt; {
+            const count = rating.distribution[stars] ?? 0;
+            const percentage = (count / rating.count) * 100;
+
+            return (
+              &lt;button
+                key={stars}
+                onClick={() =&gt; setFilterRating(filterRating === stars ? null : stars)}
+                className={cn(
+                  'flex items-center gap-2 w-full hover:bg-gray-100 px-2 py-1 rounded',
+                  filterRating === stars &amp;&amp; 'bg-yellow-50'
+                )}
+              &gt;
+                &lt;span className=&quot;text-sm w-8&quot;&gt;{stars} star&lt;/span&gt;
+                &lt;div className=&quot;flex-1 h-2 bg-gray-200 rounded overflow-hidden&quot;&gt;
+                  &lt;div
+                    className=&quot;h-full bg-yellow-400&quot;
+                    style={{ width: `${percentage}%` }}
+                  /&gt;
+                &lt;/div&gt;
+                &lt;span className=&quot;text-sm text-gray-500 w-10&quot;&gt;{Math.round(percentage)}%&lt;/span&gt;
+              &lt;/button&gt;
+            );
+          })}
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Sort &amp; Filter */}
+      &lt;div className=&quot;flex items-center justify-between&quot;&gt;
+        &lt;select
+          value={sortBy}
+          onChange={(e) =&gt; setSortBy(e.target.value as any)}
+          className=&quot;border rounded-lg px-3 py-2&quot;
+        &gt;
+          &lt;option value=&quot;helpful&quot;&gt;Most Helpful&lt;/option&gt;
+          &lt;option value=&quot;recent&quot;&gt;Most Recent&lt;/option&gt;
+          &lt;option value=&quot;rating_high&quot;&gt;Highest Rated&lt;/option&gt;
+          &lt;option value=&quot;rating_low&quot;&gt;Lowest Rated&lt;/option&gt;
+        &lt;/select&gt;
+
+        {filterRating &amp;&amp; (
+          &lt;button
+            onClick={() =&gt; setFilterRating(null)}
+            className=&quot;text-sm text-blue-600 hover:underline&quot;
+          &gt;
+            Clear filter
+          &lt;/button&gt;
+        )}
+      &lt;/div&gt;
+
+      {/* Reviews List */}
+      &lt;div className=&quot;space-y-6&quot;&gt;
+        {reviews.map((review) =&gt; (
+          &lt;ReviewCard key={review.id} review={review} productId={productId} /&gt;
+        ))}
+      &lt;/div&gt;
+
+      {/* Load More */}
+      {hasNextPage &amp;&amp; (
+        &lt;button
+          onClick={() =&gt; fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className=&quot;w-full py-2 border rounded-lg hover:bg-gray-50&quot;
+        &gt;
+          {isFetchingNextPage ? 'Loading...' : 'Load More Reviews'}
+        &lt;/button&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="20-review-card-component">20. Review Card Component</h2>
+<pre><code class="language-tsx">// components/ReviewCard.tsx
+interface Review {
+  id: string;
+  author: { name: string; avatar?: string; verified: boolean };
+  rating: number;
+  title: string;
+  content: string;
+  images?: string[];
+  createdAt: string;
+  helpfulCount: number;
+  unhelpfulCount: number;
+  userVote?: 'helpful' | 'unhelpful';
+}
+
+function ReviewCard({ review, productId }: { review: Review; productId: string }) {
+  const queryClient = useQueryClient();
+
+  const voteMutation = useMutation({
+    mutationFn: (vote: 'helpful' | 'unhelpful') =&gt;
+      fetch(`/api/reviews/${review.id}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vote }),
+      }),
+    onSuccess: () =&gt; {
+      queryClient.invalidateQueries({ queryKey: ['reviews', productId] });
+    },
+  });
+
+  return (
+    &lt;div className=&quot;border-b pb-6&quot;&gt;
+      {/* Header */}
+      &lt;div className=&quot;flex items-center gap-3&quot;&gt;
+        {review.author.avatar ? (
+          &lt;img src={review.author.avatar} className=&quot;w-10 h-10 rounded-full&quot; alt=&quot;&quot; /&gt;
+        ) : (
+          &lt;div className=&quot;w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center&quot;&gt;
+            {review.author.name[0]}
+          &lt;/div&gt;
+        )}
+        &lt;div&gt;
+          &lt;p className=&quot;font-medium flex items-center gap-2&quot;&gt;
+            {review.author.name}
+            {review.author.verified &amp;&amp; (
+              &lt;span className=&quot;text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded&quot;&gt;
+                Verified Purchase
+              &lt;/span&gt;
+            )}
+          &lt;/p&gt;
+          &lt;p className=&quot;text-sm text-gray-500&quot;&gt;
+            {new Date(review.createdAt).toLocaleDateString()}
+          &lt;/p&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Rating &amp; Title */}
+      &lt;div className=&quot;mt-3&quot;&gt;
+        &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+          &lt;StarRating rating={review.rating} /&gt;
+          &lt;span className=&quot;font-semibold&quot;&gt;{review.title}&lt;/span&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Content */}
+      &lt;p className=&quot;mt-2 text-gray-700 whitespace-pre-wrap&quot;&gt;{review.content}&lt;/p&gt;
+
+      {/* Images */}
+      {review.images &amp;&amp; review.images.length &gt; 0 &amp;&amp; (
+        &lt;div className=&quot;flex gap-2 mt-3&quot;&gt;
+          {review.images.map((img, i) =&gt; (
+            &lt;button
+              key={i}
+              onClick={() =&gt; openImageViewer(review.images!, i)}
+              className=&quot;w-20 h-20 rounded overflow-hidden&quot;
+            &gt;
+              &lt;img src={img} className=&quot;w-full h-full object-cover&quot; alt=&quot;&quot; /&gt;
+            &lt;/button&gt;
+          ))}
+        &lt;/div&gt;
+      )}
+
+      {/* Helpful Voting */}
+      &lt;div className=&quot;flex items-center gap-4 mt-4 text-sm&quot;&gt;
+        &lt;span className=&quot;text-gray-500&quot;&gt;Was this helpful?&lt;/span&gt;
+        &lt;button
+          onClick={() =&gt; voteMutation.mutate('helpful')}
+          className={cn(
+            'flex items-center gap-1 px-3 py-1 rounded border',
+            review.userVote === 'helpful' ? 'border-green-500 text-green-600' : 'hover:bg-gray-50'
+          )}
+        &gt;
+          &lt;ThumbsUp className=&quot;w-4 h-4&quot; /&gt;
+          Yes ({review.helpfulCount})
+        &lt;/button&gt;
+        &lt;button
+          onClick={() =&gt; voteMutation.mutate('unhelpful')}
+          className={cn(
+            'flex items-center gap-1 px-3 py-1 rounded border',
+            review.userVote === 'unhelpful' ? 'border-red-500 text-red-600' : 'hover:bg-gray-50'
+          )}
+        &gt;
+          &lt;ThumbsDown className=&quot;w-4 h-4&quot; /&gt;
+          No ({review.unhelpfulCount})
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="21-product-recommendations-carousel">21. Product Recommendations Carousel</h2>
+<pre><code class="language-tsx">// components/ProductCarousel.tsx
+import { useRef, useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+
+interface ProductCarouselProps {
+  title: string;
+  type: 'similar' | 'frequently_bought' | 'recently_viewed' | 'trending';
+  productId?: string;
+}
+
+export function ProductCarousel({ title, type, productId }: ProductCarouselProps) {
+  const scrollRef = useRef&lt;HTMLDivElement&gt;(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const { data: products, isLoading } = useQuery({
+    queryKey: ['recommendations', type, productId],
+    queryFn: () =&gt;
+      fetch(`/api/recommendations?type=${type}${productId ? `&amp;productId=${productId}` : ''}`).then((r) =&gt; r.json()),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  const updateScrollButtons = () =&gt; {
+    if (!scrollRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+    setCanScrollLeft(scrollLeft &gt; 0);
+    setCanScrollRight(scrollLeft &lt; scrollWidth - clientWidth - 10);
+  };
+
+  useEffect(() =&gt; {
+    updateScrollButtons();
+    const el = scrollRef.current;
+    el?.addEventListener('scroll', updateScrollButtons);
+    return () =&gt; el?.removeEventListener('scroll', updateScrollButtons);
+  }, [products]);
+
+  const scroll = (direction: 'left' | 'right') =&gt; {
+    if (!scrollRef.current) return;
+    const scrollAmount = scrollRef.current.clientWidth * 0.8;
+    scrollRef.current.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth',
+    });
+  };
+
+  if (isLoading) {
+    return &lt;ProductCarouselSkeleton title={title} /&gt;;
+  }
+
+  if (!products?.length) return null;
+
+  return (
+    &lt;section className=&quot;relative&quot;&gt;
+      &lt;h2 className=&quot;text-xl font-bold mb-4&quot;&gt;{title}&lt;/h2&gt;
+
+      {/* Scroll Buttons */}
+      {canScrollLeft &amp;&amp; (
+        &lt;button
+          onClick={() =&gt; scroll('left')}
+          className=&quot;absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 bg-white shadow-lg rounded-full flex items-center justify-center hover:bg-gray-50&quot;
+        &gt;
+          &lt;ChevronLeft className=&quot;w-6 h-6&quot; /&gt;
+        &lt;/button&gt;
+      )}
+      {canScrollRight &amp;&amp; (
+        &lt;button
+          onClick={() =&gt; scroll('right')}
+          className=&quot;absolute right-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 bg-white shadow-lg rounded-full flex items-center justify-center hover:bg-gray-50&quot;
+        &gt;
+          &lt;ChevronRight className=&quot;w-6 h-6&quot; /&gt;
+        &lt;/button&gt;
+      )}
+
+      {/* Products */}
+      &lt;div
+        ref={scrollRef}
+        className=&quot;flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth pb-2&quot;
+      &gt;
+        {products.map((product: Product) =&gt; (
+          &lt;div key={product.id} className=&quot;flex-shrink-0 w-48&quot;&gt;
+            &lt;ProductCard product={product} variant=&quot;compact&quot; /&gt;
+          &lt;/div&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/section&gt;
+  );
+}
+
+function ProductCarouselSkeleton({ title }: { title: string }) {
+  return (
+    &lt;section&gt;
+      &lt;h2 className=&quot;text-xl font-bold mb-4&quot;&gt;{title}&lt;/h2&gt;
+      &lt;div className=&quot;flex gap-4 overflow-hidden&quot;&gt;
+        {Array.from({ length: 6 }).map((_, i) =&gt; (
+          &lt;div key={i} className=&quot;flex-shrink-0 w-48 animate-pulse&quot;&gt;
+            &lt;div className=&quot;aspect-square bg-gray-200 rounded mb-2&quot; /&gt;
+            &lt;div className=&quot;h-4 bg-gray-200 rounded w-3/4 mb-1&quot; /&gt;
+            &lt;div className=&quot;h-4 bg-gray-200 rounded w-1/2&quot; /&gt;
+          &lt;/div&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/section&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="22-wishlist-management">22. Wishlist Management</h2>
+<pre><code class="language-tsx">// stores/wishlistStore.ts
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface WishlistState {
+  items: string[]; // Product IDs
+  isInWishlist: (productId: string) =&gt; boolean;
+  toggleWishlist: (productId: string) =&gt; void;
+  removeFromWishlist: (productId: string) =&gt; void;
+  clearWishlist: () =&gt; void;
+}
+
+export const useWishlistStore = create&lt;WishlistState&gt;()(
+  persist(
+    (set, get) =&gt; ({
+      items: [],
+
+      isInWishlist: (productId) =&gt; get().items.includes(productId),
+
+      toggleWishlist: (productId) =&gt; {
+        set((state) =&gt; ({
+          items: state.items.includes(productId)
+            ? state.items.filter((id) =&gt; id !== productId)
+            : [...state.items, productId],
+        }));
+
+        // Sync with server (fire and forget)
+        fetch('/api/wishlist/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId }),
+        });
+      },
+
+      removeFromWishlist: (productId) =&gt; {
+        set((state) =&gt; ({
+          items: state.items.filter((id) =&gt; id !== productId),
+        }));
+      },
+
+      clearWishlist: () =&gt; set({ items: [] }),
+    }),
+    { name: 'wishlist-storage' }
+  )
+);
+
+// components/WishlistPage.tsx
+export function WishlistPage() {
+  const { items, removeFromWishlist } = useWishlistStore();
+
+  const { data: products, isLoading } = useQuery({
+    queryKey: ['wishlist-products', items],
+    queryFn: () =&gt;
+      fetch(`/api/products?ids=${items.join(',')}`).then((r) =&gt; r.json()),
+    enabled: items.length &gt; 0,
+  });
+
+  if (items.length === 0) {
+    return (
+      &lt;div className=&quot;text-center py-16&quot;&gt;
+        &lt;Heart className=&quot;w-16 h-16 mx-auto text-gray-300 mb-4&quot; /&gt;
+        &lt;h2 className=&quot;text-xl font-semibold mb-2&quot;&gt;Your wishlist is empty&lt;/h2&gt;
+        &lt;p className=&quot;text-gray-500 mb-4&quot;&gt;Save items you love to your wishlist&lt;/p&gt;
+        &lt;Link href=&quot;/&quot; className=&quot;text-blue-600 hover:underline&quot;&gt;
+          Continue Shopping
+        &lt;/Link&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div className=&quot;max-w-6xl mx-auto px-4 py-8&quot;&gt;
+      &lt;h1 className=&quot;text-2xl font-bold mb-6&quot;&gt;My Wishlist ({items.length} items)&lt;/h1&gt;
+
+      &lt;div className=&quot;grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4&quot;&gt;
+        {products?.map((product: Product) =&gt; (
+          &lt;div key={product.id} className=&quot;relative&quot;&gt;
+            &lt;ProductCard product={product} /&gt;
+            &lt;button
+              onClick={() =&gt; removeFromWishlist(product.id)}
+              className=&quot;absolute top-2 right-2 p-2 bg-white rounded-full shadow hover:bg-red-50&quot;
+            &gt;
+              &lt;X className=&quot;w-4 h-4&quot; /&gt;
+            &lt;/button&gt;
+          &lt;/div&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="23-url-based-filter-state">23. URL-Based Filter State</h2>
+<pre><code class="language-tsx">// hooks/useFilterParams.ts
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useMemo, useCallback } from 'react';
+
+export function useFilterParams() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Parse filters from URL
+  const filters: ProductFilters = useMemo(() =&gt; ({
+    category: searchParams.get('category') ?? undefined,
+    brand: searchParams.getAll('brand'),
+    priceMin: searchParams.get('priceMin') ? Number(searchParams.get('priceMin')) : undefined,
+    priceMax: searchParams.get('priceMax') ? Number(searchParams.get('priceMax')) : undefined,
+    rating: searchParams.get('rating') ? Number(searchParams.get('rating')) : undefined,
+    inStock: searchParams.get('inStock') === 'true',
+    sort: (searchParams.get('sort') as ProductFilters['sort']) ?? undefined,
+    search: searchParams.get('q') ?? undefined,
+  }), [searchParams]);
+
+  // Update URL with new filters
+  const setFilters = useCallback((newFilters: ProductFilters) =&gt; {
+    const params = new URLSearchParams();
+
+    if (newFilters.category) params.set('category', newFilters.category);
+    if (newFilters.brand?.length) {
+      newFilters.brand.forEach((b) =&gt; params.append('brand', b));
+    }
+    if (newFilters.priceMin) params.set('priceMin', String(newFilters.priceMin));
+    if (newFilters.priceMax) params.set('priceMax', String(newFilters.priceMax));
+    if (newFilters.rating) params.set('rating', String(newFilters.rating));
+    if (newFilters.inStock) params.set('inStock', 'true');
+    if (newFilters.sort) params.set('sort', newFilters.sort);
+    if (newFilters.search) params.set('q', newFilters.search);
+
+    router.push(`/products?${params.toString()}`, { scroll: false });
+  }, [router]);
+
+  // Update single filter
+  const updateFilter = useCallback(&lt;K extends keyof ProductFilters&gt;(
+    key: K,
+    value: ProductFilters[K]
+  ) =&gt; {
+    setFilters({ ...filters, [key]: value });
+  }, [filters, setFilters]);
+
+  // Clear all filters
+  const clearFilters = useCallback(() =&gt; {
+    router.push('/products', { scroll: false });
+  }, [router]);
+
+  return { filters, setFilters, updateFilter, clearFilters };
+}
+
+// Usage in ProductListPage
+export function ProductListPage() {
+  const { filters, setFilters, clearFilters } = useFilterParams();
+
+  const { data } = useProducts(filters);
+
+  return (
+    &lt;div className=&quot;flex&quot;&gt;
+      &lt;FilterSidebar
+        facets={data?.pages[0]?.facets ?? []}
+        filters={filters}
+        onChange={setFilters}
+      /&gt;
+      &lt;div className=&quot;flex-1&quot;&gt;
+        {/* Active Filters */}
+        &lt;ActiveFilters filters={filters} onRemove={setFilters} onClearAll={clearFilters} /&gt;
+        &lt;ProductGrid filters={filters} viewMode=&quot;grid&quot; /&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="24-performance-optimizations">24. Performance Optimizations</h2>
+<pre><code class="language-tsx">// Lazy load heavy components
+const ProductReviews = lazy(() =&gt; import('./ProductReviews'));
+const ProductQA = lazy(() =&gt; import('./ProductQA'));
+const ImageZoom = lazy(() =&gt; import('./ImageZoom'));
+
+// Image optimization component
+function OptimizedImage({ src, alt, width, height, priority = false }: OptimizedImageProps) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  // Generate srcset for responsive images
+  const generateSrcSet = (baseUrl: string) =&gt; {
+    const widths = [320, 480, 640, 768, 1024, 1280];
+    return widths
+      .map((w) =&gt; `${baseUrl}?w=${w}&amp;q=75 ${w}w`)
+      .join(', ');
+  };
+
+  if (error) {
+    return (
+      &lt;div className=&quot;bg-gray-200 flex items-center justify-center&quot; style={{ width, height }}&gt;
+        &lt;ImageIcon className=&quot;w-8 h-8 text-gray-400&quot; /&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div className=&quot;relative&quot; style={{ width, height }}&gt;
+      {/* Blur placeholder */}
+      {!isLoaded &amp;&amp; (
+        &lt;div className=&quot;absolute inset-0 bg-gray-200 animate-pulse&quot; /&gt;
+      )}
+      &lt;img
+        src={src}
+        srcSet={generateSrcSet(src)}
+        sizes=&quot;(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw&quot;
+        alt={alt}
+        width={width}
+        height={height}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding=&quot;async&quot;
+        onLoad={() =&gt; setIsLoaded(true)}
+        onError={() =&gt; setError(true)}
+        className={cn(
+          'transition-opacity duration-300',
+          isLoaded ? 'opacity-100' : 'opacity-0'
+        )}
+      /&gt;
+    &lt;/div&gt;
+  );
+}
+
+// Intersection observer for infinite scroll
+function useInfiniteScroll(callback: () =&gt; void, hasMore: boolean) {
+  const observer = useRef&lt;IntersectionObserver | null&gt;(null);
+
+  const lastElementRef = useCallback((node: HTMLElement | null) =&gt; {
+    if (observer.current) observer.current.disconnect();
+
+    observer.current = new IntersectionObserver((entries) =&gt; {
+      if (entries[0].isIntersecting &amp;&amp; hasMore) {
+        callback();
+      }
+    }, { threshold: 0.1, rootMargin: '100px' });
+
+    if (node) observer.current.observe(node);
+  }, [callback, hasMore]);
+
+  return lastElementRef;
+}
+
+// Prefetch product on hover
+function usePrefetchProduct() {
+  const queryClient = useQueryClient();
+
+  const prefetch = useCallback((productId: string) =&gt; {
+    queryClient.prefetchQuery({
+      queryKey: ['product', productId],
+      queryFn: () =&gt; fetch(`/api/products/${productId}`).then((r) =&gt; r.json()),
+      staleTime: 5 * 60 * 1000,
+    });
+  }, [queryClient]);
+
+  return prefetch;
+}
+</code></pre>
+<hr />
+<h2 id="25-recently-viewed-products">25. Recently Viewed Products</h2>
+<pre><code class="language-tsx">// hooks/useRecentlyViewed.ts
+const STORAGE_KEY = 'recently-viewed';
+const MAX_ITEMS = 20;
+
+export function useRecentlyViewed() {
+  const [items, setItems] = useState&lt;string[]&gt;([]);
+
+  useEffect(() =&gt; {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      setItems(JSON.parse(stored));
+    }
+  }, []);
+
+  const addItem = useCallback((productId: string) =&gt; {
+    setItems((prev) =&gt; {
+      // Remove if exists, add to front
+      const filtered = prev.filter((id) =&gt; id !== productId);
+      const updated = [productId, ...filtered].slice(0, MAX_ITEMS);
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const clearHistory = useCallback(() =&gt; {
+    localStorage.removeItem(STORAGE_KEY);
+    setItems([]);
+  }, []);
+
+  return { items, addItem, clearHistory };
+}
+
+// Track product view
+export function useTrackProductView(productId: string) {
+  const { addItem } = useRecentlyViewed();
+
+  useEffect(() =&gt; {
+    addItem(productId);
+
+    // Also send to analytics
+    trackEvent('product_view', { productId });
+  }, [productId, addItem]);
+}
+
+// Display recently viewed
+export function RecentlyViewedSection() {
+  const { items } = useRecentlyViewed();
+
+  if (items.length === 0) return null;
+
+  return (
+    &lt;ProductCarousel
+      title=&quot;Recently Viewed&quot;
+      type=&quot;recently_viewed&quot;
+      productIds={items}
+    /&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="26-accessibility-considerations">26. Accessibility Considerations</h2>
+<pre><code class="language-tsx">// Accessible star rating input
+function StarRatingInput({ value, onChange, label }: StarRatingInputProps) {
+  const [hovered, setHovered] = useState&lt;number | null&gt;(null);
+
+  return (
+    &lt;fieldset&gt;
+      &lt;legend className=&quot;sr-only&quot;&gt;{label}&lt;/legend&gt;
+      &lt;div
+        className=&quot;flex gap-1&quot;
+        role=&quot;radiogroup&quot;
+        aria-label={label}
+        onMouseLeave={() =&gt; setHovered(null)}
+      &gt;
+        {[1, 2, 3, 4, 5].map((star) =&gt; (
+          &lt;label
+            key={star}
+            onMouseEnter={() =&gt; setHovered(star)}
+            className=&quot;cursor-pointer&quot;
+          &gt;
+            &lt;input
+              type=&quot;radio&quot;
+              name=&quot;rating&quot;
+              value={star}
+              checked={value === star}
+              onChange={() =&gt; onChange(star)}
+              className=&quot;sr-only&quot;
+              aria-label={`${star} star${star &gt; 1 ? 's' : ''}`}
+            /&gt;
+            &lt;Star
+              className={cn(
+                'w-6 h-6 transition-colors',
+                (hovered ?? value) &gt;= star
+                  ? 'fill-yellow-400 text-yellow-400'
+                  : 'text-gray-300'
+              )}
+            /&gt;
+          &lt;/label&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/fieldset&gt;
+  );
+}
+
+// Focus trap for modals
+function useFocusTrap(isOpen: boolean) {
+  const containerRef = useRef&lt;HTMLDivElement&gt;(null);
+
+  useEffect(() =&gt; {
+    if (!isOpen || !containerRef.current) return;
+
+    const container = containerRef.current;
+    const focusableElements = container.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex=&quot;-1&quot;])'
+    );
+    const firstEl = focusableElements[0] as HTMLElement;
+    const lastEl = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+    // Focus first element
+    firstEl?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) =&gt; {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey &amp;&amp; document.activeElement === firstEl) {
+        e.preventDefault();
+        lastEl?.focus();
+      } else if (!e.shiftKey &amp;&amp; document.activeElement === lastEl) {
+        e.preventDefault();
+        firstEl?.focus();
+      }
+    };
+
+    container.addEventListener('keydown', handleKeyDown);
+    return () =&gt; container.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
+  return containerRef;
+}
+
+// Skip to main content link
+function SkipLink() {
+  return (
+    &lt;a
+      href=&quot;#main-content&quot;
+      className=&quot;sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-yellow-400 focus:text-black focus:rounded&quot;
+    &gt;
+      Skip to main content
+    &lt;/a&gt;
+  );
+}
+
+// Announce dynamic content to screen readers
+function useLiveRegion() {
+  const announce = useCallback((message: string, priority: 'polite' | 'assertive' = 'polite') =&gt; {
+    const el = document.createElement('div');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', priority);
+    el.setAttribute('aria-atomic', 'true');
+    el.className = 'sr-only';
+    el.textContent = message;
+
+    document.body.appendChild(el);
+    setTimeout(() =&gt; document.body.removeChild(el), 1000);
+  }, []);
+
+  return announce;
+}
+
+// Usage: Announce cart updates
+function useCartAnnouncements() {
+  const announce = useLiveRegion();
+  const prevCount = useRef&lt;number&gt;(0);
+  const { cart } = useCartStore();
+
+  useEffect(() =&gt; {
+    if (!cart) return;
+
+    if (cart.itemCount &gt; prevCount.current) {
+      announce(`Item added to cart. Cart now has ${cart.itemCount} items.`);
+    } else if (cart.itemCount &lt; prevCount.current) {
+      announce(`Item removed from cart. Cart now has ${cart.itemCount} items.`);
+    }
+
+    prevCount.current = cart.itemCount;
+  }, [cart?.itemCount, announce]);
+}
+</code></pre></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

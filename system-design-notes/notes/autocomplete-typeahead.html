@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search Autocomplete / Typeahead System Design — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html" aria-current="page">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="search-autocomplete-typeahead-system-design">Search Autocomplete / Typeahead System Design</h1>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design a search autocomplete system (Google-scale) that returns top-K query suggestions as the user types, ranked by relevance, recency, and personalization.</p>
+<blockquote>
+<p><strong>Core problem:</strong> Return the right top-10 suggestions for any prefix in under 100ms at 700K QPS — every keystroke is a request. The only way to achieve this is <strong>precomputation</strong>. You do not compute suggestions at query time. You precompute them at write time and look them up in O(1).</p>
+<p><strong>Autocomplete ≠ Search.</strong> Search handles complex queries with heavy computation. Autocomplete is prefix-based, precomputed, and ultra-fast. They are fundamentally different systems sharing only the search box.</p>
+</blockquote>
+<p><strong>In scope:</strong> Prefix-based suggestions, frequency-weighted ranking, personalization, trending queries, typo tolerance.
+<strong>Out of scope:</strong> Full-text search results pages, spell correction as a standalone product, query understanding / NLU.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Number</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DAU</td>
+<td>500M</td>
+</tr>
+<tr>
+<td>Searches/user/day</td>
+<td>10</td>
+</tr>
+<tr>
+<td>Total searches/day</td>
+<td>5B</td>
+</tr>
+<tr>
+<td>Avg keystrokes before submit</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Autocomplete requests/day</td>
+<td>20B</td>
+</tr>
+<tr>
+<td>Peak QPS (3× avg)</td>
+<td>~700K QPS</td>
+</tr>
+<tr>
+<td>Read:Write ratio</td>
+<td>100:1</td>
+</tr>
+<tr>
+<td>Unique query terms in trie</td>
+<td>Top 1M (covers 95% traffic — Zipf distribution)</td>
+</tr>
+<tr>
+<td>Trie memory per shard</td>
+<td>~230MB (fits in Redis, 26 shards by first char)</td>
+</tr>
+<tr>
+<td>Query log storage</td>
+<td>5B × 50 bytes = 250 GB/day (Kafka, 7-day retention = ~1.75 TB)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Hardest path:</strong> 700K QPS at sub-100ms p99 — every millisecond counts. The primary bottleneck is the trie lookup tier, not the DB.</p>
+<p><strong>Key implication:</strong> The system is almost entirely read. Every design decision must optimise the read path.</p>
+<p><em>These numbers drive the following decisions: trie in Redis (not disk), CDN caching of short prefixes, client-side debounce + LRU cache to kill ~40% of network requests before they leave the browser.</em></p>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ul>
+<li>Return top-10 suggestions for any prefix as the user types</li>
+<li>Rank suggestions by: global query frequency × recency × personalization score</li>
+<li>Personalise with user's recent 100 searches (blended with global)</li>
+<li>Serve trending queries (updated hourly from aggregated logs)</li>
+<li>Tolerate 1–2 character typos (fuzzy match via Elasticsearch fallback)</li>
+<li>Return suggestions within <strong>100ms p99</strong></li>
+</ul>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Requirement</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Availability</td>
+<td>99.99%</td>
+<td>Autocomplete is in the critical path of every search</td>
+</tr>
+<tr>
+<td>Read latency</td>
+<td>&lt;100ms p99</td>
+<td>User perceives lag above 100ms, types faster than network round-trip</td>
+</tr>
+<tr>
+<td>Write latency</td>
+<td>Eventual, ~1hr staleness acceptable</td>
+<td>Trie rebuilt hourly — trending today, not trending in last keystroke</td>
+</tr>
+<tr>
+<td>Throughput</td>
+<td>700K read QPS</td>
+<td>Must be horizontally scalable</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>AP (eventual)</td>
+<td>Stale suggestions for 1hr are acceptable; split is not</td>
+</tr>
+</tbody>
+</table>
+<h3 id="consistency-model">Consistency Model</h3>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Model</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Global suggestions</td>
+<td>Eventual (hourly)</td>
+<td>Frequency counts aggregate over time; hourly refresh is accurate enough</td>
+</tr>
+<tr>
+<td>Trending queries</td>
+<td>Near-real-time (Flink, ~5min)</td>
+<td>Trending must reflect recent spikes, not yesterday's data</td>
+</tr>
+<tr>
+<td>User personalisation</td>
+<td>Read-your-writes</td>
+<td>User expects their last search to appear in suggestions immediately</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mental-model">🧠 Mental Model</h2>
+<p><strong>Autocomplete is a precomputed prefix-index system optimized for ultra-low latency reads.</strong></p>
+<pre><code>This system trades storage for latency by precomputing top-K suggestions
+for every prefix — offline, on a schedule — so that every read is O(1).
+
+Precompute:  &quot;app&quot; → [apple, application, apple watch, ...]
+Read:        user types &quot;app&quot; → Redis lookup → return list (1–2ms)
+
+You never compute suggestions at query time. Ever.
+</code></pre>
+<p><strong>Why precomputation is non-negotiable:</strong>
+- 700K QPS × every request computes suggestions = impossible
+- Trie DFS over subtree of "a" at runtime = traverse millions of nodes per request
+- Ranking over 1M terms per keystroke = 700K ranking operations/second</p>
+<p><strong>The solution:</strong> Every trie node stores its top-K pre-ranked suggestions. Writes are expensive and infrequent (hourly batch). Reads are O(prefix_length) and instant.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Autocomplete systems trade storage for latency by precomputing top suggestions for each prefix. The trie is not a search structure at read time — it's a lookup table.</p>
+</blockquote>
+<p><strong>This system is one of the most latency-sensitive systems you will design.</strong> The &lt;100ms budget is not a guideline — it's a hard constraint. Users type faster than 100ms between keystrokes. If you miss it, suggestions appear <em>after</em> the user has already typed the next character — they feel useless. Every architectural decision flows from this constraint.</p>
+<p>Three flows define this system:</p>
+<ol>
+<li><strong>Read path (hot):</strong> keystroke → debounce → client LRU cache → CDN edge (short prefixes) → Autocomplete Service → Redis Trie (O(prefix_len) lookup of precomputed topK) → blend user history → return top-10 in &lt;100ms</li>
+<li><strong>Write path (precomputation):</strong> search completion → Kafka log → Flink (5min trending) + Spark (hourly batch) → Score Aggregator → Trie Builder (precompute topK at every node) → push to Redis</li>
+<li><strong>Fuzzy fallback path:</strong> prefix not in trie (typo) → Elasticsearch query → top-5 typo-tolerant results</li>
+</ol>
+<pre><code>User types &quot;app&quot;
+     |
+[Client LRU cache]  hit? → return immediately (0ms)
+     |miss
+[CDN edge cache]    hit? → return in ~10ms (short prefix = global result)
+     |miss
+[Autocomplete Service]
+     |
+  [Redis Trie]      O(prefix_len) lookup → topK list at trie node
+     |
+  [User History]    Redis: last 100 searches for this userId
+     |
+  [Score Blender]   global score × 0.7 + personal score × 0.3
+     |
+  Return top-10 JSON
+</code></pre>
+<p><strong>⚡ Core Design Principles</strong></p>
+<table>
+<thead>
+<tr>
+<th>Fast Path</th>
+<th>Reliable Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Client LRU cache (0ms, 40% hit rate)</td>
+<td>Kafka query log (all searches durably captured)</td>
+</tr>
+<tr>
+<td>CDN edge cache for 1-3 char prefixes (10ms)</td>
+<td>Flink real-time aggregation (5min trending freshness)</td>
+</tr>
+<tr>
+<td>Redis Trie lookup (1-2ms)</td>
+<td>Spark hourly batch (full frequency recompute)</td>
+</tr>
+<tr>
+<td>Pre-computed topK at each trie node (no DFS)</td>
+<td>Trie rebuild job (correctness guarantee)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-api-design">5. API Design</h2>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Params</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/autocomplete</code></td>
+<td>GET</td>
+<td><code>q={prefix}&amp;uid={userId}&amp;limit=10&amp;lang=en</code></td>
+<td><code>{ suggestions: [{term, score, type}] }</code></td>
+</tr>
+<tr>
+<td><code>/autocomplete/trending</code></td>
+<td>GET</td>
+<td><code>category={cat}&amp;region={region}</code></td>
+<td>Top trending terms</td>
+</tr>
+<tr>
+<td><code>/search/complete</code></td>
+<td>POST</td>
+<td><code>{ query, userId, sessionId, ts }</code></td>
+<td>200 OK (async log to Kafka)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notes:</strong>
+- <code>uid</code> is optional — anonymous users get global suggestions only
+- Response is ~500 bytes; at 700K QPS = 350 MB/s egress — CDN is required
+- <code>/search/complete</code> fires-and-forgets after user submits; drives frequency aggregation pipeline</p>
+<hr />
+<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Async Aggregation Pipeline — why it's async, not synchronous</strong></p>
+<p><strong>Search Log Pipeline (Kafka → Flink → Redis)</strong>
+- WHY async: At 700K QPS, synchronously updating trie frequency on every keystroke would lock shared state across shards. Kafka absorbs all search events; Flink + Spark aggregate at their own pace.
+- Delivery: at-least-once (Kafka consumer replay on crash) + idempotency via <code>(userId, sessionId, query)</code> deduplication key
+- Retry: exponential backoff + DLQ for failed trie publishes
+- Freshness: Flink window = 5 min (trending), Spark batch = 1 hour (full frequency recompute)</p>
+<p><em>The aggregation pipeline is a correctness requirement, not a performance optimisation. Without it, high-frequency queries like "apple" never rise above low-frequency queries like "aardvark" — ranking would be meaningless.</em></p>
+</blockquote>
+<h3 id="61-read-path-user-types-app">6.1 Read Path — User Types "app"</h3>
+<ol>
+<li>User types "a", "ap", "app" — I debounce at <strong>150ms</strong> because sending a request per keystroke at 700K QPS would be 3× heavier; 150ms is below human perception threshold for "instant" feedback.</li>
+<li>Client checks <strong>LRU cache</strong> (Map, max 200 entries, TTL 5min) — cache key is the prefix. Hit rate ~40% in practice because users repeat common prefixes.</li>
+<li>Cache miss → HTTP request fires. Short prefixes (1–3 chars: "a", "ap", "app") hit <strong>CDN edge cache</strong> first. I cache these because the top-10 for "app" is identical for 499M out of 500M users — no need to hit origin.</li>
+<li>Cache miss at CDN → request reaches <strong>Autocomplete Service</strong> (stateless, horizontally scaled behind ALB).</li>
+<li>Service calls <strong>Redis Trie</strong> with key <code>trie:{shard}</code> where shard = first char of prefix. Returns <code>topK</code> list pre-stored at the trie node for prefix "app" — <strong>O(prefix_length) lookup, no DFS required</strong>. I chose pre-computed topK at each node because DFS over the subtree of "a" at peak QPS would traverse millions of nodes.</li>
+<li>Service fetches <strong>user history</strong> from Redis (<code>user:history:{userId}</code>, sorted set, last 100 searches) — ~0.5ms.</li>
+<li><strong>Score Blender</strong>: <code>final_score = global_score × 0.7 + personal_score × 0.3</code>. The trade-off I accept is that personalisation slightly biases away from global relevance, which is acceptable because relevance to this user &gt; global popularity.</li>
+<li>Return top-10 sorted by final_score. Total latency: &lt;100ms p99.</li>
+</ol>
+<h3 id="62-write-path-user-completes-search-apple-iphone">6.2 Write Path — User Completes Search "apple iphone"</h3>
+<ol>
+<li>On search submit, client fires <code>POST /search/complete</code> — fire-and-forget, doesn't block the result page load.</li>
+<li><strong>Kafka</strong> receives the event: <code>{userId, query: "apple iphone", ts, sessionId}</code>. I chose Kafka because at 5B searches/day, any synchronous write to a shared data store would be a bottleneck immediately.</li>
+<li><strong>Flink (real-time window):</strong> sliding 5-minute window aggregates frequency counts per term. Updates a <strong>Trending Redis Set</strong> (<code>trending:{category}</code>, TTL 5min) with recent spike terms. Deduplication: <code>(userId, sessionId, query)</code> composite key — the same user re-searching doesn't double-count.</li>
+<li><strong>Spark (hourly batch):</strong> reads 1hr of Kafka logs, recomputes full frequency scores with recency decay (<code>score = count × e^(-λ×age_hours)</code>), writes to <strong>Query Frequency Table</strong> (Cassandra, partition key = <code>term</code>).</li>
+<li><strong>Trie Builder job</strong> (runs hourly): reads top-1M terms by score from Cassandra, rebuilds the in-memory trie, pre-computes topK at every node, publishes to Redis. Hot-swap: publish to <code>trie:v2</code>, then atomically rename — zero downtime trie update.</li>
+</ol>
+<p><strong>Why not real-time trie updates per search?</strong> Updating the trie on every search event means:
+   - 5B events/day = 58K trie writes/sec
+   - Each write must propagate topK changes up every ancestor node (DFS up the tree)
+   - Concurrent writes require distributed locks across shard boundaries
+   - Race conditions corrupt topK lists</p>
+<p>Batch rebuild every hour avoids all of this. The trie is immutable between rebuilds — reads are always consistent within a version. Flink trending (5-min window) provides freshness for spike queries without touching the trie.</p>
+<h3 id="63-fuzzy-fallback-user-types-aple-typo">6.3 Fuzzy Fallback — User Types "aple" (typo)</h3>
+<ol>
+<li>Autocomplete Service looks up "aple" in Redis Trie — no match (not in top-1M terms).</li>
+<li>Falls back to <strong>Elasticsearch</strong> with <code>fuzzy: { value: "aple", fuzziness: 2 }</code> — Levenshtein distance ≤ 2. Returns "apple", "maple", "ample".</li>
+<li>I chose ES as the fuzzy fallback (not primary) because Levenshtein distance queries over 1M terms at 700K QPS would overwhelm even a large ES cluster. The trie handles 95% of traffic; ES handles the long tail.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User Browser
+    participant CDN as CDN Edge
+    participant AS as Autocomplete Service
+    participant RT as Redis Trie
+    participant RH as Redis User History
+    participant ES as Elasticsearch
+
+    U-&gt;&gt;U: debounce 150ms
+    U-&gt;&gt;CDN: GET /autocomplete?q=app&amp;uid=123
+    CDN--&gt;&gt;U: HIT (short prefix, cached 5min)
+    Note over CDN,AS: Cache miss for personalised or long prefix
+    CDN-&gt;&gt;AS: GET /autocomplete?q=apple&amp;uid=123
+    AS-&gt;&gt;RT: HGET trie:a prefix=apple
+    RT--&gt;&gt;AS: topK [{apple iphone,0.9},{apple watch,0.85}...]
+    AS-&gt;&gt;RH: ZREVRANGE user:history:123 0 9
+    RH--&gt;&gt;AS: [apple, airpods, amazon]
+    AS-&gt;&gt;AS: blend scores (0.7 global + 0.3 personal)
+    AS--&gt;&gt;CDN: [{apple iphone,0.93},{airpods,0.91}...]
+    CDN--&gt;&gt;U: top-10 suggestions
+
+    Note over U,ES: Fuzzy fallback for typos
+    U-&gt;&gt;AS: GET /autocomplete?q=aple
+    AS-&gt;&gt;RT: HGET trie:a prefix=aple
+    RT--&gt;&gt;AS: no match
+    AS-&gt;&gt;ES: fuzzy query fuzziness=2
+    ES--&gt;&gt;AS: [apple, maple]
+    AS--&gt;&gt;U: fuzzy suggestions
+</div>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User Browser
+    participant K as Kafka
+    participant FL as Flink
+    participant SP as Spark
+    participant TR as Redis Trending
+    participant CA as Cassandra
+    participant TB as Trie Builder
+    participant RT as Redis Trie
+
+    U-&gt;&gt;K: POST /search/complete {query: apple iphone}
+    K-&gt;&gt;FL: stream event
+    FL-&gt;&gt;TR: ZINCRBY trending:electronics apple_iphone 1
+    Note over FL,TR: 5-min sliding window, TTL 5min
+    K-&gt;&gt;SP: batch (hourly)
+    SP-&gt;&gt;CA: UPSERT query_frequency (term=apple iphone, score=941520)
+    CA-&gt;&gt;TB: hourly trigger
+    TB-&gt;&gt;TB: rebuild trie top-1M terms
+    TB-&gt;&gt;RT: HSET trie:v2 (hot-swap)
+    TB-&gt;&gt;RT: RENAME trie:v2 trie:a
+    Note over TB,RT: zero-downtime atomic swap
+</div>
+<hr />
+<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    U[&quot;User Browser&quot;]
+    AG[&quot;API Gateway&quot;]
+    AS[&quot;Autocomplete Service&quot;]
+    RT[(&quot;Redis Trie&quot;)]
+    ES[(&quot;Elasticsearch&quot;)]
+    K[[&quot;Kafka&quot;]]
+    SP[&quot;Spark Batch&quot;]
+
+    U--&gt;AG--&gt;AS
+    AS--&gt;RT
+    AS--&gt;ES
+    AS--&gt;K
+    K--&gt;SP--&gt;RT
+</div>
+<h3 id="evolved-design">Evolved Design</h3>
+<div class="mermaid">
+graph TD
+    U[&quot;User Browser&quot;]
+    CDN[&quot;CDN Edge Cache&quot;]
+    ALB[&quot;Load Balancer&quot;]
+    AS1[&quot;Autocomplete Service 1&quot;]
+    AS2[&quot;Autocomplete Service 2&quot;]
+    RT[(&quot;Redis Trie Cluster\n26 shards by first char&quot;)]
+    RH[(&quot;Redis User History&quot;)]
+    TR[(&quot;Redis Trending&quot;)]
+    ES[(&quot;Elasticsearch\nFuzzy Fallback&quot;)]
+    K[[&quot;Kafka\nSearch Logs&quot;]]
+    FL[&quot;Flink\nReal-time Window 5min&quot;]
+    SP[&quot;Spark\nHourly Batch&quot;]
+    CA[(&quot;Cassandra\nQuery Frequency&quot;)]
+    TB[&quot;Trie Builder Job&quot;]
+
+    U--&gt;CDN
+    CDN--&gt;ALB
+    ALB--&gt;AS1
+    ALB--&gt;AS2
+    AS1--&gt;RT
+    AS1--&gt;RH
+    AS1--&gt;TR
+    AS1--&gt;ES
+    AS2--&gt;RT
+    U--&gt;K
+    K--&gt;FL--&gt;TR
+    K--&gt;SP--&gt;CA
+    CA--&gt;TB--&gt;RT
+</div>
+<hr />
+<h2 id="8-data-model">8. Data Model</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Storage Separation</strong></p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trie (top-1M terms + topK at each node)</td>
+<td>Redis Cluster (26 shards)</td>
+<td>Sub-ms in-memory prefix lookup; never disk</td>
+</tr>
+<tr>
+<td>Query frequency scores</td>
+<td>Cassandra</td>
+<td>Write-heavy (5B events/day aggregated); partition key = term for O(1) lookup</td>
+</tr>
+<tr>
+<td>User search history</td>
+<td>Redis Sorted Set (score=timestamp)</td>
+<td>Sub-ms read, TTL=30d, ZREVRANGE top-100</td>
+</tr>
+<tr>
+<td>Trending terms</td>
+<td>Redis Sorted Set (score=count)</td>
+<td>TTL=5min, replaced every Flink window</td>
+</tr>
+<tr>
+<td>Raw search logs</td>
+<td>Kafka (7-day retention)</td>
+<td>Source of truth for reprocessing; never query directly</td>
+</tr>
+<tr>
+<td>Fuzzy index</td>
+<td>Elasticsearch</td>
+<td>n-gram tokenisation; never use for prefix queries</td>
+</tr>
+</tbody>
+</table>
+</blockquote>
+<h3 id="trie-node-structure-in-redis-hash">Trie Node Structure (in Redis Hash)</h3>
+<pre><code>Key:   trie:{first_char}
+Field: {prefix}
+Value: [{term: &quot;apple iphone&quot;, score: 0.93}, {term: &quot;apple watch&quot;, 0.85}, ...]
+       (topK=10 pre-computed at each node)
+</code></pre>
+<p><strong>Why store topK at every node, not just leaf nodes?</strong>
+At 700K QPS you cannot DFS the subtree of "a" (could be 200K nodes). Pre-computing topK at every prefix node costs more write-time memory but makes every read O(prefix_length) — the only viable approach at scale.</p>
+<h3 id="query-frequency-table-cassandra">Query Frequency Table (Cassandra)</h3>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>term</td>
+<td>text (PK)</td>
+<td>partition key</td>
+</tr>
+<tr>
+<td>global_score</td>
+<td>float</td>
+<td>frequency × recency decay</td>
+</tr>
+<tr>
+<td>count_7d</td>
+<td>bigint</td>
+<td>raw count, last 7 days</td>
+</tr>
+<tr>
+<td>count_1h</td>
+<td>bigint</td>
+<td>last hour (for trending signal)</td>
+</tr>
+<tr>
+<td>updated_at</td>
+<td>timestamp</td>
+<td>last Spark batch run</td>
+</tr>
+</tbody>
+</table>
+<h3 id="user-search-history-redis-sorted-set">User Search History (Redis Sorted Set)</h3>
+<pre><code>Key:   user:history:{userId}
+Type:  Sorted Set
+Score: Unix timestamp
+Value: search term
+TTL:   30 days
+ZREVRANGE user:history:123 0 99  → last 100 searches
+</code></pre>
+<hr />
+<h2 id="9-deep-dives">9. Deep Dives</h2>
+<h3 id="91-trie-vs-elasticsearch-the-core-data-structure-decision">9.1 Trie vs Elasticsearch — the core data structure decision</h3>
+<p><strong>Problem:</strong> We need to return top-10 matching completions for any prefix in &lt;5ms (after CDN). What data structure?</p>
+<p><strong>Naive solution — Elasticsearch only:</strong>
+Full ES fuzzy query for every keystroke at 700K QPS → ES cluster needs 100+ nodes → expensive, p99 latency ~50–200ms under load. Doesn't work.</p>
+<p><strong>Naive solution — Pure Trie without topK at nodes:</strong>
+Standard trie stores terms at leaf nodes. To find top-10 completions for "app", you DFS the entire subtree of the "p" node — could be 200K nodes for a common prefix. At 700K QPS, each request triggers a massive traversal. System collapses under load.</p>
+<p><strong>Naive solution — Pure Trie in application memory:</strong>
+Each Autocomplete Service instance holds the full trie. Problem: 1M terms × average 10 chars × trie node overhead = ~6GB per process. 100 service instances = 600GB RAM wasted.</p>
+<p><strong>Chosen solution — Pre-computed topK Redis Trie (the key insight):</strong></p>
+<blockquote>
+<p>[!IMPORTANT]
+Every trie node stores its own top-K pre-ranked suggestions. This is the single most important design decision in this system.</p>
+<p><code>Node "app" → ["apple", "application", "apple watch", "appstore", ...]
+Node "appl" → ["apple", "application", "apple watch", ...]
+Node "apple" → ["apple", "apple watch", "apple store", ...]</code></p>
+<p>Reading "apple" = walk 5 nodes, read the pre-stored list at the last node. O(prefix_length). No DFS, no traversal, no computation at read time.</p>
+<p>The DFS is done <strong>once, offline, by the Trie Builder</strong> — not at request time.</p>
+</blockquote>
+<ul>
+<li>Read: <code>HGET trie:a prefix=apple</code> → O(prefix_len) lookups. Total: ~1–2ms.</li>
+<li>Write: hourly Trie Builder DFS computes topK bottom-up from leaves to root. Write cost paid offline, once per hour.</li>
+<li>Memory: 1M nodes × (10 suggestions × 50 bytes) = 500MB per shard. 26 shards = 13GB total Redis — manageable.</li>
+</ul>
+<p>The trade-off I accept is <strong>1-hour staleness</strong> — a query that goes viral today won't appear in suggestions for up to 1 hour. This is acceptable because autocomplete relevance doesn't require sub-minute freshness; Flink trending layer handles the spike signal separately.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Store topK at every trie node — not just leaf nodes. Reading "apple" is O(5) lookups, not O(subtree). Trie alone is not enough. Trie + precomputed topK at every internal node is the complete solution.</p>
+</blockquote>
+<hr />
+<h3 id="92-ranking-personalisation-frequency-recency-user-context">9.2 Ranking + Personalisation — frequency × recency × user context</h3>
+<p><strong>Problem:</strong> "apple" is searched 10M/day. "apple iphone 15 pro max" is searched 50K/day. But a user in Tokyo who always searches Apple products should see "apple watch" before "amazon prime" — and "apple store tokyo" before "apple store london". How do we rank?</p>
+<p><strong>Personalisation is a real system requirement</strong>, not a nice-to-have. Real systems personalise on:
+- <strong>User history</strong> — what this user has searched before
+- <strong>Location</strong> — user in Mumbai sees "amazon in" before "amazon us"
+- <strong>Context</strong> — time of day (morning news searches vs evening entertainment)
+- <strong>Device</strong> — mobile users type shorter queries, get shorter suggestions</p>
+<p><strong>Naive solution:</strong> Order by raw frequency count. No recency, no personalisation. "Donald Trump" stays top forever even if nobody searches it anymore.</p>
+<p><strong>Chosen solution — three-factor score:</strong></p>
+<pre><code>global_score  = frequency_score × recency_decay
+              = count_7d × e^(-λ × age_days)   where λ = 0.1 (half-life ~7 days)
+
+personal_score = 1.0 if in user's last 100 searches, else 0.0
+               (boosted by recency: searches from last 24hr = 2.0)
+               (boosted by location match: +0.5 if region matches)
+
+final_score   = global_score × 0.7 + personal_score × 0.3
+</code></pre>
+<p>Why 0.7 / 0.3 split? Global relevance dominates — a user who once searched "apple" shouldn't forever see "apple" above all other suggestions. Personal score nudges the ranking without overriding global relevance entirely.</p>
+<p><strong>Where scores are computed:</strong>
+- <code>global_score</code>: precomputed by Spark batch (hourly), written to Cassandra → Trie Builder stores at every node
+- <code>personal_score</code>: computed at <strong>request time</strong> from Redis user history (<code>ZREVRANGE user:history:{userId}</code>, ~0.5ms) — this is the only runtime computation in the entire read path
+- <code>final_score</code>: blended in Autocomplete Service per-request, then top-10 selected</p>
+<p><strong>Why personal_score is NOT precomputed:</strong>
+Precomputing personalised suggestions per user × per prefix = 500M users × 1M prefixes = 500 trillion entries. Physically impossible. Instead: precompute global topK into the trie, blend personal score at serve-time from a tiny per-user Redis set.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Precomputation covers 70% of the ranking signal (global score in trie). Personalisation covers the remaining 30% at request time from a 100-item Redis set per user. This is the only architecture that satisfies both latency (&lt;100ms) and personalisation at 500M user scale.</p>
+</blockquote>
+<hr />
+<h3 id="93-cdn-caching-for-short-prefixes">9.3 CDN Caching for Short Prefixes</h3>
+<p><strong>Problem:</strong> 700K QPS, but "a", "ap", "app" are queried by millions of users simultaneously. Origin doesn't need to serve these identically.</p>
+<p><strong>The insight:</strong> Short prefixes (1–3 chars) have <strong>no personalisation</strong> — the suggestions are identical for 99.9% of users. This makes them perfect CDN candidates.</p>
+<p><strong>Strategy:</strong>
+- Prefixes of length 1–3: cached at CDN edge, TTL = 5 minutes. No userId in cache key.
+- Prefixes of length 4+: pass through to origin (personalisation matters here; <code>uid</code> varies).
+- Cache key for CDN: <code>autocomplete:{prefix}:{lang}:{region}</code> (no user ID).</p>
+<p><strong>Math:</strong> Top-1000 prefixes (3 chars, 26³ = 17,576 possibilities, but top 1000 cover ~80% of traffic) × 10 suggestions × 50 bytes = 500KB per CDN PoP. Fits in L1 edge cache trivially.</p>
+<p>I chose TTL=5min (not longer) because Flink trending updates every 5 min — any longer and a viral query wouldn't surface at CDN edges for 10+ minutes.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: CDN caching of 1–3 char prefixes offloads ~40–60% of all autocomplete traffic. The origin never sees "a" or "ap" requests from cold users.</p>
+</blockquote>
+<hr />
+<h3 id="94-trie-sharding-strategy">9.4 Trie Sharding Strategy</h3>
+<p><strong>Problem:</strong> The trie is huge — 1M terms, topK at every node, needs to be in-memory for sub-ms reads. Can't fit in one Redis instance. How do we shard without scatter-gather?</p>
+<p><strong>The sharding constraint unique to prefix systems:</strong>
+Normal sharding (by hash of key) doesn't work here. A query for "apple" might hash to shard-7, but "appl" hashes to shard-3 and "app" to shard-19. A single prefix traversal would hit all 26 shards — 26× the latency, 26× the network calls.</p>
+<p><strong>Chosen sharding strategy — shard by prefix range:</strong></p>
+<pre><code>a–f  → Trie Server 1   (all queries starting with a, b, c, d, e, f)
+g–m  → Trie Server 2
+n–s  → Trie Server 3
+t–z  → Trie Server 4
+0–9  → Trie Server 5   (numeric + special)
+</code></pre>
+<p>Why prefix-range sharding works:
+- Query for "apple" → first char = "a" → always Trie Server 1. One lookup, one shard, zero scatter-gather.
+- Trie Builder writes shard-1 only when rebuilding "a"–"f" terms. No cross-shard coordination.
+- Can refine to first 2 chars (676 possible shards) for more even load distribution as scale increases.</p>
+<p><strong>Memory per shard:</strong>
+- Shard "a–f": ~230K unique terms across 6 chars
+- Each trie node: topK list = 10 × 50 bytes = 500 bytes
+- Memory: ~115MB per shard (very comfortable for Redis)</p>
+<p><strong>Uneven load:</strong> Shard "s" gets ~4× traffic of shard "z" — "search", "sports", "shop" are common. Solution: read replicas per hot shard.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Shard by prefix range, not by hash. This is the only sharding strategy that guarantees every prefix query hits exactly one shard with zero cross-shard coordination. Hash-sharding autocomplete trie = scatter-gather nightmare.</p>
+</blockquote>
+<hr />
+<h3 id="95-fuzzy-matching-typo-tolerance">9.5 Fuzzy Matching — Typo Tolerance</h3>
+<p><strong>Problem:</strong> User types "aple" (misses second "p"). Trie has no node for "aple". Do we return nothing?</p>
+<p><strong>Naive solution:</strong> Run Levenshtein distance check against all 1M terms in the trie on every request. O(1M × prefix_len) = too slow.</p>
+<p><strong>Chosen solution:</strong> Two-tier fuzzy:
+1. <strong>Primary (trie):</strong> exact prefix match — handles 95% of traffic
+2. <strong>Fallback (Elasticsearch):</strong> only triggered when trie returns 0 results. ES uses n-gram tokenization (min=2, max=3) for fuzzy prefix matching with <code>fuzziness: AUTO</code>.</p>
+<p>I chose ES as fuzzy fallback (not primary) because:
+- Trie at 700K QPS = 1–2ms; ES fuzzy at 700K QPS = 50–200ms (10-100× slower)
+- Only ~5% of queries are typos — sending all traffic through ES is wasteful
+- Trade-off I accept: the fuzzy path is slower (~150ms) and serves a minority of traffic</p>
+<p><strong>Elasticsearch index design:</strong>
+- n-gram analyzer: tokenizes "apple" into "ap", "app", "appl", "apple", "ppl", "pple", "ple" etc.
+- Query: <code>{ match: { term: { query: "aple", fuzziness: "AUTO" } } }</code>
+- Result: "apple" (edit distance 1), "maple" (edit distance 2)</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Elasticsearch is not the primary autocomplete store — it's the typo fallback. Using ES for all prefix queries at this scale would require 100+ nodes and still lose to a well-designed Redis trie on latency.</p>
+</blockquote>
+<hr />
+<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
+<p>We're designing for <strong>500M DAU</strong>, <strong>700K QPS peak</strong>, <strong>1M trie terms</strong>, <strong>250GB/day</strong> query logs. The primary bottleneck at scale is <strong>trie read throughput</strong> on hot shards (shard "s" sees ~4× average traffic).</p>
+<p><strong>What breaks first at 10× scale (7M QPS):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Bottleneck</th>
+<th>Problem</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Redis hot shard ("s", "c")</td>
+<td>4× average QPS on popular first chars</td>
+<td>Read replicas per shard (Redis replicas, reads distributed)</td>
+</tr>
+<tr>
+<td>Trie Builder job</td>
+<td>1M terms × topK DFS in 1hr window</td>
+<td>Shard trie builder (parallel per shard), run every 15min</td>
+</tr>
+<tr>
+<td>Kafka ingest</td>
+<td>50B events/day at 10×</td>
+<td>Increase partitions (partition by first char of query), scale consumers</td>
+</tr>
+<tr>
+<td>Autocomplete Service</td>
+<td>Stateless, easily horizontal</td>
+<td>Auto-scale on QPS metric; no state to migrate</td>
+</tr>
+<tr>
+<td>CDN origin shield</td>
+<td>More cache misses at 10× unique prefixes</td>
+<td>Add origin shield (regional aggregator), longer TTL for 4+ char prefixes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Spike scenario:</strong> Google announces an event → "google" prefix suddenly at 10× normal QPS. Mitigation:
+1. CDN absorbs: "goo", "goog", "googl" all cached at edge.
+2. Redis read replicas for shard "g" handle the residual.
+3. Flink detects spike in 5-min window → promotes "google [event term]" to Trending.</p>
+<p><strong>Trie rebuild frequency vs staleness:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Rebuild interval</th>
+<th>Freshness</th>
+<th>CPU cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>15 min</td>
+<td>Good for trending</td>
+<td>High (4× per hour)</td>
+</tr>
+<tr>
+<td>1 hour</td>
+<td>Acceptable</td>
+<td>Moderate</td>
+</tr>
+<tr>
+<td>6 hours</td>
+<td>Stale for virals</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> 1-hour full rebuild + 5-min Flink trending overlay. Best of both.</p>
+<hr />
+<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Redis Trie shard goes down</td>
+<td>Shard's prefix suggestions return empty</td>
+<td>Redis Replica promoted (Sentinel/Cluster auto-failover, &lt;30s); fallback to ES for affected prefix during failover</td>
+</tr>
+<tr>
+<td>Kafka consumer crash</td>
+<td>Query logs not aggregated</td>
+<td>Consumer restarts, replays from last committed offset (at-least-once). Dedup key <code>(userId, sessionId, query)</code> prevents double-counting</td>
+</tr>
+<tr>
+<td>Trie Builder job fails mid-rebuild</td>
+<td>Stale trie, up to 2 hours old</td>
+<td>Old trie stays live (never deleted until swap succeeds). Alert fires. Next hourly run retries.</td>
+</tr>
+<tr>
+<td>Elasticsearch cluster degraded</td>
+<td>Fuzzy fallback fails (~5% of queries)</td>
+<td>Return empty array for typo queries; autocomplete degrades gracefully — exact matches still work</td>
+</tr>
+<tr>
+<td>CDN cache poisoning / stale TTL</td>
+<td>Users see wrong suggestions for 5min</td>
+<td>CDN TTL=5min is low enough to self-heal. For emergency: CDN purge API for specific prefix keys</td>
+</tr>
+<tr>
+<td>Flink job lag</td>
+<td>Trending not updated</td>
+<td>Trending TTL expires → Redis returns stale trending → service falls back to global frequency ranking. Alert fires at &gt;10min lag</td>
+</tr>
+<tr>
+<td>User history Redis OOM</td>
+<td>Personalisation disabled</td>
+<td>Autocomplete Service detects empty history response → falls back to global suggestions silently</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="primary-storage-redis-trie-vs-elasticsearch">Primary Storage: Redis Trie vs Elasticsearch</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Redis Trie (chosen)</th>
+<th>Elasticsearch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read latency</td>
+<td>1–2ms</td>
+<td>20–200ms</td>
+</tr>
+<tr>
+<td>Prefix lookup</td>
+<td>O(prefix_len), exact</td>
+<td>O(1) with n-gram, approximate</td>
+</tr>
+<tr>
+<td>Fuzzy matching</td>
+<td>Not supported natively</td>
+<td>Native, flexible</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>~6.5GB for 1M terms</td>
+<td>~50GB for same (inverted index overhead)</td>
+</tr>
+<tr>
+<td>Update model</td>
+<td>Batch rebuild (hourly)</td>
+<td>Near-real-time upsert</td>
+</tr>
+<tr>
+<td>QPS ceiling</td>
+<td>700K+ (sharded)</td>
+<td>~50K per cluster without heavy hardware</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Redis Trie for primary, Elasticsearch for fuzzy fallback.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Elasticsearch is the wrong primary store for autocomplete at Google scale. It's designed for full-text relevance ranking, not millisecond prefix lookup at 700K QPS. Redis Trie wins on latency; ES fills the typo gap.</p>
+</blockquote>
+<hr />
+<h3 id="trie-update-real-time-vs-batch">Trie Update: Real-time vs Batch</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Real-time (per search event)</th>
+<th>Batch Hourly (chosen)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Freshness</td>
+<td>&lt;1sec</td>
+<td>~1hr</td>
+</tr>
+<tr>
+<td>Write throughput</td>
+<td>5B updates/day → trie write locks</td>
+<td>Aggregated, one rebuild/hr</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Complex (concurrent trie mutations)</td>
+<td>Simple (immutable rebuild, atomic swap)</td>
+</tr>
+<tr>
+<td>Risk</td>
+<td>Race conditions, partial updates</td>
+<td>1hr staleness</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Batch rebuild every hour + Flink trending overlay for spikes.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: Real-time trie updates at 5B events/day would require distributed locking on every trie node — a distributed systems nightmare. Batch rebuild with atomic hot-swap is far simpler and correct. Trending Flink layer buys back freshness where it matters.</p>
+</blockquote>
+<hr />
+<h3 id="cdn-caching-prefix-length-cutoff">CDN Caching: Prefix Length Cutoff</h3>
+<table>
+<thead>
+<tr>
+<th>Prefix Length</th>
+<th>Personalisation?</th>
+<th>Cache at CDN?</th>
+<th>Cache hit rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1–3 chars</td>
+<td>No (results identical for all)</td>
+<td>Yes, TTL=5min</td>
+<td>~60% of all traffic</td>
+</tr>
+<tr>
+<td>4+ chars</td>
+<td>Yes (uid matters)</td>
+<td>No (pass through)</td>
+<td>N/A</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Cache only 1–3 char prefixes at CDN edge without uid. 4+ chars go to origin.</p>
+<blockquote>
+<p>[!NOTE]
+Key Insight: "app" suggestions are the same for 500M users. Caching them at CDN edges with no personalisation collapses 60% of origin traffic to zero cost.</p>
+</blockquote>
+<hr />
+<h3 id="sync-vs-async-aggregation">Sync vs Async Aggregation</h3>
+<blockquote>
+<p>[!IMPORTANT]
+The Kafka aggregation pipeline is a <strong>correctness requirement</strong>, not a performance optimisation. Without it:
+- Every one of 5B daily searches would need to update shared frequency state synchronously
+- 700K QPS × trie write lock = instant serialisation bottleneck
+- The trie would never be consistent under concurrent writes</p>
+<p>Kafka + batch aggregation decouples write throughput from read performance entirely.</p>
+</blockquote>
+<hr />
+<h2 id="13-frontend-notes">13. Frontend Notes</h2>
+<p><em>Autocomplete is 90% backend / 10% frontend. The frontend problem is preventing unnecessary requests and making the dropdown feel instant.</em></p>
+<h3 id="debounce-not-throttle">Debounce — Not Throttle</h3>
+<p>I debounce at <strong>150ms</strong>, not throttle. Throttle fires at fixed intervals (so "apple" fires for "a","ap","app","appl","apple" regardless). Debounce fires only after the user pauses — "apple" likely fires once at "appl" or "apple". This eliminates ~60% of outbound requests at no perceived cost to the user.</p>
+<pre><code class="language-js">const debouncedFetch = useMemo(
+  () =&gt; debounce((query) =&gt; fetchSuggestions(query), 150),
+  []
+);
+</code></pre>
+<h3 id="abortcontroller-cancel-in-flight-requests">AbortController — Cancel In-Flight Requests</h3>
+<pre><code class="language-js">const controllerRef = useRef(null);
+
+const fetchSuggestions = async (query) =&gt; {
+  controllerRef.current?.abort(); // cancel previous in-flight request
+  controllerRef.current = new AbortController();
+  const res = await fetch(`/autocomplete?q=${query}`, {
+    signal: controllerRef.current.signal
+  });
+};
+</code></pre>
+<p>Without AbortController, a fast typist fires 5 requests in 500ms. Responses arrive out of order. Suggestions flicker. This prevents it.</p>
+<h3 id="client-side-lru-cache">Client-Side LRU Cache</h3>
+<pre><code class="language-js">const cache = new Map(); // LRU, max 200 entries, TTL 5min
+
+const getFromCache = (prefix) =&gt; {
+  const entry = cache.get(prefix);
+  if (!entry) return null;
+  if (Date.now() - entry.ts &gt; 300_000) { cache.delete(prefix); return null; }
+  return entry.suggestions;
+};
+</code></pre>
+<p>User types "apple" → backspaces to "appl" → "apple" again → served from cache in 0ms. Hit rate ~40%.</p>
+<h3 id="keyboard-navigation">Keyboard Navigation</h3>
+<p>Arrow Up/Down to navigate suggestions, Enter to select, Escape to close. Use <code>aria-activedescendant</code> to announce selected item to screen readers. Never use <code>blur</code> event to close dropdown — it fires before click, breaking mouse selection. Use <code>mousedown</code> with <code>preventDefault</code> instead.</p>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem it solves</th>
+<th>Trade-off accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pre-computed topK at every trie node</td>
+<td>700K QPS read — DFS at request time is O(subtree), unbounded</td>
+<td>Higher write-time cost (hourly rebuild DFS)</td>
+</tr>
+<tr>
+<td>Shard trie by first character</td>
+<td>Single Redis node can't serve 700K QPS; avoids cross-shard scatter-gather</td>
+<td>Uneven shard load (shard "s" is 4× busiest)</td>
+</tr>
+<tr>
+<td>CDN cache for 1–3 char prefixes</td>
+<td>Short prefixes identical for all users — no need to hit origin</td>
+<td>5-min staleness for trending on short prefixes</td>
+</tr>
+<tr>
+<td>Kafka + hourly Spark batch</td>
+<td>5B events/day can't be applied synchronously to shared trie state</td>
+<td>1-hour staleness for new trending terms</td>
+</tr>
+<tr>
+<td>Flink 5-min trending overlay</td>
+<td>Viral queries need fresher signal than 1hr</td>
+<td>Trending displayed separately, not merged into trie</td>
+</tr>
+<tr>
+<td>Elasticsearch as fuzzy fallback only</td>
+<td>Typos are ~5% of traffic; ES is 100× slower than trie for prefix</td>
+<td>Fuzzy fallback is slower (~150ms); acceptable for error path</td>
+</tr>
+<tr>
+<td>Personalisation: 0.7/0.3 blend</td>
+<td>Pure global ranking ignores user intent; pure personal ranking surfaces niche terms</td>
+<td>Slight ranking divergence from global relevance</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>Fast Path (latency-optimised):
+  User keystroke
+    → 150ms debounce
+    → Client LRU cache (0ms, 40% hit)
+    → CDN edge cache (10ms, 60% of short-prefix traffic)
+    → Redis Trie shard (1-2ms)
+    → Personal history blend (0.5ms)
+    → Top-10 response
+
+Reliable Path (correctness-guaranteed):
+  Search completion event
+    → Kafka (durable log, at-least-once)
+    → Flink (5min trending freshness)
+    → Spark (hourly full frequency recompute)
+    → Cassandra (query frequency source of truth)
+    → Trie Builder (pre-compute topK)
+    → Redis atomic swap (zero-downtime update)
+</code></pre>
+<h3 id="key-insights-checklist">Key Insights Checklist</h3>
+<blockquote>
+<p>[!TIP]
+Say these out loud in the interview:</p>
+</blockquote>
+<ol>
+<li>"Autocomplete is not search. Search handles complex queries with heavy computation at request time. Autocomplete is prefix-based and precomputed. They share a search box but nothing else architecturally."</li>
+<li>"I never compute suggestions at query time. Every prefix has its top-K pre-ranked suggestions stored at the trie node — computed offline by the Trie Builder, once per hour. The read path is pure lookup, zero computation."</li>
+<li>"I store top-K at every trie node — not just leaf nodes. A standard trie requires DFS over the subtree to find completions: O(subtree size), unbounded. With precomputed topK at every node, reading 'apple' is O(5) lookups. Trie alone is not enough — trie + precomputed topK is the complete solution."</li>
+<li>"Trie updates are batch, not real-time. Updating the trie per search event means distributed locks, concurrent topK propagation up ancestor nodes, and race conditions. Batch rebuild once an hour eliminates all of that — the trie is immutable between rebuilds."</li>
+<li>"I shard by prefix range, not by hash. Hash sharding would scatter a single prefix traversal across all 26 shards — 26× latency, 26× network calls. Prefix-range sharding guarantees every query hits exactly one shard."</li>
+<li>"Personalisation covers 30% of the ranking signal at request time, from a 100-item Redis set per user (~0.5ms). The other 70% is precomputed in the trie. I can't precompute personalised suggestions — 500M users × 1M prefixes = 500 trillion entries."</li>
+<li>"Short prefixes like 'a', 'ap', 'app' are globally identical for 99.9% of users. CDN caching without a user ID collapses 60% of autocomplete traffic before it ever reaches origin."</li>
+<li>"I debounce at 150ms on the client. A user typing 'apple' fires 5 potential requests in 300ms. Debounce collapses them to one. The client is the cheapest place to kill unnecessary work at 700K QPS."</li>
+</ol></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

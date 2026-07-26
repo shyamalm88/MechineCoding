@@ -1,0 +1,957 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design: Ride Booking (Uber / Rapido) — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html" aria-current="page">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="system-design-ride-booking-uber-rapido">System Design: Ride Booking (Uber / Rapido)</h1>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design a ride-booking platform (Uber / Rapido) supporting fare estimation, driver matching, real-time location tracking, and payment — at millions of concurrent users and drivers.</p>
+<p><strong>In Scope:</strong> Fare estimation, ride booking, driver matching, real-time location tracking (rider and driver), trip start/end, ratings, payments, surge pricing.</p>
+<p><strong>Out of Scope:</strong> Driver onboarding, fleet management, surge zone boundary drawing, fraud detection internals, driver incentive programs.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<pre><code>Inputs:
+  Total drivers online:       5 million
+  Daily rides:                20 million
+  Peak concurrent requests:   500,000
+  Location update frequency:  every 1s (ON_TRIP), every 2s (RESERVED), every 5s (IDLE)
+
+Location writes/sec:
+  5M drivers x (1 update / 3s avg) = ~1.67M writes/sec -&gt; Redis must handle this
+
+WebSocket connections (peak):
+  5M drivers + ~2M active riders = ~7M persistent connections
+
+Trip events/sec (Kafka):
+  20M rides/day / 86,400s = ~232 events/sec (well within Kafka capacity)
+
+Storage:
+  Trip record: ~1 KB x 20M rides/day = 20 GB/day (PostgreSQL)
+  Location history (waypoints): ~500 GPS points x 16B x 20M trips = ~160 GB/day (cold)
+  Driver metadata: 5M drivers x 1 KB = 5 GB (static, fits in memory)
+
+Bandwidth comparison:
+  Location update frame (WebSocket): ~20 bytes
+  Location update frame (HTTP polling): ~2 KB (headers + body)
+  At 1.67M updates/sec: WebSocket = 33 MB/s vs HTTP = 3.3 GB/s -&gt; WebSocket wins 100x
+</code></pre>
+<p>These numbers drive the following decisions: Redis for geospatial search (not PostGIS), WebSocket (not HTTP polling), Kafka for fan-out (not direct server-to-server calls), and state-adaptive location frequency (not a fixed 1s tick).</p>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ol>
+<li>Rider gets a fare estimate (per vehicle type) for a pickup and drop location</li>
+<li>Rider books a ride; system matches a nearby available driver within 60 seconds</li>
+<li>Driver accepts or denies the ride offer (15-second window)</li>
+<li>Both rider and driver track each other on a live map</li>
+<li>Trip starts and ends; fare is finalized and payment is processed</li>
+<li>Rider and driver rate each other after trip completion</li>
+<li>Rider can cancel a ride before driver arrival; driver can cancel before trip start</li>
+</ol>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Latency — driver matching</td>
+<td>&lt; 300ms to dispatch first offer</td>
+</tr>
+<tr>
+<td>Latency — location update visible to rider</td>
+<td>&lt; 2s end-to-end</td>
+</tr>
+<tr>
+<td>Availability (rider-facing)</td>
+<td>99.9% — app down = revenue loss</td>
+</tr>
+<tr>
+<td>Consistency (driver assignment)</td>
+<td>Strong — a driver must never be assigned to two rides simultaneously</td>
+</tr>
+<tr>
+<td>Durability (trip + billing data)</td>
+<td>Zero loss — replicated DB + Kafka retention</td>
+</tr>
+<tr>
+<td>Location update throughput</td>
+<td>1.67M writes/sec sustained</td>
+</tr>
+<tr>
+<td>WebSocket connections</td>
+<td>7M concurrent at peak</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Consistency Model by Component:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Consistency</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Driver assignment (Redis WATCH/EXEC)</td>
+<td>Strong</td>
+<td>Prevents double-booking</td>
+</tr>
+<tr>
+<td>Driver location (Redis Geo)</td>
+<td>Eventual</td>
+<td>Overwrites on next tick; ephemeral</td>
+</tr>
+<tr>
+<td>Trip record (PostgreSQL)</td>
+<td>Strong (ACID)</td>
+<td>Financial correctness</td>
+</tr>
+<tr>
+<td>Surge multiplier (Redis cache)</td>
+<td>Eventual (60s TTL)</td>
+<td>Slight staleness is acceptable</td>
+</tr>
+<tr>
+<td>Ride history (read replica)</td>
+<td>Eventual</td>
+<td>Acceptable for non-real-time reads</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>CAP Theorem framing:</strong> This system intentionally makes different consistency trade-offs per component. Rider-facing read services (fare estimate, history) prefer availability. Driver assignment prefers strong consistency. Stating this explicitly in an interview shows CAP awareness at a component level — not a single global answer.</p>
+</blockquote>
+<hr />
+<h2 id="5-mental-model">5. 🧠 Mental Model</h2>
+<p>Uber is two concurrent real-time systems: <strong>location tracking</strong> and <strong>driver matching</strong>. Every 1–5 seconds, millions of drivers push their GPS coordinates into a geo-indexed in-memory store. When a rider requests a trip, the system finds the closest available driver by ETA (not distance), atomically assigns them via a state transition, and keeps both maps in sync — all under 300ms. The hardest problems are concurrency (preventing double-booking) and geospatial search at scale.</p>
+<pre><code>                ┌──────────────────────────────────────────────────────────────┐
+                │                     FAST PATH                                 │
+ ┌──────────┐  │  ┌───────────────┐  GEORADIUS   ┌──────────────┐             │
+ │  Driver  │──►  │ Location Svc  │ ───────────► │ Match Engine │ ──► Driver  │
+ │  App     │  │  │ (Redis Geo)   │              │ (top K score)│    notified  │
+ └──────────┘  │  └───────────────┘              └──────┬───────┘             │
+  every 1-5s   │                                        │ WATCH/MULTI/EXEC    │
+               └────────────────────────────────────────┼─────────────────────┘
+                                                         │
+               ┌─────────────────────────────────────────▼────────────────────┐
+               │                    RELIABLE PATH                               │
+               │  Trip event ──► Kafka ──► Trip DB (PostgreSQL)                │
+               │  (start, end, fare, route) — durable, for billing + history   │
+               └──────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="core-design-principles">Core Design Principles</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Optimized For</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast Path — matching</td>
+<td>Latency (&lt; 300ms end-to-end)</td>
+<td>Driver WS → Redis GEOADD → GEORADIUS → WATCH/MULTI/EXEC → WS push to driver</td>
+</tr>
+<tr>
+<td>Fast Path — live tracking</td>
+<td>Low-latency map sync</td>
+<td>Location Svc → Kafka → rider WebSocket (ON_TRIP only)</td>
+</tr>
+<tr>
+<td>Reliable Path — billing</td>
+<td>Durability (zero revenue loss)</td>
+<td>trip_start / trip_end → Kafka → PostgreSQL (replicated)</td>
+</tr>
+<tr>
+<td>Ephemeral data</td>
+<td>Sub-ms reads, auto-expiry on disconnect</td>
+<td>Driver state + location in Redis with TTL</td>
+</tr>
+<tr>
+<td>Durable data</td>
+<td>Correct billing, audit, replay</td>
+<td>Trip events event-sourced into PostgreSQL via Kafka</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Driver location is fast path only.</strong> Location is overwritten every 1–5 seconds — only the latest value matters. Trip events are reliable path — they drive billing. Never conflate ephemeral real-time data (location) with durable transactional data (trip records).</p>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Both paths run concurrently on every event — they are not sequential. The fast path can fail and self-heal. The reliable path must not fail. Redis TTL is not a weakness; it is the correct primitive for data with a natural expiry.</p>
+</blockquote>
+<hr />
+<h2 id="6-api-design">6. API Design</h2>
+<h3 id="rider-apis">Rider APIs</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td>/api/v1/rides/request</td>
+<td>Request ride {pickup_lat, pickup_lng, dest_lat, dest_lng}, returns {ride_id, fare_estimate, eta}</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/rides/{id}/status</td>
+<td>Poll ride status + driver location</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td>/api/v1/rides/{id}</td>
+<td>Cancel ride (before driver assigned)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/rides/{id}/rating</td>
+<td>Rate driver post-ride</td>
+</tr>
+</tbody>
+</table>
+<h3 id="driver-apis">Driver APIs</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PUT</td>
+<td>/api/v1/drivers/availability</td>
+<td>Toggle online/offline with current location</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/rides/{id}/accept</td>
+<td>Accept dispatched ride request</td>
+</tr>
+<tr>
+<td>PUT</td>
+<td>/api/v1/rides/{id}/status</td>
+<td>Update status: ARRIVED, STARTED, COMPLETED</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/drivers/location</td>
+<td>GPS ping {lat, lng} every 5s</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Async matching design:</strong> POST /rides/request is synchronous only for fare estimation. Driver matching happens asynchronously — the client polls GET /rides/{id}/status. This is why the system can afford to try multiple drivers without blocking the rider.</p>
+</blockquote>
+<hr />
+<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
+<p><strong>The story in plain English:</strong></p>
+<ol>
+<li>Rider taps "Request Ride" — sends <code>POST /rides</code> with pickup and destination coordinates.</li>
+<li>Match Service queries Redis Geo: <code>GEORADIUS drivers:idle:city 3km</code> — returns all idle drivers sorted by distance.</li>
+<li>Match Service filters by vehicle type, rating, and acceptance rate, then ranks by estimated ETA.</li>
+<li>The top driver is atomically reserved in Redis using <code>WATCH/MULTI/EXEC</code> — this prevents two rides from being assigned to the same driver simultaneously (the classic race condition).</li>
+<li>A push notification is sent to the driver's app: "New ride offer — 15 seconds to respond."</li>
+<li>Driver accepts → Match Service locks the driver's state in Redis to RESERVED, and pushes a WebSocket event to the rider: "Driver assigned, ETA 4 min."</li>
+<li>Real-time tracking begins. Driver app sends GPS pings every 1–2 seconds via WebSocket.</li>
+<li>Location Service writes to Redis Geo (overwrites driver position) and publishes to Kafka. A consumer on the rider's server reads the Kafka event and pushes the updated position to the rider's app over WebSocket.</li>
+<li>Driver arrives, starts trip → status set to ON_TRIP in Redis. Trip start event persisted to PostgreSQL via Kafka.</li>
+<li>Driver ends trip → <code>POST /rides/{id}/end</code> with final distance. Fare is calculated and charged asynchronously via Payment Service (Kafka consumer).</li>
+<li>Driver state returns to IDLE in Redis Geo pool — immediately available for the next ride.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant R as Rider App
+    participant LB as Load Balancer
+    participant RS as Ride Service
+    participant MS as Match Service
+    participant LS as Location Service
+    participant Redis as Redis Geo and State
+    participant K as Kafka
+    participant D as Driver App
+    participant NS as Notification Svc
+    participant PS as Payment Service
+    participant DB as PostgreSQL
+
+    Note over R: Rider requests a ride
+    R-&gt;&gt;LB: POST /rides with request_id
+    LB-&gt;&gt;MS: forward booking request
+
+    Note over MS: Step 1 - geo search
+    MS-&gt;&gt;Redis: GEORADIUS drivers:idle:city 3km COUNT 100
+    Redis--&gt;&gt;MS: driver_001 0.3km, driver_002 0.7km
+
+    Note over MS: Step 2 - eligibility filter and ETA rank
+    MS-&gt;&gt;MS: filter by state=IDLE, vehicle type, rating
+    MS-&gt;&gt;MS: score by ETA, rating, acceptance rate
+
+    Note over MS: Step 3 - atomic assignment
+    MS-&gt;&gt;Redis: WATCH driver:state:driver_001
+    MS-&gt;&gt;Redis: MULTI SET state RESERVED ZREM idle pool
+    Redis--&gt;&gt;MS: EXEC OK - driver reserved
+
+    Note over D: Driver receives offer
+    MS-&gt;&gt;NS: push offer to driver_001
+    NS-&gt;&gt;D: WS ride offer - 15s to respond
+
+    D-&gt;&gt;LB: POST /rides/ride_id/respond - accept
+    LB-&gt;&gt;MS: driver accepted
+    MS-&gt;&gt;Redis: SET driver:state:driver_001 RESERVED
+    MS--&gt;&gt;R: WS - driver assigned ETA 4 min
+
+    Note over D,R: Real-time tracking begins
+    D-&gt;&gt;LS: WS location every 1-2s
+    LS-&gt;&gt;Redis: GEOADD overwrite driver position
+    LS-&gt;&gt;K: location_update ride_id lat lng
+    K-&gt;&gt;LS: consumer on rider server reads event
+    LS-&gt;&gt;R: WS push - driver moved
+
+    Note over D: Driver starts trip
+    D-&gt;&gt;LB: POST /rides/ride_id/start
+    MS-&gt;&gt;Redis: SET driver:state ON_TRIP
+    MS-&gt;&gt;K: trip_start event ride_id driver_id timestamp
+    K-&gt;&gt;DB: persist trip record
+
+    Note over D: Driver ends trip
+    D-&gt;&gt;LB: POST /rides/ride_id/end with final_distance_km
+    MS-&gt;&gt;K: trip_end event fare distance route
+    K-&gt;&gt;PS: consume - charge rider
+    K-&gt;&gt;DB: finalize trip record
+    PS--&gt;&gt;R: WS - payment confirmed
+    MS-&gt;&gt;Redis: SET driver:state IDLE re-add to idle geo pool
+</div>
+<hr />
+<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    Rider[&quot;Rider App&quot;]
+    Driver[&quot;Driver App&quot;]
+    LB[&quot;Load Balancer / API Gateway&quot;]
+    RS[&quot;Ride Service - fare calc&quot;]
+    MS[&quot;Match Service&quot;]
+    LS[&quot;Location Service&quot;]
+    NS[&quot;Notification Service - FCM/APNs&quot;]
+    DB[(&quot;PostgreSQL - trips, users, drivers&quot;)]
+    Redis[(&quot;Redis - geo index, state, lock&quot;)]
+    Maps[&quot;Google Maps API&quot;]
+
+    Rider --&gt;|HTTPS| LB
+    Driver --&gt;|WebSocket| LB
+    LB --&gt; RS
+    LB --&gt; MS
+    LB --&gt; LS
+    RS --&gt; Maps
+    RS --&gt; DB
+    MS --&gt; Redis
+    MS --&gt; NS
+    LS --&gt; Redis
+    NS --&gt;|push| Driver
+</div>
+<h3 id="evolved-design-with-kafka-and-surge-pricing">Evolved Design (with Kafka and Surge Pricing)</h3>
+<div class="mermaid">
+graph TD
+    Rider[&quot;Rider App&quot;]
+    Driver[&quot;Driver App&quot;]
+    LB[&quot;Load Balancer&quot;]
+    RS[&quot;Ride Service&quot;]
+    SC[&quot;Surge Calculator&quot;]
+    MS[&quot;Match Service&quot;]
+    LS[&quot;Location Service&quot;]
+    NS[&quot;Notification Service&quot;]
+    PS[&quot;Payment Service&quot;]
+    RateDB[(&quot;Rate DB - price per km per vehicle&quot;)]
+    ReqDB[(&quot;Ride Request DB - analytics&quot;)]
+    Redis[(&quot;Redis Geo + State + Lock&quot;)]
+    K[[&quot;Kafka - trip events&quot;]]
+    TripDB[(&quot;PostgreSQL - trips, payments&quot;)]
+    Maps[&quot;Google Maps API&quot;]
+
+    Rider --&gt;|HTTPS| LB
+    Driver --&gt;|WebSocket| LB
+    LB --&gt; RS
+    LB --&gt; MS
+    LB --&gt; LS
+    RS --&gt; Maps
+    RS --&gt; RateDB
+    RS --&gt; ReqDB
+    ReqDB --&gt; SC
+    SC --&gt;|surge multiplier| Redis
+    RS --&gt;|reads surge from Redis| RS
+    MS --&gt; Redis
+    MS --&gt; NS
+    LS --&gt; Redis
+    LS --&gt; K
+    K --&gt; TripDB
+    K --&gt; PS
+</div>
+<hr />
+<h2 id="9-data-model">9. Data Model</h2>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns</th>
+<th>Why this store</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Driver live location</td>
+<td>Redis Geo sorted set</td>
+<td>drivers:idle:city → driver_id, lng, lat</td>
+<td>1.67M writes/sec; ephemeral; sub-ms GEORADIUS queries</td>
+</tr>
+<tr>
+<td>Driver state</td>
+<td>Redis key-value with TTL</td>
+<td>driver:state:driver_id → IDLE / RESERVED / ON_TRIP</td>
+<td>Atomic WATCH/EXEC for double-booking prevention; TTL self-heals on disconnect</td>
+</tr>
+<tr>
+<td>Trip record</td>
+<td>PostgreSQL</td>
+<td>trip_id, rider_id, driver_id, status, pickup, dropoff, fare, started_at, ended_at</td>
+<td>ACID for financial correctness; strong consistency on fare and payment</td>
+</tr>
+<tr>
+<td>Payment record</td>
+<td>PostgreSQL</td>
+<td>payment_id, trip_id, amount, status, method, created_at</td>
+<td>ACID; joins with trip record for reconciliation</td>
+</tr>
+<tr>
+<td>Surge multiplier</td>
+<td>Redis key-value with TTL 60s</td>
+<td>surge:geohash → multiplier float</td>
+<td>Cache layer; 60s staleness acceptable; SC writes, RS reads</td>
+</tr>
+<tr>
+<td>Ride request log</td>
+<td>Analytics DB (Cassandra or BigQuery)</td>
+<td>request_id, geohash, vehicle_type, timestamp</td>
+<td>High-write analytics; feeds Surge Calculator; no ACID needed</td>
+</tr>
+<tr>
+<td>Waypoints (GPS trace)</td>
+<td>Object storage (S3)</td>
+<td>waypoints/trip_id.jsonl</td>
+<td>~160 GB/day; cold after trip ends; no random access needed</td>
+</tr>
+<tr>
+<td>Driver metadata</td>
+<td>PostgreSQL + Redis cache</td>
+<td>driver_id, name, vehicle, rating, acceptance_rate</td>
+<td>Static metadata; cached in Redis TTL 5m after first read</td>
+</tr>
+<tr>
+<td>User / rider profile</td>
+<td>PostgreSQL</td>
+<td>user_id, name, phone, email, payment_method</td>
+<td>Relational; infrequent writes; strong consistency on payment method</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-deep-dives">10. Deep Dives</h2>
+<h3 id="71-driver-matching-with-geohash-and-atomic-assignment">7.1 Driver Matching with Geohash and Atomic Assignment</h3>
+<p>Here is the problem we are solving: when a rider requests a trip, find the best available nearby driver, offer them the ride, and assign atomically — without double-booking — in under 300ms. Five million drivers are in the pool. Naive: scan all drivers in the DB — impossible at scale.</p>
+<p><strong>Naive solution fails:</strong> A full-table scan of 5M driver rows per ride request at 500K peak requests/sec = 2.5 trillion row scans per second. No relational DB survives this.</p>
+<p><strong>Chosen solution — five-step pipeline:</strong></p>
+<pre><code>Step 1: Geo index search     -&gt; GEORADIUS -&gt; top 100 candidates within 2km
+Step 2: Eligibility filter   -&gt; state=IDLE, vehicle type, rating, acceptance rate
+Step 3: ETA-based ranking    -&gt; call routing engine for top 20; score by ETA + quality
+Step 4: Sequential dispatch  -&gt; offer to top driver, 15s window; expand if exhausted
+Step 5: Atomic state lock    -&gt; WATCH/MULTI/EXEC: IDLE -&gt; RESERVED atomically
+</code></pre>
+<p><strong>Why H3 over plain geohash for production:</strong></p>
+<p>Geohash cells are rectangles — corner distances are longer than edge distances, causing search radius inconsistencies. Uber's H3 uses hexagons: every cell has exactly 6 equidistant neighbors, so "expand to adjacent cell" expands coverage uniformly in all directions. For this design, Redis built-in GEORADIUS (geohash-based) is acceptable; H3 is the production upgrade.</p>
+<p><strong>The atomic assignment — no separate lock service:</strong></p>
+<pre><code>WATCH driver:state:driver_001
+  current = GET driver:state:driver_001
+  IF current != &quot;IDLE&quot;: DISCARD  -- another server got here first
+MULTI
+  SET driver:state:driver_001  RESERVED  EX 30
+  ZREM drivers:idle:bangalore  driver_001
+EXEC
+  -&gt; nil  EXEC failed -- state changed between WATCH and EXEC, skip driver
+  -&gt; OK   atomic commit -- driver is RESERVED, removed from idle pool
+</code></pre>
+<p>Two servers racing to reserve the same driver: only one EXEC commits. The other gets nil and moves to the next candidate. No separate lock key. No lock service. The state is the truth.</p>
+<p><strong>Dispatch expansion:</strong></p>
+<pre><code>Round 1: 2km, 2-min timeout  -- quality match (close driver, good ETA)
+Round 2: 3km, 2-min timeout  -- balance quality + availability
+Round 3: 5km, 2-min timeout  -- availability over quality
+Round 4: fail request        -- &quot;no driver found&quot;
+</code></pre>
+<div class="mermaid">
+flowchart TD
+    A[&quot;Ride request received&quot;] --&gt; B[&quot;Step 1+2: GEORADIUS + eligibility filter&quot;]
+    B --&gt; C[&quot;Step 3: ETA-rank top 20&quot;]
+    C --&gt; D[&quot;Step 4: Take top driver&quot;]
+    D --&gt; E[&quot;WATCH/MULTI/EXEC: IDLE to RESERVED&quot;]
+    E --&gt;|EXEC nil - already taken| D
+    E --&gt;|EXEC OK| F[&quot;Push offer via WebSocket - 15s timeout&quot;]
+    F --&gt;|ACCEPT| G[&quot;Confirmed. Notify rider.&quot;]
+    F --&gt;|DENY or timeout| H[&quot;RESERVED to IDLE. Next candidate.&quot;]
+    H --&gt; D
+    D --&gt;|All candidates exhausted| I[&quot;Expand radius: 2km to 3km to 5km&quot;]
+    I --&gt;|Max radius exhausted| J[&quot;No driver found - return error&quot;]
+    I --&gt; B
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Matching is not about finding the nearest driver — it is about finding the fastest pickup. ETA is the metric, not distance. A driver 0.5km away in traffic has a worse ETA than one 1.2km away on an open road. Every system that ranks by distance is optimizing for the wrong thing.</p>
+<p>[!IMPORTANT]
+<strong>State machine replaces distributed locks.</strong> The atomic IDLE → RESERVED transition ensures a driver is either fully available or fully reserved — never both. No ZooKeeper, no Redlock, no DB row lock. The state is the truth.</p>
+</blockquote>
+<hr />
+<h3 id="72-surge-pricing-algorithm">7.2 Surge Pricing Algorithm</h3>
+<p>Here is the problem we are solving: at peak demand, more riders request rides than drivers are available. Without price adjustment, all riders compete for the same few drivers, matching fails, and drivers earn less. Surge pricing signals scarcity to both sides — it is a market-clearing mechanism, not a revenue grab.</p>
+<p><strong>Naive solution fails:</strong> Static per-km rates mean the same price during a 3am downpour as a sunny Tuesday morning. Matching rate drops. Rider wait times spike. Drivers have no incentive to come online.</p>
+<p><strong>Chosen solution — demand-signal feedback loop:</strong></p>
+<div class="mermaid">
+graph LR
+    R[&quot;Fare requests&quot;] --&gt; ReqDB[(&quot;Ride Request DB&quot;)]
+    ReqDB --&gt; SC[&quot;Surge Calculator - runs every 60s&quot;]
+    SC --&gt;|reads demand per geohash cell| SC
+    SC --&gt;|writes surge:geohash multiplier| Redis[(&quot;Redis - TTL 60s&quot;)]
+    RS[&quot;Ride Service&quot;] --&gt;|reads multiplier on each fare call| Redis
+    RS --&gt;|final fare = base x multiplier| Rider[&quot;Rider App&quot;]
+</div>
+<p><strong>Surge formula per geohash cell:</strong></p>
+<pre><code>demand_ratio = active_ride_requests / idle_drivers_in_cell
+multiplier:
+  ratio &lt; 1.0   -&gt; 1.0x  (supply exceeds demand)
+  ratio 1.0-1.5 -&gt; 1.2x
+  ratio 1.5-2.0 -&gt; 1.5x
+  ratio 2.0-3.0 -&gt; 2.0x
+  ratio &gt; 3.0   -&gt; 3.0x  (capped -- prevents extreme pricing)
+</code></pre>
+<ul>
+<li>Surge Calculator runs every 60 seconds, writes <code>surge:{geohash}</code> to Redis (TTL 60s)</li>
+<li>Ride Service reads the multiplier on each fare call (sub-ms Redis read)</li>
+<li>Rider sees the multiplier before confirming — informed consent (legal requirement in most markets)</li>
+<li>Surge does not affect matching logic — it only affects the fare shown to the rider</li>
+</ul>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Surge pricing is a read-path concern only — it does not affect matching. The Surge Calculator is a separate service feeding data into Redis. The matching engine never reads it. Decoupling surge calculation from matching prevents a slow analytics query from blocking a 300ms matching window.</p>
+</blockquote>
+<p><strong>Trade-off — eventual consistency on surge:</strong> A 60-second Redis TTL means surge multiplier can be up to 60s stale. A rider booking 30 seconds after a demand spike may see the old price. This is acceptable: the fare shown at request time is the fare charged (contractual), and 60s staleness does not meaningfully harm either party.</p>
+<hr />
+<h3 id="73-real-time-location-write-architecture">7.3 Real-Time Location Write Architecture</h3>
+<p>Here is the problem we are solving: 1.67 million GPS updates arrive per second from driver devices. Each update must be indexed for sub-ms geospatial lookup. The rider tracking a trip must see the driver move smoothly on their map — but the rider and driver are on different backend servers.</p>
+<p><strong>Naive solution fails:</strong> Writing 1.67M rows/sec to a relational DB creates disk I/O saturation within minutes. Direct server-to-server WebSocket push (Server A to Server B) is impossible in a stateless distributed deployment.</p>
+<p><strong>Chosen solution — three-layer architecture:</strong></p>
+<p><strong>Layer 1 — Write batching:</strong> Location Service buffers 500ms of updates and pipeline-writes to Redis in one round-trip. This reduces Redis round-trips 3–5x without increasing visible latency to the rider (500ms is imperceptible vs 1s update tick).</p>
+<p><strong>Layer 2 — Redis Geo sorted set:</strong> GEOADD overwrites the previous coordinate (O(log N) per write). GEORADIUS scans a bounding box (O(N+log M)). No locking. No transactions. This is why Redis Geo handles 1.67M concurrent writes while serving sub-10ms matching queries simultaneously.</p>
+<p><strong>Layer 3 — Kafka fan-out for ON_TRIP tracking:</strong></p>
+<div class="mermaid">
+sequenceDiagram
+    participant D as Driver App
+    participant LSA as Location Svc A
+    participant Redis as Redis Geo
+    participant K as Kafka
+    participant LSB as Location Svc B
+    participant R as Rider App
+
+    Note over D: Every 1s when ON_TRIP
+    D-&gt;&gt;LSA: WS lat lng heading speed driver_id state
+    LSA-&gt;&gt;Redis: GEOADD drivers:idle:city lng lat driver_id
+    Note over LSA,Redis: Overwrites previous coordinate - only latest matters
+
+    LSA-&gt;&gt;K: location_update driver_id ride_id lat lng
+    Note over K: Partitioned by ride_id - ordered delivery per trip
+    K-&gt;&gt;LSB: Consumer on rider server reads
+    LSB-&gt;&gt;R: WS push driver_moved lat lng eta_seconds
+</div>
+<p><strong>State-adaptive update frequency — accuracy vs cost:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Driver state</th>
+<th>Update frequency</th>
+<th>Redis writes/sec at 5M drivers</th>
+<th>Why this frequency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IDLE</td>
+<td>Every 5s</td>
+<td>1M writes/sec</td>
+<td>No rider watching — coarse position enough for matching</td>
+</tr>
+<tr>
+<td>RESERVED</td>
+<td>Every 2s</td>
+<td>2.5M writes/sec</td>
+<td>Rider watching ETA countdown on map</td>
+</tr>
+<tr>
+<td>ON_TRIP</td>
+<td>Every 1s</td>
+<td>5M writes/sec</td>
+<td>Rider watching live position; smooth animation required</td>
+</tr>
+</tbody>
+</table>
+<p>Sending 1-second updates from IDLE drivers wastes 60–70% of Redis write capacity for zero rider-visible benefit. The state machine already knows each driver's state — frequency is derived from it for free.</p>
+<p><strong>Stale location self-healing:</strong></p>
+<pre><code>Driver phone disconnects -&gt; WebSocket closes -&gt; Location Svc detects
+  -&gt; EXPIRE driver:state:driver_id 30
+  -&gt; After 30s with no heartbeat: key expires -&gt; auto-removed from idle pool
+  -&gt; No stale drivers offered to riders. No cron job needed.
+</code></pre>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Fan-out via Kafka is a correctness requirement, not a performance optimization.</strong> Without it, location updates only reach the rider if they happen to be on the same server as the driver — never guaranteed in a distributed deployment.</p>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Write path and read path never conflict in Redis Geo. Writes overwrite one sorted set entry (O(log N)). Reads scan a bounding box (O(N+log M)). No locking. This is why Redis Geo handles 1.67M concurrent writes while serving sub-10ms matching queries.</p>
+</blockquote>
+<hr />
+<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
+<p><strong>What breaks first as scale grows 10x:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Bottleneck</th>
+<th>Breaks at</th>
+<th>Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Redis location write throughput</td>
+<td>~10M writes/sec</td>
+<td>Shard by city/region: drivers:idle:bangalore, drivers:idle:mumbai. Each shard is an independent Redis cluster.</td>
+</tr>
+<tr>
+<td>Match Service fan-out at surge</td>
+<td>500K ride requests/sec</td>
+<td>Horizontal scale (stateless service); partition ride requests by pickup geohash — each Match Service shard owns a set of cells.</td>
+</tr>
+<tr>
+<td>PostgreSQL trip writes</td>
+<td>~100K writes/sec per primary</td>
+<td>Kafka consumers batch-insert trips (bulk insert 1000 rows vs 1 per event). Add read replicas for ride history queries.</td>
+</tr>
+<tr>
+<td>WebSocket server connections</td>
+<td>~100K connections per server</td>
+<td>Sticky load balancing by driver_id hash; horizontal scale to 70+ servers for 7M connections.</td>
+</tr>
+<tr>
+<td>Surge Calculator at 10x cities</td>
+<td>Slow DB scan</td>
+<td>Pre-aggregate demand counts per geohash cell using Kafka Streams (rolling 5-min window) — write results to Redis instead of scanning the full ride request DB.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Caching strategy:</strong>
+- Driver metadata (name, vehicle, rating): Redis cache TTL 5 minutes — reads on every matching request
+- Surge multiplier: Redis TTL 60s — Surge Calculator writes, Ride Service reads
+- Rate table (price/km): Redis TTL 1 hour — changes infrequently
+- Ride history: read replica + application-level pagination — no caching needed (user reads once)</p>
+<p><strong>CDN / Edge:</strong> Not applicable to the core matching path. Rider and driver apps download static assets (map tiles, app bundles) via CDN. Dynamic API calls and WebSockets must reach origin.</p>
+<hr />
+<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Redis primary fails (location + state)</td>
+<td>Matching halts; active trips lose live map</td>
+<td>Redis Sentinel / Cluster failover in &lt; 30s. Drivers re-register within 15s via heartbeat. Active trips re-establish tracking via Kafka (reliable path unaffected).</td>
+</tr>
+<tr>
+<td>Match Service instance crashes mid-assignment</td>
+<td>Driver reserved but no offer sent; driver stuck in RESERVED</td>
+<td>Redis TTL on driver:state expires in 30s → auto-reverts to IDLE. Rider request retries via Kafka dead-letter queue.</td>
+</tr>
+<tr>
+<td>Kafka broker failure</td>
+<td>Trip events delayed; live tracking fan-out delayed</td>
+<td>Kafka cluster replication (RF=3); consumer lag; events replayed on broker recovery. No data loss.</td>
+</tr>
+<tr>
+<td>PostgreSQL primary fails</td>
+<td>Trip write fails; billing delayed</td>
+<td>PostgreSQL replica promoted (RDS Multi-AZ: &lt; 60s). Kafka retains events during failover — no billing data lost.</td>
+</tr>
+<tr>
+<td>Driver app disconnects mid-trip</td>
+<td>Location updates stop; rider map freezes</td>
+<td>Rider shown "signal lost" UI. Driver reconnects and resumes. If no reconnect in 30s: TTL expires, trip marked as interrupted, ops notified.</td>
+</tr>
+<tr>
+<td>Payment Service unavailable</td>
+<td>Fare not charged at trip end</td>
+<td>Kafka retains trip_end event. Payment Service processes on recovery. Idempotency key prevents double-charge.</td>
+</tr>
+<tr>
+<td>Surge Calculator crash</td>
+<td>Surge multiplier stale (60s TTL expiry)</td>
+<td>Redis TTL expires → fallback to 1x. Surge Calculator restarts; resumes writing within seconds. Brief under-pricing acceptable.</td>
+</tr>
+<tr>
+<td>Double-booking race condition</td>
+<td>Two servers attempt to reserve the same driver</td>
+<td>Redis WATCH/MULTI/EXEC: only one EXEC succeeds. Second server gets nil, skips driver, tries next candidate. Zero double-bookings.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-trade-offs">13. Trade-offs</h2>
+<h3 id="geohash-vs-quadtree-for-driver-geospatial-index">Geohash vs Quadtree for Driver Geospatial Index</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Geohash (Redis Geo)</th>
+<th>Quadtree</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cell shape</td>
+<td>Rectangle — uneven diagonal vs edge distance</td>
+<td>Adaptive subdivision — cells match data density</td>
+</tr>
+<tr>
+<td>Neighbor lookup</td>
+<td>Must check up to 9 cells for edge cases</td>
+<td>Clean tree traversal — 4 children per node</td>
+</tr>
+<tr>
+<td>Write throughput</td>
+<td>In-memory sorted set — 1.67M writes/sec</td>
+<td>Tree rebalancing on write — slower at high write rates</td>
+</tr>
+<tr>
+<td>Operational cost</td>
+<td>Redis built-in GEORADIUS — zero extra infra</td>
+<td>Custom service or library — additional complexity</td>
+</tr>
+<tr>
+<td>Production use</td>
+<td>Industry standard for most systems</td>
+<td>Better for non-uniform density (dense city vs rural)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Redis Geo (geohash) — already in the stack for driver state and locks. GEORADIUS is a single command. The trade-off I accept is rectangular cells with slight edge distortion, which is acceptable because we expand to adjacent cells on radius expansion and the distortion (&lt; 5% area difference) does not materially affect ETA accuracy.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> H3 hexagons (Uber's production choice) solve the corner-distance problem but require a custom indexing layer. For most systems, Redis GEORADIUS is the right default — zero extra infrastructure, built-in neighbor search, proven at scale.</p>
+</blockquote>
+<hr />
+<h3 id="websocket-vs-http-polling-for-live-tracking">WebSocket vs HTTP Polling for Live Tracking</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>WebSocket</th>
+<th>HTTP Polling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connection overhead</td>
+<td>Persistent — one TLS handshake, then frames</td>
+<td>New HTTP request per update — TLS + headers each time</td>
+</tr>
+<tr>
+<td>Write volume at 5M drivers</td>
+<td>1.67M x 20B frames = 33 MB/s</td>
+<td>1.67M x 2KB headers = 3.3 GB/s</td>
+</tr>
+<tr>
+<td>Bidirectional</td>
+<td>Yes — server pushes dispatch offer to driver</td>
+<td>No — driver must poll for offers separately</td>
+</tr>
+<tr>
+<td>Server state</td>
+<td>Stateful sticky routing needed</td>
+<td>Stateless — any server handles any request</td>
+</tr>
+<tr>
+<td>Battery impact</td>
+<td>Low — persistent connection</td>
+<td>High — repeated TLS handshakes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> WebSocket — at 5M drivers updating every 3 seconds, HTTP header overhead alone generates 3.3 GB/s of wasted bytes. WebSocket frames are ~20 bytes. The trade-off I accept is stateful sticky routing (drivers must reconnect to the same server region), which is acceptable because the Location Service is partitioned by city and drivers rarely cross region boundaries mid-shift.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> WebSocket vs HTTP is a math problem. 5M drivers x 1 update/3s x 2KB HTTP overhead = 3.3 GB/s in headers alone. WebSocket frames are ~20 bytes. The transport choice is arithmetic, not preference.</p>
+</blockquote>
+<hr />
+<h3 id="surge-pricing-consistency-eventual-vs-strong">Surge Pricing Consistency — Eventual vs Strong</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Strong consistency (read-your-writes)</th>
+<th>Eventual consistency (Redis TTL 60s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Accuracy</td>
+<td>Multiplier always reflects latest demand</td>
+<td>Up to 60s stale</td>
+</tr>
+<tr>
+<td>Latency impact</td>
+<td>Must read from DB or leader on every fare call</td>
+<td>Redis sub-ms read</td>
+</tr>
+<tr>
+<td>Complexity</td>
+<td>Distributed transaction across Surge Calc + Ride Svc</td>
+<td>Fire-and-forget write to Redis; Ride Svc reads independently</td>
+</tr>
+<tr>
+<td>Rider impact</td>
+<td>Price always reflects current demand</td>
+<td>Rider may see slightly outdated price</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Eventual consistency with 60s TTL. The fare shown at request time is the fare charged (contractual). A 60-second staleness window does not materially harm riders or drivers. The strong-consistency alternative adds a synchronous DB read on every fare call — at 500K peak requests/sec this becomes a DB bottleneck.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Surge pricing staleness is a business tolerance decision, not a technical limitation. 60 seconds is enough granularity for a pricing signal. Exact real-time surge would require a synchronous distributed read on every fare request — the cost is not justified by the precision gained.</p>
+</blockquote>
+<hr />
+<h2 id="14-interview-summary">14. Interview Summary</h2>
+<blockquote>
+<p>[!TIP]
+When the interviewer says "walk me through your Uber design," hit these points in order. Each is a decision with a clear WHY.</p>
+</blockquote>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem It Solves</th>
+<th>Trade-off Accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WebSocket (not HTTP) for location</td>
+<td>3.3 GB/s HTTP header waste at 5M drivers</td>
+<td>Stateful sticky routing per city region</td>
+</tr>
+<tr>
+<td>Redis Geo (not PostGIS) for live positions</td>
+<td>1.67M location writes/sec; sub-ms spatial queries</td>
+<td>Ephemeral — re-registers within 15s on crash</td>
+</tr>
+<tr>
+<td>WATCH/MULTI/EXEC atomic state transition</td>
+<td>Prevents double-booking without a separate lock service</td>
+<td>30s TTL on RESERVED state — rare retry on server crash</td>
+</tr>
+<tr>
+<td>Driver State Machine (IDLE/RESERVED/ON_TRIP)</td>
+<td>Controls pool membership, update frequency, and crash recovery in one mechanism</td>
+<td>State lives in Redis — not durable, but self-healing via TTL</td>
+</tr>
+<tr>
+<td>Kafka for trip events (not direct DB write)</td>
+<td>Decouples 300ms fast matching path from reliable billing write</td>
+<td>5–20ms Kafka lag on durable writes — acceptable</td>
+</tr>
+<tr>
+<td>ETA-based ranking (not distance)</td>
+<td>Riders experience wait time, not map distance</td>
+<td>Routing engine call for each top-K candidate — ~10ms per call</td>
+</tr>
+<tr>
+<td>State-adaptive location frequency</td>
+<td>60–70% Redis write reduction vs fixed 1s tick; no rider-visible degradation</td>
+<td>Requires state machine to be the source of truth for update interval</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>Fast Path   (latency):   Driver WS -&gt; Redis GEOADD -&gt; GEORADIUS -&gt; WATCH/EXEC -&gt; WS push to driver
+                         ON_TRIP tracking: Redis -&gt; Kafka -&gt; WS push to rider map
+
+Reliable Path (safety):  trip_start / trip_end -&gt; Kafka -&gt; PostgreSQL (billing, history)
+                         Fare request -&gt; Ride Request DB -&gt; Surge Calculator -&gt; Redis
+
+Location = fast path only (ephemeral, overwritten every 1-5s, TTL self-heals)
+Trip record = reliable path (durable, drives billing and audit, never lost)
+</code></pre>
+<h3 id="key-insights-checklist">Key Insights Checklist</h3>
+<blockquote>
+<p>[!IMPORTANT]
+These are the lines that make an interviewer lean forward. Know them cold.</p>
+</blockquote>
+<ul>
+<li><strong>"Matching is not about finding the nearest driver — it is about finding the fastest pickup."</strong> We rank by ETA, not distance. Distance is a proxy; ETA is the truth. Every system that ranks by distance is optimizing for the wrong metric.</li>
+<li><strong>"Consistency in driver assignment is enforced through state transitions, not locks."</strong> The atomic IDLE → RESERVED via WATCH/MULTI/EXEC is the mutual exclusion. No separate lock service. No ZooKeeper. The state is the truth.</li>
+<li><strong>"Location data is high-frequency and ephemeral — storing it in a DB creates write bottlenecks."</strong> Redis holds only the current position. TTL self-evicts stale data. The previous coordinate has zero value the moment the next one arrives.</li>
+<li><strong>"Update frequency is a function of driver state, not a single tuning knob."</strong> IDLE drivers waste 60–70% of Redis write capacity if pinged every second. The state machine already knows the state — frequency is derived from it for free.</li>
+<li><strong>"The Kafka queue is a correctness requirement."</strong> Decoupling fast matching (Redis, sub-100ms) from reliable billing (Kafka → DB) is what makes both guarantees achievable simultaneously. Without Kafka, a slow DB write would block the matching path.</li>
+<li><strong>"CAP per component."</strong> Rider-facing services are AP. Driver assignment is CP. The system is not uniformly one or the other — this is the right answer in an interview.</li>
+</ul></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Design: LeetCode / Online Judge — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html" aria-current="page">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="system-design-leetcode-online-judge">System Design: LeetCode / Online Judge</h1>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design LeetCode — a platform where users browse coding problems, write solutions in a browser IDE, submit code for automated judging, and compete in timed competitions with a live leaderboard. The hard problems are safe untrusted code execution at scale and serving a live aggregated ranking to 100K concurrent users without destroying the database.</p>
+<p><strong>In scope:</strong> Problem catalog (browse, filter, view), code submission and judging, isolated code execution, competition mode with up to 100K participants, near-real-time leaderboard (2–5 second freshness).</p>
+<p><strong>Out of scope:</strong> User authentication, admin tooling for problem creation, discussion forums, subscription/payments.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<p><strong>Scale we are designing for:</strong>
+- 100,000 DAU (peak = competition day)
+- 3,000 problems in catalog
+- Competitions: up to 100,000 participants, 90 minutes, 10 problems</p>
+<p><strong>Read QPS:</strong>
+- Problem list: 100K users × 10 sessions/day = 1M reads/day → ~12 QPS (trivial, cacheable)
+- Problem detail: 100K users × 5 views/day = 500K reads/day → ~6 QPS</p>
+<p><strong>Write QPS (submissions):</strong>
+- Normal day: 100K users × 10 submissions/day = 1M/day → ~12 writes/sec
+- Competition average: 100K users over 90 min → ~18 submissions/sec
+- Competition end-of-round burst: final 10 min → <strong>500–1,000 submissions/sec</strong></p>
+<p><strong>Leaderboard read QPS:</strong>
+- 100K users polling every 3 seconds = <strong>~33,000 leaderboard reads/sec</strong> during competition
+- This cannot touch the database — must be served from Redis</p>
+<p><strong>Storage:</strong>
+- 3,000 problems × 50KB avg = ~150MB (trivial)
+- Submissions: 1M/day × 5KB avg = 5GB/day → ~1.8TB/year (PostgreSQL + cold archival)
+- Code blobs: S3, no size concern at this scale</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The leaderboard read volume (33K QPS) is 1,000x the write volume. The problem is not writes — it is serving aggregated read results at scale without re-computing on every request.</p>
+</blockquote>
+<p><em>These numbers drive the following decisions: queue before execution (burst absorption), Redis sorted set for leaderboard (33K QPS from memory), S3 for code blobs (SQS message size limit), Docker warm pool (low startup latency at high throughput).</em></p>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ol>
+<li>Users can browse a paginated, filterable problem list (by difficulty, category)</li>
+<li>Users can view a full problem with description, code stubs per language, and sample test cases</li>
+<li>Users can write code in a browser IDE (Monaco) and submit for judging</li>
+<li>Submissions return pass/fail with per-test-case outcomes and runtime metrics</li>
+<li>Users can join a competition; accepted submissions count toward a live leaderboard</li>
+<li>Users can view the competition leaderboard with near-real-time updates during the contest</li>
+</ol>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Availability</td>
+<td>AP — eventual consistency acceptable; site must stay up for 100K concurrent users</td>
+</tr>
+<tr>
+<td>Code execution security</td>
+<td>Full isolation from host OS, DB, and network per submission</td>
+</tr>
+<tr>
+<td>Submission throughput</td>
+<td>Handle 500–1,000 submissions/sec burst without dropping any</td>
+</tr>
+<tr>
+<td>Leaderboard freshness</td>
+<td>2–5 second update interval during competition</td>
+</tr>
+<tr>
+<td>Submission result latency</td>
+<td>Result visible within ~10 seconds of submit</td>
+</tr>
+<tr>
+<td>Durability</td>
+<td>No submission silently dropped; queue provides persistence</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Consistency Model:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Consistency</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Submission result (DB)</td>
+<td>Strong</td>
+<td>User must see their own result correctly</td>
+</tr>
+<tr>
+<td>Leaderboard (Redis)</td>
+<td>Eventual (~ms CDC lag)</td>
+<td>Stale for milliseconds is acceptable</td>
+</tr>
+<tr>
+<td>Problem catalog (cache)</td>
+<td>Eventual (minutes)</td>
+<td>Problems rarely change; cache TTL is fine</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mental-model">🧠 Mental Model</h2>
+<p>LeetCode is a code execution pipeline wrapped around a problem catalog. Three flows define the system: users browse problems (simple read-heavy), submit code for judging (async queue + isolated container), and compete with a live leaderboard (Redis sorted set updated via CDC). The hardest part is not storing problems — it is safely running untrusted code at scale and serving an aggregated leaderboard to 33K concurrent readers without touching the database on every request.</p>
+<pre><code>                   ┌──────────────────────────────────────────────────────────────┐
+                   │                      FAST PATH (Submit)                       │
+ ┌────────┐ POST  │  ┌────────┐  enqueue  ┌────────┐  dispatch  ┌─────────────┐ │
+ │ Client │──────►│  │  API   │──────────►│  SQS   │───────────►│ Worker +    │ │
+ │(Monaco)│       │  │ Server │           │ Queue  │            │ Docker      │ │
+ └────┬───┘       │  └────────┘           └────────┘            │ Container   │ │
+      │  GET/poll │                                              └──────┬──────┘ │
+      │◄──────────│────────────────────────────────────────────────────│        │
+      │           │                                               write │ result │
+      │           └────────────────────────────────────────────────────┼────────┘
+      │                                                                 │
+      │           ┌─────────────────────────────────────────────────────▼────────┐
+      │           │                  RELIABLE PATH (Leaderboard)                  │
+      │           │  DB write → CDC → Kafka → Worker → Redis ZADD                │
+      │           │  GET /leaderboard → API → Redis ZRANGE → done                │
+      └───────────└──────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="core-design-principles">⚡ Core Design Principles</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Optimized For</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast Path</td>
+<td>Throughput — zero submission drops</td>
+<td>SQS queue absorbs burst; 202 Accepted immediately; Docker worker drains at capacity</td>
+</tr>
+<tr>
+<td>Reliable Path</td>
+<td>Leaderboard freshness without DB reads</td>
+<td>CDC on PostgreSQL emits events; Kafka consumer does ZADD to Redis sorted set</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-api-design">6. API Design</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td>/api/v1/problems?difficulty=&amp;tags=&amp;page=</td>
+<td>List problems with filters and pagination</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/problems/{id}</td>
+<td>Problem detail — description, constraints, examples</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/submissions</td>
+<td>Submit code {problem_id, language, code} → returns {submission_id} immediately (async)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/submissions/{id}</td>
+<td>Poll result — status: PENDING / RUNNING / ACCEPTED / WRONG_ANSWER / TLE / MLE</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/leaderboard/{contest_id}?page=</td>
+<td>Contest leaderboard — paginated, sorted by score desc</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/contests/{id}/register</td>
+<td>Register for a contest</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>POST /submissions is the most important endpoint — it is intentionally async.</strong> The submission is queued immediately and the client polls GET /submissions/{id} every 3 seconds. This is NOT a design compromise — LeetCode itself works this way. Polling is correct here because execution time is variable (milliseconds to seconds), and WebSocket would be overkill for a single status check.</p>
+</blockquote>
+<hr />
+<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
+<p>User submits code → API enqueues → Docker worker judges → client polls for result → leaderboard updates via CDC.</p>
+<p><strong>The story in plain English:</strong></p>
+<ol>
+<li>User clicks "Submit" — <code>POST /submissions {problem_id, language, code}</code> is sent to the API.</li>
+<li>API uploads the code blob to S3 — we never store raw code in the database. S3 is cheaper and handles large payloads better.</li>
+<li>API enqueues a job to SQS: <code>{submission_id, s3_url, language, test_case_ids}</code>. Returns <code>202 Accepted</code> with <code>submission_id</code> immediately — no waiting.</li>
+<li>Client starts polling <code>GET /submissions/{id}</code> every 3 seconds. This is intentional — execution time is variable (ms to seconds), so polling is simpler and correct here. Not a WebSocket — you don't need a persistent connection for a one-time result.</li>
+<li>A Judge Worker picks up the job from SQS. It fetches the code from S3 and spins up a Docker container with the right language runtime.</li>
+<li>The container runs the code against all test cases with hard limits: 5 second CPU timeout, 256MB memory cap, read-only filesystem, network disabled. The container is destroyed after execution — no state leaks between submissions.</li>
+<li>Worker writes the result to PostgreSQL: status (ACCEPTED / WRONG_ANSWER / TLE / MLE), runtime_ms, memory_kb, test case details.</li>
+<li>PostgreSQL CDC (logical replication) emits the change event to Kafka.</li>
+<li>A consumer reads the Kafka event and executes <code>ZADD leaderboard:{contest_id} {score} {user_id}</code> in Redis. The leaderboard updates without the judge worker needing to know about it.</li>
+<li>Next poll from the client hits the API → PostgreSQL read → result returned. Client shows the verdict.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant API
+    participant S3
+    participant SQS
+    participant Worker
+    participant Docker
+    participant DB
+    participant CDC
+    participant Redis
+
+    Client-&gt;&gt;API: POST /problems/:id/submissions (code, language, competition_id)
+    API-&gt;&gt;S3: Upload code blob
+    API-&gt;&gt;SQS: Enqueue job (submission_id, s3_url, language, test_cases)
+    API--&gt;&gt;Client: 202 Accepted - submission_id
+
+    Note over SQS,Docker: Workers drain queue at available container capacity
+    Worker-&gt;&gt;SQS: Poll for jobs
+    SQS--&gt;&gt;Worker: Job batch
+    Worker-&gt;&gt;S3: Fetch code blob
+    Worker-&gt;&gt;Docker: Run code in isolated container (5s timeout)
+    Docker--&gt;&gt;Worker: Pass/fail + test results + runtime_ms
+    Worker-&gt;&gt;DB: Write submission row (status, results)
+    DB--&gt;&gt;CDC: Emit change event (logical replication)
+    CDC-&gt;&gt;Redis: ZADD leaderboard:comp_id score user_id
+
+    Note over Client,DB: Client polls every 3 seconds
+    Client-&gt;&gt;API: GET /submissions/:submission_id
+    API-&gt;&gt;DB: SELECT WHERE id = :id
+    DB--&gt;&gt;API: Submission row
+    API--&gt;&gt;Client: Result (passed/failed + details)
+</div>
+<hr />
+<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Browser Client - Monaco IDE&quot;]
+    LB[&quot;Load Balancer&quot;]
+    API[&quot;Primary API Server&quot;]
+    DB[(&quot;PostgreSQL DB&quot;)]
+    Containers[&quot;Docker Containers - one per runtime&quot;]
+
+    Client --&gt;|HTTPS| LB
+    LB --&gt; API
+    API --&gt;|Read problems, write submissions| DB
+    API --&gt;|Dispatch code directly| Containers
+    Containers --&gt;|Pass/fail result| API
+</div>
+<h3 id="evolved-design-queue-cache-cdc">Evolved Design — Queue, Cache, CDC</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Browser Client&quot;]
+    LB[&quot;Load Balancer&quot;]
+    API[&quot;Primary API Server&quot;]
+    DB[(&quot;PostgreSQL DB&quot;)]
+    Queue[[&quot;SQS Queue&quot;]]
+    Worker[&quot;Submission Worker&quot;]
+    Docker[&quot;Docker Containers - Python, Java, JS, Go&quot;]
+    Redis([&quot;Redis - Leaderboard ZSET&quot;])
+    CDC[&quot;CDC Stream - Postgres logical replication&quot;]
+    Kafka[[&quot;Kafka - CDC event bus&quot;]]
+    S3[(&quot;S3 - Code Blobs&quot;)]
+
+    Client --&gt;|GET problems, POST submit, GET poll| LB
+    LB --&gt; API
+    API --&gt;|Read problems| DB
+    API --&gt;|Store code blob| S3
+    API --&gt;|Enqueue submission ref| Queue
+    Queue --&gt;|Pull job| Worker
+    Worker --&gt;|Fetch code| S3
+    Worker --&gt;|Run code| Docker
+    Docker --&gt;|Result| Worker
+    Worker --&gt;|Write submission row| DB
+    DB --&gt;|Change stream| CDC
+    CDC --&gt;|Publish event| Kafka
+    Kafka --&gt;|Consume| Worker
+    Worker --&gt;|ZADD score| Redis
+    API --&gt;|ZRANGE leaderboard| Redis
+    API --&gt;|GET submission status| DB
+</div>
+<hr />
+<h2 id="9-data-model">9. Data Model</h2>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns</th>
+<th>Why this store</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Problems</td>
+<td>PostgreSQL</td>
+<td>problem_id, title, difficulty, category, description, test_cases</td>
+<td>Relational structure; rarely written; cacheable at API layer</td>
+</tr>
+<tr>
+<td>Submissions</td>
+<td>PostgreSQL</td>
+<td>submission_id, user_id, problem_id, competition_id, status, passed, runtime_ms, submitted_at</td>
+<td>ACID correctness required; source of truth for CDC</td>
+</tr>
+<tr>
+<td>Code blobs</td>
+<td>S3</td>
+<td>s3_key (submission_id), language</td>
+<td>Binary blobs; cheap object storage; keeps queue messages small</td>
+</tr>
+<tr>
+<td>Leaderboard</td>
+<td>Redis Sorted Set</td>
+<td>key: leaderboard:{competition_id} — member: user_id, score: composite float</td>
+<td>O(log n) ZADD and ZRANGE; 33K QPS from memory; no DB at read time</td>
+</tr>
+<tr>
+<td>Results cache</td>
+<td>Redis String</td>
+<td>key: result:{submission_id} — value: serialized result</td>
+<td>Short TTL (60s); reduces DB polling load during high-traffic contests</td>
+</tr>
+<tr>
+<td>Problem list cache</td>
+<td>Redis / CDN</td>
+<td>key: problems:{category}:{difficulty}:{page}</td>
+<td>Read-heavy, rarely changes; TTL of minutes is acceptable</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Composite leaderboard score encoding:</strong></p>
+<pre><code>score = problems_solved + (1 / submitted_at_unix_timestamp)
+</code></pre>
+<p>More solved problems = higher integer part. Among ties, faster last solve = higher fractional value. Stored as a single float in the sorted set — no recomputation at read time.</p>
+<hr />
+<h2 id="10-deep-dives">10. Deep Dives</h2>
+<h3 id="71-docker-container-isolation-and-security-hardening">7.1 Docker Container Isolation and Security Hardening</h3>
+<p>Here is the problem we are solving: users submit arbitrary code we have no control over. Running it directly on the API server means malicious code can delete our database, exfiltrate credentials, run crypto miners, or fork-bomb the host. Isolation is a correctness requirement — not an optimization.</p>
+<p><strong>Naive solution:</strong> Spawn a process directly on the API server to execute code. Fails immediately — a single <code>os.system("rm -rf /")</code> or infinite loop takes down the entire service.</p>
+<p><strong>VM per execution:</strong> Full OS isolation, maximum security. Problem: VMs take minutes to boot and consume gigabytes of memory. At 500 submissions/sec during a burst, the resource cost is prohibitive.</p>
+<p><strong>Chosen: Docker containers with a warm pool</strong></p>
+<p>One container per supported runtime (Python, Java, JavaScript, C++, Go) kept warm and reused across submissions. Startup is under 100ms for a warm container.</p>
+<div class="mermaid">
+graph LR
+    Worker[&quot;Submission Worker&quot;]
+    PyC[&quot;Container: Python 3.11&quot;]
+    JavaC[&quot;Container: Java 21&quot;]
+    JSC[&quot;Container: Node.js 20&quot;]
+    GoC[&quot;Container: Go 1.22&quot;]
+
+    Worker --&gt;|language=python| PyC
+    Worker --&gt;|language=java| JavaC
+    Worker --&gt;|language=javascript| JSC
+    Worker --&gt;|language=go| GoC
+</div>
+<p><strong>Security hardening applied inside each container:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Implementation</th>
+<th>Threat mitigated</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Execution timeout</td>
+<td>Kill process after 5 seconds</td>
+<td>Infinite loops, TLE</td>
+</tr>
+<tr>
+<td>CPU limit</td>
+<td>Container CPU quota (0.5 vCPU)</td>
+<td>Fork bombs, compute exhaustion</td>
+</tr>
+<tr>
+<td>Memory limit</td>
+<td>Container memory cap (256MB)</td>
+<td>OOM attacks, unbounded allocations</td>
+</tr>
+<tr>
+<td>Read-only filesystem</td>
+<td>Mount rootfs read-only; /tmp writable only</td>
+<td>Persistent malware, filesystem tampering</td>
+</tr>
+<tr>
+<td>Network isolation</td>
+<td>No egress; VPC firewall blocks all outbound</td>
+<td>Data exfiltration, reverse shells</td>
+</tr>
+<tr>
+<td>Syscall filtering</td>
+<td>seccomp profile blocks dangerous syscalls</td>
+<td>Kernel exploits, privilege escalation</td>
+</tr>
+<tr>
+<td>No DB access</td>
+<td>Containers not in DB subnet</td>
+<td>Cannot read or delete user data</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Fast Path vs Reliable Path for code execution:</strong>
+- <strong>Fast path:</strong> Warm container picks up job from queue, runs code, writes result — user polls and sees result in ~5–8 seconds.
+- <strong>Reliable path:</strong> If the container crashes mid-execution, the job stays in SQS (visibility timeout not expired). Another worker picks it up and retries. No submission is silently dropped.</p>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Docker containers vs VMs is a resource efficiency trade-off — containers run 10–20x more instances per host. At 100K submissions during a competition, this difference is the gap between affordable and cost-prohibitive.</p>
+</blockquote>
+<hr />
+<h3 id="72-redis-sorted-set-leaderboard-with-composite-score">7.2 Redis Sorted Set Leaderboard with Composite Score</h3>
+<p>Here is the problem we are solving: the naive approach queries the submissions table grouped by user, filtered by competition, sorted by score — an aggregation over up to 100K rows. At 33K reads/sec during competition, this query runs constantly. At several seconds of latency per query on PostgreSQL and DynamoDB scan costs, this is both too slow and too expensive.</p>
+<p><strong>Evolution of the leaderboard design:</strong></p>
+<p>Stage 1 — Direct DB aggregation: works at small scale, kills DB at 33K QPS.</p>
+<p>Stage 2 — Cache with TTL: run expensive query, cache for 10 seconds. Problem: thundering herd at TTL expiry — all 100K clients hit DB simultaneously when cache expires.</p>
+<p>Stage 3 — Cron job refresh: scheduled worker runs query every 10 seconds and overwrites cache. Problem: if cron fails, cache goes stale indefinitely. Query still runs at full cost every 10 seconds.</p>
+<p>Stage 4 — Redis Sorted Set (chosen):</p>
+<div class="mermaid">
+sequenceDiagram
+    participant Worker
+    participant DB
+    participant CDC
+    participant Kafka
+    participant Redis
+    participant Client
+    participant API
+
+    Worker-&gt;&gt;DB: Write submission row (passed=true)
+    DB--&gt;&gt;CDC: Emit change event
+    CDC-&gt;&gt;Kafka: Publish submission event
+    Kafka-&gt;&gt;Worker: Consume event
+    Worker-&gt;&gt;Redis: ZADD leaderboard:comp_id score user_id
+
+    Note over Client,Redis: 3 seconds later
+    Client-&gt;&gt;API: GET /leaderboard/:comp_id?page=1
+    API-&gt;&gt;Redis: ZREVRANGE leaderboard:comp_id 0 99
+    Redis--&gt;&gt;API: Top 100 entries
+    API--&gt;&gt;Client: Ranked leaderboard
+</div>
+<p><strong>Write path:</strong> Worker writes DB row → CDC emits event → Kafka consumer computes new composite score → <code>ZADD leaderboard:{competition_id} {score} {user_id}</code> (O(log n))</p>
+<p><strong>Read path:</strong> API calls <code>ZREVRANGE leaderboard:{competition_id} 0 99</code> — O(log n + k) from memory, zero DB queries.</p>
+<p><strong>Why CDC instead of writing directly to Redis from the API server:</strong> if the API server writes DB and then crashes before writing Redis, the leaderboard is permanently stale. CDC makes the Redis update a consequence of the DB write — guaranteed eventual consistency. If Redis goes down, it can be fully rebuilt from the submissions table.</p>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>CDC over dual writes:</strong> Dual writes create a consistency window — DB updated, Redis not yet. On API server crash that window becomes permanent. CDC closes this gap: Redis is always derived from DB state, never independently written.</p>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Redis sorted set turns a multi-second aggregation query into a sub-millisecond memory lookup. Leaderboard computation moves from read-time to write-time — O(log n) update per submission vs O(n) scan per read. At 33K reads/sec, this is the only viable architecture.</p>
+</blockquote>
+<hr />
+<h3 id="73-submission-queue-burst-handling">7.3 Submission Queue Burst Handling</h3>
+<p>Here is the problem we are solving: at the end of a 90-minute competition, every participant rushes to submit their final solution. A synchronized burst of up to 1,000 submissions/sec arrives. Docker containers have finite capacity — auto-scaling has a 2–5 minute reaction time — a 100K burst is over before new containers are ready.</p>
+<p><strong>Chosen: SQS message queue as an elastic buffer</strong></p>
+<p>The API server enqueues immediately and returns 202 Accepted. Workers drain the queue at available container capacity. The queue absorbs the entire burst; no submission is dropped regardless of the instantaneous spike.</p>
+<table>
+<thead>
+<tr>
+<th>Without queue</th>
+<th>With queue</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API dispatches directly to containers</td>
+<td>API enqueues immediately, returns 202</td>
+</tr>
+<tr>
+<td>Container capacity exceeded → 503 dropped</td>
+<td>All submissions land in durable queue — zero drops</td>
+</tr>
+<tr>
+<td>User loses their submission permanently</td>
+<td>Worker retries on failure (SQS visibility timeout)</td>
+</tr>
+<tr>
+<td>Auto-scale lag = lost requests</td>
+<td>Auto-scale lag = processing delay, not data loss</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Handling large code payloads:</strong> SQS has a 256KB message size limit. Code is uploaded to S3 first; the queue message carries only the S3 URL and metadata. Workers fetch code from S3 before dispatching to the container.</p>
+<p><strong>Worker pool sizing heuristic:</strong>
+- Each container takes up to 5 seconds per job
+- Target burst: 1,000 submissions/sec × 5s = 5,000 concurrent executions needed
+- At 10 containers per worker node (with CPU/memory limits): ~500 worker nodes at burst peak
+- With queue buffering, pre-scale to 100–200 nodes before competition start; queue absorbs the delta</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The queue is a correctness requirement, not a performance optimization. Without it, the end-of-competition surge drops requests. With it, every submission is durable and retryable — the only consequence of insufficient capacity is processing delay, not data loss.</p>
+</blockquote>
+<hr />
+<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
+<h3 id="judge-worker-pool-sizing">Judge Worker Pool Sizing</h3>
+<p><strong>What breaks first:</strong> Docker worker capacity — at 1,000 submissions/sec with a 5-second execution time, you need 5,000 concurrent containers. Insufficient workers mean queue depth grows unboundedly.</p>
+<p><strong>Strategy:</strong> Pre-scale worker fleet before competition start based on registered participant count. SQS queue depth is the primary auto-scaling signal — add workers when queue depth exceeds threshold × average processing time.</p>
+<h3 id="contest-burst-traffic">Contest Burst Traffic</h3>
+<p><strong>What breaks first:</strong> The API server tier and the DB write path under 1,000 submissions/sec.</p>
+<p><strong>Strategy:</strong>
+- API servers are stateless — horizontal scale behind load balancer
+- DB write path: submissions table write rate of 1,000/sec is within PostgreSQL capacity; partition submissions table by competition_id for large-scale deployments
+- Code blobs go to S3 — no DB write pressure from payload storage</p>
+<h3 id="leaderboard-at-scale">Leaderboard at Scale</h3>
+<p><strong>What breaks first:</strong> If Redis is not used, any DB aggregation at 33K QPS kills the primary.</p>
+<p><strong>Strategy:</strong>
+- Redis sorted set serves all leaderboard reads from memory
+- Redis can handle 100K+ QPS on a single node for ZRANGE operations
+- For very large competitions, shard leaderboard by competition_id — each competition maps to its own sorted set key, naturally partitioned
+- If Redis fails, fall back to DB query with aggressive caching — degraded freshness is acceptable as a fallback</p>
+<blockquote>
+<p>[!TIP]
+<strong>Say this out loud:</strong> "The leaderboard is the most read-heavy operation in the system — 33K QPS during competition. I pre-compute the ranking on every write so the read path is a single Redis ZRANGE. No DB involved at read time."</p>
+</blockquote>
+<hr />
+<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Worker crashes mid-execution</td>
+<td>Job still in SQS (visibility timeout not expired)</td>
+<td>Another worker picks up and retries; submission eventually processed</td>
+</tr>
+<tr>
+<td>SQS queue backup</td>
+<td>Submissions queue but not yet judged; polling returns pending</td>
+<td>Auto-scale workers on queue depth metric; clients see pending state, not errors</td>
+</tr>
+<tr>
+<td>Redis failure</td>
+<td>Leaderboard reads fail; API falls back to DB aggregation query</td>
+<td>Degraded freshness (seconds vs milliseconds); Redis rebuilt from DB on restart via replay</td>
+</tr>
+<tr>
+<td>PostgreSQL primary fails</td>
+<td>Submission writes fail; new submissions cannot be stored</td>
+<td>Failover to replica promoted as primary (RDS Multi-AZ, ~30–60s); SQS messages wait in queue</td>
+</tr>
+<tr>
+<td>CDC pipeline lag</td>
+<td>Redis leaderboard falls behind DB state by seconds</td>
+<td>Clients see slightly stale rankings; self-healing once pipeline catches up</td>
+</tr>
+<tr>
+<td>Docker container kernel exploit</td>
+<td>Attacker escapes container to host</td>
+<td>seccomp + read-only rootfs + no-network limits blast radius; incident response isolates host</td>
+</tr>
+<tr>
+<td>S3 unavailable</td>
+<td>Workers cannot fetch code blobs; jobs fail</td>
+<td>SQS message not deleted (job fails, requeued); retry when S3 recovers</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-trade-offs">13. Trade-offs</h2>
+<h3 id="docker-vs-vm-vs-lambda-for-isolation">Docker vs VM vs Lambda for Isolation</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Docker Containers</th>
+<th>VMs</th>
+<th>AWS Lambda</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Startup latency</td>
+<td>under 100ms (warm)</td>
+<td>1–3 minutes</td>
+<td>1–3s cold start</td>
+</tr>
+<tr>
+<td>Resource efficiency</td>
+<td>High — shared OS kernel</td>
+<td>Low — full OS per VM</td>
+<td>High — managed</td>
+</tr>
+<tr>
+<td>Isolation strength</td>
+<td>Good — seccomp, namespaces</td>
+<td>Maximum — hypervisor</td>
+<td>Good — managed sandbox</td>
+</tr>
+<tr>
+<td>Operational overhead</td>
+<td>Medium — manage worker fleet</td>
+<td>High — provision VMs</td>
+<td>Low — serverless</td>
+</tr>
+<tr>
+<td>Control over security</td>
+<td>Full — seccomp, VPC, FS</td>
+<td>Full</td>
+<td>Limited — AWS managed</td>
+</tr>
+<tr>
+<td>Cost at burst scale</td>
+<td>Predictable (EC2 fleet)</td>
+<td>Expensive (underutilized)</td>
+<td>Variable per invocation</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Docker containers with warm pool. VMs are too slow to start and too resource-heavy at 1,000 submissions/sec. Lambda cold start causes unacceptable latency spikes at competition end; pre-warmed Lambdas are functionally containers with less control over seccomp and filesystem hardening.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Lambda cold start = untrusted code execution latency during peak load. Docker containers with a warm pool = consistent sub-100ms dispatch. The real choice is who manages the container lifecycle — and for untrusted code, full control over seccomp and network egress matters.</p>
+</blockquote>
+<hr />
+<h3 id="polling-vs-websocket-for-result-delivery">Polling vs WebSocket for Result Delivery</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>HTTP Polling (every 3s)</th>
+<th>WebSocket / SSE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Implementation complexity</td>
+<td>Low</td>
+<td>High — stateful connections, WS manager tier</td>
+</tr>
+<tr>
+<td>Server state</td>
+<td>Stateless</td>
+<td>Stateful — connection registry</td>
+</tr>
+<tr>
+<td>Result latency</td>
+<td>0–3s</td>
+<td>Sub-second</td>
+</tr>
+<tr>
+<td>Infrastructure</td>
+<td>Standard HTTP</td>
+<td>Dedicated WS tier</td>
+</tr>
+<tr>
+<td>Fault tolerance</td>
+<td>Simple — client retries</td>
+<td>Connection drops need reconnect logic</td>
+</tr>
+<tr>
+<td>Real-world precedent</td>
+<td>LeetCode uses polling</td>
+<td>Overkill for single-event delivery</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> HTTP polling at 3-second intervals. The submission result is a single async event that takes up to 5 seconds to produce — a 3-second polling window delivers the result within 8 seconds total, which matches user expectations. WebSocket adds stateful infrastructure complexity with no meaningful UX improvement for a once-per-submission event.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> WebSocket vs HTTP is an engineering complexity question, not a latency question. When your real-time event only happens once (submission result) or updates every few seconds (leaderboard), polling is simpler, stateless, and equally effective. Save WebSockets for truly bidirectional continuous streams.</p>
+</blockquote>
+<hr />
+<h3 id="redis-zset-vs-db-for-leaderboard">Redis ZSET vs DB for Leaderboard</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Redis Sorted Set</th>
+<th>DB GROUP BY query</th>
+<th>Cron-refreshed cache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read latency</td>
+<td>Sub-millisecond (memory)</td>
+<td>Seconds (100K row scan)</td>
+<td>Fast (cached)</td>
+</tr>
+<tr>
+<td>DB load at 33K QPS</td>
+<td>Zero</td>
+<td>Catastrophic</td>
+<td>1 query per 10s</td>
+</tr>
+<tr>
+<td>Freshness</td>
+<td>Per-submission (CDC lag ~ms)</td>
+<td>Real-time (expensive)</td>
+<td>10-second intervals</td>
+</tr>
+<tr>
+<td>Failure mode</td>
+<td>Redis down → fallback to DB</td>
+<td>DB overloaded → site down</td>
+<td>Cron down → stale forever</td>
+</tr>
+<tr>
+<td>Complexity</td>
+<td>Medium — needs CDC pipeline</td>
+<td>Low</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Redis sorted set with CDC pipeline. Cron-refreshed cache is operationally fragile — cron failure produces indefinitely stale data with no self-healing. Sorted set is updated atomically per submission; freshness is bounded by CDC latency (milliseconds), not a cron interval.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> A cron job is a dependency that fails silently. A CDC-driven sorted set makes leaderboard freshness a property of the write path — it cannot fall behind unless the write path itself fails, and even then it self-heals on recovery.</p>
+</blockquote>
+<hr />
+<h2 id="14-interview-summary">14. Interview Summary</h2>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem It Solves</th>
+<th>Trade-off Accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker containers per runtime</td>
+<td>Untrusted code must not touch API server, DB, or host OS</td>
+<td>Worker fleet to manage; warm pool needed to avoid startup latency</td>
+</tr>
+<tr>
+<td>SQS queue before execution</td>
+<td>100K end-of-competition burst drops requests without a buffer</td>
+<td>Results become async; requires polling endpoint; adds queue infra</td>
+</tr>
+<tr>
+<td>Redis sorted set for leaderboard</td>
+<td>DB aggregation at 33K reads/sec is too slow and too costly</td>
+<td>CDC pipeline adds eventual consistency lag (~ms); Redis adds infra</td>
+</tr>
+<tr>
+<td>CDC (PostgreSQL → Kafka → Redis)</td>
+<td>Dual writes risk cache-DB inconsistency on API server crash</td>
+<td>Adds pipeline complexity; Redis is always recoverable from DB</td>
+</tr>
+<tr>
+<td>Polling for result and leaderboard</td>
+<td>WebSocket adds stateful infra without UX gain at this latency target</td>
+<td>0–3s result delay; acceptable given 5s execution time</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>FAST PATH (submission result):
+  Client POST /submit
+    → API uploads code to S3, enqueues job to SQS (durable immediately)
+    → Returns 202 Accepted with submission_id
+    → Worker pulls job, fetches code from S3, dispatches to Docker container
+    → Docker runs code with 5s timeout, returns pass/fail
+    → Worker writes submission row to DB
+    → Client polls GET /submissions/:id every 3s → sees result
+
+RELIABLE PATH (leaderboard):
+  Worker writes submission row to DB
+    → CDC (Postgres logical replication) emits change event
+    → Kafka consumer computes composite score
+    → ZADD leaderboard:{competition_id} {score} {user_id}
+    → All leaderboard reads hit Redis ZRANGE (O(log n), in-memory)
+    → Zero DB queries triggered by leaderboard requests
+    → Redis recoverable from DB replay if it goes down
+</code></pre>
+<h3 id="ordering-summary">Ordering Summary</h3>
+<p>Leaderboard ordering is maintained in the Redis sorted set using a composite score: <code>problems_solved + (1 / submitted_at_unix_timestamp)</code>. This guarantees users with more solved problems always rank higher, and among ties, the user who solved their last problem earliest ranks higher. Ordering is maintained atomically per ZADD — no recomputation needed at read time. This guarantee is scoped to the sorted set partition key (competition_id); cross-competition rankings are not supported in this design.</p>
+<blockquote>
+<p>[!IMPORTANT]
+Leaderboard ordering is scoped to the competition_id partition key. Cross-competition or all-time rankings require a separate aggregation job — not the same sorted set.</p>
+</blockquote>
+<h3 id="key-insights-checklist">Key Insights Checklist</h3>
+<ol>
+<li><strong>"Running user code on the API server is a security catastrophe — I use Docker containers with seccomp profiles, CPU and memory limits, a read-only filesystem, no network egress, and a 5-second execution timeout."</strong></li>
+<li><strong>"The leaderboard aggregation query at 100K rows times 33K QPS is the most expensive operation in the system — Redis sorted set moves that computation to write time, making every read O(log n) from memory with zero DB involvement."</strong></li>
+<li><strong>"The submission queue is a correctness requirement, not a performance optimization — without it, the end-of-competition surge drops requests permanently. With it, every submission is durable and retryable."</strong></li>
+<li><strong>"I use CDC instead of dual writes so Redis and DB stay consistent even if the API server crashes between the two writes — Redis is always a derived view of DB state."</strong></li>
+<li><strong>"Polling over WebSocket for both submission results and leaderboard — WebSocket adds a stateful connection tier for a once-per-submission event that takes 5 seconds to produce. Polling at 3 seconds matches the latency requirement and keeps servers stateless."</strong></li>
+</ol>
+<hr />
+<h2 id="frontend-notes-10-of-design">Frontend Notes (10% of design)</h2>
+<p>Backend dominates this system (90%). Three frontend points worth mentioning in an interview:</p>
+<ul>
+<li><strong>Monaco Editor</strong> — the open-source editor powering VS Code, embedded in the browser with no custom IDE work needed; supports syntax highlighting and autocomplete for all supported languages</li>
+<li><strong>Optimistic submission state</strong> — show "Submitted, running..." immediately on receiving the 202 response before polling returns; reduces perceived latency without changing the actual result delivery time</li>
+<li><strong>Leaderboard virtualization</strong> — a 100K-row leaderboard must use a virtual list (react-window or similar) rendering only visible rows; full DOM render of 100K rows crashes the browser</li>
+</ul></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

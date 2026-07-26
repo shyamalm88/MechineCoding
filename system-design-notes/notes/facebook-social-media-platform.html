@@ -1,0 +1,1307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facebook — Social Media Platform System Design — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html" aria-current="page">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="facebook-social-media-platform-system-design">Facebook — Social Media Platform System Design</h1>
+<blockquote>
+<p><strong>Frontend / Backend Split:</strong> 60% backend · 40% frontend
+Feed generation, fan-out, and content pipeline dominate the design. Frontend deserves equal depth for infinite scroll, virtual list, and optimistic engagement UI.</p>
+</blockquote>
+<hr />
+<h2 id="mental-model">🧠 Mental Model</h2>
+<p>Facebook is fundamentally a <strong>read-heavy, write-amplified</strong> system. Every post write triggers thousands of feed updates (fan-out). Every page load must return a pre-computed, personalised feed in under 200ms — even for users with 10,000 friends. There are three core flows:</p>
+<ol>
+<li><strong>Write path</strong> — Post created → Kafka buffer → Content moderation → Post DB + S3 → Fan-out updates all follower feeds</li>
+<li><strong>Read path</strong> — User opens app → Feed Cache hit (Redis, pre-computed) → Instant response; backfill kicks in before the user scrolls to the bottom</li>
+<li><strong>Engagement path</strong> — Like/comment → Kafka buffer → Engagement consumer → Cassandra (comments) + PostgreSQL (likes)</li>
+</ol>
+<pre><code>                     WRITE PATH                                 READ PATH
+ User ──POST /post──▶ Content Svc ──▶ Kafka(raw-post) ──▶ Moderator
+                                                              │
+                                             ┌──── filtered-post ────┐
+                                             ▼                       ▼
+                                       Post Consumer           Fan-out Svc
+                                       (Cassandra+S3)          │
+                                                               ▼
+                                                     Kafka(fanout-tasks)
+                                                               │
+                                                               ▼
+ User ──GET /feed──▶ Feed Svc ──▶ Redis(feed-cache) ◀── Fan-out Consumer
+</code></pre>
+<p><strong>⚡ Core Design Principles</strong></p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Optimized For</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fast Path (feed read)</td>
+<td>Latency &lt; 200ms</td>
+<td>Pre-computed feed in Redis; serve from cache, skip DB entirely</td>
+</tr>
+<tr>
+<td>Reliable Path (post write)</td>
+<td>Durability + moderation</td>
+<td>Kafka buffer → Moderator → Post Consumer → guaranteed write to Cassandra</td>
+</tr>
+<tr>
+<td>Celebrity Path</td>
+<td>Write efficiency</td>
+<td>Skip push fan-out; backfill pulls celebrity posts on-demand via Redis materialization cache</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-problem-scope">1. Problem + Scope</h2>
+<p>Design a social media platform like Facebook at scale (500M DAU). Users can sign up, create and share posts (text, image, video), follow each other, like and comment on posts, and view a personalised feed of content from people they follow.</p>
+<p><strong>In Scope:</strong> User onboarding, post creation (text + media), follow/unfollow, like/comment, personalised feed generation.</p>
+<p><strong>Out of Scope:</strong> Stories, Messenger/chat (separate system), video encoding pipeline (follows OTT platform design), friend-of-friend suggestions, ads ranking.</p>
+<hr />
+<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Daily Active Users (DAU)</td>
+<td>500M</td>
+</tr>
+<tr>
+<td>Avg posts per user per day</td>
+<td>1 (40% include media)</td>
+</tr>
+<tr>
+<td>Post write QPS (baseline)</td>
+<td>~5,800/sec</td>
+</tr>
+<tr>
+<td>Post write QPS (peak, 10×)</td>
+<td>~58,000/sec</td>
+</tr>
+<tr>
+<td>Feed reads per user per day</td>
+<td>5 sessions</td>
+</tr>
+<tr>
+<td>Feed read QPS (baseline)</td>
+<td>~29,000/sec</td>
+</tr>
+<tr>
+<td>Likes + comments per user per day</td>
+<td>10 interactions</td>
+</tr>
+<tr>
+<td>Engagement write QPS (peak)</td>
+<td>~57,000/sec</td>
+</tr>
+<tr>
+<td>Avg text post size</td>
+<td>1 KB</td>
+</tr>
+<tr>
+<td>Avg media file size</td>
+<td>1 MB (image), 100 MB (video)</td>
+</tr>
+<tr>
+<td>Text storage per day</td>
+<td>500 GB</td>
+</tr>
+<tr>
+<td>Media storage per day</td>
+<td>~200 TB</td>
+</tr>
+<tr>
+<td>Feed cache (Redis, post IDs only at 8B each)</td>
+<td>500M users × 100 posts × 8B ≈ <strong>400 GB</strong></td>
+</tr>
+<tr>
+<td>Post materialization cache (100 posts/user)</td>
+<td>500M × 100 × 8B ≈ <strong>400 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Post fan-out write amplification:</strong>
+Average user has 200 followers. 500M posts/day × 200 = 100B feed update writes/day = <strong>~1.16M feed writes/sec peak</strong> — this is the single hardest problem to solve.</p>
+<blockquote>
+<p>These numbers drive the following decisions: Cassandra for write-heavy post/comment storage, Redis for feed cache (memory-only, no disk I/O), Kafka as fan-out buffer to absorb burst writes, and a hybrid push/pull fan-out to handle celebrities.</p>
+</blockquote>
+<hr />
+<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<ul>
+<li>Users can register, log in, and manage their profile</li>
+<li>Users can create posts (text, image, video)</li>
+<li>Users can follow and unfollow other users</li>
+<li>Users can like and comment on posts</li>
+<li>Users see a personalised feed of posts from people they follow</li>
+<li>Feed supports infinite scroll (pagination via cursor)</li>
+<li>Users are notified when their post is blocked by content moderation</li>
+</ul>
+<hr />
+<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Feed load latency</td>
+<td>&lt; 200ms (p99)</td>
+</tr>
+<tr>
+<td>Post upload latency</td>
+<td>&lt; 500ms for text/image</td>
+</tr>
+<tr>
+<td>Availability</td>
+<td>99.99% (AP system)</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Eventual — new posts may take seconds to minutes to appear in all feeds</td>
+</tr>
+<tr>
+<td>Durability</td>
+<td>Zero post loss after write acknowledgement</td>
+</tr>
+<tr>
+<td>Read/Write ratio</td>
+<td>~5:1 (read-heavy but write fan-out amplifies writes 200×)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Consistency Model:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Model</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Feed generation</td>
+<td>Eventual</td>
+<td>It's OK if a new post appears in your feed after 1–2 minutes</td>
+</tr>
+<tr>
+<td>Post storage</td>
+<td>Strong (within shard)</td>
+<td>A post must not be lost or double-written</td>
+</tr>
+<tr>
+<td>Like counts</td>
+<td>Eventual</td>
+<td>Approximate counts (±10) are acceptable</td>
+</tr>
+<tr>
+<td>Comment ordering</td>
+<td>Eventual + client-side seq</td>
+<td>Comments within a post should appear in order</td>
+</tr>
+<tr>
+<td>User authentication</td>
+<td>Strong</td>
+<td>Auth tokens must be consistent</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mental-model-see-above">🧠 Mental Model <em>(see above)</em></h2>
+<hr />
+<h2 id="5-api-design">5. API Design</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/register</code></td>
+<td>Register new user (returns JWT)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/auth/login</code></td>
+<td>Login, returns JWT</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/users/:userId</code></td>
+<td>Get user profile metadata</td>
+</tr>
+<tr>
+<td>PUT</td>
+<td><code>/api/v1/users/:userId</code></td>
+<td>Update profile metadata</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/posts</code></td>
+<td>Create a post (text/media); returns post_id</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/posts/:postId</code></td>
+<td>Get post metadata + media URL</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/posts/:postId</code></td>
+<td>Delete a post</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/feed?cursor=&amp;limit=50</code></td>
+<td>Get personalised feed (cursor-based pagination)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/users/:userId/posts?cursor=</code></td>
+<td>Get all posts by a user</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/posts/:postId/like</code></td>
+<td>Like a post</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/posts/:postId/like</code></td>
+<td>Unlike a post</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/posts/:postId/comments</code></td>
+<td>Add a comment</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/posts/:postId/comments?cursor=</code></td>
+<td>Get comments (paginated)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/follow/:targetUserId</code></td>
+<td>Follow a user</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/follow/:targetUserId</code></td>
+<td>Unfollow a user</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Feed API uses cursor-based pagination, not offset. Offset = re-scan from top on every page. Cursor = O(1) resume from last seen post. Critical at 500M users.</p>
+</blockquote>
+<hr />
+<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Facebook is a queue-first, event-driven system across three independent Kafka pipelines:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Pipeline</th>
+<th>Kafka Topic</th>
+<th>Why async</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Post write + moderation</td>
+<td><code>raw-post</code> → <code>filtered-post</code> → <code>blocked-post</code></td>
+<td>Moderation is 500ms AI/ML — cannot block the write response</td>
+</tr>
+<tr>
+<td>Feed generation (fan-out)</td>
+<td><code>fan-out-tasks</code></td>
+<td>1.16M feed writes/sec — must be buffered and consumed independently</td>
+</tr>
+<tr>
+<td>Notifications + analytics</td>
+<td><code>notifications</code>, <code>analytics-events</code></td>
+<td>Decoupled from delivery; analytics must never slow down the user path</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Retry:</strong> exponential backoff on consumer failure; Fan-out Consumer resumes from Kafka offset.
+<strong>Idempotency:</strong> <code>post_id</code> + <code>follower_id</code> dedup in Redis sorted set prevents double-insertion to feeds.
+<strong>Delivery guarantee:</strong> at-least-once (Kafka default) + idempotent consumers = effectively-once.</p>
+</blockquote>
+<hr />
+<h3 id="61-complete-end-to-end-post-feed-say-this-out-loud-in-the-interview">6.1 — Complete End-to-End: Post → Feed (say this out loud in the interview)</h3>
+<p><strong>Write path — user creates a post:</strong></p>
+<pre><code>1. User clicks Post
+   → POST /posts {text, mediaId, post_id (client-generated)}
+   → API Gateway authenticates JWT, routes to Content Service
+
+2. Content Service publishes to Kafka raw-post topic immediately
+   → Returns 202 Accepted + post_id in &lt; 50ms
+   → I chose async here because synchronous moderation at 58K posts/sec
+     would require 29,000 concurrent AI/ML calls — architecturally infeasible
+
+3. Moderator Service consumes raw-post
+   → Runs AI/ML classifier (image hash check + text policy)
+   → Valid → publishes to filtered-post topic
+   → Blocked → publishes to blocked-post → Notification Service alerts user
+
+4. Post Consumer consumes filtered-post
+   → Writes metadata to Cassandra PostDB (partition = post_id)
+   → Uploads media bytes to S3 (if media post)
+   → I store metadata and media separately: Cassandra for structured queries,
+     S3 for binary blobs — DB is wrong for 100MB video files
+
+5. Fan-out Service consumes the same filtered-post event (parallel to step 4)
+   → Checks poster's follower count
+   → If &lt; 1,000 followers (regular user): PUSH model — reads Follower Cache,
+     enqueues (follower_id, post_id) pairs to Kafka fan-out-tasks
+   → If ≥ 1,000 followers (celebrity): PULL model — writes post_id only to
+     Post Materialization Cache; skips fan-out entirely
+
+6. Fan-out Consumer processes fan-out-tasks
+   → ZINCRBY on each follower's Feed Cache Redis sorted set
+   → Score = post timestamp → feed stays time-ordered automatically
+   → I use Redis sorted set because it's always sorted — no server-side
+     ranking logic needed at read time
+
+7. Post Materializer (parallel to steps 5-6)
+   → Writes post_id to poster's &quot;latest 100 posts&quot; Redis cache
+   → This is the celebrity pull source + backfill source
+</code></pre>
+<p><strong>Read path — user opens the feed:</strong></p>
+<pre><code>1. User opens app / scrolls
+   → GET /feed?cursor=&amp;limit=50
+   → Feed Service reads from Redis Feed Cache (ZREVRANGE user:feed:{userId} 0 49)
+   → O(1) lookup — returns 50 post_ids in &lt; 1ms
+
+2. Feed Service batch-hydrates post_ids
+   → MGET from Post Cache (Redis) or Cassandra PostDB for post details
+   → CDN URL for media thumbnails (never stream raw S3 from API)
+   → Returns ranked feed to client in &lt; 200ms total
+
+3. If user follows celebrities → Backfill Service merges
+   → Reads celebrity post_ids from Post Materialization Cache
+   → Merges with regular feed, re-sorts by timestamp
+   → Merged result returned as single feed
+
+4. When user is 80% through the 50 posts (Intersection Observer fires)
+   → Client pre-fetches next 50 posts in background
+   → Infinite scroll feels seamless — no spinner unless network is slow
+
+On fan-out failure: Kafka Consumer retries from last offset; feed may lag seconds
+On Redis miss: Backfill Service regenerates from Post Materialization Cache
+On Redis node failure: Fall through to Cassandra + slower backfill path
+</code></pre>
+<hr />
+<h3 id="62-post-creation-sequence-diagram">6.2 — Post Creation (Sequence Diagram)</h3>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant AG as API Gateway
+    participant CS as Content Service
+    participant K1 as Kafka raw-post
+    participant MOD as Moderator Service
+    participant K2 as Kafka filtered-post
+    participant PC as Post Consumer
+    participant DB as Cassandra PostDB
+    participant S3 as S3 Bucket
+    participant FO as Fan-out Service
+    participant FC as Feed Cache Redis
+
+    U-&gt;&gt;AG: POST /posts with text + media
+    AG-&gt;&gt;CS: Route to Content Service
+    CS-&gt;&gt;K1: Publish to raw-post topic
+    CS--&gt;&gt;U: 202 Accepted (post_id)
+    K1-&gt;&gt;MOD: Moderator consumes
+    MOD-&gt;&gt;MOD: AI/ML policy check
+    alt Post is valid
+        MOD-&gt;&gt;K2: Publish to filtered-post topic
+        K2-&gt;&gt;PC: Post Consumer consumes
+        PC-&gt;&gt;DB: Write post metadata
+        PC-&gt;&gt;S3: Upload media file
+        K2-&gt;&gt;FO: Fan-out Service consumes same event
+        FO-&gt;&gt;FC: Update feed caches of all followers
+    else Post is blocked
+        MOD-&gt;&gt;K2: Publish to blocked-post topic
+        K2-&gt;&gt;NS: Notification Service sends alert to user
+    end
+</div>
+<h3 id="63-feed-read-sequence-diagram">6.3 — Feed Read (Sequence Diagram)</h3>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant AG as API Gateway
+    participant FS as Feed Service
+    participant FC as Redis Feed Cache
+    participant FDB as Feed DB
+    participant BF as Backfill Service
+
+    U-&gt;&gt;AG: GET /feed?cursor=
+    AG-&gt;&gt;FS: Route to Feed Service
+    FS-&gt;&gt;FC: Lookup pre-computed feed for user_id
+    alt Cache hit (&lt; 100 posts consumed)
+        FC--&gt;&gt;FS: Return list of post_ids
+        FS--&gt;&gt;U: Return paginated feed
+    else Cache empty or near exhausted
+        FS-&gt;&gt;BF: Trigger backfill for user_id
+        BF-&gt;&gt;FC: Read top followers from Follower Cache
+        BF-&gt;&gt;FC: Read latest 100 posts per follower from Post Materialization Cache
+        BF-&gt;&gt;FS: Return merged + ranked post list
+        FS--&gt;&gt;U: Return feed
+    end
+</div>
+<hr />
+<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    U[(&quot;Users / Clients&quot;)]
+    LB[&quot;Load Balancer + API Gateway&quot;]
+    USvc[&quot;User Service&quot;]
+    CSvc[&quot;Content Service&quot;]
+    FSvc[&quot;Feed Service&quot;]
+    FollSvc[&quot;Follower Service&quot;]
+    ESvc[&quot;Engagement Service&quot;]
+    UDB[(&quot;User DB - PostgreSQL&quot;)]
+    PDB[(&quot;Post DB - Cassandra&quot;)]
+    FDB[(&quot;Follower DB - PostgreSQL&quot;)]
+    LDB[(&quot;Like DB - PostgreSQL&quot;)]
+    CDB[(&quot;Comment DB - Cassandra&quot;)]
+    S3[(&quot;S3 - Media Storage&quot;)]
+
+    U --&gt; LB
+    LB --&gt; USvc
+    LB --&gt; CSvc
+    LB --&gt; FSvc
+    LB --&gt; FollSvc
+    LB --&gt; ESvc
+    USvc --&gt; UDB
+    CSvc --&gt; PDB
+    CSvc --&gt; S3
+    FSvc --&gt; PDB
+    FSvc --&gt; FDB
+    FollSvc --&gt; FDB
+    ESvc --&gt; LDB
+    ESvc --&gt; CDB
+</div>
+<h3 id="evolved-design-production-scale">Evolved Design (Production Scale)</h3>
+<div class="mermaid">
+graph TD
+    U[(&quot;Users / Clients&quot;)]
+    LB[&quot;Load Balancer + API Gateway&quot;]
+
+    subgraph Write Pipeline
+        CS[&quot;Content Service&quot;]
+        K1[[&quot;Kafka - raw-post&quot;]]
+        MOD[&quot;Moderator Service (AI/ML)&quot;]
+        K2[[&quot;Kafka - filtered-post&quot;]]
+        K3[[&quot;Kafka - blocked-post&quot;]]
+        PC[&quot;Post Consumer&quot;]
+        PM[&quot;Post Materializer&quot;]
+    end
+
+    subgraph Storage
+        PDB[(&quot;Cassandra - Post DB&quot;)]
+        S3[(&quot;S3 - Media&quot;)]
+        UDB[(&quot;PostgreSQL - User DB&quot;)]
+        FDB[(&quot;PostgreSQL - Follower DB&quot;)]
+    end
+
+    subgraph Feed System
+        FOS[&quot;Fan-out Service&quot;]
+        KF[[&quot;Kafka - fan-out tasks&quot;]]
+        FOC[&quot;Fan-out Consumer&quot;]
+        FC[(&quot;Redis - Feed Cache&quot;)]
+        PMC[(&quot;Redis - Post Materialization Cache&quot;)]
+        FOLC[(&quot;Redis - Follower Cache&quot;)]
+        BF[&quot;Backfill Service&quot;]
+        FEED[&quot;Feed Service&quot;]
+    end
+
+    subgraph Engagement Pipeline
+        KEng[[&quot;Kafka - engagement&quot;]]
+        EC[&quot;Engagement Consumer&quot;]
+        LDB[(&quot;PostgreSQL - Like DB&quot;)]
+        CDB[(&quot;Cassandra - Comment DB&quot;)]
+    end
+
+    NS[&quot;Notification Service&quot;]
+    USvc[&quot;User Service&quot;]
+
+    U --&gt; LB
+    LB --&gt; CS
+    LB --&gt; FEED
+    LB --&gt; USvc
+    CS --&gt; K1
+    K1 --&gt; MOD
+    MOD --&gt; K2
+    MOD --&gt; K3
+    K2 --&gt; PC
+    K2 --&gt; FOS
+    K2 --&gt; PM
+    PC --&gt; PDB
+    PC --&gt; S3
+    PM --&gt; PMC
+    K3 --&gt; NS
+    FOS --&gt; FOLC
+    FOS --&gt; KF
+    KF --&gt; FOC
+    FOC --&gt; FC
+    FEED --&gt; FC
+    FEED --&gt; BF
+    BF --&gt; FOLC
+    BF --&gt; PMC
+    BF --&gt; KF
+    USvc --&gt; UDB
+    LB --&gt; KEng
+    KEng --&gt; EC
+    EC --&gt; LDB
+    EC --&gt; CDB
+</div>
+<hr />
+<h2 id="8-data-model">8. Data Model</h2>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns</th>
+<th>Why this store</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User</td>
+<td>PostgreSQL</td>
+<td>user_id, username, email, password_hash, phone, created_at</td>
+<td>Flat relational metadata; ACID for auth correctness</td>
+</tr>
+<tr>
+<td>Post</td>
+<td>Cassandra</td>
+<td>post_id (UUID), user_id, post_type, content_text, media_url, thumbnail_url, like_count, comment_count, created_at</td>
+<td>Write-heavy (58K/sec peak); Cassandra multi-master handles it; wide rows for timeline queries</td>
+</tr>
+<tr>
+<td>Follower</td>
+<td>PostgreSQL</td>
+<td>follow_id, follower_id, following_id, status (pending/active), created_at</td>
+<td>Simple relational; JOIN-free; use Graph DB only if friend-of-friend recommendations required</td>
+</tr>
+<tr>
+<td>Comment</td>
+<td>Cassandra</td>
+<td>comment_id (TIMEUUID), post_id (partition key), user_id, content, like_count, created_at</td>
+<td>Write-heavy; TIMEUUID clustering gives time-ordered comments per post automatically</td>
+</tr>
+<tr>
+<td>Like</td>
+<td>PostgreSQL</td>
+<td>like_id, post_id, comment_id (nullable), user_id, reaction_type, created_at</td>
+<td>Lower volume than comments; relational for dedup checks</td>
+</tr>
+<tr>
+<td>Feed Cache</td>
+<td>Redis</td>
+<td>user_id → sorted set of post_ids (score = timestamp)</td>
+<td>Ephemeral pre-computed feed; TTL = 24h; max 100 entries per user</td>
+</tr>
+<tr>
+<td>Post Materialization Cache</td>
+<td>Redis</td>
+<td>user_id → sorted set of post_ids (latest 100)</td>
+<td>Backfill source — avoids DB scan on scroll exhaustion</td>
+</tr>
+<tr>
+<td>Follower Cache</td>
+<td>Redis</td>
+<td>user_id → list of top_follower_ids (ML-ranked)</td>
+<td>Limits fan-out to relevant followers; reduces 10K friends to 200 active connections</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Feed Cache stores post_ids only (8 bytes each), not full post objects. Full hydration happens in a single batch <code>MGET</code> from Post DB or a separate post cache. This keeps Redis memory at ~400 GB instead of 40 TB.</p>
+</blockquote>
+<hr />
+<h2 id="9-deep-dives">9. Deep Dives</h2>
+<h3 id="91-feed-generation-push-vs-pull-vs-hybrid">9.1 — Feed Generation: Push vs Pull vs Hybrid</h3>
+<p><strong>Here's the problem we're solving:</strong> News feed is the #1 feature of Facebook. It must load in &lt; 200ms for 500M DAU. Computing it at read time is too slow. Writing it to all followers at post time is too expensive. Neither pure model works. This is the question inside the question.</p>
+<p><strong>The three models — comparison:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Push (fan-out on write)</th>
+<th>Pull (fan-out on read)</th>
+<th>Hybrid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read latency</td>
+<td>&lt; 200ms — feed pre-computed in Redis</td>
+<td>2–10 seconds — computed at read time</td>
+<td>&lt; 200ms — regular users pre-computed, celebrities pulled</td>
+</tr>
+<tr>
+<td>Write cost</td>
+<td><strong>High</strong> — 200× amplification per post. 5,800 posts/sec × 200 followers = 1.16M writes/sec</td>
+<td><strong>Low</strong> — just write the post once to PostDB</td>
+<td>Medium — fan-out only for users &lt; 1,000 followers</td>
+</tr>
+<tr>
+<td>Celebrity problem</td>
+<td><strong>Catastrophic</strong> — 1 post × 10M followers = 10M writes in seconds</td>
+<td>No problem — 1 write, read on demand</td>
+<td>Solved — celebrities use pull; their posts are pulled at read time</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Eventual — feed may lag seconds</td>
+<td>Fresh — always current</td>
+<td>Eventual for regular, fresh for celebrity</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>High — Redis feed cache per user</td>
+<td>Low — only PostDB</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><strong>Best for</strong></td>
+<td>Regular users with few followers</td>
+<td>Celebrity content only</td>
+<td>Production systems at scale</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Push = low read latency but high write cost. Pull = scalable writes but slow reads. Hybrid = the only answer that works at 500M DAU. Knowing all three models and when each breaks is what staff-level candidates say.</p>
+</blockquote>
+<p><strong>Push model implementation (regular users &lt; 1,000 followers):</strong></p>
+<p>When a user posts:
+1. Fan-out Service reads the <code>filtered-post</code> Kafka topic
+2. Fetches the user's top followers from <strong>Follower Cache</strong> (Redis, pre-ranked by interaction frequency)
+3. Publishes <code>(follower_id, post_id)</code> pairs to Kafka <code>fan-out-tasks</code>
+4. Fan-out Consumer reads tasks → <code>ZINCRBY user:feed:{followerId} {timestamp} {post_id}</code> in Redis
+5. Feed is pre-computed and waiting before the follower ever opens the app</p>
+<p>When the follower opens the app:
+1. Feed Service: <code>ZREVRANGE user:feed:{userId} 0 49</code> → O(1) — returns 50 post_ids
+2. Batch hydrate from Post Cache → return full feed in &lt; 200ms</p>
+<p><strong>Pull model implementation (celebrities ≥ 1,000 followers):</strong></p>
+<p>When a celebrity posts:
+1. Fan-out Service skips fan-out entirely — no Kafka fan-out-tasks published
+2. Post Materializer writes <code>post_id</code> to celebrity's <strong>Post Materialization Cache</strong> (Redis, TTL-bounded, latest 100 posts)</p>
+<p>When a follower opens the app:
+1. Feed Service checks Follower Cache → identifies which followees are celebrities
+2. Backfill Service pulls celebrity post_ids from Post Materialization Cache for each celebrity followee
+3. Merges celebrity posts with pre-computed regular feed → re-sorts by timestamp
+4. Returns unified feed</p>
+<p><strong>Trade-off accepted:</strong> Celebrity posts may appear 1–3 seconds later than regular posts (pull merge adds latency). Acceptable — eventual consistency SLA covers this.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The celebrity threshold (1,000 followers) is a business tuning parameter, not an engineering constant. Facebook likely uses a much higher threshold and factors in engagement velocity, not just follower count. Say "the threshold is tuneable based on write amplification observed in production."</p>
+</blockquote>
+<hr />
+<h3 id="92-feed-ranking-facebook-feed-is-not-chronological">9.2 — Feed Ranking (Facebook Feed is NOT Chronological)</h3>
+<p><strong>Here's the problem we're solving:</strong> A user follows 500 people. In the last hour they collectively published 300 posts. We can't show all 300 — we show 50. Which 50? Chronological order is the naive answer. But a post from your best friend from 2 hours ago is more relevant than a brand post from 2 minutes ago. Chronological order is a terrible proxy for relevance.</p>
+<p><strong>Naive solution — sort by timestamp descending:</strong></p>
+<pre><code>ZREVRANGE user:feed:{userId} 0 49
+</code></pre>
+<p>Returns the 50 most recent posts. Problem: a viral post from a close friend gets buried below noise from accounts the user barely interacts with. Engagement collapses.</p>
+<p><strong>Chosen solution — two-stage pipeline: candidate generation → ML ranking</strong></p>
+<div class="mermaid">
+flowchart TD
+    FC[(&quot;Redis Feed Cache\n500 post_id candidates&quot;)]
+    CG[&quot;Candidate Generator\nfilter by recency + follow strength&quot;]
+    FE[&quot;Feature Extractor\npull signals for each candidate post&quot;]
+    ML[&quot;ML Ranking Model\npredict P(engagement)&quot;]
+    RS[(&quot;Ranked Feed\ntop 50 returned to client&quot;)]
+    SI[(&quot;Signal Store\nRedis - user behaviour events)&quot;)]
+
+    FC --&gt; CG
+    CG --&gt; FE
+    FE --&gt; ML
+    SI --&gt; ML
+    ML --&gt; RS
+</div>
+<p><strong>Stage 1 — Candidate generation (fast filter, no ML):</strong>
+- Start with ~500 post_ids from Redis Feed Cache (pre-computed by fan-out)
+- Apply lightweight filters: recency (posts &gt; 7 days old dropped), follow strength (posts from users you've interacted with in last 30 days weighted up)
+- Output: ~200 candidate post_ids</p>
+<p><strong>Stage 2 — ML ranking (predict engagement probability):</strong></p>
+<p>The model predicts: <em>"Given this user and this post, what is P(like), P(comment), P(share), P(click)?"</em></p>
+<p>Features fed into the model:</p>
+<table>
+<thead>
+<tr>
+<th>Feature category</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Post features</strong></td>
+<td>post age, media type (video/image/text), like count, comment velocity (likes per minute since posted)</td>
+</tr>
+<tr>
+<td><strong>Author features</strong></td>
+<td>poster's relationship to viewer (close friend, page, group), poster's recent engagement rate</td>
+</tr>
+<tr>
+<td><strong>User behaviour signals</strong></td>
+<td>viewer's past interactions with this poster, content types the viewer historically engages with, time of day (mobile morning = short text; evening = video)</td>
+</tr>
+<tr>
+<td><strong>Contextual signals</strong></td>
+<td>device type, network speed (don't rank video #1 on slow connection), session length so far</td>
+</tr>
+</tbody>
+</table>
+<p>Model output: score per candidate post (0.0–1.0 engagement probability). Top 50 by score = the feed.</p>
+<p><strong>Where ranking fits in the overall pipeline:</strong></p>
+<pre><code>Fan-out Consumer writes post_ids to Redis Feed Cache (500 candidates, unranked)
+                              │
+                              ▼
+                   GET /feed request arrives
+                              │
+                              ▼
+             Candidate Generator → 200 candidates
+                              │
+                              ▼
+         Feature Extractor fetches signals (Redis Signal Store)
+                              │
+                              ▼
+               ML Ranking Model scores each candidate
+                              │
+                              ▼
+              Top 50 returned to client (ranked, not chronological)
+</code></pre>
+<p><strong>Signals are pre-computed, not computed at request time:</strong>
+- User behaviour events (likes, comments, shares, dwells) are streamed to Kafka <code>analytics-events</code> topic
+- Signal aggregator writes pre-computed user-author interaction scores to Redis Signal Store
+- At ranking time: Feature Extractor does O(1) Redis lookups, not DB queries
+- <strong>Why:</strong> Fetching raw signals at 29K feed requests/sec × 200 candidates × 10 signals = 58M DB lookups/sec. Impossible without pre-computation.</p>
+<p><strong>Trade-off accepted:</strong> ML ranking adds 20–50ms to feed load time vs pure Redis sorted set read. This is an intentional trade — a relevant feed drives 3× more engagement than a chronological feed. The latency cost is worth it.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Facebook feed ranking is a candidate generation + ML scoring pipeline, not a sort. Sorting is O(N log N) on every request. Candidate generation narrows to 200, ML scores 200 candidates in parallel — it's O(200) per request regardless of how many posts exist. This is why it can run in &lt; 50ms at scale.</p>
+</blockquote>
+<hr />
+<h3 id="93-content-moderation-pipeline">9.3 — Content Moderation Pipeline</h3>
+<p><strong>Here's the problem we're solving:</strong> At 58K posts/sec peak, synchronous content moderation would block the write path. A 500ms AI/ML model call per post × 58K posts/sec = 29,000 concurrent model calls. Synchronous moderation is impossible at this scale.</p>
+<p><strong>Naive solution — synchronous moderation in Content Service:</strong></p>
+<pre><code>POST /post → Content Service → call Moderator API → wait 500ms → write to DB → 202 Accepted
+</code></pre>
+<p>Fails: Moderator API becomes a bottleneck. Post latency grows to 500ms+. Any moderation service outage = complete post creation failure.</p>
+<p><strong>Chosen solution — async Kafka-based moderation pipeline:</strong></p>
+<ol>
+<li>Content Service writes raw post to Kafka <code>raw-post</code> topic immediately → returns <code>202 Accepted</code> with <code>post_id</code> (&lt; 50ms)</li>
+<li>Moderator Service consumes from <code>raw-post</code> asynchronously, runs AI/ML classifier</li>
+<li>Routes to <code>filtered-post</code> (valid) or <code>blocked-post</code> (policy violation) topic</li>
+<li>Post Consumer writes valid posts to Cassandra + S3</li>
+<li>Notification Service alerts user on blocked posts</li>
+</ol>
+<p><strong>Trade-off accepted:</strong> Post is not immediately visible after <code>202 Accepted</code> — it takes a few seconds to pass moderation and appear in feeds. Users see a local optimistic preview in the client UI. This is acceptable given eventual consistency SLA.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The Kafka buffer is a correctness requirement, not a performance optimisation. Without it, a Moderator outage loses posts entirely. With Kafka, posts are durable in the log and moderation resumes when the service recovers.</p>
+</blockquote>
+<hr />
+<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
+<p><strong>Scale we're designing for (say these numbers early in the interview — they anchor every decision):</strong>
+- <strong>1B+ registered users, 500M DAU</strong>
+- <strong>5,800 post writes/sec baseline → 58K/sec peak</strong> (10× traffic spike on major events)
+- <strong>1.16M feed writes/sec</strong> — this is the true write load after fan-out amplification (200 followers/user × 5,800 posts/sec)
+- <strong>29K feed read requests/sec</strong> — each returns 50 post IDs → batch hydrated from Cassandra
+- <strong>57K engagement writes/sec</strong> (likes + comments) — Kafka-buffered, eventually consistent
+- <strong>200TB/day media storage</strong> — all media via CDN + S3, never streamed from origin</p>
+<p>"The hardest number is the 1.16M feed writes/sec from fan-out. A single Redis node handles ~500K writes/sec. That's why Redis Cluster partitioned by <code>user_id</code> is not optional — it's the first thing that breaks at scale."</p>
+<table>
+<thead>
+<tr>
+<th>Bottleneck</th>
+<th>Breaks at</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Feed Cache memory</td>
+<td>500M users × 100 posts</td>
+<td>Store post IDs only (8B each = 400GB); shard Redis by user_id consistent hash</td>
+</tr>
+<tr>
+<td>Cassandra Post DB write throughput</td>
+<td>58K posts/sec</td>
+<td>Horizontal scaling; partition by post_id; replication factor 3</td>
+</tr>
+<tr>
+<td>Fan-out write amplification</td>
+<td>Celebrity with 10M followers</td>
+<td>Hybrid push/pull; celebrity threshold = 1,000 followers</td>
+</tr>
+<tr>
+<td>Kafka fan-out-tasks lag</td>
+<td>Viral post spike</td>
+<td>Auto-scale Fan-out Consumer group; 100+ partitions on fan-out topic</td>
+</tr>
+<tr>
+<td>Follower DB read fan-out</td>
+<td>10K friends per user lookup</td>
+<td>Follower Cache (Redis) pre-computes top followers per user; full Follower DB only queried on cache miss</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Sharding Strategy:</strong>
+- Post DB (Cassandra): partitioned by <code>post_id</code> UUID — natural distribution
+- Feed Cache (Redis): sharded by <code>user_id % N_shards</code> consistent hashing
+- User DB (PostgreSQL): sharded by <code>user_id</code> range; read replicas for profile reads</p>
+<p><strong>CDN:</strong>
+- All media (images, video thumbnails) served via CDN
+- Signed S3 URLs with 1-hour TTL for private media
+- Profile pictures and post thumbnails cached at edge — 90%+ cache hit rate expected</p>
+<hr />
+<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Impact</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cassandra Post DB node fails</td>
+<td>Write latency spike; some reads temporarily degrade</td>
+<td>Replication factor 3; automatic failover to replica; Kafka retains unwritten posts until service resumes</td>
+</tr>
+<tr>
+<td>Redis Feed Cache node fails</td>
+<td>Users served stale or empty feed</td>
+<td>Backfill Service triggers on cache miss; regenerates feed from Post Materialization Cache</td>
+</tr>
+<tr>
+<td>Kafka broker failure</td>
+<td>Posts buffered in Content Service; fan-out delayed</td>
+<td>Kafka replication across 3 brokers; ISR (in-sync replicas) ensures no message loss</td>
+</tr>
+<tr>
+<td>Fan-out Consumer crash mid-write</td>
+<td>Some follower feeds not updated</td>
+<td>At-least-once Kafka delivery; Fan-out Consumer resumes from last committed offset; idempotent writes to Redis sorted set</td>
+</tr>
+<tr>
+<td>Moderator Service outage</td>
+<td>Posts pile up in raw-post topic; nothing passes moderation</td>
+<td>Kafka retains unprocessed events; Moderator Service catches up on restart; users see "Post is being reviewed" in UI</td>
+</tr>
+<tr>
+<td>S3 outage</td>
+<td>Media upload fails</td>
+<td>Content Service returns error to user; text post metadata saved; user prompted to retry media upload separately</td>
+</tr>
+<tr>
+<td>API Gateway overload</td>
+<td>All services unreachable</td>
+<td>Rate limiting at gateway; circuit breaker pattern; horizontal scale-out behind LB</td>
+</tr>
+<tr>
+<td><strong>Feed generation fails (Fan-out Consumer down)</strong></td>
+<td>New posts not reaching follower feeds</td>
+<td><strong>Fallback to pull model</strong> — Feed Service detects stale cache (TTL exceeded), switches to on-demand pull from Post Materialization Cache + Cassandra. Slower (500ms vs 200ms) but functional. Fan-out resumes from Kafka offset on recovery.</td>
+</tr>
+<tr>
+<td><strong>Redis Feed Cache miss</strong></td>
+<td>Cache empty (cold start, TTL expired, node restart)</td>
+<td><strong>DB fallback</strong> — Backfill Service pulls from Post Materialization Cache (Redis, warm) → Cassandra PostDB if that also misses. Feed load degrades to 500–800ms. Cache is re-warmed on next fan-out write.</td>
+</tr>
+<tr>
+<td><strong>Kafka fan-out lag</strong> (queue backup during viral post spike)</td>
+<td>Follower feeds not updated for seconds to minutes</td>
+<td><strong>Eventual consistency delay</strong> — feeds temporarily stale. Client shows "refresh for new posts" pill when WebSocket signals new content available. Kafka Consumer auto-scales; lag self-resolves. No data loss — events are durably in Kafka log.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="fan-out-strategy-push-vs-pull-vs-hybrid">Fan-out Strategy: Push vs Pull vs Hybrid</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Push (fan-out on write)</th>
+<th>Pull (fan-out on read)</th>
+<th>Hybrid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read latency</td>
+<td><strong>Low</strong> — &lt; 200ms, pre-computed</td>
+<td><strong>High</strong> — 2–10 seconds</td>
+<td><strong>Low</strong> for regular users</td>
+</tr>
+<tr>
+<td>Write cost</td>
+<td><strong>High</strong> — 1.16M writes/sec at 200× fan-out</td>
+<td><strong>Low</strong> — 1 write</td>
+<td><strong>Medium</strong> — fan-out only for &lt; 1K followers</td>
+</tr>
+<tr>
+<td>Celebrity problem</td>
+<td><strong>Breaks</strong> — 10M writes on 1 post</td>
+<td>No issue</td>
+<td><strong>Solved</strong> — celebrities skip push</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>High (Redis feed per user)</td>
+<td>Low</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>Freshness</td>
+<td>Eventual (seconds)</td>
+<td>Always fresh</td>
+<td>Eventual + fresh for celebrity</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Hybrid — push for regular users, pull for celebrities.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Push = low read latency, high write cost. Pull = low write cost, high read latency. Neither works alone at 500M DAU. The hybrid approach is the only correct answer — and knowing WHY each pure model fails is what interviewers are testing for.</p>
+</blockquote>
+<hr />
+<h3 id="post-database-cassandra-vs-postgresql">Post Database: Cassandra vs PostgreSQL</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Cassandra</th>
+<th>PostgreSQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Write throughput</td>
+<td>1M+/sec (multi-master)</td>
+<td>~50–100K/sec (single primary)</td>
+</tr>
+<tr>
+<td>Read patterns</td>
+<td>Excellent for partition key lookups</td>
+<td>Excellent for joins and aggregations</td>
+</tr>
+<tr>
+<td>Schema flexibility</td>
+<td>Wide rows, good for time-series posts</td>
+<td>Rigid schema</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Eventual (tunable quorum)</td>
+<td>Strong (ACID)</td>
+</tr>
+<tr>
+<td>Operational cost</td>
+<td>Complex tuning</td>
+<td>Simpler operations</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Cassandra for Post DB and Comment DB — write-heavy workloads dominate. PostgreSQL for User DB and Like DB where relational consistency matters.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Cassandra is not always "more scalable." It's optimised for write-heavy workloads with known partition key access patterns. For ad-hoc queries or joins, PostgreSQL wins. Use the right tool per access pattern.</p>
+</blockquote>
+<hr />
+<h3 id="feed-cache-invalidation-ttl-vs-event-driven">Feed Cache Invalidation: TTL vs Event-Driven</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>TTL-based expiry</th>
+<th>Event-driven invalidation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stale data</td>
+<td>Possible (up to TTL window)</td>
+<td>Minimal</td>
+</tr>
+<tr>
+<td>Complexity</td>
+<td>Simple</td>
+<td>Complex (need to track all cache keys per user)</td>
+</tr>
+<tr>
+<td>Cache stampede risk</td>
+<td>On TTL expiry for popular users</td>
+<td>On post deletion / edit</td>
+</tr>
+<tr>
+<td>Write cost</td>
+<td>None</td>
+<td>Extra write per post per follower</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> TTL (24h) + event-driven for critical cases (post deletion). TTL is sufficient for eventual consistency SLA. Event-driven invalidation only for deleted/edited posts to avoid serving removed content.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Cache invalidation is only worth the complexity when serving stale data has real user impact. Serving a post 2 minutes late = fine. Serving a deleted post = unacceptable. Invalidate selectively.</p>
+</blockquote>
+<hr />
+<h3 id="content-moderation-synchronous-vs-asynchronous">Content Moderation: Synchronous vs Asynchronous</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Synchronous</th>
+<th>Asynchronous (Kafka)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Post upload latency</td>
+<td>500ms+</td>
+<td>&lt; 50ms (202 Accepted immediately)</td>
+</tr>
+<tr>
+<td>Failure isolation</td>
+<td>Moderator outage = post creation fails</td>
+<td>Moderator outage = post queued, not lost</td>
+</tr>
+<tr>
+<td>User experience</td>
+<td>Post visible immediately or blocked</td>
+<td>Post visible after 2–5 seconds</td>
+</tr>
+<tr>
+<td>Complexity</td>
+<td>Simple</td>
+<td>Kafka + moderator + consumer pipeline</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen:</strong> Asynchronous Kafka pipeline. At 58K posts/sec, synchronous moderation is architecturally infeasible. Optimistic local preview in the client hides the delay.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The Kafka buffer turns a synchronous dependency into a durable contract. The Moderator Service can be deployed, updated, or restarted without dropping a single post.</p>
+</blockquote>
+<hr />
+<h2 id="frontend-design-40-of-this-system">Frontend Design (40% of this system)</h2>
+<blockquote>
+<p>The frontend of a social feed is a performance engineering problem. The challenge is not rendering posts — it's rendering thousands of posts at 60fps without memory leaks, blank flashes, or layout shifts. This is where frontend candidates differentiate.</p>
+</blockquote>
+<h3 id="infinite-scroll-feed-pagination">Infinite Scroll + Feed Pagination</h3>
+<p><strong>Problem:</strong> User scrolls indefinitely. Loading all posts at once = memory overflow. Polling for new posts = wasted requests.</p>
+<p><strong>Solution:</strong></p>
+<pre><code>                    viewport
+                   ┌─────────┐
+  posts above  ─── │ post 3  │ ← rendered (visible)
+  viewport are     │ post 4  │ ← rendered (visible)
+  unmounted  ───── │ post 5  │ ← rendered (near viewport)
+                   └─────────┘
+  posts below  ─── [sentinel div] ← IntersectionObserver watches this
+  viewport are
+  not yet fetched
+</code></pre>
+<ol>
+<li><strong>Cursor-based pagination</strong> — <code>GET /feed?cursor={lastPostId}&amp;limit=50</code>. Cursor = last seen post_id. Why: offset pagination re-scans from page 1 each time. Cursor = O(1) resume.</li>
+<li><strong>IntersectionObserver on sentinel element</strong> — fires when user is 3 posts from the bottom → triggers <code>GET /feed?cursor=</code> for next page</li>
+<li><strong>Pre-fetch</strong> — next page is fetched while user is still reading current page. No spinner, no blank gap.</li>
+<li><strong>Append-only state</strong> — new posts appended to feed array, not replaced. Never re-render the full list.</li>
+</ol>
+<h3 id="virtual-list-dom-virtualisation">Virtual List (DOM Virtualisation)</h3>
+<p><strong>Problem:</strong> After 10 minutes of scrolling, user has seen 500 posts. 500 DOM nodes × ~15 elements each = 7,500 DOM nodes active. Frame rate drops, memory spikes, browser tab crashes on mobile.</p>
+<p><strong>Solution — render only what's visible:</strong></p>
+<pre><code>Total posts in state:  [1...500]
+DOM nodes rendered:    [posts 47–62] ← only 15 nodes exist at any time
+Posts above viewport:  height placeholder div (maintains scroll position)
+Posts below viewport:  height placeholder div
+</code></pre>
+<ul>
+<li>Track <code>scrollTop</code> → calculate which post indices are in viewport (index = scrollTop / avgPostHeight)</li>
+<li>Render only visible posts ± 3 buffer posts</li>
+<li>Replace off-screen posts with height-preserving placeholder divs → scroll position never jumps</li>
+<li><strong>Why it matters:</strong> 15 DOM nodes vs 7,500 = 60fps vs 8fps on a mid-range Android.</li>
+</ul>
+<h3 id="skeleton-loading-prevent-cls">Skeleton Loading (Prevent CLS)</h3>
+<p><strong>Problem:</strong> Posts load at different speeds. Without placeholders, content jumps around as it loads (Cumulative Layout Shift — CLS). Google uses CLS as a Core Web Vital ranking signal.</p>
+<p><strong>Solution — skeleton screens:</strong></p>
+<pre><code class="language-jsx">// While post is loading:
+&lt;div className=&quot;post-skeleton&quot;&gt;
+  &lt;div className=&quot;skeleton-avatar&quot; /&gt;    // same size as real avatar
+  &lt;div className=&quot;skeleton-text&quot; /&gt;      // same line-height as real text
+  &lt;div className=&quot;skeleton-image&quot; /&gt;     // same aspect ratio as real image
+&lt;/div&gt;
+</code></pre>
+<ul>
+<li>Skeleton has <strong>identical dimensions</strong> to the real post — no layout shift when content arrives</li>
+<li>Animated shimmer effect (CSS gradient sweep) signals "loading" without a spinner</li>
+<li>Reserve exact height for media before image loads (<code>aspect-ratio: 16/9</code> on the image container) — prevents CLS from image popping in</li>
+</ul>
+<h3 id="cdn-for-media">CDN for Media</h3>
+<p><strong>Problem:</strong> Serving images and videos from origin servers at 500M DAU = 200TB/day of media bandwidth from a handful of data centres. Latency for users far from origin = seconds.</p>
+<p><strong>Solution:</strong>
+- All media URLs point to CDN edge nodes, not S3 directly: <code>https://cdn.facebook.com/images/{post_id}/thumb.jpg</code>
+- Pre-signed S3 URLs are never exposed to clients — CDN fetches from S3 on first request, caches at edge
+- <strong>Thumbnail strategy:</strong> serve low-res thumbnail (50KB) immediately; swap to high-res on click/fullscreen
+- <strong>Video:</strong> first frame thumbnail served as image; actual video loaded only on play intent (IntersectionObserver)
+- CDN cache hit rate target: &gt; 95% for profile pictures, &gt; 85% for post images</p>
+<h3 id="client-side-feed-cache-redux-indexeddb">Client-Side Feed Cache (Redux + IndexedDB)</h3>
+<p><strong>Problem:</strong> User visits feed, scrolls 50 posts, navigates to a profile, hits back button → feed re-fetches from server. Perceived as slow.</p>
+<p><strong>Solution:</strong></p>
+<pre><code>Redux store (in-memory, fast):
+  feedSlice: { posts: [...], cursor: &quot;abc123&quot;, hasMore: true }
+
+IndexedDB (persisted across sessions):
+  key: &quot;feed_cache_userId&quot;
+  value: { posts: first 100, timestamp: Date.now() }
+</code></pre>
+<ul>
+<li>On app open: render from IndexedDB cache immediately (0ms) → background-fetch fresh posts from API</li>
+<li>Compare fresh response to cache: if different, animate new posts in at top of feed</li>
+<li>On back navigation: restore scroll position from Redux — user returns to exactly where they were</li>
+<li>Cache TTL: 5 minutes. After TTL, full refresh. During TTL, stale-while-revalidate.</li>
+<li><strong>Why Redux for feed, not local state:</strong> feed state must survive component unmounts during navigation.</li>
+</ul>
+<h3 id="optimistic-ui-for-engagement">Optimistic UI for Engagement</h3>
+<p><strong>Problem:</strong> Like button press → API call → wait 200ms → counter updates. Feels laggy. At 57K likes/sec, every like feeling slow = bad UX.</p>
+<p><strong>Solution:</strong></p>
+<pre><code>User clicks Like:
+  1. Instantly increment local like count (Redux dispatch)
+  2. Show filled heart icon immediately
+  3. POST /posts/:postId/like in background
+  4a. Server responds 200 → no-op (local state is already correct)
+  4b. Server responds 429/500 → revert to pre-click state + show error toast
+</code></pre>
+<p><strong>Why it matters:</strong> The user perceives zero latency. 95%+ of like requests succeed. Reverting on error is rare — the optimistic assumption is almost always correct.</p>
+<h3 id="websocket-for-new-post-notifications">WebSocket for New Post Notifications</h3>
+<p><strong>Problem:</strong> New posts from friends arrive while user is on the feed. Without real-time notification, user misses them until next pull.</p>
+<p><strong>Solution:</strong>
+- Maintain a single WebSocket connection to Notification Service per session
+- On new post event: show a <code>"5 new posts — click to refresh"</code> pill at top of feed
+- Do NOT auto-inject new posts into the feed while user is reading — this shifts layout and disorients the user
+- On pill click: prepend new posts and scroll to top
+- On WebSocket disconnect (mobile background): reconnect silently on foreground resume</p>
+<hr />
+<h2 id="interview-summary">Interview Summary</h2>
+<h3 id="key-decisions">Key Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Problem it solves</th>
+<th>Trade-off accepted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kafka for post write pipeline</td>
+<td>Async moderation without blocking write path</td>
+<td>Post not immediately visible (eventual, 2–5 sec delay)</td>
+</tr>
+<tr>
+<td>Redis Feed Cache (pre-computed)</td>
+<td>Feed load in &lt; 200ms for 500M users</td>
+<td>Write amplification 200× per post; requires Fan-out infrastructure</td>
+</tr>
+<tr>
+<td>Hybrid fan-out (push for regular, pull for celebrities)</td>
+<td>Avoid 10M write-storm on celebrity post</td>
+<td>Celebrity posts may appear seconds later than regular-user posts</td>
+</tr>
+<tr>
+<td>Cassandra for posts + comments</td>
+<td>58K writes/sec post ingestion; 57K engagement writes/sec</td>
+<td>No ACID guarantees; eventual consistency for like counts</td>
+</tr>
+<tr>
+<td>Post Materialization Cache (Redis, 100 posts/user)</td>
+<td>Backfill at scroll exhaustion without DB scan</td>
+<td>Redis memory cost ~400GB; must be kept warm by Post Materializer Service</td>
+</tr>
+<tr>
+<td>ML ranking (candidate gen + model scoring)</td>
+<td>Chronological feed drives 3× less engagement than ranked feed</td>
+<td>+20–50ms latency per feed request; requires pre-computed signal store in Redis</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
+<pre><code>FAST PATH (feed read)
+User → API Gateway → Feed Service → Redis Feed Cache → return post_ids → hydrate → 200ms ✓
+
+RELIABLE PATH (post write)
+User → API Gateway → Content Service → Kafka(raw-post) [durable] → Moderator Service
+→ Kafka(filtered-post) [durable] → Post Consumer → Cassandra [replicated, RF=3] ✓
+</code></pre>
+<h3 id="key-insights-checklist-say-these-out-loud-in-the-interview">Key Insights Checklist <em>(say these out loud in the interview)</em></h3>
+<ul>
+<li>"The news feed is the core engineering problem of Facebook. Push model gives low read latency but costs 1.16M writes/sec in fan-out. Pull model is cheap to write but takes 10 seconds to read. Neither works alone — the hybrid is the only answer at this scale."</li>
+<li>"Feed is pre-computed at write time. When a user opens the app, their feed is already sitting in a Redis sorted set. The read path is a single ZREVRANGE — O(1). Without this, a 10K-friend user's feed load would take 10 seconds."</li>
+<li>"The celebrity threshold is tuneable — it's a business parameter, not an engineering constant. I'd set it based on write amplification observed in production, not a fixed number."</li>
+<li>"Facebook runs three independent Kafka pipelines: post write + moderation, feed fan-out, and notifications/analytics. Each scales independently. Coupling any two of these would create a shared bottleneck."</li>
+<li>"Feed Cache stores post_ids only — 8 bytes each. Full hydration is a batch MGET. This keeps Redis at 400GB instead of 40TB. The post content lives in Cassandra, not the feed cache."</li>
+<li>"Virtual list is not optional on a social feed. 500 loaded posts = 7,500 active DOM nodes = 8fps on Android. With virtualisation: 15 nodes rendered at any time = 60fps. This is the difference between 'it works' and 'it ships'."</li>
+<li>"Skeleton loading prevents CLS. If image containers don't reserve height before the image loads, content shifts when it arrives. Google measures this as a Core Web Vital. Reserve exact dimensions with aspect-ratio CSS."</li>
+<li>"Optimistic UI for likes is the right default assumption — 95%+ of requests succeed. Show the update immediately, revert on error. Users perceive zero latency. Waiting for server confirmation is the wrong mental model for engagement actions."</li>
+<li>"Facebook feed is NOT chronological. It's a two-stage pipeline: candidate generation narrows 500 posts to 200, then an ML model scores each candidate on P(engagement). Chronological is the naive answer — a ranked feed drives 3× more engagement."</li>
+<li>"ML ranking signals are pre-computed, not fetched at request time. 29K feed requests/sec × 200 candidates × 10 signals = 58M DB lookups/sec if computed live. Pre-compute user-author interaction scores into Redis — request time is O(1) lookups."</li>
+</ul></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

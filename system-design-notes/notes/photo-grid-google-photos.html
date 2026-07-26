@@ -1,0 +1,2293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>High-Level Design: Photo Grid System (Google Photos-like) — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html" aria-current="page">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="high-level-design-photo-grid-system-google-photos-like">High-Level Design: Photo Grid System (Google Photos-like)</h1>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-problem-statement--requirements">Problem Statement &amp; Requirements</a></li>
+<li><a href="#2-high-level-architecture">High-Level Architecture</a></li>
+<li><a href="#3-component-architecture-frontend">Component Architecture (Frontend)</a></li>
+<li><a href="#4-data-flow">Data Flow</a></li>
+<li><a href="#5-api-design--communication-protocols">API Design &amp; Communication Protocols</a></li>
+<li><a href="#6-database-design">Database Design</a></li>
+<li><a href="#7-caching-strategy-multi-layer">Caching Strategy (Multi-Layer)</a></li>
+<li><a href="#8-state-management-frontend">State Management (Frontend)</a></li>
+<li><a href="#9-performance-optimization">Performance Optimization</a></li>
+<li><a href="#10-error-handling--edge-cases">Error Handling &amp; Edge Cases</a></li>
+<li><a href="#11-interview-cross-questions--answers">Interview Cross-Questions &amp; Answers</a></li>
+<li><a href="#12-summary--key-takeaways">Summary &amp; Key Takeaways</a></li>
+</ol>
+<hr />
+<h2 id="1-problem-statement-requirements">1. Problem Statement &amp; Requirements</h2>
+<h3 id="11-functional-requirements">1.1 Functional Requirements</h3>
+<p><strong>Core Features:</strong>
+- Upload photos/videos (single &amp; batch)
+- Display photos in a responsive grid/masonry layout
+- Infinite scroll through large collections (10K+ photos)
+- Search photos by:
+  - Date, location, metadata
+  - Content (objects, scenes via ML)
+  - People/faces
+  - Text in images (OCR)
+- Create and manage albums
+- Share photos/albums with granular permissions
+- Organize by timeline, location, people
+- Photo editing (basic filters, crop, rotate)
+- Face detection and grouping</p>
+<p><strong>Non-Functional Requirements:</strong>
+- Low latency: &lt; 200ms for grid rendering
+- Handle millions of users
+- 99.9% availability
+- Support 10TB+ storage per user
+- Efficient bandwidth usage (adaptive quality)
+- Resumable uploads for large files
+- Cross-device sync
+- GDPR/privacy compliance</p>
+<h3 id="12-scale-estimates">1.2 Scale Estimates</h3>
+<pre><code>Users: 100M active users
+Photos per user: ~10K average, 100K for power users
+Total photos: ~1 Trillion photos
+Upload rate: ~10K photos/sec peak
+Read:Write ratio: 100:1 (read-heavy)
+Storage: ~100 PB (with compression &amp; deduplication)
+Bandwidth:
+  - Upload: ~100 Gbps peak
+  - Download: ~10 Tbps (with CDN)
+</code></pre>
+<h3 id="13-out-of-scope-for-this-design">1.3 Out of Scope (for this design)</h3>
+<ul>
+<li>Video streaming optimization (separate HLD needed)</li>
+<li>Advanced AI features (auto-enhance, style transfer)</li>
+<li>Print/merchandise ordering</li>
+<li>Live Photos/Motion Photos</li>
+<li>Collaborative editing</li>
+</ul>
+<hr />
+<h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
+<pre><code>                                    ┌─────────────────────────────────┐
+                                    │   CDN (CloudFront/Cloudflare)   │
+                                    │   - Image delivery              │
+                                    │   - Thumbnail caching           │
+                                    └──────────────┬──────────────────┘
+                                                   │
+                                                   │
+┌─────────────────┐                ┌──────────────▼──────────────────┐
+│                 │                │      Load Balancer (L7)         │
+│  Mobile Apps    │◄───────────────┤      - SSL Termination          │
+│  (iOS/Android)  │                │      - Rate limiting            │
+│                 │                └──────────────┬──────────────────┘
+└─────────────────┘                               │
+                                                   │
+┌─────────────────┐                ┌──────────────▼──────────────────┐
+│                 │                │      API Gateway                │
+│  Web Client     │◄───────────────┤      - Auth validation          │
+│  (React/SPA)    │                │      - Request routing          │
+│                 │                │      - API composition          │
+└─────────────────┘                └──────────────┬──────────────────┘
+                                                   │
+                        ┌──────────────────────────┼──────────────────────────┐
+                        │                          │                          │
+                        │                          │                          │
+              ┌─────────▼─────────┐    ┌──────────▼──────────┐   ┌──────────▼─────────┐
+              │  Upload Service   │    │   Gallery Service   │   │   Search Service   │
+              │  - Resumable      │    │   - Photo listing   │   │   - Metadata search│
+              │  - Chunked upload │    │   - Timeline view   │   │   - ML-based search│
+              │  - Validation     │    │   - Album mgmt      │   │   - Face search    │
+              └─────────┬─────────┘    └──────────┬──────────┘   └──────────┬─────────┘
+                        │                         │                          │
+                        │                         │                          │
+              ┌─────────▼─────────┐    ┌──────────▼──────────┐   ┌──────────▼─────────┐
+              │ Image Processing  │    │   Metadata Service  │   │   ML/AI Service    │
+              │ - Thumbnail gen   │    │   - EXIF extract    │   │   - Face detection │
+              │ - Format convert  │    │   - Geo tagging     │   │   - Object detect  │
+              │ - Compression     │    │   - Deduplication   │   │   - Scene recog    │
+              └─────────┬─────────┘    └──────────┬──────────┘   └──────────┬─────────┘
+                        │                         │                          │
+                        │                         │                          │
+        ┌───────────────┴───────────┐  ┌──────────▼──────────┐   ┌──────────▼─────────┐
+        │                           │  │   PostgreSQL        │   │   Elasticsearch    │
+        │   Object Storage (S3)     │  │   - User data       │   │   - Search index   │
+        │   - Original photos       │  │   - Photo metadata  │   │   - Content tags   │
+        │   - Thumbnails (multi)    │  │   - Albums/shares   │   │   - Face vectors   │
+        │   - Encrypted at rest     │  │   - Permissions     │   │                    │
+        │                           │  └──────────┬──────────┘   └────────────────────┘
+        └───────────────────────────┘             │
+                                       ┌──────────▼──────────┐
+                                       │   Redis Cluster     │
+                                       │   - Session cache   │
+                                       │   - Metadata cache  │
+                                       │   - Rate limit      │
+                                       └─────────────────────┘
+
+                        ┌────────────────────────────────────┐
+                        │   Message Queue (Kafka/SQS)        │
+                        │   - Async processing tasks         │
+                        │   - ML pipeline events             │
+                        │   - Thumbnail generation jobs      │
+                        └────────────────────────────────────┘
+</code></pre>
+<h3 id="21-architecture-rationale">2.1 Architecture Rationale</h3>
+<p><strong>Microservices Approach:</strong>
+- <strong>Upload Service</strong>: Isolated to handle high write load, implement retry logic
+- <strong>Gallery Service</strong>: Read-optimized, heavily cached
+- <strong>Search Service</strong>: Separate indexing pipeline, can scale independently
+- <strong>Image Processing</strong>: CPU/GPU intensive, can be scaled horizontally with workers</p>
+<p><strong>Storage Strategy:</strong>
+- <strong>S3 for blobs</strong>: Cost-effective, durable (11 9's), scales infinitely
+- <strong>PostgreSQL for metadata</strong>: ACID guarantees for user data, albums, sharing
+- <strong>Elasticsearch</strong>: Full-text search, ML vector search capabilities
+- <strong>Redis</strong>: Sub-millisecond latency for hot data</p>
+<hr />
+<h2 id="3-component-architecture-frontend">3. Component Architecture (Frontend)</h2>
+<h3 id="31-component-hierarchy">3.1 Component Hierarchy</h3>
+<pre><code>App
+│
+├── AuthProvider (Context)
+│   └── User session, tokens
+│
+├── Router
+│   │
+│   ├── PhotoGridView
+│   │   ├── VirtualizedGrid (react-window/react-virtuoso)
+│   │   │   ├── PhotoTile
+│   │   │   │   ├── LazyImage
+│   │   │   │   ├── SelectionOverlay
+│   │   │   │   └── PhotoActions
+│   │   │   └── DateSeparator
+│   │   │
+│   │   ├── GridControls
+│   │   │   ├── ViewToggle (grid/list/map)
+│   │   │   ├── SortOptions
+│   │   │   └── FilterPanel
+│   │   │
+│   │   ├── InfiniteScrollTrigger
+│   │   └── UploadDropzone
+│   │
+│   ├── AlbumView
+│   │   ├── AlbumHeader
+│   │   ├── PhotoGridView (reused)
+│   │   └── SharingSettings
+│   │
+│   ├── SearchView
+│   │   ├── SearchBar
+│   │   │   ├── Autocomplete
+│   │   │   └── FilterChips
+│   │   ├── SearchResults (PhotoGridView)
+│   │   └── SuggestedSearches
+│   │
+│   ├── PhotoDetailView (Modal/Route)
+│   │   ├── FullResolutionImage
+│   │   ├── MetadataPanel
+│   │   ├── NavigationControls (prev/next)
+│   │   └── ActionBar (share/delete/edit)
+│   │
+│   └── UploadManager
+│       ├── UploadQueue
+│       ├── UploadProgress
+│       └── RetryManager
+│
+└── GlobalComponents
+    ├── Notification/Toast
+    ├── ErrorBoundary
+    └── NetworkStatusIndicator
+</code></pre>
+<h3 id="32-key-frontend-components">3.2 Key Frontend Components</h3>
+<p><strong>VirtualizedGrid:</strong></p>
+<pre><code class="language-javascript">// Renders only visible rows + buffer
+// Handles 10K+ items efficiently
+
+&lt;VirtualizedGrid
+  items={photos}
+  itemHeight={calculateDynamicHeight} // Masonry support
+  overscan={3} // Preload 3 screens
+  onEndReached={loadMore}
+/&gt;
+</code></pre>
+<p><strong>LazyImage Component:</strong></p>
+<pre><code class="language-javascript">// Progressive loading: blur placeholder -&gt; thumbnail -&gt; full
+&lt;LazyImage
+  placeholder={blurhash}
+  thumbnail={thumbnailUrl} // 400px
+  src={fullUrl} // 1920px
+  srcSet={responsiveSources}
+  loading=&quot;lazy&quot;
+  decoding=&quot;async&quot;
+/&gt;
+</code></pre>
+<hr />
+<h2 id="4-data-flow">4. Data Flow</h2>
+<h3 id="41-upload-flow">4.1 Upload Flow</h3>
+<pre><code>┌──────────┐
+│  Client  │
+└────┬─────┘
+     │
+     │ 1. Request upload session
+     ├──────────────────────────────────────┐
+     │                                      ▼
+     │                          ┌────────────────────┐
+     │                          │  Upload Service    │
+     │                          └────────┬───────────┘
+     │                                   │
+     │ 2. Return signed URL              │
+     │    + upload session ID            │
+     │◄──────────────────────────────────┤
+     │                                   │
+     │ 3. Upload chunks directly         │
+     │   (multipart upload)              │
+     ├───────────────────────────────────┼──────────┐
+     │                                   │          ▼
+     │                                   │    ┌──────────┐
+     │                                   │    │    S3    │
+     │                                   │    └──────┬───┘
+     │ 4. Chunk uploaded ACK             │           │
+     │◄──────────────────────────────────┼───────────┘
+     │                                   │
+     │ 5. Complete upload (all chunks)   │
+     ├──────────────────────────────────►│
+     │                                   │
+     │                                   │ 6. Merge chunks
+     │                                   │    Extract EXIF
+     │                                   │    Save metadata
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────┐
+     │                                   │  │  PostgreSQL  │
+     │                                   │  └──────────────┘
+     │                                   │
+     │                                   │ 7. Queue processing
+     │                                   │    jobs
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────┐
+     │                                   │  │    Kafka     │
+     │                                   │  └──────┬───────┘
+     │ 8. Upload complete                │         │
+     │    Return photo ID                │         │
+     │◄──────────────────────────────────┤         │
+     │                                   │         │
+     │                                             │
+     │                              ┌──────────────┘
+     │                              ▼
+     │                     ┌──────────────────┐
+     │                     │ Async Workers    │
+     │                     │ - Thumbnails     │
+     │                     │ - Face detection │
+     │                     │ - Object tagging │
+     │                     └──────────────────┘
+     │
+     │ 9. WebSocket/SSE: Processing complete
+     │◄─────────────────────────────────────────
+     │
+</code></pre>
+<p><strong>Upload Implementation Details:</strong></p>
+<ol>
+<li><strong>Chunked Upload (Resumable):</strong></li>
+<li>Split large files into 5MB chunks</li>
+<li>Each chunk uploaded independently</li>
+<li>Client tracks uploaded chunks (localStorage)</li>
+<li>Resume from last successful chunk on failure</li>
+<li>
+<p>Use <code>Content-Range</code> headers</p>
+</li>
+<li>
+<p><strong>Why Resumable Uploads:</strong></p>
+</li>
+<li>Mobile networks are unreliable</li>
+<li>Large files (RAW images: 50-100MB)</li>
+<li>Better user experience (pause/resume)</li>
+<li>
+<p>Reduced bandwidth waste on retries</p>
+</li>
+<li>
+<p><strong>Direct S3 Upload:</strong></p>
+</li>
+<li>Reduces server load (no proxy)</li>
+<li>S3 handles multipart upload natively</li>
+<li>Pre-signed URLs for security (1hr expiry)</li>
+<li>CORS configured for browser uploads</li>
+</ol>
+<h3 id="42-photo-grid-view-flow">4.2 Photo Grid View Flow</h3>
+<pre><code>┌──────────┐
+│  Client  │
+└────┬─────┘
+     │
+     │ 1. Request photos (page=1, limit=50)
+     ├──────────────────────────────────────┐
+     │                                      ▼
+     │                          ┌────────────────────┐
+     │                          │  Gallery Service   │
+     │                          └────────┬───────────┘
+     │                                   │
+     │                                   │ 2. Check cache
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────┐
+     │                                   │  │    Redis     │
+     │                                   │  │  (metadata)  │
+     │                                   │  └──────┬───────┘
+     │                                   │         │
+     │                                   │ 3. Cache miss
+     │                                   │◄────────┘
+     │                                   │
+     │                                   │ 4. Query DB
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────┐
+     │                                   │  │ PostgreSQL   │
+     │                                   │  │ SELECT *     │
+     │                                   │  │ FROM photos  │
+     │                                   │  │ WHERE ...    │
+     │                                   │  │ ORDER BY     │
+     │                                   │  │   created    │
+     │                                   │  │ LIMIT 50     │
+     │                                   │  └──────┬───────┘
+     │                                   │         │
+     │                                   │ 5. Results
+     │                                   │◄────────┘
+     │                                   │
+     │                                   │ 6. Cache results
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────┐
+     │                                   │  │    Redis     │
+     │                                   │  │   (1 hour)   │
+     │                                   │  └──────────────┘
+     │                                   │
+     │ 7. Return photo metadata          │
+     │    + CDN URLs (thumbnails)        │
+     │◄──────────────────────────────────┤
+     │                                   │
+     │ 8. Browser requests thumbnails    │
+     │    (parallel, HTTP/2)             │
+     ├───────────────────────────────────┼──────────┐
+     │                                   │          ▼
+     │                                   │    ┌──────────┐
+     │                                   │    │   CDN    │
+     │                                   │    └──────┬───┘
+     │                                   │           │
+     │                                   │           │ Cache
+     │                                   │           │ miss?
+     │                                   │           │
+     │                                   │           ▼
+     │                                   │    ┌──────────┐
+     │                                   │    │    S3    │
+     │                                   │    └──────┬───┘
+     │ 9. Images delivered               │           │
+     │◄──────────────────────────────────┼───────────┘
+     │                                   │
+     │ 10. User scrolls near end         │
+     │     Trigger next page load        │
+     ├──────────────────────────────────►│
+     │     (page=2, limit=50)            │
+     │                                   │
+</code></pre>
+<p><strong>View Optimization:</strong>
+- <strong>Cursor-based pagination</strong> (not offset): <code>?cursor=photoId123&amp;limit=50</code>
+- <strong>Thumbnail sizes</strong>: 150px, 400px, 800px (responsive)
+- <strong>Intersection Observer</strong> for lazy loading
+- <strong>Virtual scrolling</strong>: Only render visible + 3 screen buffer
+- <strong>Prefetch next page</strong> when 80% scrolled</p>
+<h3 id="43-search-flow">4.3 Search Flow</h3>
+<pre><code>┌──────────┐
+│  Client  │
+└────┬─────┘
+     │
+     │ 1. Search query: &quot;beach sunset&quot;
+     ├──────────────────────────────────────┐
+     │                                      ▼
+     │                          ┌────────────────────┐
+     │                          │  Search Service    │
+     │                          └────────┬───────────┘
+     │                                   │
+     │                                   │ 2. Parse query
+     │                                   │    + apply filters
+     │                                   │
+     │                                   │ 3. Query ES index
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────────┐
+     │                                   │  │ Elasticsearch    │
+     │                                   │  │ - Text search    │
+     │                                   │  │ - Vector search  │
+     │                                   │  │ - Filters (date) │
+     │                                   │  │ - Aggregations   │
+     │                                   │  └──────┬───────────┘
+     │                                   │         │
+     │                                   │ 4. Photo IDs + score
+     │                                   │◄────────┘
+     │                                   │
+     │                                   │ 5. Enrich metadata
+     │                                   ├────────┐
+     │                                   │        ▼
+     │                                   │  ┌──────────────┐
+     │                                   │  │ PostgreSQL   │
+     │                                   │  │ + Redis      │
+     │                                   │  └──────┬───────┘
+     │                                   │         │
+     │                                   │◄────────┘
+     │                                   │
+     │ 6. Return ranked results          │
+     │◄──────────────────────────────────┤
+     │                                   │
+</code></pre>
+<p><strong>Search Capabilities:</strong></p>
+<ol>
+<li><strong>Metadata Search</strong> (Elasticsearch):</li>
+<li>Date ranges, location, camera model</li>
+<li>File type, size, dimensions</li>
+<li>
+<p>Album name, tags</p>
+</li>
+<li>
+<p><strong>Content Search</strong> (ML + Elasticsearch):</p>
+</li>
+<li>Objects: "dog", "car", "sunset"</li>
+<li>Scenes: "beach", "mountain", "indoor"</li>
+<li>Colors: "blue", "warm tones"</li>
+<li>
+<p>Similarity search (vector embeddings)</p>
+</li>
+<li>
+<p><strong>Face Search</strong>:</p>
+</li>
+<li>Face embeddings stored as vectors (512-dim)</li>
+<li>k-NN search in Elasticsearch</li>
+<li>Group by person (clustering)</li>
+</ol>
+<hr />
+<h2 id="5-api-design-communication-protocols">5. API Design &amp; Communication Protocols</h2>
+<h3 id="51-rest-api-design">5.1 REST API Design</h3>
+<p><strong>Why REST for Photo Grid:</strong>
+1. <strong>Request-Response pattern fits perfectly</strong>: User requests photos, server responds
+2. <strong>Cacheable by design</strong>: GET requests cached at CDN/browser level
+3. <strong>Stateless</strong>: Easy to scale horizontally
+4. <strong>Standard HTTP features</strong>: Compression, range requests, conditional GET
+5. <strong>No need for real-time</strong>: Photos don't update in real-time (unlike chat)</p>
+<p><strong>When NOT to use REST:</strong>
+- Real-time collaborative editing (use WebSocket)
+- Live upload progress (use SSE)
+- Push notifications (use WebSocket/SSE)</p>
+<h3 id="52-core-api-endpoints">5.2 Core API Endpoints</h3>
+<pre><code>Authentication:
+POST   /api/v1/auth/login
+POST   /api/v1/auth/refresh
+POST   /api/v1/auth/logout
+
+Photo Management:
+GET    /api/v1/photos
+       ?cursor=abc123&amp;limit=50&amp;sort=date_desc&amp;filter=favorites
+GET    /api/v1/photos/{photoId}
+POST   /api/v1/photos/upload/init
+       → Returns: { uploadId, signedUrls[], sessionToken }
+POST   /api/v1/photos/upload/complete
+PUT    /api/v1/photos/{photoId}
+DELETE /api/v1/photos/{photoId}
+POST   /api/v1/photos/batch-delete
+
+Albums:
+GET    /api/v1/albums
+POST   /api/v1/albums
+GET    /api/v1/albums/{albumId}/photos
+POST   /api/v1/albums/{albumId}/photos
+       Body: { photoIds: [...] }
+
+Search:
+GET    /api/v1/search
+       ?q=beach&amp;type=content&amp;date_from=2024-01-01
+GET    /api/v1/search/suggestions
+       ?q=be → Returns: [&quot;beach&quot;, &quot;bedroom&quot;, &quot;bear&quot;]
+
+People/Faces:
+GET    /api/v1/people
+GET    /api/v1/people/{personId}/photos
+POST   /api/v1/people/{personId}/merge
+       Body: { targetPersonId }
+
+Sharing:
+POST   /api/v1/shares
+       Body: { photoIds, permissions, recipients }
+GET    /api/v1/shares/{shareId}
+PUT    /api/v1/shares/{shareId}/permissions
+</code></pre>
+<h3 id="53-api-response-format">5.3 API Response Format</h3>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;data&quot;: {
+    &quot;photos&quot;: [...],
+    &quot;cursor&quot;: &quot;eyJpZCI6MTIzfQ==&quot;,
+    &quot;hasMore&quot;: true
+  },
+  &quot;meta&quot;: {
+    &quot;total&quot;: 10523,
+    &quot;requestId&quot;: &quot;req_abc123&quot;
+  }
+}
+</code></pre>
+<p><strong>Error Response:</strong></p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;error&quot;,
+  &quot;error&quot;: {
+    &quot;code&quot;: &quot;PHOTO_NOT_FOUND&quot;,
+    &quot;message&quot;: &quot;Photo with ID 123 not found&quot;,
+    &quot;details&quot;: {}
+  },
+  &quot;meta&quot;: {
+    &quot;requestId&quot;: &quot;req_abc123&quot;
+  }
+}
+</code></pre>
+<h3 id="54-when-to-use-different-protocols">5.4 When to Use Different Protocols</h3>
+<table>
+<thead>
+<tr>
+<th>Use Case</th>
+<th>Protocol</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Photo grid listing</td>
+<td>REST</td>
+<td>Cacheable, stateless, standard</td>
+</tr>
+<tr>
+<td>Photo upload progress</td>
+<td>SSE</td>
+<td>One-way server push, simpler than WebSocket</td>
+</tr>
+<tr>
+<td>Shared album updates</td>
+<td>WebSocket</td>
+<td>Bidirectional, multiple collaborators</td>
+</tr>
+<tr>
+<td>Search autocomplete</td>
+<td>REST</td>
+<td>Debounced requests, cacheable</td>
+</tr>
+<tr>
+<td>Image delivery</td>
+<td>HTTP/2</td>
+<td>Multiplexing, header compression</td>
+</tr>
+<tr>
+<td>Large file upload</td>
+<td>Resumable HTTP</td>
+<td>Chunked, retryable</td>
+</tr>
+<tr>
+<td>Real-time comments</td>
+<td>WebSocket</td>
+<td>Low latency, bidirectional</td>
+</tr>
+</tbody>
+</table>
+<h3 id="55-graphql-alternative-trade-off">5.5 GraphQL Alternative (Trade-off)</h3>
+<p><strong>Why NOT GraphQL for Photo Grid:</strong>
+- Over-fetching not a problem (fixed schema for photos)
+- REST caching is superior (CDN, browser cache)
+- Simpler to implement and debug
+- No need for complex nested queries
+- Better HTTP caching semantics</p>
+<p><strong>When GraphQL Makes Sense:</strong>
+- Multiple related resources in one request
+- Mobile app with limited bandwidth
+- Flexible client requirements (3rd party APIs)</p>
+<hr />
+<h2 id="6-database-design">6. Database Design</h2>
+<h3 id="61-sql-vs-nosql-decision">6.1 SQL vs NoSQL Decision</h3>
+<p><strong>PostgreSQL (Primary Metadata Store)</strong></p>
+<p><strong>Why SQL:</strong>
+1. <strong>ACID guarantees</strong>: Critical for user data, sharing permissions
+2. <strong>Complex queries</strong>: JOIN albums, photos, shares, users
+3. <strong>Transactions</strong>: Album creation + photo assignment in one transaction
+4. <strong>Mature</strong>: Rich ecosystem, excellent tooling
+5. <strong>JSON support</strong>: Flexible metadata storage (JSONB)</p>
+<p><strong>Schema Design:</strong></p>
+<pre><code class="language-sql">-- Users table
+CREATE TABLE users (
+    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255),
+    storage_used BIGINT DEFAULT 0,
+    storage_limit BIGINT DEFAULT 107374182400, -- 100GB
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Photos table (main metadata)
+CREATE TABLE photos (
+    photo_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+
+    -- Storage
+    s3_key VARCHAR(512) NOT NULL,
+    s3_bucket VARCHAR(255) NOT NULL,
+    file_size BIGINT NOT NULL,
+
+    -- Metadata
+    original_filename VARCHAR(512),
+    mime_type VARCHAR(100),
+    width INTEGER,
+    height INTEGER,
+
+    -- EXIF data (JSONB for flexibility)
+    exif_data JSONB,
+
+    -- Computed fields
+    taken_at TIMESTAMP, -- from EXIF or upload time
+    location GEOGRAPHY(POINT), -- PostGIS for geo queries
+
+    -- ML/AI generated
+    content_tags TEXT[], -- ['beach', 'sunset', 'ocean']
+    detected_faces JSONB[], -- [{bbox, personId, confidence}]
+
+    -- Flags
+    is_favorite BOOLEAN DEFAULT FALSE,
+    is_archived BOOLEAN DEFAULT FALSE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    deleted_at TIMESTAMP,
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+
+    -- Indexes
+    CONSTRAINT valid_dimensions CHECK (width &gt; 0 AND height &gt; 0)
+);
+
+-- Indexes for common queries
+CREATE INDEX idx_photos_user_created ON photos(user_id, created_at DESC)
+    WHERE is_deleted = FALSE;
+CREATE INDEX idx_photos_user_taken ON photos(user_id, taken_at DESC)
+    WHERE is_deleted = FALSE;
+CREATE INDEX idx_photos_location ON photos USING GIST(location)
+    WHERE location IS NOT NULL;
+CREATE INDEX idx_photos_tags ON photos USING GIN(content_tags);
+CREATE INDEX idx_photos_exif ON photos USING GIN(exif_data);
+
+-- Thumbnails (pre-computed)
+CREATE TABLE photo_thumbnails (
+    thumbnail_id SERIAL PRIMARY KEY,
+    photo_id UUID NOT NULL REFERENCES photos(photo_id) ON DELETE CASCADE,
+    size_variant VARCHAR(50) NOT NULL, -- 'small', 'medium', 'large'
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    s3_key VARCHAR(512) NOT NULL,
+    file_size BIGINT,
+    format VARCHAR(20), -- 'webp', 'avif', 'jpg'
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(photo_id, size_variant, format)
+);
+
+CREATE INDEX idx_thumbnails_photo ON photo_thumbnails(photo_id);
+
+-- Albums
+CREATE TABLE albums (
+    album_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    cover_photo_id UUID REFERENCES photos(photo_id) ON DELETE SET NULL,
+    is_shared BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_albums_user ON albums(user_id, created_at DESC);
+
+-- Album Photos (many-to-many)
+CREATE TABLE album_photos (
+    album_id UUID NOT NULL REFERENCES albums(album_id) ON DELETE CASCADE,
+    photo_id UUID NOT NULL REFERENCES photos(photo_id) ON DELETE CASCADE,
+    added_at TIMESTAMP DEFAULT NOW(),
+    position INTEGER, -- for manual ordering
+
+    PRIMARY KEY (album_id, photo_id)
+);
+
+CREATE INDEX idx_album_photos_album ON album_photos(album_id, position);
+CREATE INDEX idx_album_photos_photo ON album_photos(photo_id);
+
+-- People/Faces
+CREATE TABLE people (
+    person_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    name VARCHAR(255),
+    cover_photo_id UUID REFERENCES photos(photo_id),
+    face_embedding VECTOR(512), -- pgvector extension for similarity search
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    UNIQUE(user_id, name)
+);
+
+CREATE INDEX idx_people_user ON people(user_id);
+
+-- Shares
+CREATE TABLE shares (
+    share_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    resource_type VARCHAR(50) NOT NULL, -- 'photo', 'album'
+    resource_id UUID NOT NULL,
+    share_token VARCHAR(255) UNIQUE NOT NULL,
+
+    -- Permissions
+    can_view BOOLEAN DEFAULT TRUE,
+    can_download BOOLEAN DEFAULT FALSE,
+    can_add_photos BOOLEAN DEFAULT FALSE,
+
+    -- Access control
+    is_public BOOLEAN DEFAULT FALSE,
+    password_hash VARCHAR(255), -- optional password protection
+    expires_at TIMESTAMP,
+
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT valid_resource_type CHECK (resource_type IN ('photo', 'album'))
+);
+
+CREATE INDEX idx_shares_owner ON shares(owner_id);
+CREATE INDEX idx_shares_token ON shares(share_token) WHERE expires_at &gt; NOW();
+
+-- Share Recipients (for private shares)
+CREATE TABLE share_recipients (
+    share_id UUID NOT NULL REFERENCES shares(share_id) ON DELETE CASCADE,
+    recipient_email VARCHAR(255) NOT NULL,
+    has_accessed BOOLEAN DEFAULT FALSE,
+    accessed_at TIMESTAMP,
+
+    PRIMARY KEY (share_id, recipient_email)
+);
+</code></pre>
+<h3 id="62-nosql-for-specific-use-cases">6.2 NoSQL for Specific Use Cases</h3>
+<p><strong>Elasticsearch (Search &amp; ML Features)</strong></p>
+<pre><code class="language-json">// photos_index mapping
+{
+  &quot;mappings&quot;: {
+    &quot;properties&quot;: {
+      &quot;photo_id&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+      &quot;user_id&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+      &quot;taken_at&quot;: { &quot;type&quot;: &quot;date&quot; },
+      &quot;location&quot;: { &quot;type&quot;: &quot;geo_point&quot; },
+
+      // Text search
+      &quot;content_tags&quot;: {
+        &quot;type&quot;: &quot;text&quot;,
+        &quot;fields&quot;: {
+          &quot;keyword&quot;: { &quot;type&quot;: &quot;keyword&quot; }
+        }
+      },
+      &quot;ocr_text&quot;: { &quot;type&quot;: &quot;text&quot; },
+      &quot;exif_data&quot;: {
+        &quot;properties&quot;: {
+          &quot;camera_model&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+          &quot;lens&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+          &quot;iso&quot;: { &quot;type&quot;: &quot;integer&quot; }
+        }
+      },
+
+      // Vector search for similarity
+      &quot;image_embedding&quot;: {
+        &quot;type&quot;: &quot;dense_vector&quot;,
+        &quot;dims&quot;: 512,
+        &quot;index&quot;: true,
+        &quot;similarity&quot;: &quot;cosine&quot;
+      },
+
+      // Aggregations
+      &quot;date_bucket&quot;: { &quot;type&quot;: &quot;keyword&quot; }, // &quot;2024-01&quot;
+      &quot;location_city&quot;: { &quot;type&quot;: &quot;keyword&quot; }
+    }
+  }
+}
+</code></pre>
+<p><strong>When to Use Elasticsearch:</strong>
+- Full-text search across tags, OCR text
+- Vector similarity search (find similar photos)
+- Geo-spatial queries (photos near location)
+- Aggregations (photos by month, location, camera)</p>
+<p><strong>DynamoDB Alternative (Trade-off):</strong></p>
+<p><strong>Pros:</strong>
+- Infinite scale, fully managed
+- Single-digit millisecond latency
+- Good for key-value access patterns</p>
+<p><strong>Cons:</strong>
+- Expensive for scan operations
+- Complex query patterns need careful design
+- No JOIN support
+- Harder to model relationships (albums, shares)</p>
+<p><strong>Verdict:</strong> PostgreSQL + Elasticsearch is better for photo grid due to:
+- Complex relational data (users, photos, albums, shares)
+- Need for ACID transactions
+- Rich querying capabilities</p>
+<h3 id="63-data-partitioning-strategy">6.3 Data Partitioning Strategy</h3>
+<p><strong>Sharding PostgreSQL:</strong></p>
+<pre><code>Shard Key: user_id (hash-based)
+
+Why user_id:
+- Most queries filtered by user_id
+- Avoids cross-shard JOINs
+- Even distribution (assuming balanced user base)
+- User data co-located (photos, albums, shares)
+
+Shards: 64 logical shards initially
+- Shard 0-15: DB cluster A
+- Shard 16-31: DB cluster B
+- Shard 32-47: DB cluster C
+- Shard 48-63: DB cluster D
+
+Routing:
+hash(user_id) % 64 → shard_id
+</code></pre>
+<p><strong>Global Tables (No sharding):</strong>
+- Users table (replicated across all shards)
+- System configuration</p>
+<hr />
+<h2 id="7-caching-strategy-multi-layer">7. Caching Strategy (Multi-Layer)</h2>
+<h3 id="71-caching-layers">7.1 Caching Layers</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                    Browser Cache                        │
+│  - Thumbnails (7 days)                                  │
+│  - Full images (1 day)                                  │
+│  - Cache-Control: public, max-age=604800               │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                    CDN Cache (CloudFront)               │
+│  - Thumbnails (30 days)                                 │
+│  - Original images (7 days)                             │
+│  - 95%+ cache hit rate for images                       │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                 Redis Cache (Metadata)                  │
+│  Layer 1: Hot data (1 hour TTL)                         │
+│    - User's recent photos list                          │
+│    - Album metadata                                     │
+│  Layer 2: Warm data (24 hour TTL)                       │
+│    - User preferences                                   │
+│    - Share settings                                     │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│              Application Memory Cache                   │
+│  - User session data                                    │
+│  - Frequently accessed metadata (LRU, 100MB limit)      │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="72-redis-caching-patterns">7.2 Redis Caching Patterns</h3>
+<p><strong>1. Photo List Cache:</strong></p>
+<pre><code>Key: photos:user:{userId}:list:{cursor}:{limit}:{filters}
+Value: JSON array of photo metadata
+TTL: 1 hour
+
+Example:
+photos:user:123:list:null:50:recent
+→ [{photoId, url, thumbnail, metadata}, ...]
+</code></pre>
+<p><strong>2. Photo Metadata Cache:</strong></p>
+<pre><code>Key: photo:{photoId}
+Value: JSON of complete photo metadata
+TTL: 24 hours
+
+Invalidation: On photo update/delete
+</code></pre>
+<p><strong>3. Album Cache:</strong></p>
+<pre><code>Key: album:{albumId}:photos:{cursor}
+Value: Photo IDs list
+TTL: 1 hour
+</code></pre>
+<p><strong>4. Search Results Cache:</strong></p>
+<pre><code>Key: search:{hash(query)}:{cursor}
+Value: Photo IDs + scores
+TTL: 15 minutes (shorter due to freshness)
+</code></pre>
+<p><strong>5. User Storage Quota:</strong></p>
+<pre><code>Key: user:{userId}:storage
+Value: Integer (bytes used)
+TTL: 5 minutes
+
+Updated on: Upload complete, photo delete
+</code></pre>
+<h3 id="73-cache-invalidation">7.3 Cache Invalidation</h3>
+<p><strong>Write-Through Pattern:</strong></p>
+<pre><code class="language-javascript">async function updatePhoto(photoId, updates) {
+  // 1. Update database
+  await db.photos.update(photoId, updates);
+
+  // 2. Invalidate caches
+  await Promise.all([
+    redis.del(`photo:${photoId}`),
+    redis.del(`photos:user:${userId}:list:*`), // Pattern delete
+    redis.del(`album:*:photos:*`) // If photo in albums
+  ]);
+
+  // 3. Optionally warm cache
+  const fresh = await db.photos.get(photoId);
+  await redis.set(`photo:${photoId}`, JSON.stringify(fresh), 'EX', 86400);
+}
+</code></pre>
+<p><strong>Cache Stampede Prevention:</strong></p>
+<pre><code class="language-javascript">async function getPhotoWithCache(photoId) {
+  // Try cache
+  let photo = await redis.get(`photo:${photoId}`);
+  if (photo) return JSON.parse(photo);
+
+  // Acquire lock to prevent stampede
+  const lock = await redis.set(
+    `lock:photo:${photoId}`,
+    '1',
+    'NX',
+    'EX',
+    10
+  );
+
+  if (lock) {
+    // First request: fetch and cache
+    photo = await db.photos.get(photoId);
+    await redis.set(
+      `photo:${photoId}`,
+      JSON.stringify(photo),
+      'EX',
+      86400
+    );
+    await redis.del(`lock:photo:${photoId}`);
+    return photo;
+  } else {
+    // Wait for first request to finish
+    await sleep(100);
+    return getPhotoWithCache(photoId); // Retry
+  }
+}
+</code></pre>
+<h3 id="74-cdn-configuration">7.4 CDN Configuration</h3>
+<p><strong>CloudFront Cache Behaviors:</strong></p>
+<pre><code>/thumbnails/*
+  - TTL: 2592000s (30 days)
+  - Compress: Yes (Gzip, Brotli)
+  - Cache-Control: public, immutable
+  - Query strings: Include (for variations)
+
+/photos/original/*
+  - TTL: 604800s (7 days)
+  - Compress: No (already compressed)
+  - Cache-Control: public, max-age=604800
+
+/api/*
+  - TTL: 0 (no cache)
+  - Forward all headers
+  - Forward cookies
+</code></pre>
+<p><strong>Cache Key Strategy:</strong></p>
+<pre><code>Thumbnail URL:
+https://cdn.example.com/thumbnails/{userId}/{photoId}_400x300.webp?v={version}
+
+- userId: For distribution across edge locations
+- photoId: Unique identifier
+- Dimensions: Allows multiple sizes
+- Format: WebP/AVIF for modern browsers
+- Version: Cache busting on updates
+</code></pre>
+<hr />
+<h2 id="8-state-management-frontend">8. State Management (Frontend)</h2>
+<h3 id="81-state-architecture">8.1 State Architecture</h3>
+<pre><code>┌────────────────────────────────────────────────────────┐
+│                  Global State (Redux/Zustand)          │
+├────────────────────────────────────────────────────────┤
+│  - Auth state (user, token)                            │
+│  - Photo collection state                              │
+│  - Upload queue state                                  │
+│  - UI state (selected photos, view mode)               │
+└────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────┐
+│              Server State (React Query/SWR)            │
+├────────────────────────────────────────────────────────┤
+│  - Photo data (cached, auto-refetch)                   │
+│  - Album data                                          │
+│  - Search results                                      │
+│  - User preferences                                    │
+└────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────┐
+│              Local State (useState/useReducer)         │
+├────────────────────────────────────────────────────────┤
+│  - Component-specific UI (modals, dropdowns)           │
+│  - Form inputs                                         │
+│  - Temporary selections                                │
+└────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────┐
+│              URL State (React Router)                  │
+├────────────────────────────────────────────────────────┤
+│  - Current route (grid/album/search)                   │
+│  - Query params (filters, sort, cursor)                │
+│  - Share-able links                                    │
+└────────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="82-state-management-implementation">8.2 State Management Implementation</h3>
+<p><strong>React Query for Server State:</strong></p>
+<pre><code class="language-javascript">// Infinite query for photo grid
+const {
+  data,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage
+} = useInfiniteQuery({
+  queryKey: ['photos', filters],
+  queryFn: ({ pageParam = null }) =&gt;
+    api.getPhotos({ cursor: pageParam, ...filters }),
+  getNextPageParam: (lastPage) =&gt; lastPage.cursor,
+  staleTime: 60000, // 1 minute
+  cacheTime: 300000, // 5 minutes
+});
+
+// Optimistic updates for favorites
+const toggleFavorite = useMutation({
+  mutationFn: (photoId) =&gt; api.toggleFavorite(photoId),
+  onMutate: async (photoId) =&gt; {
+    // Cancel outgoing refetches
+    await queryClient.cancelQueries(['photos']);
+
+    // Snapshot previous value
+    const previous = queryClient.getQueryData(['photos']);
+
+    // Optimistically update
+    queryClient.setQueryData(['photos'], (old) =&gt; ({
+      ...old,
+      pages: old.pages.map(page =&gt; ({
+        ...page,
+        photos: page.photos.map(p =&gt;
+          p.id === photoId
+            ? { ...p, isFavorite: !p.isFavorite }
+            : p
+        )
+      }))
+    }));
+
+    return { previous };
+  },
+  onError: (err, vars, context) =&gt; {
+    // Rollback on error
+    queryClient.setQueryData(['photos'], context.previous);
+  }
+});
+</code></pre>
+<p><strong>Zustand for UI State:</strong></p>
+<pre><code class="language-javascript">const usePhotoStore = create((set) =&gt; ({
+  selectedPhotos: new Set(),
+  viewMode: 'grid', // 'grid' | 'list' | 'map'
+  gridSize: 'medium', // 'small' | 'medium' | 'large'
+
+  toggleSelection: (photoId) =&gt; set((state) =&gt; {
+    const newSelected = new Set(state.selectedPhotos);
+    if (newSelected.has(photoId)) {
+      newSelected.delete(photoId);
+    } else {
+      newSelected.add(photoId);
+    }
+    return { selectedPhotos: newSelected };
+  }),
+
+  clearSelection: () =&gt; set({ selectedPhotos: new Set() }),
+
+  setViewMode: (mode) =&gt; set({ viewMode: mode }),
+}));
+</code></pre>
+<p><strong>Upload Queue State:</strong></p>
+<pre><code class="language-javascript">const useUploadStore = create((set, get) =&gt; ({
+  uploads: [], // [{ id, file, progress, status, error }]
+
+  addUpload: (file) =&gt; set((state) =&gt; ({
+    uploads: [
+      ...state.uploads,
+      {
+        id: generateId(),
+        file,
+        progress: 0,
+        status: 'queued', // 'queued' | 'uploading' | 'complete' | 'error'
+        error: null
+      }
+    ]
+  })),
+
+  updateProgress: (id, progress) =&gt; set((state) =&gt; ({
+    uploads: state.uploads.map(u =&gt;
+      u.id === id ? { ...u, progress } : u
+    )
+  })),
+
+  setStatus: (id, status, error = null) =&gt; set((state) =&gt; ({
+    uploads: state.uploads.map(u =&gt;
+      u.id === id ? { ...u, status, error } : u
+    )
+  })),
+
+  removeUpload: (id) =&gt; set((state) =&gt; ({
+    uploads: state.uploads.filter(u =&gt; u.id !== id)
+  }))
+}));
+</code></pre>
+<h3 id="83-state-persistence">8.3 State Persistence</h3>
+<p><strong>LocalStorage for Preferences:</strong></p>
+<pre><code class="language-javascript">const usePreferences = create(
+  persist(
+    (set) =&gt; ({
+      gridSize: 'medium',
+      theme: 'light',
+      autoUpload: false,
+
+      setGridSize: (size) =&gt; set({ gridSize: size }),
+      setTheme: (theme) =&gt; set({ theme }),
+    }),
+    {
+      name: 'photo-grid-preferences',
+      storage: createJSONStorage(() =&gt; localStorage)
+    }
+  )
+);
+</code></pre>
+<p><strong>IndexedDB for Offline Support:</strong></p>
+<pre><code class="language-javascript">// Store photo metadata for offline viewing
+const db = new Dexie('PhotoGridDB');
+db.version(1).stores({
+  photos: 'id, userId, takenAt',
+  thumbnails: 'photoId', // Blob storage
+  albums: 'id, userId'
+});
+
+// Sync on online
+window.addEventListener('online', async () =&gt; {
+  const pending = await db.photos.where({ syncStatus: 'pending' }).toArray();
+  await syncWithServer(pending);
+});
+</code></pre>
+<hr />
+<h2 id="9-performance-optimization">9. Performance Optimization</h2>
+<h3 id="91-virtual-grid-implementation">9.1 Virtual Grid Implementation</h3>
+<p><strong>Challenge: Render 10K+ photos without performance degradation</strong></p>
+<p><strong>Solution: Virtual Scrolling + Dynamic Height</strong></p>
+<pre><code class="language-javascript">import { Virtuoso } from 'react-virtuoso';
+
+const VirtualPhotoGrid = ({ photos }) =&gt; {
+  const columns = useGridColumns(); // Responsive: 2-6 columns
+
+  // Group photos into rows
+  const rows = useMemo(() =&gt;
+    chunk(photos, columns),
+    [photos, columns]
+  );
+
+  return (
+    &lt;Virtuoso
+      data={rows}
+      overscan={200} // Render 200px above/below viewport
+      itemContent={(index, row) =&gt; (
+        &lt;PhotoRow photos={row} /&gt;
+      )}
+      endReached={loadMore}
+      components={{
+        Footer: () =&gt; isFetchingMore ? &lt;Spinner /&gt; : null
+      }}
+    /&gt;
+  );
+};
+</code></pre>
+<p><strong>Masonry Layout (Pinterest-style):</strong></p>
+<pre><code class="language-javascript">import Masonry from 'react-masonry-css';
+
+const MasonryGrid = ({ photos }) =&gt; {
+  const breakpoints = {
+    default: 6,
+    1400: 5,
+    1100: 4,
+    800: 3,
+    500: 2
+  };
+
+  return (
+    &lt;Masonry
+      breakpointCols={breakpoints}
+      className=&quot;photo-masonry-grid&quot;
+      columnClassName=&quot;photo-masonry-column&quot;
+    &gt;
+      {photos.map(photo =&gt; (
+        &lt;PhotoTile
+          key={photo.id}
+          photo={photo}
+          lazy
+        /&gt;
+      ))}
+    &lt;/Masonry&gt;
+  );
+};
+</code></pre>
+<p><strong>Trade-off: Fixed Grid vs Masonry</strong></p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Fixed Grid</th>
+<th>Masonry</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Performance</td>
+<td>Better (predictable heights)</td>
+<td>Slower (dynamic layout)</td>
+</tr>
+<tr>
+<td>Aesthetics</td>
+<td>Less engaging</td>
+<td>More visually appealing</td>
+</tr>
+<tr>
+<td>Virtual scrolling</td>
+<td>Easy</td>
+<td>Complex (varying heights)</td>
+</tr>
+<tr>
+<td>Use case</td>
+<td>Mobile, large collections</td>
+<td>Desktop, curated albums</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommendation:</strong> Fixed grid for main library, Masonry for albums</p>
+<h3 id="92-image-optimization">9.2 Image Optimization</h3>
+<p><strong>Multi-Format Support:</strong></p>
+<pre><code class="language-html">&lt;picture&gt;
+  &lt;source
+    srcSet=&quot;/thumbnails/photo123_400.avif&quot;
+    type=&quot;image/avif&quot;
+  /&gt;
+  &lt;source
+    srcSet=&quot;/thumbnails/photo123_400.webp&quot;
+    type=&quot;image/webp&quot;
+  /&gt;
+  &lt;img
+    src=&quot;/thumbnails/photo123_400.jpg&quot;
+    loading=&quot;lazy&quot;
+    decoding=&quot;async&quot;
+    alt=&quot;Photo description&quot;
+  /&gt;
+&lt;/picture&gt;
+</code></pre>
+<p><strong>Format Comparison:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Size (vs JPEG)</th>
+<th>Support</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AVIF</td>
+<td>-50%</td>
+<td>Chrome 85+, Firefox 93+</td>
+<td>Modern browsers</td>
+</tr>
+<tr>
+<td>WebP</td>
+<td>-30%</td>
+<td>All modern browsers</td>
+<td>Fallback from AVIF</td>
+</tr>
+<tr>
+<td>JPEG</td>
+<td>Baseline</td>
+<td>Universal</td>
+<td>Legacy support</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Responsive Images:</strong></p>
+<pre><code class="language-javascript">// Generate srcSet for different screen densities
+const srcSet = [
+  { width: 400, density: 1 },
+  { width: 800, density: 2 },
+  { width: 1200, density: 3 }
+].map(({ width, density }) =&gt;
+  `/thumbnails/${photoId}_${width}.webp ${density}x`
+).join(', ');
+
+&lt;img
+  src={`/thumbnails/${photoId}_400.webp`}
+  srcSet={srcSet}
+  sizes=&quot;(max-width: 768px) 50vw, 25vw&quot;
+/&gt;
+</code></pre>
+<p><strong>Thumbnail Generation Pipeline:</strong></p>
+<pre><code>Original Upload (5MB JPEG)
+        │
+        ▼
+┌───────────────────┐
+│ Image Processor   │
+│ (Sharp/ImageMagick│
+└────────┬──────────┘
+         │
+         ├─► Thumbnail 150x150 (WebP, AVIF, JPEG) → 5KB
+         ├─► Thumbnail 400x400 (WebP, AVIF, JPEG) → 20KB
+         ├─► Thumbnail 800x800 (WebP, AVIF, JPEG) → 60KB
+         ├─► Full HD 1920x1080 (WebP, JPEG) → 200KB
+         └─► Original (preserved) → 5MB
+
+Quality settings:
+- WebP: quality 80
+- AVIF: quality 75 (equivalent to JPEG 85)
+- JPEG: quality 85
+</code></pre>
+<p><strong>Blur Hash for Progressive Loading:</strong></p>
+<pre><code class="language-javascript">// Generate blur hash on upload
+import { encode } from 'blurhash';
+
+const blurhash = encode(imagePixels, width, height, 4, 3);
+// Store in DB: &quot;L6PZfSi_.AyE_3t7t7R**0o#DgR4&quot;
+
+// Decode on client for placeholder
+import { decode } from 'blurhash';
+
+const pixels = decode(blurhash, 32, 32);
+// Display as CSS background while loading
+</code></pre>
+<h3 id="93-lazy-loading-strategy">9.3 Lazy Loading Strategy</h3>
+<p><strong>Intersection Observer:</strong></p>
+<pre><code class="language-javascript">const LazyImage = ({ src, placeholder }) =&gt; {
+  const [imageSrc, setImageSrc] = useState(placeholder);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const imgRef = useRef();
+
+  useEffect(() =&gt; {
+    const observer = new IntersectionObserver(
+      ([entry]) =&gt; {
+        if (entry.isIntersecting) {
+          setImageSrc(src);
+          observer.unobserve(entry.target);
+        }
+      },
+      {
+        rootMargin: '100px' // Start loading 100px before visible
+      }
+    );
+
+    if (imgRef.current) {
+      observer.observe(imgRef.current);
+    }
+
+    return () =&gt; observer.disconnect();
+  }, [src]);
+
+  return (
+    &lt;img
+      ref={imgRef}
+      src={imageSrc}
+      onLoad={() =&gt; setIsLoaded(true)}
+      className={isLoaded ? 'loaded' : 'loading'}
+    /&gt;
+  );
+};
+</code></pre>
+<p><strong>Prefetching Next Page:</strong></p>
+<pre><code class="language-javascript">const usePhotosWithPrefetch = (filters) =&gt; {
+  const query = useInfiniteQuery({
+    queryKey: ['photos', filters],
+    queryFn: fetchPhotos,
+    // ...
+  });
+
+  // Prefetch next page when 80% scrolled
+  const handleScroll = useCallback(() =&gt; {
+    const scrollPct = window.scrollY / document.body.scrollHeight;
+
+    if (scrollPct &gt; 0.8 &amp;&amp; query.hasNextPage &amp;&amp; !query.isFetchingNextPage) {
+      query.fetchNextPage();
+    }
+  }, [query]);
+
+  useEffect(() =&gt; {
+    window.addEventListener('scroll', handleScroll);
+    return () =&gt; window.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
+
+  return query;
+};
+</code></pre>
+<h3 id="94-network-optimization">9.4 Network Optimization</h3>
+<p><strong>HTTP/2 Multiplexing:</strong>
+- Load 6+ thumbnails in parallel over single connection
+- Server push for critical resources
+- Header compression (HPACK)</p>
+<p><strong>Resource Hints:</strong></p>
+<pre><code class="language-html">&lt;!-- DNS prefetch for CDN --&gt;
+&lt;link rel=&quot;dns-prefetch&quot; href=&quot;https://cdn.photos.com&quot;&gt;
+
+&lt;!-- Preconnect to API --&gt;
+&lt;link rel=&quot;preconnect&quot; href=&quot;https://api.photos.com&quot;&gt;
+
+&lt;!-- Prefetch next page of photos --&gt;
+&lt;link rel=&quot;prefetch&quot; href=&quot;/api/photos?cursor=abc123&quot;&gt;
+</code></pre>
+<p><strong>Service Worker Caching:</strong></p>
+<pre><code class="language-javascript">// Cache thumbnails aggressively
+self.addEventListener('fetch', (event) =&gt; {
+  const url = new URL(event.request.url);
+
+  if (url.pathname.includes('/thumbnails/')) {
+    event.respondWith(
+      caches.open('thumbnails-v1').then((cache) =&gt;
+        cache.match(event.request).then((response) =&gt; {
+          if (response) return response;
+
+          return fetch(event.request).then((networkResponse) =&gt; {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        })
+      )
+    );
+  }
+});
+</code></pre>
+<h3 id="95-bundle-optimization">9.5 Bundle Optimization</h3>
+<p><strong>Code Splitting:</strong></p>
+<pre><code class="language-javascript">// Lazy load heavy components
+const PhotoEditor = lazy(() =&gt; import('./PhotoEditor'));
+const MapView = lazy(() =&gt; import('./MapView'));
+const AlbumCreator = lazy(() =&gt; import('./AlbumCreator'));
+
+// Route-based splitting
+const routes = [
+  { path: '/', component: lazy(() =&gt; import('./PhotoGrid')) },
+  { path: '/album/:id', component: lazy(() =&gt; import('./Album')) },
+  { path: '/search', component: lazy(() =&gt; import('./Search')) }
+];
+</code></pre>
+<p><strong>Tree Shaking:</strong>
+- Use ES modules for better tree shaking
+- Import only needed functions: <code>import { debounce } from 'lodash-es'</code>
+- Analyze bundle: <code>webpack-bundle-analyzer</code></p>
+<p><strong>Target Metrics:</strong></p>
+<pre><code>Initial bundle size: &lt; 200KB gzipped
+Time to Interactive (TTI): &lt; 3s on 3G
+Largest Contentful Paint (LCP): &lt; 2.5s
+Cumulative Layout Shift (CLS): &lt; 0.1
+First Input Delay (FID): &lt; 100ms
+</code></pre>
+<hr />
+<h2 id="10-error-handling-edge-cases">10. Error Handling &amp; Edge Cases</h2>
+<h3 id="101-upload-error-scenarios">10.1 Upload Error Scenarios</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Cause</th>
+<th>Handling Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network timeout</td>
+<td>Slow/unstable connection</td>
+<td>Retry with exponential backoff, resume from last chunk</td>
+</tr>
+<tr>
+<td>Storage quota exceeded</td>
+<td>User limit reached</td>
+<td>Show quota warning, offer upgrade</td>
+</tr>
+<tr>
+<td>Invalid file type</td>
+<td>User uploaded .exe</td>
+<td>Client-side validation, clear error message</td>
+</tr>
+<tr>
+<td>File too large</td>
+<td>&gt; 100MB file</td>
+<td>Reject or compress, suggest alternatives</td>
+</tr>
+<tr>
+<td>Duplicate photo</td>
+<td>Same hash exists</td>
+<td>Deduplicate, ask user if intentional</td>
+</tr>
+<tr>
+<td>S3 upload failed</td>
+<td>AWS service issue</td>
+<td>Retry 3x, fallback to different region</td>
+</tr>
+<tr>
+<td>Processing timeout</td>
+<td>Large RAW file</td>
+<td>Queue for async processing, notify when done</td>
+</tr>
+<tr>
+<td>Corrupted file</td>
+<td>Incomplete upload</td>
+<td>Validate checksum, request re-upload</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Retry Logic:</strong></p>
+<pre><code class="language-javascript">async function uploadWithRetry(chunk, maxRetries = 3) {
+  for (let attempt = 1; attempt &lt;= maxRetries; attempt++) {
+    try {
+      const result = await uploadChunk(chunk);
+      return result;
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = Math.pow(2, attempt - 1) * 1000;
+      await sleep(delay);
+
+      console.log(`Retry ${attempt}/${maxRetries} for chunk ${chunk.id}`);
+    }
+  }
+}
+</code></pre>
+<h3 id="102-display-error-scenarios">10.2 Display Error Scenarios</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Cause</th>
+<th>Handling Strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Image 404</td>
+<td>Deleted/moved photo</td>
+<td>Show placeholder, offer to remove from library</td>
+</tr>
+<tr>
+<td>Thumbnail failed</td>
+<td>Processing incomplete</td>
+<td>Show original or blur hash placeholder</td>
+</tr>
+<tr>
+<td>CDN timeout</td>
+<td>Edge location issue</td>
+<td>Fallback to origin, report to monitoring</td>
+</tr>
+<tr>
+<td>Infinite scroll stuck</td>
+<td>API failure</td>
+<td>Show retry button, maintain scroll position</td>
+</tr>
+<tr>
+<td>Search no results</td>
+<td>No matches</td>
+<td>Suggest alternative queries, show popular searches</td>
+</tr>
+<tr>
+<td>Slow loading</td>
+<td>Poor network</td>
+<td>Show skeleton screens, progressive enhancement</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Graceful Degradation:</strong></p>
+<pre><code class="language-javascript">const PhotoTile = ({ photo }) =&gt; {
+  const [imageError, setImageError] = useState(false);
+
+  const handleError = () =&gt; {
+    setImageError(true);
+    // Log to error tracking
+    logger.error('Image load failed', { photoId: photo.id });
+  };
+
+  if (imageError) {
+    return (
+      &lt;div className=&quot;photo-tile-error&quot;&gt;
+        &lt;BrokenImageIcon /&gt;
+        &lt;p&gt;Unable to load photo&lt;/p&gt;
+        &lt;button onClick={() =&gt; setImageError(false)}&gt;Retry&lt;/button&gt;
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;img
+      src={photo.thumbnailUrl}
+      onError={handleError}
+      alt={photo.description}
+    /&gt;
+  );
+};
+</code></pre>
+<h3 id="103-edge-cases">10.3 Edge Cases</h3>
+<p><strong>Race Conditions:</strong>
+- <strong>Concurrent uploads of same file</strong>: Hash-based deduplication
+- <strong>Delete while uploading</strong>: Cancel upload, clean up chunks
+- <strong>Share link expired mid-view</strong>: Graceful expiration message</p>
+<p><strong>Data Consistency:</strong>
+- <strong>Photo deleted but in cache</strong>: Implement cache invalidation, verify on critical operations
+- <strong>Album photo count mismatch</strong>: Background reconciliation job
+- <strong>Search index out of sync</strong>: Eventual consistency acceptable, manual reindex option</p>
+<p><strong>Mobile-Specific:</strong>
+- <strong>App backgrounded during upload</strong>: Use background upload API (iOS/Android)
+- <strong>Storage full on device</strong>: Clear thumbnail cache, warn user
+- <strong>Photo permissions denied</strong>: Clear permission prompt, explain necessity</p>
+<p><strong>Quota &amp; Limits:</strong></p>
+<pre><code class="language-javascript">// Rate limiting
+const UPLOAD_RATE_LIMIT = {
+  maxUploads: 100,
+  windowMs: 60 * 60 * 1000 // 1 hour
+};
+
+// Storage quota check
+async function checkStorageQuota(userId, fileSize) {
+  const user = await getUser(userId);
+
+  if (user.storageUsed + fileSize &gt; user.storageLimit) {
+    throw new QuotaExceededError({
+      used: user.storageUsed,
+      limit: user.storageLimit,
+      required: fileSize
+    });
+  }
+}
+</code></pre>
+<p><strong>Browser Compatibility:</strong>
+- <strong>AVIF not supported</strong>: Fallback to WebP → JPEG
+- <strong>Intersection Observer not available</strong>: Use scroll event listener
+- <strong>Service Worker not supported</strong>: Graceful degradation, no offline support</p>
+<hr />
+<h2 id="11-interview-cross-questions-answers">11. Interview Cross-Questions &amp; Answers</h2>
+<h3 id="111-architecture-design">11.1 Architecture &amp; Design</h3>
+<p><strong>Q1: Why REST instead of GraphQL for this system?</strong></p>
+<p><strong>A:</strong> REST is better suited for photo grid because:
+1. <strong>Caching</strong>: REST GET requests are cacheable at CDN/browser level natively
+2. <strong>Simplicity</strong>: Photo metadata schema is fixed, no over-fetching problem
+3. <strong>HTTP features</strong>: Leverage range requests, conditional GET, compression
+4. <strong>Image delivery</strong>: Images are delivered via URLs, not API responses
+5. <strong>Performance</strong>: CDN caching gives 95%+ hit rate for photo viewing</p>
+<p>GraphQL would add complexity without significant benefits. It's better for:
+- Complex, nested data relationships
+- Clients with varying data needs (mobile vs web)
+- Reducing API calls by fetching multiple resources</p>
+<p><strong>Q2: Why not use WebSockets for real-time photo updates?</strong></p>
+<p><strong>A:</strong> Photos don't require real-time synchronization because:
+1. <strong>User behavior</strong>: Users upload/view their own photos, rare collaboration
+2. <strong>Latency tolerance</strong>: 1-5 minute delay for new photos is acceptable
+3. <strong>Resource cost</strong>: Maintaining millions of WebSocket connections is expensive
+4. <strong>REST suffices</strong>: Pull-based model with periodic refresh works fine</p>
+<p><strong>When WebSockets make sense:</strong>
+- Shared album with active collaboration (Google Photos shared albums)
+- Live photo upload notifications (optional enhancement)
+- Real-time comments on photos</p>
+<p><strong>Trade-off:</strong> Implement WebSocket selectively for shared albums only, not main grid.</p>
+<p><strong>Q3: How would you handle 1 million concurrent users viewing photos?</strong></p>
+<p><strong>A:</strong>
+1. <strong>CDN offloads 95%+ of image traffic</strong>: CloudFront has infinite scale
+2. <strong>Read replicas for database</strong>: 100:1 read/write ratio, use 10+ read replicas
+3. <strong>Redis cluster for metadata caching</strong>: Reduces DB load by 80%+
+4. <strong>Stateless API servers</strong>: Scale horizontally with load balancers (1000+ instances)
+5. <strong>Elasticsearch cluster</strong>: Distributed search across 50+ nodes
+6. <strong>Database sharding</strong>: 64 shards by user_id for even distribution</p>
+<p><strong>Bottleneck analysis:</strong>
+- Images: CDN handles (no bottleneck)
+- Metadata API: Redis + read replicas scale to 100K req/s per cluster
+- Search: Elasticsearch scales horizontally
+- Database writes: Sharding + async processing handles 10K uploads/s</p>
+<p><strong>Q4: SQL vs NoSQL - justify your choice for photo metadata.</strong></p>
+<p><strong>A:</strong> <strong>PostgreSQL (SQL) is better</strong> because:</p>
+<p><strong>Pros:</strong>
+1. <strong>ACID guarantees</strong>: Critical for user data, permissions, sharing
+2. <strong>Complex queries</strong>: JOINs for albums, shares, users
+3. <strong>Transactions</strong>: Album creation + photo assignment atomically
+4. <strong>Data integrity</strong>: Foreign keys, constraints prevent orphaned data
+5. <strong>Mature ecosystem</strong>: Excellent tooling, monitoring, backup solutions
+6. <strong>JSON support</strong>: JSONB for flexible EXIF data</p>
+<p><strong>When NoSQL (e.g., DynamoDB) works:</strong>
+- Key-value access patterns only
+- No complex relationships
+- Infinite scale required (SQL can shard too)</p>
+<p><strong>Hybrid approach (best):</strong>
+- PostgreSQL for metadata, albums, users
+- Elasticsearch for search
+- S3 for blobs
+- Redis for caching</p>
+<p>This leverages each database's strengths.</p>
+<h3 id="112-performance-scalability">11.2 Performance &amp; Scalability</h3>
+<p><strong>Q5: How do you handle rendering 100K photos in the browser?</strong></p>
+<p><strong>A:</strong>
+1. <strong>Virtual scrolling</strong>: Render only visible rows + buffer (200 photos max in DOM)
+2. <strong>Pagination</strong>: Load 50-100 photos at a time (infinite scroll)
+3. <strong>Lazy loading</strong>: Load images only when in viewport (Intersection Observer)
+4. <strong>Thumbnail optimization</strong>:
+   - Small thumbnails (5-20KB each)
+   - WebP/AVIF formats (-50% size)
+   - Aggressive CDN caching
+5. <strong>Debounced scroll</strong>: Avoid excessive render calls
+6. <strong>React.memo</strong>: Prevent unnecessary re-renders of photo tiles</p>
+<p><strong>Memory management:</strong>
+- Virtual scrolling keeps DOM size constant (~200 elements)
+- Browser native lazy loading unloads off-screen images
+- Service worker caches thumbnails (100MB limit)</p>
+<p><strong>Result:</strong> Can scroll through 100K photos smoothly at 60fps.</p>
+<p><strong>Q6: What if S3 or CDN goes down?</strong></p>
+<p><strong>A:</strong> Multi-layer redundancy:</p>
+<ol>
+<li><strong>S3 failover</strong>:</li>
+<li>Cross-region replication (us-east-1 → us-west-2)</li>
+<li>Automatic failover to replica region</li>
+<li>
+<p>99.99% availability SLA</p>
+</li>
+<li>
+<p><strong>CDN failover</strong>:</p>
+</li>
+<li>Multi-CDN strategy (CloudFront + Cloudflare)</li>
+<li>DNS-based failover (Route53 health checks)</li>
+<li>
+<p>Origin failover to different S3 region</p>
+</li>
+<li>
+<p><strong>Graceful degradation</strong>:</p>
+</li>
+<li>Show cached thumbnails from browser/service worker</li>
+<li>Display error state for unavailable photos</li>
+<li>
+<p>Queue uploads for retry when service recovers</p>
+</li>
+<li>
+<p><strong>Monitoring &amp; alerts</strong>:</p>
+</li>
+<li>Real-time error rate monitoring</li>
+<li>Auto-scaling of backup systems</li>
+<li>PagerDuty alerts for engineering team</li>
+</ol>
+<p><strong>Q7: How do you optimize the initial page load time?</strong></p>
+<p><strong>A:</strong>
+1. <strong>Critical CSS inline</strong>: Above-the-fold styles in HTML (<style>)
+2. <strong>Code splitting</strong>: Lazy load non-critical routes and components
+3. <strong>Preload key resources</strong>: <code>&lt;link rel="preload"&gt;</code> for fonts, critical images
+4. <strong>Server-side rendering (SSR)</strong>: First page of photos rendered on server
+5. <strong>Service worker</strong>: Cache shell for instant subsequent loads
+6. <strong>HTTP/2 server push</strong>: Push critical assets before requested
+7. <strong>Bundle optimization</strong>: Tree shaking, minification, compression (Brotli)
+8. <strong>Image optimization</strong>: Blur hash placeholders, progressive JPEGs</p>
+<p><strong>Metrics:</strong>
+- First Contentful Paint: &lt; 1.5s
+- Time to Interactive: &lt; 3s
+- Bundle size: &lt; 200KB gzipped</p>
+<p><strong>Q8: Explain your caching strategy in detail.</strong></p>
+<p><strong>A:</strong> 4-layer caching:</p>
+<p><strong>Layer 1: Browser Cache</strong>
+- Thumbnails: 7 days (Cache-Control: public, max-age=604800)
+- CSS/JS: Versioned URLs, cache forever (immutable)</p>
+<p><strong>Layer 2: CDN (CloudFront)</strong>
+- Images: 30 days at edge locations
+- 95%+ hit rate (reduces origin requests by 20x)
+- Regional edge caches for popular content</p>
+<p><strong>Layer 3: Redis (Metadata)</strong>
+- Hot data: Photo lists, album metadata (1 hour TTL)
+- Warm data: User preferences (24 hour TTL)
+- Pattern-based invalidation on updates</p>
+<p><strong>Layer 4: Application Memory</strong>
+- User sessions (in-memory LRU cache)
+- Frequently accessed config (100MB limit)</p>
+<p><strong>Cache invalidation:</strong>
+- Write-through on updates
+- Pattern-based deletion for related data
+- Stampede prevention with locking</p>
+<p><strong>Trade-off:</strong>
+- Aggressive caching = stale data risk
+- Mitigation: Short TTLs for mutable data (1 hour), long TTLs for immutable (images)</p>
+<h3 id="113-advanced-features">11.3 Advanced Features</h3>
+<p><strong>Q9: How would you implement face detection and grouping?</strong></p>
+<p><strong>A:</strong></p>
+<p><strong>Pipeline:</strong></p>
+<pre><code>Photo Upload
+    │
+    ▼
+┌─────────────────┐
+│ Face Detection  │ (ML Model: MTCNN or RetinaFace)
+│ - Detect faces  │
+│ - Extract bbox  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Face Embeddings │ (FaceNet or ArcFace)
+│ - Generate 512  │
+│   dim vectors   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Face Clustering │ (DBSCAN or HDBSCAN)
+│ - Group similar │
+│   faces         │
+│ - Create person │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Store in DB     │
+│ - person_id     │
+│ - embeddings    │
+│ - confidence    │
+└─────────────────┘
+</code></pre>
+<p><strong>Database schema:</strong></p>
+<pre><code class="language-sql">CREATE TABLE detected_faces (
+    face_id UUID PRIMARY KEY,
+    photo_id UUID REFERENCES photos(photo_id),
+    person_id UUID REFERENCES people(person_id),
+
+    -- Bounding box
+    bbox_x INTEGER,
+    bbox_y INTEGER,
+    bbox_width INTEGER,
+    bbox_height INTEGER,
+
+    -- Face embedding (512 dimensions)
+    embedding VECTOR(512),
+
+    -- Confidence score
+    confidence FLOAT,
+
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_faces_photo ON detected_faces(photo_id);
+CREATE INDEX idx_faces_person ON detected_faces(person_id);
+
+-- Vector similarity search (pgvector)
+CREATE INDEX idx_faces_embedding ON detected_faces
+    USING ivfflat (embedding vector_cosine_ops);
+</code></pre>
+<p><strong>Grouping algorithm:</strong></p>
+<pre><code class="language-python"># DBSCAN clustering for face grouping
+from sklearn.cluster import DBSCAN
+
+# Get all face embeddings
+embeddings = get_all_embeddings(user_id)
+
+# Cluster with cosine distance
+clustering = DBSCAN(
+    eps=0.4,  # Distance threshold
+    min_samples=2,  # Min faces to form a group
+    metric='cosine'
+).fit(embeddings)
+
+# Create person groups
+for cluster_id in set(clustering.labels_):
+    if cluster_id == -1:
+        continue  # Skip noise
+
+    face_ids = [face_id for i, face_id in enumerate(face_ids)
+                if clustering.labels_[i] == cluster_id]
+
+    create_person_group(user_id, face_ids)
+</code></pre>
+<p><strong>Search by face:</strong></p>
+<pre><code class="language-sql">-- Find all photos of a person
+SELECT p.*
+FROM photos p
+JOIN detected_faces f ON p.photo_id = f.photo_id
+WHERE f.person_id = 'person_123'
+ORDER BY p.taken_at DESC;
+
+-- Find similar faces (vector similarity)
+SELECT p.*, 1 - (f.embedding &lt;=&gt; :query_embedding) AS similarity
+FROM photos p
+JOIN detected_faces f ON p.photo_id = f.photo_id
+WHERE 1 - (f.embedding &lt;=&gt; :query_embedding) &gt; 0.7
+ORDER BY similarity DESC
+LIMIT 50;
+</code></pre>
+<p><strong>Q10: How would you implement content-based image search ("find beach photos")?</strong></p>
+<p><strong>A:</strong></p>
+<p><strong>ML Pipeline:</strong></p>
+<pre><code>Photo Upload
+    │
+    ▼
+┌──────────────────┐
+│ Image Embedding  │ (CLIP or ResNet50)
+│ - Generate 512   │
+│   dim vector     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Object Detection │ (YOLO or Faster R-CNN)
+│ - Detect objects │
+│ - Tags: &quot;beach&quot;, │
+│   &quot;ocean&quot;, &quot;sky&quot; │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Scene Recognition│ (Places365)
+│ - Classify scene │
+│ - &quot;outdoor&quot;,     │
+│   &quot;natural&quot;      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Store in ES      │
+│ - Text tags      │
+│ - Image vector   │
+│ - Scene labels   │
+└──────────────────┘
+</code></pre>
+<p><strong>Elasticsearch index:</strong></p>
+<pre><code class="language-json">{
+  &quot;mappings&quot;: {
+    &quot;properties&quot;: {
+      &quot;photo_id&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+      &quot;user_id&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+
+      // Text search
+      &quot;content_tags&quot;: { &quot;type&quot;: &quot;text&quot; },
+      &quot;scene_labels&quot;: { &quot;type&quot;: &quot;text&quot; },
+      &quot;color_palette&quot;: { &quot;type&quot;: &quot;keyword&quot; },
+
+      // Vector search
+      &quot;image_embedding&quot;: {
+        &quot;type&quot;: &quot;dense_vector&quot;,
+        &quot;dims&quot;: 512,
+        &quot;index&quot;: true,
+        &quot;similarity&quot;: &quot;cosine&quot;
+      },
+
+      // Filters
+      &quot;taken_at&quot;: { &quot;type&quot;: &quot;date&quot; },
+      &quot;location&quot;: { &quot;type&quot;: &quot;geo_point&quot; }
+    }
+  }
+}
+</code></pre>
+<p><strong>Search query:</strong></p>
+<pre><code class="language-javascript">// Text search: &quot;beach sunset&quot;
+const textSearch = {
+  multi_match: {
+    query: &quot;beach sunset&quot;,
+    fields: [&quot;content_tags^2&quot;, &quot;scene_labels&quot;]
+  }
+};
+
+// Vector search: Find visually similar
+const vectorSearch = {
+  script_score: {
+    query: { match_all: {} },
+    script: {
+      source: &quot;cosineSimilarity(params.queryVector, 'image_embedding') + 1.0&quot;,
+      params: { queryVector: queryEmbedding }
+    }
+  }
+};
+
+// Hybrid search (combine both)
+const hybridSearch = {
+  bool: {
+    should: [
+      { ...textSearch, boost: 2 },
+      { ...vectorSearch, boost: 1 }
+    ]
+  }
+};
+</code></pre>
+<p><strong>Search flow:</strong>
+1. User types "beach sunset"
+2. Generate text embedding for "beach sunset" (CLIP text encoder)
+3. Search Elasticsearch:
+   - Text match on tags/labels
+   - Vector similarity on image embeddings
+4. Combine scores (text: 60%, visual: 40%)
+5. Return ranked results</p>
+<p><strong>Q11: How do you handle photo deduplication?</strong></p>
+<p><strong>A:</strong></p>
+<p><strong>Deduplication strategy:</strong></p>
+<ol>
+<li><strong>Hash-based (exact duplicates):</strong></li>
+</ol>
+<pre><code class="language-javascript">// Compute perceptual hash on upload
+import { hash } from 'phash';
+
+const imageHash = await hash(photoBuffer);
+
+// Check for duplicates
+const existing = await db.photos.findOne({
+    user_id: userId,
+    perceptual_hash: imageHash
+});
+
+if (existing) {
+    return { status: 'duplicate', existingPhotoId: existing.photo_id };
+}
+</code></pre>
+<ol>
+<li><strong>Similarity-based (near duplicates):</strong></li>
+</ol>
+<pre><code class="language-sql">-- Find similar photos using image embeddings
+SELECT photo_id, 1 - (embedding &lt;=&gt; :new_embedding) AS similarity
+FROM photos
+WHERE user_id = :user_id
+  AND 1 - (embedding &lt;=&gt; :new_embedding) &gt; 0.95
+LIMIT 1;
+</code></pre>
+<ol>
+<li><strong>User decision:</strong></li>
+</ol>
+<pre><code class="language-javascript">// If duplicate found, ask user
+if (isDuplicate) {
+    return {
+        status: 'duplicate',
+        message: 'This photo already exists',
+        existingPhoto: { id, thumbnailUrl, uploadedAt },
+        options: [
+            'Skip upload',
+            'Keep both',
+            'Replace existing'
+        ]
+    };
+}
+</code></pre>
+<p><strong>Storage savings:</strong>
+- Dedupe identical photos: Save 100% storage for duplicate
+- Share same S3 object: Reference counting
+- Only store metadata separately</p>
+<p><strong>Q12: Design the sharing feature with different permission levels.</strong></p>
+<p><strong>A:</strong></p>
+<p><strong>Permission model:</strong></p>
+<pre><code class="language-sql">CREATE TABLE shares (
+    share_id UUID PRIMARY KEY,
+    owner_id UUID REFERENCES users(user_id),
+    resource_type VARCHAR(50), -- 'photo' | 'album'
+    resource_id UUID,
+
+    -- Access control
+    share_token VARCHAR(255) UNIQUE,
+    is_public BOOLEAN DEFAULT FALSE,
+    password_hash VARCHAR(255),
+    expires_at TIMESTAMP,
+
+    -- Permissions (bitflags for efficiency)
+    permissions INTEGER, -- 1=view, 2=download, 4=comment, 8=add_photos
+
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Share recipients (for private shares)
+CREATE TABLE share_recipients (
+    share_id UUID REFERENCES shares(share_id),
+    recipient_email VARCHAR(255),
+    permission_override INTEGER, -- Override default permissions
+
+    PRIMARY KEY (share_id, recipient_email)
+);
+</code></pre>
+<p><strong>Permission levels:</strong></p>
+<pre><code class="language-javascript">const PERMISSIONS = {
+    VIEW: 1 &lt;&lt; 0,        // 1
+    DOWNLOAD: 1 &lt;&lt; 1,    // 2
+    COMMENT: 1 &lt;&lt; 2,     // 4
+    ADD_PHOTOS: 1 &lt;&lt; 3,  // 8
+    EDIT: 1 &lt;&lt; 4,        // 16
+    DELETE: 1 &lt;&lt; 5       // 32
+};
+
+// Check permission
+function hasPermission(userPerms, requiredPerm) {
+    return (userPerms &amp; requiredPerm) === requiredPerm;
+}
+
+// Example: User can view and comment
+const userPerms = PERMISSIONS.VIEW | PERMISSIONS.COMMENT;
+hasPermission(userPerms, PERMISSIONS.VIEW); // true
+hasPermission(userPerms, PERMISSIONS.DELETE); // false
+</code></pre>
+<p><strong>Share types:</strong></p>
+<ol>
+<li><strong>Public link</strong> (anyone with link):</li>
+</ol>
+<pre><code class="language-javascript">{
+    shareToken: &quot;abc123&quot;,
+    isPublic: true,
+    permissions: VIEW | DOWNLOAD,
+    expiresAt: &quot;2024-12-31&quot;
+}
+</code></pre>
+<ol>
+<li><strong>Private share</strong> (specific recipients):</li>
+</ol>
+<pre><code class="language-javascript">{
+    shareToken: &quot;xyz789&quot;,
+    isPublic: false,
+    recipients: [
+        { email: &quot;user@example.com&quot;, permissions: VIEW | COMMENT },
+        { email: &quot;admin@example.com&quot;, permissions: VIEW | EDIT }
+    ]
+}
+</code></pre>
+<ol>
+<li><strong>Password-protected</strong>:</li>
+</ol>
+<pre><code class="language-javascript">{
+    shareToken: &quot;secure123&quot;,
+    isPublic: true,
+    passwordHash: &quot;bcrypt_hash&quot;,
+    permissions: VIEW
+}
+</code></pre>
+<p><strong>Access flow:</strong></p>
+<pre><code>User visits: /share/abc123
+    │
+    ▼
+Check share validity
+    ├─ Expired? → 403
+    ├─ Password required? → Prompt
+    ├─ Private? → Check recipient
+    └─ Valid → Grant access
+            │
+            ▼
+        Apply permissions
+            ├─ Can view? → Show photos
+            ├─ Can download? → Enable download button
+            └─ Can add? → Show upload UI
+</code></pre>
+<hr />
+<h2 id="12-summary-key-takeaways">12. Summary &amp; Key Takeaways</h2>
+<h3 id="121-critical-design-decisions">12.1 Critical Design Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Choice</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API Protocol</td>
+<td>REST</td>
+<td>Cacheable, simple, sufficient for non-real-time</td>
+</tr>
+<tr>
+<td>Database</td>
+<td>PostgreSQL</td>
+<td>ACID, relationships, mature ecosystem</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Elasticsearch</td>
+<td>Full-text, vector search, geo queries</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>S3 + CDN</td>
+<td>Cost-effective, durable, scales infinitely</td>
+</tr>
+<tr>
+<td>Caching</td>
+<td>Multi-layer (Browser, CDN, Redis)</td>
+<td>95%+ hit rate, reduces DB load 10x</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>Virtual scrolling + lazy loading</td>
+<td>Handle 10K+ photos at 60fps</td>
+</tr>
+<tr>
+<td>Image format</td>
+<td>AVIF &gt; WebP &gt; JPEG</td>
+<td>50% smaller, faster loading</td>
+</tr>
+<tr>
+<td>Upload</td>
+<td>Resumable chunked</td>
+<td>Reliable for large files on mobile</td>
+</tr>
+</tbody>
+</table>
+<h3 id="122-scalability-strategies">12.2 Scalability Strategies</h3>
+<ol>
+<li><strong>Horizontal scaling</strong>: Stateless API servers, sharded databases</li>
+<li><strong>Caching everywhere</strong>: Browser, CDN, Redis, application memory</li>
+<li><strong>Async processing</strong>: Thumbnail generation, ML pipelines via queues</li>
+<li><strong>CDN offloading</strong>: 95% of traffic served from edge</li>
+<li><strong>Database sharding</strong>: Hash-based on user_id for even distribution</li>
+</ol>
+<h3 id="123-performance-optimizations">12.3 Performance Optimizations</h3>
+<ol>
+<li><strong>Virtual scrolling</strong>: Constant DOM size for 100K+ photos</li>
+<li><strong>Image optimization</strong>: WebP/AVIF, responsive sizes, blur hash</li>
+<li><strong>Lazy loading</strong>: Load images only when visible</li>
+<li><strong>Prefetching</strong>: Next page loaded at 80% scroll</li>
+<li><strong>Code splitting</strong>: Lazy load routes and heavy components</li>
+</ol>
+<h3 id="124-trade-offs-alternatives">12.4 Trade-offs &amp; Alternatives</h3>
+<p><strong>REST vs GraphQL:</strong>
+- REST chosen for simplicity, caching, standard HTTP features
+- GraphQL better for complex nested queries, flexible clients</p>
+<p><strong>SQL vs NoSQL:</strong>
+- PostgreSQL for metadata (ACID, relationships)
+- NoSQL (DynamoDB) for key-value, infinite scale
+- Hybrid approach leverages both strengths</p>
+<p><strong>Fixed Grid vs Masonry:</strong>
+- Fixed grid for performance (predictable heights)
+- Masonry for aesthetics (Pinterest-style)
+- Use fixed for main library, masonry for albums</p>
+<p><strong>Client-side vs Server-side rendering:</strong>
+- SSR for initial page load (SEO, performance)
+- CSR for interactivity (SPA experience)
+- Hybrid approach (Next.js) for best of both</p>
+<h3 id="125-interview-tips">12.5 Interview Tips</h3>
+<ol>
+<li><strong>Start with requirements</strong>: Clarify functional and non-functional requirements</li>
+<li><strong>Draw diagrams</strong>: Visual representations help communicate clearly</li>
+<li><strong>Discuss trade-offs</strong>: Every decision has pros/cons, explain both</li>
+<li><strong>Consider scale</strong>: Design for 100M users, not 100</li>
+<li><strong>Real-world examples</strong>: Reference Google Photos, Flickr, Instagram</li>
+<li><strong>Ask questions</strong>: Clarify ambiguous requirements</li>
+<li><strong>Iterate</strong>: Start simple, add complexity incrementally</li>
+<li><strong>Justify choices</strong>: "Why REST?" "Why PostgreSQL?" have clear answers</li>
+</ol>
+<hr />
+<p><strong>End of Document</strong></p>
+<p>This HLD covers all aspects of designing a production-grade photo grid system like Google Photos, from architecture to implementation details, with a focus on trade-offs and interview readiness.</p></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

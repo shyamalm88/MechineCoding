@@ -29,10 +29,10 @@ npm run preview
 | `JavaScriptProblems/` | Polyfills, design patterns, async utilities, utility functions |
 | `reactHooks/` | 6 custom React hooks |
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
-| `system-design/` | Markdown architecture docs (frontend system design) |
-| `Theory/` | Markdown reference notes (browser internals, JS core, etc.) |
-| `tools/md-site/` | Reusable markdown-to-HTML-site generator (source-agnostic, not tied to `Theory/`) |
-| `theory-notes/` | Generated static site (sidebar + one page per note) built from `Theory/*.md` via `tools/md-site/` — not hand-edited |
+| `system-design/` | Markdown architecture docs (frontend system design) — flat folder, no subfolders |
+| `tools/md-site/` | Reusable markdown-to-HTML-site generator (source-agnostic) |
+| `theory-notes/` | Generated static site built from the former `Theory/*.md` notes via `tools/md-site/` — not hand-edited. `Theory/` itself was removed from the repo after this site was generated, committed, and pushed; restore it from git history (`git log -- Theory/`) if it ever needs to be regenerated or edited |
+| `system-design-notes/` | Generated static site (sidebar + one page per note) built from `system-design/*.md` via `tools/md-site/` — not hand-edited |
 
 ### DSA file format
 Every DSA file follows the same convention: a JSDoc header with problem statement, intuition, and complexity, then the implementation, then test cases as plain `console.log` calls at the bottom. Run any file with Node to execute those tests.
@@ -54,11 +54,11 @@ Solution components must use a **default export** and a `.jsx` extension (Vite c
 `promise-async-problems/` is subdivided by concern: `Core/` (building blocks like retry/timeout), `execution/` (parallel/series/limit runners), `orchastration/` (compose, waterfall, dependency graphs), `reliability/` (circuit breaker, backoff), `scheduler/` (priority queues, idle runners). Each file is standalone with no imports.
 
 ### System design docs
-The `system-design/latest & updated/` folder contains the canonical versions. Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.
+All 25 docs in `system-design/` are canonical (the folder was previously split into a top-level set plus a `latest & updated/` subfolder of newer rewrites; duplicates were removed and everything was flattened into one directory). Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.
 
 ### Markdown-to-site generator (`tools/md-site/`)
-Converts any folder of `.md` files into a browsable static HTML site — see `tools/md-site/README.md` for full usage. `Theory/` is its first source; `theory-notes/` is the generated output (never hand-edit `theory-notes/index.html`, `notes/`, or `assets/` — only `theory-notes/README.md` is hand-authored). Regenerate after editing a note:
+Converts any folder of `.md` files into a browsable static HTML site — see `tools/md-site/README.md` for full usage. Two sources currently use it: the former `Theory/*.md` (→ `theory-notes/`, source since removed — see the `theory-notes/` row above) and `system-design/*.md` (→ `system-design-notes/`). Never hand-edit a generated site's `index.html`, `notes/`, or `assets/` — only its `README.md` is hand-authored. Regenerate `system-design-notes/` after editing a doc:
 ```bash
-python3 tools/md-site/build.py Theory/ theory-notes/
+python3 tools/md-site/build.py system-design/ system-design-notes/
 ```
-Sidebar grouping and title come from `Theory/site.config.json`; category order follows that file's own key order, not alphabetical filename order.
+Sidebar grouping and title come from `system-design/site.config.json`; category order follows that file's own key order, not alphabetical filename order.

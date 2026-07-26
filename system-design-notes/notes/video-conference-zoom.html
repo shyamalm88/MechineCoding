@@ -1,0 +1,2002 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Conference (Zoom) - Frontend System Design — System Design Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar"><h2 class="brand">System Design Notes</h2><details open><summary>E-commerce &amp; Marketplace</summary><ul><li><a href="config-driven-shopping-cart-homepage.html">Config Driven Shopping Cart Homepage</a></li><li><a href="ecommerce-marketplace-amazon.html">Ecommerce Marketplace Amazon</a></li></ul></details><details open><summary>Social &amp; Media Feeds</summary><ul><li><a href="facebook-social-media-platform.html">Facebook Social Media Platform</a></li><li><a href="instagram-photo-feed.html">Instagram Photo Feed</a></li><li><a href="photo-grid-google-photos.html">Photo Grid Google Photos</a></li></ul></details><details open><summary>Media Streaming &amp; Communication</summary><ul><li><a href="chat-app-whatsapp-web.html">Chat App Whatsapp Web</a></li><li><a href="video-conference-zoom.html" aria-current="page">Video Conference Zoom</a></li><li><a href="video-streaming-youtube.html">Video Streaming Youtube</a></li></ul></details><details open><summary>Booking &amp; On-Demand Services</summary><ul><li><a href="bookmyshow-ticket-booking.html">Bookmyshow Ticket Booking</a></li><li><a href="ride-booking-uber-rapido.html">Ride Booking Uber Rapido</a></li><li><a href="travel-booking-airbnb-makemytrip.html">Travel Booking Airbnb Makemytrip</a></li><li><a href="zomato-food-delivery.html">Zomato Food Delivery</a></li></ul></details><details open><summary>Productivity &amp; Collaboration</summary><ul><li><a href="email-delivery-system-gmail.html">Email Delivery System Gmail</a></li><li><a href="google-calendar-day-view.html">Google Calendar Day View</a></li><li><a href="google-docs.html">Google Docs</a></li><li><a href="google-drive-dropbox.html">Google Drive Dropbox</a></li><li><a href="notification-system.html">Notification System</a></li><li><a href="trello-issue-manager.html">Trello Issue Manager</a></li></ul></details><details open><summary>Fintech</summary><ul><li><a href="payment-gateway-stripe.html">Payment Gateway Stripe</a></li><li><a href="stock-broker-platform-zerodha-groww.html">Stock Broker Platform Zerodha Groww</a></li></ul></details><details open><summary>Infra &amp; Platform Building Blocks</summary><ul><li><a href="autocomplete-typeahead.html">Autocomplete Typeahead</a></li><li><a href="leetcode-online-judge.html">Leetcode Online Judge</a></li><li><a href="rate-limiter.html">Rate Limiter</a></li><li><a href="top-k-leaderboard.html">Top K Leaderboard</a></li></ul></details><details open><summary>Reference</summary><ul><li><a href="systemdesignquestions.html">SystemDesignQuestions</a></li></ul></details></nav>
+<main><h1 id="video-conference-zoom-frontend-system-design">Video Conference (Zoom) - Frontend System Design</h1>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-requirements-overview">Requirements Overview</a></li>
+<li><a href="#2-high-level-architecture">High-Level Architecture</a></li>
+<li><a href="#3-core-data-types">Core Data Types</a></li>
+<li><a href="#4-meeting-store-zustand">Meeting Store (Zustand)</a></li>
+<li><a href="#5-webrtc-connection-manager">WebRTC Connection Manager</a></li>
+<li><a href="#6-video-grid-component">Video Grid Component</a></li>
+<li><a href="#7-video-tile-component">Video Tile Component</a></li>
+<li><a href="#8-controls-bar">Controls Bar</a></li>
+<li><a href="#9-control-button-component">Control Button Component</a></li>
+<li><a href="#10-chat-panel">Chat Panel</a></li>
+<li><a href="#11-participants-panel">Participants Panel</a></li>
+<li><a href="#12-screen-share-view">Screen Share View</a></li>
+<li><a href="#13-reactions-system">Reactions System</a></li>
+<li><a href="#14-audio-level-detection">Audio Level Detection</a></li>
+<li><a href="#15-signaling-service-websocket">Signaling Service (WebSocket)</a></li>
+<li><a href="#16-device-settings-dialog">Device Settings Dialog</a></li>
+<li><a href="#17-pre-join-screen">Pre-Join Screen</a></li>
+<li><a href="#18-keyboard-shortcuts">Keyboard Shortcuts</a></li>
+<li><a href="#19-connection-quality-indicator">Connection Quality Indicator</a></li>
+</ol>
+<hr />
+<h2 id="1-requirements-overview">1. Requirements Overview</h2>
+<h3 id="functional-requirements">Functional Requirements</h3>
+<ul>
+<li><strong>Video Grid</strong>: Display multiple participants in grid/speaker view</li>
+<li><strong>Screen Sharing</strong>: Share screen, window, or tab</li>
+<li><strong>Chat</strong>: In-meeting text chat with reactions</li>
+<li><strong>Controls</strong>: Mute/unmute, camera on/off, leave meeting</li>
+<li><strong>Participants Panel</strong>: View and manage participants</li>
+<li><strong>Reactions</strong>: Raise hand, emoji reactions</li>
+<li><strong>Recording</strong>: Cloud/local recording indicator</li>
+<li><strong>Virtual Backgrounds</strong>: Apply background effects</li>
+<li><strong>Breakout Rooms</strong>: Split into smaller groups</li>
+</ul>
+<h3 id="non-functional-requirements">Non-Functional Requirements</h3>
+<ul>
+<li><strong>Latency</strong>: &lt; 150ms end-to-end video latency</li>
+<li><strong>Quality</strong>: Adaptive bitrate for network conditions</li>
+<li><strong>Scalability</strong>: Support 100+ participants</li>
+<li><strong>Accessibility</strong>: Keyboard navigation, screen reader support</li>
+<li><strong>Cross-browser</strong>: Chrome, Firefox, Safari, Edge support</li>
+</ul>
+<hr />
+<h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
+<pre><code>+------------------------------------------------------------------+
+|                     Video Conference App                          |
++------------------------------------------------------------------+
+|  +------------------+  +-------------------+  +----------------+  |
+|  |   Video Grid     |  |   Controls Bar    |  |  Side Panels   |  |
+|  |   - Gallery      |  |   - Mute/Video    |  |  - Chat        |  |
+|  |   - Speaker      |  |   - Share Screen  |  |  - Participants|  |
+|  |   - Screen Share |  |   - Reactions     |  |  - Settings    |  |
+|  +------------------+  +-------------------+  +----------------+  |
++------------------------------------------------------------------+
+|                     WebRTC Layer                                  |
+|  - PeerConnection   - MediaStream   - DataChannel                |
++------------------------------------------------------------------+
+|                     Signaling (WebSocket)                         |
+|  - Join/Leave   - Offer/Answer   - ICE Candidates                |
++------------------------------------------------------------------+
+</code></pre>
+<hr />
+<h2 id="3-core-data-types">3. Core Data Types</h2>
+<pre><code class="language-typescript">// types/conference.ts
+interface Participant {
+  id: string;
+  name: string;
+  avatar?: string;
+  isHost: boolean;
+  isMuted: boolean;
+  isVideoOn: boolean;
+  isScreenSharing: boolean;
+  isHandRaised: boolean;
+  isSpeaking: boolean;
+  connectionQuality: 'excellent' | 'good' | 'poor' | 'disconnected';
+  stream?: MediaStream;
+}
+
+interface Meeting {
+  id: string;
+  title: string;
+  hostId: string;
+  participants: Participant[];
+  startTime: string;
+  isRecording: boolean;
+  settings: MeetingSettings;
+}
+
+interface MeetingSettings {
+  allowScreenShare: boolean;
+  allowChat: boolean;
+  muteOnEntry: boolean;
+  waitingRoom: boolean;
+  maxParticipants: number;
+}
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  timestamp: string;
+  type: 'text' | 'reaction' | 'system';
+  replyTo?: string;
+}
+
+interface Reaction {
+  type: 'thumbsUp' | 'clap' | 'heart' | 'laugh' | 'surprised';
+  participantId: string;
+  timestamp: number;
+}
+
+interface MediaConstraints {
+  video: boolean | MediaTrackConstraints;
+  audio: boolean | MediaTrackConstraints;
+}
+
+interface VideoLayout {
+  mode: 'gallery' | 'speaker' | 'spotlight';
+  pinnedParticipantId?: string;
+  gridSize: number;
+}
+</code></pre>
+<hr />
+<h2 id="4-meeting-store-zustand">4. Meeting Store (Zustand)</h2>
+<pre><code class="language-typescript">// stores/meetingStore.ts
+import { create } from 'zustand';
+
+interface MeetingState {
+  meeting: Meeting | null;
+  localParticipant: Participant | null;
+  remoteParticipants: Map&lt;string, Participant&gt;;
+  layout: VideoLayout;
+  activeSpeakerId: string | null;
+
+  // Local media state
+  localStream: MediaStream | null;
+  screenStream: MediaStream | null;
+  isMuted: boolean;
+  isVideoOn: boolean;
+  isScreenSharing: boolean;
+
+  // Actions
+  setMeeting: (meeting: Meeting) =&gt; void;
+  addParticipant: (participant: Participant) =&gt; void;
+  removeParticipant: (participantId: string) =&gt; void;
+  updateParticipant: (participantId: string, updates: Partial&lt;Participant&gt;) =&gt; void;
+  setLocalStream: (stream: MediaStream | null) =&gt; void;
+  toggleMute: () =&gt; void;
+  toggleVideo: () =&gt; void;
+  setLayout: (layout: Partial&lt;VideoLayout&gt;) =&gt; void;
+  setActiveSpeaker: (participantId: string | null) =&gt; void;
+}
+
+export const useMeetingStore = create&lt;MeetingState&gt;((set, get) =&gt; ({
+  meeting: null,
+  localParticipant: null,
+  remoteParticipants: new Map(),
+  layout: { mode: 'gallery', gridSize: 9 },
+  activeSpeakerId: null,
+
+  localStream: null,
+  screenStream: null,
+  isMuted: false,
+  isVideoOn: true,
+  isScreenSharing: false,
+
+  setMeeting: (meeting) =&gt; set({ meeting }),
+
+  addParticipant: (participant) =&gt; {
+    set((state) =&gt; {
+      const updated = new Map(state.remoteParticipants);
+      updated.set(participant.id, participant);
+      return { remoteParticipants: updated };
+    });
+  },
+
+  removeParticipant: (participantId) =&gt; {
+    set((state) =&gt; {
+      const updated = new Map(state.remoteParticipants);
+      updated.delete(participantId);
+      return { remoteParticipants: updated };
+    });
+  },
+
+  updateParticipant: (participantId, updates) =&gt; {
+    set((state) =&gt; {
+      const updated = new Map(state.remoteParticipants);
+      const participant = updated.get(participantId);
+      if (participant) {
+        updated.set(participantId, { ...participant, ...updates });
+      }
+      return { remoteParticipants: updated };
+    });
+  },
+
+  setLocalStream: (stream) =&gt; set({ localStream: stream }),
+
+  toggleMute: () =&gt; {
+    const { localStream, isMuted } = get();
+    localStream?.getAudioTracks().forEach((track) =&gt; {
+      track.enabled = isMuted;
+    });
+    set({ isMuted: !isMuted });
+  },
+
+  toggleVideo: () =&gt; {
+    const { localStream, isVideoOn } = get();
+    localStream?.getVideoTracks().forEach((track) =&gt; {
+      track.enabled = !isVideoOn;
+    });
+    set({ isVideoOn: !isVideoOn });
+  },
+
+  setLayout: (layout) =&gt; set((state) =&gt; ({
+    layout: { ...state.layout, ...layout },
+  })),
+
+  setActiveSpeaker: (participantId) =&gt; set({ activeSpeakerId: participantId }),
+}));
+</code></pre>
+<hr />
+<h2 id="5-webrtc-connection-manager">5. WebRTC Connection Manager</h2>
+<pre><code class="language-typescript">// lib/webrtc/PeerConnectionManager.ts
+interface PeerConnectionConfig {
+  iceServers: RTCIceServer[];
+  onTrack: (participantId: string, stream: MediaStream) =&gt; void;
+  onConnectionStateChange: (participantId: string, state: RTCPeerConnectionState) =&gt; void;
+}
+
+export class PeerConnectionManager {
+  private connections = new Map&lt;string, RTCPeerConnection&gt;();
+  private config: PeerConnectionConfig;
+  private localStream: MediaStream | null = null;
+
+  constructor(config: PeerConnectionConfig) {
+    this.config = config;
+  }
+
+  setLocalStream(stream: MediaStream) {
+    this.localStream = stream;
+    // Add tracks to existing connections
+    this.connections.forEach((pc) =&gt; {
+      stream.getTracks().forEach((track) =&gt; {
+        pc.addTrack(track, stream);
+      });
+    });
+  }
+
+  async createConnection(participantId: string): Promise&lt;RTCPeerConnection&gt; {
+    const pc = new RTCPeerConnection({
+      iceServers: this.config.iceServers,
+    });
+
+    // Add local tracks
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) =&gt; {
+        pc.addTrack(track, this.localStream!);
+      });
+    }
+
+    // Handle incoming tracks
+    pc.ontrack = (event) =&gt; {
+      this.config.onTrack(participantId, event.streams[0]);
+    };
+
+    // Handle connection state changes
+    pc.onconnectionstatechange = () =&gt; {
+      this.config.onConnectionStateChange(participantId, pc.connectionState);
+    };
+
+    // Handle ICE candidates
+    pc.onicecandidate = (event) =&gt; {
+      if (event.candidate) {
+        this.sendIceCandidate(participantId, event.candidate);
+      }
+    };
+
+    this.connections.set(participantId, pc);
+    return pc;
+  }
+
+  async createOffer(participantId: string): Promise&lt;RTCSessionDescriptionInit&gt; {
+    const pc = this.connections.get(participantId);
+    if (!pc) throw new Error('No connection found');
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    return offer;
+  }
+
+  async handleOffer(
+    participantId: string,
+    offer: RTCSessionDescriptionInit
+  ): Promise&lt;RTCSessionDescriptionInit&gt; {
+    let pc = this.connections.get(participantId);
+    if (!pc) {
+      pc = await this.createConnection(participantId);
+    }
+
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    return answer;
+  }
+
+  async handleAnswer(participantId: string, answer: RTCSessionDescriptionInit) {
+    const pc = this.connections.get(participantId);
+    if (!pc) throw new Error('No connection found');
+    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+  }
+
+  async addIceCandidate(participantId: string, candidate: RTCIceCandidateInit) {
+    const pc = this.connections.get(participantId);
+    if (pc) {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  }
+
+  closeConnection(participantId: string) {
+    const pc = this.connections.get(participantId);
+    if (pc) {
+      pc.close();
+      this.connections.delete(participantId);
+    }
+  }
+
+  closeAll() {
+    this.connections.forEach((pc) =&gt; pc.close());
+    this.connections.clear();
+  }
+
+  private sendIceCandidate(participantId: string, candidate: RTCIceCandidate) {
+    // Send via signaling server
+    signalingService.send({
+      type: 'ice-candidate',
+      targetId: participantId,
+      candidate: candidate.toJSON(),
+    });
+  }
+}
+</code></pre>
+<hr />
+<h2 id="6-video-grid-component">6. Video Grid Component</h2>
+<pre><code class="language-tsx">// components/VideoGrid.tsx
+import { useMemo } from 'react';
+
+interface VideoGridProps {
+  participants: Participant[];
+  localParticipant: Participant;
+  layout: VideoLayout;
+  activeSpeakerId: string | null;
+}
+
+export function VideoGrid({
+  participants,
+  localParticipant,
+  layout,
+  activeSpeakerId,
+}: VideoGridProps) {
+  const allParticipants = useMemo(
+    () =&gt; [localParticipant, ...participants],
+    [localParticipant, participants]
+  );
+
+  // Calculate grid dimensions
+  const gridConfig = useMemo(() =&gt; {
+    const count = allParticipants.length;
+    if (count === 1) return { cols: 1, rows: 1 };
+    if (count === 2) return { cols: 2, rows: 1 };
+    if (count &lt;= 4) return { cols: 2, rows: 2 };
+    if (count &lt;= 6) return { cols: 3, rows: 2 };
+    if (count &lt;= 9) return { cols: 3, rows: 3 };
+    if (count &lt;= 16) return { cols: 4, rows: 4 };
+    return { cols: 5, rows: Math.ceil(count / 5) };
+  }, [allParticipants.length]);
+
+  if (layout.mode === 'speaker') {
+    return (
+      &lt;SpeakerView
+        participants={allParticipants}
+        activeSpeakerId={activeSpeakerId || layout.pinnedParticipantId}
+      /&gt;
+    );
+  }
+
+  return (
+    &lt;div
+      className=&quot;h-full w-full p-2 grid gap-2&quot;
+      style={{
+        gridTemplateColumns: `repeat(${gridConfig.cols}, 1fr)`,
+        gridTemplateRows: `repeat(${gridConfig.rows}, 1fr)`,
+      }}
+    &gt;
+      {allParticipants.slice(0, layout.gridSize).map((participant) =&gt; (
+        &lt;VideoTile
+          key={participant.id}
+          participant={participant}
+          isLocal={participant.id === localParticipant.id}
+          isActiveSpeaker={participant.id === activeSpeakerId}
+          isPinned={participant.id === layout.pinnedParticipantId}
+        /&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+
+function SpeakerView({
+  participants,
+  activeSpeakerId,
+}: {
+  participants: Participant[];
+  activeSpeakerId?: string;
+}) {
+  const speaker = participants.find((p) =&gt; p.id === activeSpeakerId) || participants[0];
+  const others = participants.filter((p) =&gt; p.id !== speaker?.id);
+
+  return (
+    &lt;div className=&quot;h-full flex flex-col gap-2 p-2&quot;&gt;
+      {/* Main speaker */}
+      &lt;div className=&quot;flex-1&quot;&gt;
+        {speaker &amp;&amp; (
+          &lt;VideoTile
+            participant={speaker}
+            isLocal={false}
+            isActiveSpeaker={true}
+            className=&quot;h-full&quot;
+          /&gt;
+        )}
+      &lt;/div&gt;
+
+      {/* Filmstrip */}
+      {others.length &gt; 0 &amp;&amp; (
+        &lt;div className=&quot;flex gap-2 h-32 overflow-x-auto&quot;&gt;
+          {others.map((participant) =&gt; (
+            &lt;VideoTile
+              key={participant.id}
+              participant={participant}
+              isLocal={false}
+              className=&quot;w-48 flex-shrink-0&quot;
+            /&gt;
+          ))}
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="7-video-tile-component">7. Video Tile Component</h2>
+<pre><code class="language-tsx">// components/VideoTile.tsx
+import { useRef, useEffect, useState } from 'react';
+import { Mic, MicOff, Pin, MoreVertical, Hand, Wifi } from 'lucide-react';
+
+interface VideoTileProps {
+  participant: Participant;
+  isLocal: boolean;
+  isActiveSpeaker?: boolean;
+  isPinned?: boolean;
+  className?: string;
+}
+
+export function VideoTile({
+  participant,
+  isLocal,
+  isActiveSpeaker,
+  isPinned,
+  className,
+}: VideoTileProps) {
+  const videoRef = useRef&lt;HTMLVideoElement&gt;(null);
+  const [showMenu, setShowMenu] = useState(false);
+
+  // Attach stream to video element
+  useEffect(() =&gt; {
+    if (videoRef.current &amp;&amp; participant.stream) {
+      videoRef.current.srcObject = participant.stream;
+    }
+  }, [participant.stream]);
+
+  const connectionColor = {
+    excellent: 'bg-green-500',
+    good: 'bg-yellow-500',
+    poor: 'bg-red-500',
+    disconnected: 'bg-gray-500',
+  }[participant.connectionQuality];
+
+  return (
+    &lt;div
+      className={cn(
+        'relative rounded-lg overflow-hidden bg-gray-900',
+        isActiveSpeaker &amp;&amp; 'ring-2 ring-green-500',
+        className
+      )}
+    &gt;
+      {/* Video */}
+      {participant.isVideoOn &amp;&amp; participant.stream ? (
+        &lt;video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isLocal}
+          className={cn(
+            'w-full h-full object-cover',
+            isLocal &amp;&amp; 'scale-x-[-1]' // Mirror local video
+          )}
+        /&gt;
+      ) : (
+        &lt;div className=&quot;w-full h-full flex items-center justify-center bg-gray-800&quot;&gt;
+          &lt;div className=&quot;w-20 h-20 rounded-full bg-gray-600 flex items-center justify-center text-2xl font-semibold text-white&quot;&gt;
+            {participant.name[0]?.toUpperCase()}
+          &lt;/div&gt;
+        &lt;/div&gt;
+      )}
+
+      {/* Speaking indicator */}
+      {participant.isSpeaking &amp;&amp; (
+        &lt;div className=&quot;absolute inset-0 ring-2 ring-green-400 rounded-lg pointer-events-none&quot; /&gt;
+      )}
+
+      {/* Name bar */}
+      &lt;div className=&quot;absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/60 to-transparent&quot;&gt;
+        &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+          {/* Mute indicator */}
+          {participant.isMuted ? (
+            &lt;MicOff className=&quot;w-4 h-4 text-red-400&quot; /&gt;
+          ) : (
+            &lt;Mic className=&quot;w-4 h-4 text-white&quot; /&gt;
+          )}
+
+          {/* Name */}
+          &lt;span className=&quot;text-white text-sm truncate&quot;&gt;
+            {participant.name} {isLocal &amp;&amp; '(You)'}
+          &lt;/span&gt;
+
+          {/* Host badge */}
+          {participant.isHost &amp;&amp; (
+            &lt;span className=&quot;text-xs bg-blue-500 px-1.5 py-0.5 rounded text-white&quot;&gt;
+              Host
+            &lt;/span&gt;
+          )}
+
+          {/* Pinned indicator */}
+          {isPinned &amp;&amp; &lt;Pin className=&quot;w-3 h-3 text-yellow-400&quot; /&gt;}
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Top indicators */}
+      &lt;div className=&quot;absolute top-2 left-2 flex items-center gap-2&quot;&gt;
+        {/* Connection quality */}
+        &lt;div className={cn('w-2 h-2 rounded-full', connectionColor)} /&gt;
+
+        {/* Hand raised */}
+        {participant.isHandRaised &amp;&amp; (
+          &lt;div className=&quot;bg-yellow-500 p-1 rounded&quot;&gt;
+            &lt;Hand className=&quot;w-4 h-4 text-white&quot; /&gt;
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+
+      {/* Context menu trigger */}
+      {!isLocal &amp;&amp; (
+        &lt;button
+          onClick={() =&gt; setShowMenu(!showMenu)}
+          className=&quot;absolute top-2 right-2 p-1 bg-black/50 rounded opacity-0 group-hover:opacity-100 hover:bg-black/70&quot;
+        &gt;
+          &lt;MoreVertical className=&quot;w-4 h-4 text-white&quot; /&gt;
+        &lt;/button&gt;
+      )}
+
+      {/* Context menu */}
+      {showMenu &amp;&amp; (
+        &lt;ParticipantMenu
+          participant={participant}
+          onClose={() =&gt; setShowMenu(false)}
+        /&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="8-controls-bar">8. Controls Bar</h2>
+<pre><code class="language-tsx">// components/ControlsBar.tsx
+import { useState } from 'react';
+import {
+  Mic, MicOff, Video, VideoOff, Monitor, MessageSquare,
+  Users, Hand, Smile, Settings, PhoneOff, MoreHorizontal, Grid, Layout
+} from 'lucide-react';
+
+export function ControlsBar() {
+  const { isMuted, isVideoOn, isScreenSharing, toggleMute, toggleVideo, layout, setLayout } =
+    useMeetingStore();
+  const [showReactions, setShowReactions] = useState(false);
+  const [activePanel, setActivePanel] = useState&lt;'chat' | 'participants' | null&gt;(null);
+
+  const startScreenShare = async () =&gt; {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: true,
+      });
+      // Handle screen share stream
+      meetingService.shareScreen(stream);
+    } catch (err) {
+      console.error('Screen share failed:', err);
+    }
+  };
+
+  const leaveMeeting = () =&gt; {
+    if (confirm('Are you sure you want to leave the meeting?')) {
+      meetingService.leave();
+      router.push('/');
+    }
+  };
+
+  return (
+    &lt;div className=&quot;h-16 bg-gray-800 flex items-center justify-between px-4&quot;&gt;
+      {/* Left controls */}
+      &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+        {/* Mute button */}
+        &lt;ControlButton
+          icon={isMuted ? MicOff : Mic}
+          label={isMuted ? 'Unmute' : 'Mute'}
+          active={!isMuted}
+          danger={isMuted}
+          onClick={toggleMute}
+          shortcut=&quot;Alt+A&quot;
+        /&gt;
+
+        {/* Video button */}
+        &lt;ControlButton
+          icon={isVideoOn ? Video : VideoOff}
+          label={isVideoOn ? 'Stop Video' : 'Start Video'}
+          active={isVideoOn}
+          danger={!isVideoOn}
+          onClick={toggleVideo}
+          shortcut=&quot;Alt+V&quot;
+        /&gt;
+      &lt;/div&gt;
+
+      {/* Center controls */}
+      &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+        {/* Screen share */}
+        &lt;ControlButton
+          icon={Monitor}
+          label={isScreenSharing ? 'Stop Share' : 'Share Screen'}
+          active={isScreenSharing}
+          onClick={startScreenShare}
+        /&gt;
+
+        {/* Participants */}
+        &lt;ControlButton
+          icon={Users}
+          label=&quot;Participants&quot;
+          active={activePanel === 'participants'}
+          onClick={() =&gt; setActivePanel(activePanel === 'participants' ? null : 'participants')}
+          badge={12}
+        /&gt;
+
+        {/* Chat */}
+        &lt;ControlButton
+          icon={MessageSquare}
+          label=&quot;Chat&quot;
+          active={activePanel === 'chat'}
+          onClick={() =&gt; setActivePanel(activePanel === 'chat' ? null : 'chat')}
+          badge={3}
+        /&gt;
+
+        {/* Reactions */}
+        &lt;div className=&quot;relative&quot;&gt;
+          &lt;ControlButton
+            icon={Smile}
+            label=&quot;Reactions&quot;
+            onClick={() =&gt; setShowReactions(!showReactions)}
+          /&gt;
+          {showReactions &amp;&amp; (
+            &lt;ReactionPicker onSelect={(reaction) =&gt; {
+              sendReaction(reaction);
+              setShowReactions(false);
+            }} /&gt;
+          )}
+        &lt;/div&gt;
+
+        {/* Raise hand */}
+        &lt;ControlButton
+          icon={Hand}
+          label=&quot;Raise Hand&quot;
+          onClick={() =&gt; meetingService.toggleHandRaise()}
+        /&gt;
+
+        {/* Layout toggle */}
+        &lt;ControlButton
+          icon={layout.mode === 'gallery' ? Grid : Layout}
+          label={layout.mode === 'gallery' ? 'Speaker View' : 'Gallery View'}
+          onClick={() =&gt; setLayout({
+            mode: layout.mode === 'gallery' ? 'speaker' : 'gallery',
+          })}
+        /&gt;
+      &lt;/div&gt;
+
+      {/* Right controls */}
+      &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+        &lt;ControlButton icon={Settings} label=&quot;Settings&quot; onClick={() =&gt; {}} /&gt;
+
+        {/* Leave button */}
+        &lt;button
+          onClick={leaveMeeting}
+          className=&quot;flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg&quot;
+        &gt;
+          &lt;PhoneOff className=&quot;w-5 h-5&quot; /&gt;
+          Leave
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="9-control-button-component">9. Control Button Component</h2>
+<pre><code class="language-tsx">// components/ControlButton.tsx
+import { forwardRef } from 'react';
+import { LucideIcon } from 'lucide-react';
+
+interface ControlButtonProps {
+  icon: LucideIcon;
+  label: string;
+  onClick: () =&gt; void;
+  active?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+  badge?: number;
+  shortcut?: string;
+}
+
+export const ControlButton = forwardRef&lt;HTMLButtonElement, ControlButtonProps&gt;(
+  ({ icon: Icon, label, onClick, active, danger, disabled, badge, shortcut }, ref) =&gt; {
+    return (
+      &lt;div className=&quot;relative group&quot;&gt;
+        &lt;button
+          ref={ref}
+          onClick={onClick}
+          disabled={disabled}
+          className={cn(
+            'flex flex-col items-center justify-center w-16 h-14 rounded-lg transition-colors',
+            active &amp;&amp; 'bg-gray-700',
+            danger &amp;&amp; 'bg-red-500/20',
+            !active &amp;&amp; !danger &amp;&amp; 'hover:bg-gray-700',
+            disabled &amp;&amp; 'opacity-50 cursor-not-allowed'
+          )}
+          title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
+        &gt;
+          &lt;div className=&quot;relative&quot;&gt;
+            &lt;Icon
+              className={cn(
+                'w-6 h-6',
+                danger ? 'text-red-400' : 'text-white'
+              )}
+            /&gt;
+            {badge !== undefined &amp;&amp; badge &gt; 0 &amp;&amp; (
+              &lt;span className=&quot;absolute -top-1 -right-2 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-xs rounded-full px-1&quot;&gt;
+                {badge &gt; 99 ? '99+' : badge}
+              &lt;/span&gt;
+            )}
+          &lt;/div&gt;
+          &lt;span className=&quot;text-xs text-gray-300 mt-1&quot;&gt;{label}&lt;/span&gt;
+        &lt;/button&gt;
+
+        {/* Tooltip with shortcut */}
+        {shortcut &amp;&amp; (
+          &lt;div className=&quot;absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap&quot;&gt;
+            {label} &lt;kbd className=&quot;bg-gray-700 px-1 rounded&quot;&gt;{shortcut}&lt;/kbd&gt;
+          &lt;/div&gt;
+        )}
+      &lt;/div&gt;
+    );
+  }
+);
+</code></pre>
+<hr />
+<h2 id="10-chat-panel">10. Chat Panel</h2>
+<pre><code class="language-tsx">// components/ChatPanel.tsx
+import { useState, useRef, useEffect } from 'react';
+import { Send, X, Smile } from 'lucide-react';
+
+interface ChatPanelProps {
+  messages: ChatMessage[];
+  onSend: (content: string) =&gt; void;
+  onClose: () =&gt; void;
+}
+
+export function ChatPanel({ messages, onSend, onClose }: ChatPanelProps) {
+  const [input, setInput] = useState('');
+  const messagesEndRef = useRef&lt;HTMLDivElement&gt;(null);
+  const inputRef = useRef&lt;HTMLInputElement&gt;(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() =&gt; {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = () =&gt; {
+    if (!input.trim()) return;
+    onSend(input.trim());
+    setInput('');
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) =&gt; {
+    if (e.key === 'Enter' &amp;&amp; !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    &lt;div className=&quot;w-80 h-full bg-white flex flex-col border-l&quot;&gt;
+      {/* Header */}
+      &lt;div className=&quot;flex items-center justify-between px-4 py-3 border-b&quot;&gt;
+        &lt;h3 className=&quot;font-semibold&quot;&gt;In-meeting Chat&lt;/h3&gt;
+        &lt;button onClick={onClose} className=&quot;p-1 hover:bg-gray-100 rounded&quot;&gt;
+          &lt;X className=&quot;w-5 h-5&quot; /&gt;
+        &lt;/button&gt;
+      &lt;/div&gt;
+
+      {/* Messages */}
+      &lt;div className=&quot;flex-1 overflow-y-auto p-4 space-y-4&quot;&gt;
+        {messages.map((msg) =&gt; (
+          &lt;ChatMessageItem key={msg.id} message={msg} /&gt;
+        ))}
+        &lt;div ref={messagesEndRef} /&gt;
+      &lt;/div&gt;
+
+      {/* Input */}
+      &lt;div className=&quot;p-4 border-t&quot;&gt;
+        &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+          &lt;input
+            ref={inputRef}
+            type=&quot;text&quot;
+            value={input}
+            onChange={(e) =&gt; setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder=&quot;Type a message...&quot;
+            className=&quot;flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500&quot;
+          /&gt;
+          &lt;button
+            onClick={handleSend}
+            disabled={!input.trim()}
+            className=&quot;p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300&quot;
+          &gt;
+            &lt;Send className=&quot;w-5 h-5&quot; /&gt;
+          &lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+
+function ChatMessageItem({ message }: { message: ChatMessage }) {
+  const isSystem = message.type === 'system';
+
+  if (isSystem) {
+    return (
+      &lt;div className=&quot;text-center text-sm text-gray-500 py-1&quot;&gt;
+        {message.content}
+      &lt;/div&gt;
+    );
+  }
+
+  return (
+    &lt;div&gt;
+      &lt;div className=&quot;flex items-center gap-2 mb-1&quot;&gt;
+        &lt;span className=&quot;font-medium text-sm&quot;&gt;{message.senderName}&lt;/span&gt;
+        &lt;span className=&quot;text-xs text-gray-400&quot;&gt;
+          {new Date(message.timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        &lt;/span&gt;
+      &lt;/div&gt;
+      &lt;p className=&quot;text-sm text-gray-700&quot;&gt;{message.content}&lt;/p&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="11-participants-panel">11. Participants Panel</h2>
+<pre><code class="language-tsx">// components/ParticipantsPanel.tsx
+import { useState } from 'react';
+import { X, Mic, MicOff, Video, VideoOff, MoreVertical, Search, Hand, Crown } from 'lucide-react';
+
+interface ParticipantsPanelProps {
+  participants: Participant[];
+  localParticipant: Participant;
+  isHost: boolean;
+  onClose: () =&gt; void;
+}
+
+export function ParticipantsPanel({
+  participants,
+  localParticipant,
+  isHost,
+  onClose,
+}: ParticipantsPanelProps) {
+  const [search, setSearch] = useState('');
+
+  const allParticipants = [localParticipant, ...participants];
+  const filteredParticipants = search
+    ? allParticipants.filter((p) =&gt;
+        p.name.toLowerCase().includes(search.toLowerCase())
+      )
+    : allParticipants;
+
+  // Sort: host first, then raised hands, then alphabetical
+  const sortedParticipants = [...filteredParticipants].sort((a, b) =&gt; {
+    if (a.isHost !== b.isHost) return a.isHost ? -1 : 1;
+    if (a.isHandRaised !== b.isHandRaised) return a.isHandRaised ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return (
+    &lt;div className=&quot;w-80 h-full bg-white flex flex-col border-l&quot;&gt;
+      {/* Header */}
+      &lt;div className=&quot;flex items-center justify-between px-4 py-3 border-b&quot;&gt;
+        &lt;h3 className=&quot;font-semibold&quot;&gt;Participants ({allParticipants.length})&lt;/h3&gt;
+        &lt;button onClick={onClose} className=&quot;p-1 hover:bg-gray-100 rounded&quot;&gt;
+          &lt;X className=&quot;w-5 h-5&quot; /&gt;
+        &lt;/button&gt;
+      &lt;/div&gt;
+
+      {/* Search */}
+      &lt;div className=&quot;p-3 border-b&quot;&gt;
+        &lt;div className=&quot;relative&quot;&gt;
+          &lt;Search className=&quot;absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400&quot; /&gt;
+          &lt;input
+            type=&quot;text&quot;
+            value={search}
+            onChange={(e) =&gt; setSearch(e.target.value)}
+            placeholder=&quot;Search participants...&quot;
+            className=&quot;w-full pl-9 pr-3 py-2 border rounded-lg text-sm&quot;
+          /&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Host controls */}
+      {isHost &amp;&amp; (
+        &lt;div className=&quot;p-3 border-b flex gap-2&quot;&gt;
+          &lt;button
+            onClick={() =&gt; meetingService.muteAll()}
+            className=&quot;flex-1 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded&quot;
+          &gt;
+            Mute All
+          &lt;/button&gt;
+          &lt;button
+            onClick={() =&gt; meetingService.lowerAllHands()}
+            className=&quot;flex-1 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded&quot;
+          &gt;
+            Lower All Hands
+          &lt;/button&gt;
+        &lt;/div&gt;
+      )}
+
+      {/* Participants list */}
+      &lt;div className=&quot;flex-1 overflow-y-auto&quot;&gt;
+        {sortedParticipants.map((participant) =&gt; (
+          &lt;ParticipantItem
+            key={participant.id}
+            participant={participant}
+            isLocal={participant.id === localParticipant.id}
+            isHost={isHost}
+          /&gt;
+        ))}
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+
+function ParticipantItem({
+  participant,
+  isLocal,
+  isHost,
+}: {
+  participant: Participant;
+  isLocal: boolean;
+  isHost: boolean;
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+
+  return (
+    &lt;div className=&quot;flex items-center gap-3 px-4 py-2 hover:bg-gray-50&quot;&gt;
+      {/* Avatar */}
+      &lt;div className=&quot;w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-sm font-medium&quot;&gt;
+        {participant.name[0].toUpperCase()}
+      &lt;/div&gt;
+
+      {/* Name */}
+      &lt;div className=&quot;flex-1 min-w-0&quot;&gt;
+        &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+          &lt;span className=&quot;font-medium text-sm truncate&quot;&gt;
+            {participant.name} {isLocal &amp;&amp; '(You)'}
+          &lt;/span&gt;
+          {participant.isHost &amp;&amp; &lt;Crown className=&quot;w-4 h-4 text-yellow-500&quot; /&gt;}
+          {participant.isHandRaised &amp;&amp; &lt;Hand className=&quot;w-4 h-4 text-yellow-500&quot; /&gt;}
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      {/* Status icons */}
+      &lt;div className=&quot;flex items-center gap-1&quot;&gt;
+        {participant.isMuted ? (
+          &lt;MicOff className=&quot;w-4 h-4 text-red-400&quot; /&gt;
+        ) : (
+          &lt;Mic className=&quot;w-4 h-4 text-gray-400&quot; /&gt;
+        )}
+        {!participant.isVideoOn &amp;&amp; &lt;VideoOff className=&quot;w-4 h-4 text-red-400&quot; /&gt;}
+      &lt;/div&gt;
+
+      {/* Menu (for host) */}
+      {isHost &amp;&amp; !isLocal &amp;&amp; (
+        &lt;div className=&quot;relative&quot;&gt;
+          &lt;button onClick={() =&gt; setShowMenu(!showMenu)} className=&quot;p-1 hover:bg-gray-200 rounded&quot;&gt;
+            &lt;MoreVertical className=&quot;w-4 h-4&quot; /&gt;
+          &lt;/button&gt;
+          {showMenu &amp;&amp; (
+            &lt;ParticipantContextMenu
+              participant={participant}
+              onClose={() =&gt; setShowMenu(false)}
+            /&gt;
+          )}
+        &lt;/div&gt;
+      )}
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="12-screen-share-view">12. Screen Share View</h2>
+<pre><code class="language-tsx">// components/ScreenShareView.tsx
+import { useEffect, useRef } from 'react';
+import { Monitor, X, Maximize, Minimize } from 'lucide-react';
+
+interface ScreenShareViewProps {
+  stream: MediaStream;
+  sharerName: string;
+  isLocal: boolean;
+  onStopShare?: () =&gt; void;
+}
+
+export function ScreenShareView({
+  stream,
+  sharerName,
+  isLocal,
+  onStopShare,
+}: ScreenShareViewProps) {
+  const videoRef = useRef&lt;HTMLVideoElement&gt;(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() =&gt; {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  const toggleFullscreen = () =&gt; {
+    if (!document.fullscreenElement) {
+      videoRef.current?.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() =&gt; {
+    const handleFullscreenChange = () =&gt; {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () =&gt; document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  return (
+    &lt;div className=&quot;relative flex-1 bg-black&quot;&gt;
+      &lt;video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className=&quot;w-full h-full object-contain&quot;
+      /&gt;
+
+      {/* Overlay header */}
+      &lt;div className=&quot;absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent&quot;&gt;
+        &lt;div className=&quot;flex items-center justify-between&quot;&gt;
+          &lt;div className=&quot;flex items-center gap-2 text-white&quot;&gt;
+            &lt;Monitor className=&quot;w-5 h-5&quot; /&gt;
+            &lt;span className=&quot;font-medium&quot;&gt;
+              {isLocal ? 'You are sharing your screen' : `${sharerName} is sharing their screen`}
+            &lt;/span&gt;
+          &lt;/div&gt;
+
+          &lt;div className=&quot;flex items-center gap-2&quot;&gt;
+            &lt;button
+              onClick={toggleFullscreen}
+              className=&quot;p-2 bg-black/50 hover:bg-black/70 rounded text-white&quot;
+            &gt;
+              {isFullscreen ? (
+                &lt;Minimize className=&quot;w-5 h-5&quot; /&gt;
+              ) : (
+                &lt;Maximize className=&quot;w-5 h-5&quot; /&gt;
+              )}
+            &lt;/button&gt;
+
+            {isLocal &amp;&amp; onStopShare &amp;&amp; (
+              &lt;button
+                onClick={onStopShare}
+                className=&quot;flex items-center gap-2 px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded&quot;
+              &gt;
+                &lt;X className=&quot;w-4 h-4&quot; /&gt;
+                Stop Sharing
+              &lt;/button&gt;
+            )}
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+
+// Hook to handle screen sharing
+function useScreenShare() {
+  const { setScreenStream } = useMeetingStore();
+  const [isSharing, setIsSharing] = useState(false);
+
+  const startScreenShare = async () =&gt; {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: 'always',
+          displaySurface: 'monitor',
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      // Handle stream end (user clicks stop in browser UI)
+      stream.getVideoTracks()[0].onended = () =&gt; {
+        stopScreenShare();
+      };
+
+      setScreenStream(stream);
+      setIsSharing(true);
+
+      // Notify other participants
+      signalingService.send({ type: 'screen-share-start' });
+
+      return stream;
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        console.error('Screen share failed:', err);
+      }
+      return null;
+    }
+  };
+
+  const stopScreenShare = () =&gt; {
+    const { screenStream } = useMeetingStore.getState();
+    screenStream?.getTracks().forEach((track) =&gt; track.stop());
+    setScreenStream(null);
+    setIsSharing(false);
+    signalingService.send({ type: 'screen-share-stop' });
+  };
+
+  return { isSharing, startScreenShare, stopScreenShare };
+}
+</code></pre>
+<hr />
+<h2 id="13-reactions-system">13. Reactions System</h2>
+<pre><code class="language-tsx">// components/ReactionPicker.tsx
+const REACTIONS = [
+  { type: 'thumbsUp', emoji: '👍', label: 'Thumbs up' },
+  { type: 'clap', emoji: '👏', label: 'Clap' },
+  { type: 'heart', emoji: '❤️', label: 'Heart' },
+  { type: 'laugh', emoji: '😂', label: 'Laugh' },
+  { type: 'surprised', emoji: '😮', label: 'Surprised' },
+] as const;
+
+interface ReactionPickerProps {
+  onSelect: (reaction: Reaction['type']) =&gt; void;
+}
+
+export function ReactionPicker({ onSelect }: ReactionPickerProps) {
+  return (
+    &lt;div className=&quot;absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-white rounded-lg shadow-lg border flex gap-1&quot;&gt;
+      {REACTIONS.map((reaction) =&gt; (
+        &lt;button
+          key={reaction.type}
+          onClick={() =&gt; onSelect(reaction.type)}
+          className=&quot;w-10 h-10 text-2xl hover:bg-gray-100 rounded-lg flex items-center justify-center&quot;
+          title={reaction.label}
+        &gt;
+          {reaction.emoji}
+        &lt;/button&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+
+// Floating reaction display
+export function FloatingReactions({ reactions }: { reactions: Reaction[] }) {
+  const [visibleReactions, setVisibleReactions] = useState&lt;(Reaction &amp; { key: string })[]&gt;([]);
+
+  useEffect(() =&gt; {
+    // Add new reactions with unique keys
+    reactions.forEach((reaction) =&gt; {
+      const key = `${reaction.participantId}-${reaction.timestamp}`;
+      setVisibleReactions((prev) =&gt; [...prev, { ...reaction, key }]);
+
+      // Remove after animation
+      setTimeout(() =&gt; {
+        setVisibleReactions((prev) =&gt; prev.filter((r) =&gt; r.key !== key));
+      }, 3000);
+    });
+  }, [reactions]);
+
+  return (
+    &lt;div className=&quot;absolute bottom-20 right-4 pointer-events-none&quot;&gt;
+      {visibleReactions.map((reaction) =&gt; (
+        &lt;FloatingEmoji key={reaction.key} type={reaction.type} /&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+
+function FloatingEmoji({ type }: { type: Reaction['type'] }) {
+  const emoji = REACTIONS.find((r) =&gt; r.type === type)?.emoji;
+
+  return (
+    &lt;div className=&quot;animate-float-up text-4xl&quot;&gt;
+      {emoji}
+    &lt;/div&gt;
+  );
+}
+
+// CSS for float animation
+// @keyframes float-up {
+//   0% { opacity: 1; transform: translateY(0) scale(1); }
+//   100% { opacity: 0; transform: translateY(-100px) scale(1.5); }
+// }
+// .animate-float-up { animation: float-up 3s ease-out forwards; }
+</code></pre>
+<hr />
+<h2 id="14-audio-level-detection">14. Audio Level Detection</h2>
+<pre><code class="language-typescript">// lib/audioAnalyzer.ts
+export class AudioLevelAnalyzer {
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private dataArray: Uint8Array | null = null;
+  private animationFrame: number | null = null;
+  private onSpeakingChange: (isSpeaking: boolean) =&gt; void;
+  private speakingThreshold = 30;
+  private silenceDelay = 500;
+  private isSpeaking = false;
+  private silenceTimer: NodeJS.Timeout | null = null;
+
+  constructor(onSpeakingChange: (isSpeaking: boolean) =&gt; void) {
+    this.onSpeakingChange = onSpeakingChange;
+  }
+
+  async connect(stream: MediaStream) {
+    this.audioContext = new AudioContext();
+    const source = this.audioContext.createMediaStreamSource(stream);
+
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.8;
+
+    source.connect(this.analyser);
+
+    this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    this.startMonitoring();
+  }
+
+  private startMonitoring() {
+    const checkLevel = () =&gt; {
+      if (!this.analyser || !this.dataArray) return;
+
+      this.analyser.getByteFrequencyData(this.dataArray);
+
+      // Calculate average volume
+      const average = this.dataArray.reduce((a, b) =&gt; a + b, 0) / this.dataArray.length;
+
+      if (average &gt; this.speakingThreshold) {
+        // Clear silence timer if speaking
+        if (this.silenceTimer) {
+          clearTimeout(this.silenceTimer);
+          this.silenceTimer = null;
+        }
+
+        if (!this.isSpeaking) {
+          this.isSpeaking = true;
+          this.onSpeakingChange(true);
+        }
+      } else if (this.isSpeaking &amp;&amp; !this.silenceTimer) {
+        // Start silence timer
+        this.silenceTimer = setTimeout(() =&gt; {
+          this.isSpeaking = false;
+          this.onSpeakingChange(false);
+          this.silenceTimer = null;
+        }, this.silenceDelay);
+      }
+
+      this.animationFrame = requestAnimationFrame(checkLevel);
+    };
+
+    checkLevel();
+  }
+
+  disconnect() {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+    }
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+  }
+}
+
+// Hook for detecting active speaker
+export function useActiveSpeaker(participants: Map&lt;string, Participant&gt;) {
+  const { setActiveSpeaker } = useMeetingStore();
+  const speakerScores = useRef(new Map&lt;string, number&gt;());
+
+  useEffect(() =&gt; {
+    // Update scores based on speaking state
+    participants.forEach((participant, id) =&gt; {
+      const currentScore = speakerScores.current.get(id) || 0;
+      if (participant.isSpeaking) {
+        speakerScores.current.set(id, currentScore + 1);
+      } else {
+        speakerScores.current.set(id, Math.max(0, currentScore - 0.5));
+      }
+    });
+
+    // Find participant with highest score
+    let maxScore = 0;
+    let activeSpeakerId: string | null = null;
+
+    speakerScores.current.forEach((score, id) =&gt; {
+      if (score &gt; maxScore &amp;&amp; score &gt; 3) {
+        maxScore = score;
+        activeSpeakerId = id;
+      }
+    });
+
+    setActiveSpeaker(activeSpeakerId);
+  }, [participants, setActiveSpeaker]);
+}
+</code></pre>
+<hr />
+<h2 id="15-signaling-service-websocket">15. Signaling Service (WebSocket)</h2>
+<pre><code class="language-typescript">// lib/signalingService.ts
+type SignalingMessage =
+  | { type: 'join'; meetingId: string; participant: Participant }
+  | { type: 'leave'; participantId: string }
+  | { type: 'offer'; targetId: string; sdp: RTCSessionDescriptionInit }
+  | { type: 'answer'; targetId: string; sdp: RTCSessionDescriptionInit }
+  | { type: 'ice-candidate'; targetId: string; candidate: RTCIceCandidateInit }
+  | { type: 'mute'; participantId: string; isMuted: boolean }
+  | { type: 'video'; participantId: string; isVideoOn: boolean }
+  | { type: 'screen-share-start'; participantId: string }
+  | { type: 'screen-share-stop'; participantId: string }
+  | { type: 'hand-raise'; participantId: string; isRaised: boolean }
+  | { type: 'reaction'; participantId: string; reaction: Reaction['type'] }
+  | { type: 'chat'; message: ChatMessage };
+
+class SignalingService {
+  private socket: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private messageQueue: SignalingMessage[] = [];
+  private handlers = new Map&lt;string, Set&lt;(data: any) =&gt; void&gt;&gt;();
+
+  connect(meetingId: string, token: string): Promise&lt;void&gt; {
+    return new Promise((resolve, reject) =&gt; {
+      const url = `wss://signaling.example.com/meeting/${meetingId}?token=${token}`;
+      this.socket = new WebSocket(url);
+
+      this.socket.onopen = () =&gt; {
+        this.reconnectAttempts = 0;
+        // Send queued messages
+        this.messageQueue.forEach((msg) =&gt; this.send(msg));
+        this.messageQueue = [];
+        resolve();
+      };
+
+      this.socket.onmessage = (event) =&gt; {
+        const message = JSON.parse(event.data) as SignalingMessage;
+        this.emit(message.type, message);
+      };
+
+      this.socket.onclose = (event) =&gt; {
+        if (!event.wasClean &amp;&amp; this.reconnectAttempts &lt; this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+          setTimeout(() =&gt; this.connect(meetingId, token), delay);
+        }
+      };
+
+      this.socket.onerror = (error) =&gt; {
+        reject(error);
+      };
+    });
+  }
+
+  send(message: SignalingMessage) {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify(message));
+    } else {
+      this.messageQueue.push(message);
+    }
+  }
+
+  on(type: string, handler: (data: any) =&gt; void) {
+    if (!this.handlers.has(type)) {
+      this.handlers.set(type, new Set());
+    }
+    this.handlers.get(type)!.add(handler);
+
+    return () =&gt; {
+      this.handlers.get(type)?.delete(handler);
+    };
+  }
+
+  private emit(type: string, data: any) {
+    this.handlers.get(type)?.forEach((handler) =&gt; handler(data));
+  }
+
+  disconnect() {
+    this.socket?.close();
+    this.socket = null;
+  }
+}
+
+export const signalingService = new SignalingService();
+</code></pre>
+<hr />
+<h2 id="16-device-settings-dialog">16. Device Settings Dialog</h2>
+<pre><code class="language-tsx">// components/DeviceSettings.tsx
+import { useState, useEffect } from 'react';
+import { Camera, Mic, Speaker, RefreshCw } from 'lucide-react';
+
+interface DeviceSettingsProps {
+  isOpen: boolean;
+  onClose: () =&gt; void;
+}
+
+export function DeviceSettings({ isOpen, onClose }: DeviceSettingsProps) {
+  const [devices, setDevices] = useState&lt;MediaDeviceInfo[]&gt;([]);
+  const [selectedCamera, setSelectedCamera] = useState&lt;string&gt;('');
+  const [selectedMic, setSelectedMic] = useState&lt;string&gt;('');
+  const [selectedSpeaker, setSelectedSpeaker] = useState&lt;string&gt;('');
+  const [previewStream, setPreviewStream] = useState&lt;MediaStream | null&gt;(null);
+
+  useEffect(() =&gt; {
+    if (isOpen) {
+      loadDevices();
+      startPreview();
+    } else {
+      stopPreview();
+    }
+  }, [isOpen]);
+
+  const loadDevices = async () =&gt; {
+    const deviceList = await navigator.mediaDevices.enumerateDevices();
+    setDevices(deviceList);
+
+    // Set defaults from localStorage or first available
+    const savedCamera = localStorage.getItem('preferredCamera');
+    const savedMic = localStorage.getItem('preferredMic');
+    const savedSpeaker = localStorage.getItem('preferredSpeaker');
+
+    const cameras = deviceList.filter((d) =&gt; d.kind === 'videoinput');
+    const mics = deviceList.filter((d) =&gt; d.kind === 'audioinput');
+    const speakers = deviceList.filter((d) =&gt; d.kind === 'audiooutput');
+
+    setSelectedCamera(savedCamera || cameras[0]?.deviceId || '');
+    setSelectedMic(savedMic || mics[0]?.deviceId || '');
+    setSelectedSpeaker(savedSpeaker || speakers[0]?.deviceId || '');
+  };
+
+  const startPreview = async () =&gt; {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: selectedCamera ? { deviceId: selectedCamera } : true,
+        audio: selectedMic ? { deviceId: selectedMic } : true,
+      });
+      setPreviewStream(stream);
+    } catch (err) {
+      console.error('Failed to start preview:', err);
+    }
+  };
+
+  const stopPreview = () =&gt; {
+    previewStream?.getTracks().forEach((track) =&gt; track.stop());
+    setPreviewStream(null);
+  };
+
+  const saveSettings = () =&gt; {
+    localStorage.setItem('preferredCamera', selectedCamera);
+    localStorage.setItem('preferredMic', selectedMic);
+    localStorage.setItem('preferredSpeaker', selectedSpeaker);
+    onClose();
+  };
+
+  const cameras = devices.filter((d) =&gt; d.kind === 'videoinput');
+  const mics = devices.filter((d) =&gt; d.kind === 'audioinput');
+  const speakers = devices.filter((d) =&gt; d.kind === 'audiooutput');
+
+  if (!isOpen) return null;
+
+  return (
+    &lt;div className=&quot;fixed inset-0 bg-black/50 flex items-center justify-center z-50&quot;&gt;
+      &lt;div className=&quot;bg-white rounded-lg w-full max-w-lg p-6&quot;&gt;
+        &lt;h2 className=&quot;text-xl font-semibold mb-6&quot;&gt;Settings&lt;/h2&gt;
+
+        {/* Camera preview */}
+        &lt;div className=&quot;mb-6&quot;&gt;
+          &lt;div className=&quot;aspect-video bg-gray-900 rounded-lg overflow-hidden mb-3&quot;&gt;
+            {previewStream &amp;&amp; (
+              &lt;video
+                autoPlay
+                playsInline
+                muted
+                ref={(el) =&gt; el &amp;&amp; (el.srcObject = previewStream)}
+                className=&quot;w-full h-full object-cover scale-x-[-1]&quot;
+              /&gt;
+            )}
+          &lt;/div&gt;
+
+          {/* Camera select */}
+          &lt;DeviceSelect
+            icon={Camera}
+            label=&quot;Camera&quot;
+            value={selectedCamera}
+            onChange={setSelectedCamera}
+            options={cameras}
+          /&gt;
+        &lt;/div&gt;
+
+        {/* Microphone */}
+        &lt;div className=&quot;mb-4&quot;&gt;
+          &lt;DeviceSelect
+            icon={Mic}
+            label=&quot;Microphone&quot;
+            value={selectedMic}
+            onChange={setSelectedMic}
+            options={mics}
+          /&gt;
+          &lt;AudioLevelMeter stream={previewStream} /&gt;
+        &lt;/div&gt;
+
+        {/* Speaker */}
+        &lt;div className=&quot;mb-6&quot;&gt;
+          &lt;DeviceSelect
+            icon={Speaker}
+            label=&quot;Speaker&quot;
+            value={selectedSpeaker}
+            onChange={setSelectedSpeaker}
+            options={speakers}
+          /&gt;
+          &lt;button className=&quot;text-sm text-blue-600 hover:underline mt-1&quot;&gt;
+            Test Speaker
+          &lt;/button&gt;
+        &lt;/div&gt;
+
+        {/* Actions */}
+        &lt;div className=&quot;flex justify-end gap-3&quot;&gt;
+          &lt;button
+            onClick={onClose}
+            className=&quot;px-4 py-2 border rounded-lg hover:bg-gray-50&quot;
+          &gt;
+            Cancel
+          &lt;/button&gt;
+          &lt;button
+            onClick={saveSettings}
+            className=&quot;px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600&quot;
+          &gt;
+            Save
+          &lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="17-pre-join-screen">17. Pre-Join Screen</h2>
+<pre><code class="language-tsx">// pages/meeting/[id]/lobby.tsx
+import { useState, useEffect, useRef } from 'react';
+import { Mic, MicOff, Video, VideoOff, Settings } from 'lucide-react';
+
+export default function PreJoinScreen({ meetingId }: { meetingId: string }) {
+  const [name, setName] = useState('');
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOn, setIsVideoOn] = useState(true);
+  const [stream, setStream] = useState&lt;MediaStream | null&gt;(null);
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState&lt;string | null&gt;(null);
+  const videoRef = useRef&lt;HTMLVideoElement&gt;(null);
+
+  useEffect(() =&gt; {
+    startPreview();
+    return () =&gt; {
+      stream?.getTracks().forEach((t) =&gt; t.stop());
+    };
+  }, []);
+
+  const startPreview = async () =&gt; {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      setError('Unable to access camera or microphone');
+    }
+  };
+
+  const toggleMute = () =&gt; {
+    stream?.getAudioTracks().forEach((track) =&gt; {
+      track.enabled = isMuted;
+    });
+    setIsMuted(!isMuted);
+  };
+
+  const toggleVideo = () =&gt; {
+    stream?.getVideoTracks().forEach((track) =&gt; {
+      track.enabled = !isVideoOn;
+    });
+    setIsVideoOn(!isVideoOn);
+  };
+
+  const joinMeeting = async () =&gt; {
+    if (!name.trim()) return;
+    setIsJoining(true);
+
+    try {
+      // Connect to meeting
+      await signalingService.connect(meetingId, 'auth-token');
+
+      // Navigate to meeting room
+      router.push(`/meeting/${meetingId}`, {
+        state: { name, stream, isMuted, isVideoOn },
+      });
+    } catch (err) {
+      setError('Failed to join meeting');
+      setIsJoining(false);
+    }
+  };
+
+  return (
+    &lt;div className=&quot;min-h-screen bg-gray-100 flex items-center justify-center p-4&quot;&gt;
+      &lt;div className=&quot;bg-white rounded-xl shadow-lg p-8 w-full max-w-md&quot;&gt;
+        &lt;h1 className=&quot;text-2xl font-bold text-center mb-6&quot;&gt;Ready to join?&lt;/h1&gt;
+
+        {/* Video preview */}
+        &lt;div className=&quot;aspect-video bg-gray-900 rounded-lg overflow-hidden mb-6 relative&quot;&gt;
+          {isVideoOn &amp;&amp; stream ? (
+            &lt;video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className=&quot;w-full h-full object-cover scale-x-[-1]&quot;
+            /&gt;
+          ) : (
+            &lt;div className=&quot;w-full h-full flex items-center justify-center&quot;&gt;
+              &lt;div className=&quot;w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center text-4xl text-white font-bold&quot;&gt;
+                {name[0]?.toUpperCase() || '?'}
+              &lt;/div&gt;
+            &lt;/div&gt;
+          )}
+
+          {/* Controls */}
+          &lt;div className=&quot;absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3&quot;&gt;
+            &lt;button
+              onClick={toggleMute}
+              className={cn(
+                'p-3 rounded-full',
+                isMuted ? 'bg-red-500' : 'bg-gray-700'
+              )}
+            &gt;
+              {isMuted ? (
+                &lt;MicOff className=&quot;w-5 h-5 text-white&quot; /&gt;
+              ) : (
+                &lt;Mic className=&quot;w-5 h-5 text-white&quot; /&gt;
+              )}
+            &lt;/button&gt;
+            &lt;button
+              onClick={toggleVideo}
+              className={cn(
+                'p-3 rounded-full',
+                !isVideoOn ? 'bg-red-500' : 'bg-gray-700'
+              )}
+            &gt;
+              {isVideoOn ? (
+                &lt;Video className=&quot;w-5 h-5 text-white&quot; /&gt;
+              ) : (
+                &lt;VideoOff className=&quot;w-5 h-5 text-white&quot; /&gt;
+              )}
+            &lt;/button&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        {/* Name input */}
+        &lt;input
+          type=&quot;text&quot;
+          value={name}
+          onChange={(e) =&gt; setName(e.target.value)}
+          placeholder=&quot;Enter your name&quot;
+          className=&quot;w-full px-4 py-3 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500&quot;
+        /&gt;
+
+        {error &amp;&amp; (
+          &lt;p className=&quot;text-red-500 text-sm mb-4&quot;&gt;{error}&lt;/p&gt;
+        )}
+
+        {/* Join button */}
+        &lt;button
+          onClick={joinMeeting}
+          disabled={!name.trim() || isJoining}
+          className=&quot;w-full py-3 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 disabled:bg-gray-300&quot;
+        &gt;
+          {isJoining ? 'Joining...' : 'Join Meeting'}
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="18-keyboard-shortcuts">18. Keyboard Shortcuts</h2>
+<pre><code class="language-tsx">// hooks/useKeyboardShortcuts.ts
+import { useEffect } from 'react';
+
+interface ShortcutMap {
+  [key: string]: () =&gt; void;
+}
+
+export function useKeyboardShortcuts(shortcuts: ShortcutMap) {
+  useEffect(() =&gt; {
+    const handleKeyDown = (e: KeyboardEvent) =&gt; {
+      // Don't trigger if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Build key string
+      const key = [
+        e.altKey &amp;&amp; 'Alt',
+        e.ctrlKey &amp;&amp; 'Ctrl',
+        e.shiftKey &amp;&amp; 'Shift',
+        e.key.toUpperCase(),
+      ]
+        .filter(Boolean)
+        .join('+');
+
+      const handler = shortcuts[key];
+      if (handler) {
+        e.preventDefault();
+        handler();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () =&gt; document.removeEventListener('keydown', handleKeyDown);
+  }, [shortcuts]);
+}
+
+// Usage in MeetingRoom
+export function MeetingRoom() {
+  const { toggleMute, toggleVideo, setLayout } = useMeetingStore();
+
+  useKeyboardShortcuts({
+    'Alt+A': toggleMute,         // Toggle mute
+    'Alt+V': toggleVideo,        // Toggle video
+    'Alt+S': startScreenShare,   // Start screen share
+    'Alt+H': toggleHandRaise,    // Raise/lower hand
+    'Alt+C': toggleChat,         // Toggle chat panel
+    'Alt+P': toggleParticipants, // Toggle participants panel
+    'Alt+F': toggleFullscreen,   // Toggle fullscreen
+    'Escape': handleEscape,      // Close panels/dialogs
+  });
+
+  return (
+    &lt;div className=&quot;h-screen flex flex-col bg-gray-900&quot;&gt;
+      &lt;MeetingHeader /&gt;
+      &lt;VideoGrid {...props} /&gt;
+      &lt;ControlsBar /&gt;
+      &lt;KeyboardShortcutsHelp /&gt; {/* Shows ? to see shortcuts */}
+    &lt;/div&gt;
+  );
+}
+
+// Shortcuts help dialog
+function KeyboardShortcutsHelp() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useKeyboardShortcuts({
+    '?': () =&gt; setIsOpen((prev) =&gt; !prev),
+  });
+
+  if (!isOpen) return null;
+
+  const shortcuts = [
+    { keys: 'Alt + A', description: 'Mute/Unmute' },
+    { keys: 'Alt + V', description: 'Start/Stop Video' },
+    { keys: 'Alt + S', description: 'Start/Stop Screen Share' },
+    { keys: 'Alt + H', description: 'Raise/Lower Hand' },
+    { keys: 'Alt + C', description: 'Toggle Chat' },
+    { keys: 'Alt + P', description: 'Toggle Participants' },
+    { keys: 'Alt + F', description: 'Toggle Fullscreen' },
+    { keys: 'Escape', description: 'Close dialogs' },
+  ];
+
+  return (
+    &lt;div className=&quot;fixed inset-0 bg-black/50 flex items-center justify-center z-50&quot;&gt;
+      &lt;div className=&quot;bg-white rounded-lg p-6 w-full max-w-md&quot;&gt;
+        &lt;h2 className=&quot;text-xl font-semibold mb-4&quot;&gt;Keyboard Shortcuts&lt;/h2&gt;
+        &lt;div className=&quot;space-y-2&quot;&gt;
+          {shortcuts.map(({ keys, description }) =&gt; (
+            &lt;div key={keys} className=&quot;flex justify-between&quot;&gt;
+              &lt;kbd className=&quot;px-2 py-1 bg-gray-100 rounded text-sm font-mono&quot;&gt;{keys}&lt;/kbd&gt;
+              &lt;span className=&quot;text-gray-600&quot;&gt;{description}&lt;/span&gt;
+            &lt;/div&gt;
+          ))}
+        &lt;/div&gt;
+        &lt;button
+          onClick={() =&gt; setIsOpen(false)}
+          className=&quot;mt-6 w-full py-2 bg-gray-100 rounded hover:bg-gray-200&quot;
+        &gt;
+          Close
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+</code></pre>
+<hr />
+<h2 id="19-connection-quality-indicator">19. Connection Quality Indicator</h2>
+<pre><code class="language-tsx">// hooks/useConnectionQuality.ts
+import { useEffect, useState } from 'react';
+
+interface ConnectionStats {
+  quality: 'excellent' | 'good' | 'poor' | 'disconnected';
+  bitrate: number;
+  packetLoss: number;
+  latency: number;
+}
+
+export function useConnectionQuality(peerConnection: RTCPeerConnection | null) {
+  const [stats, setStats] = useState&lt;ConnectionStats&gt;({
+    quality: 'excellent',
+    bitrate: 0,
+    packetLoss: 0,
+    latency: 0,
+  });
+
+  useEffect(() =&gt; {
+    if (!peerConnection) return;
+
+    let prevBytesReceived = 0;
+    let prevTimestamp = 0;
+
+    const interval = setInterval(async () =&gt; {
+      const report = await peerConnection.getStats();
+
+      let packetsLost = 0;
+      let packetsReceived = 0;
+      let bytesReceived = 0;
+      let roundTripTime = 0;
+
+      report.forEach((stat) =&gt; {
+        if (stat.type === 'inbound-rtp' &amp;&amp; stat.kind === 'video') {
+          packetsLost = stat.packetsLost || 0;
+          packetsReceived = stat.packetsReceived || 0;
+          bytesReceived = stat.bytesReceived || 0;
+        }
+        if (stat.type === 'candidate-pair' &amp;&amp; stat.state === 'succeeded') {
+          roundTripTime = stat.currentRoundTripTime || 0;
+        }
+      });
+
+      // Calculate bitrate
+      const now = Date.now();
+      const bitrate = prevTimestamp
+        ? ((bytesReceived - prevBytesReceived) * 8) / ((now - prevTimestamp) / 1000) / 1000
+        : 0;
+      prevBytesReceived = bytesReceived;
+      prevTimestamp = now;
+
+      // Calculate packet loss percentage
+      const totalPackets = packetsReceived + packetsLost;
+      const packetLoss = totalPackets &gt; 0 ? (packetsLost / totalPackets) * 100 : 0;
+
+      // Determine quality
+      let quality: ConnectionStats['quality'] = 'excellent';
+      if (packetLoss &gt; 5 || roundTripTime &gt; 0.3) {
+        quality = 'poor';
+      } else if (packetLoss &gt; 2 || roundTripTime &gt; 0.15) {
+        quality = 'good';
+      }
+
+      if (peerConnection.connectionState === 'disconnected') {
+        quality = 'disconnected';
+      }
+
+      setStats({
+        quality,
+        bitrate: Math.round(bitrate),
+        packetLoss: Math.round(packetLoss * 10) / 10,
+        latency: Math.round(roundTripTime * 1000),
+      });
+    }, 2000);
+
+    return () =&gt; clearInterval(interval);
+  }, [peerConnection]);
+
+  return stats;
+}
+
+// Connection quality badge
+function ConnectionQualityBadge({ quality }: { quality: ConnectionStats['quality'] }) {
+  const config = {
+    excellent: { color: 'bg-green-500', bars: 4, label: 'Excellent' },
+    good: { color: 'bg-yellow-500', bars: 3, label: 'Good' },
+    poor: { color: 'bg-red-500', bars: 2, label: 'Poor' },
+    disconnected: { color: 'bg-gray-500', bars: 0, label: 'Disconnected' },
+  }[quality];
+
+  return (
+    &lt;div className=&quot;flex items-center gap-1&quot; title={config.label}&gt;
+      {[1, 2, 3, 4].map((bar) =&gt; (
+        &lt;div
+          key={bar}
+          className={cn(
+            'w-1 rounded-full',
+            bar &lt;= config.bars ? config.color : 'bg-gray-300',
+            bar === 1 &amp;&amp; 'h-1',
+            bar === 2 &amp;&amp; 'h-2',
+            bar === 3 &amp;&amp; 'h-3',
+            bar === 4 &amp;&amp; 'h-4'
+          )}
+        /&gt;
+      ))}
+    &lt;/div&gt;
+  );
+}
+</code></pre></main>
+</div>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>
