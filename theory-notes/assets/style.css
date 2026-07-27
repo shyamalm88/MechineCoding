@@ -1,9 +1,11 @@
 :root {
+  color-scheme: light dark;
   --bg: #fbfbfe;
   --sidebar-bg: #f8f7fc;
   --sidebar-border: #ece9f7;
   --sidebar-text: #504b6b;
   --sidebar-group: #9691b3;
+  --sidebar-hover: #f1effc;
   --accent: #5b3df0;
   --accent-bg: #ece9fd;
   --text: #232037;
@@ -12,8 +14,31 @@
   --code-text: #d7d3f5;
   --inline-code-bg: #f1eefc;
   --inline-code-text: #5b3df0;
+  /* Mermaid gets its own card treatment that stays light in both themes:
+     the diagram's own node/text colors are hardcoded light in the
+     mermaid.initialize() JS config, so a dark card here would make
+     diagrams unreadable rather than adapting them. */
   --mermaid-card-bg: #ffffff;
   --mermaid-card-border: #ece9f7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14121f;
+    --sidebar-bg: #1a1729;
+    --sidebar-border: #2c2840;
+    --sidebar-text: #b8b3d1;
+    --sidebar-group: #8b86a8;
+    --sidebar-hover: #221e35;
+    --accent: #9c81ff;
+    --accent-bg: #2a2340;
+    --text: #f2f0fb;
+    --text-body: #c9c5e0;
+    --code-bg: #211d36;
+    --code-text: #dcd8f7;
+    --inline-code-bg: #2a2340;
+    --inline-code-text: #b39dff;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -49,10 +74,27 @@ body {
   letter-spacing: 0.05em;
   color: var(--sidebar-group);
   cursor: pointer;
-  margin: 0.9rem 0 0.35rem 0.5rem;
+  margin: 0.9rem 0.5rem 0.35rem 0.5rem;
   list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 .sidebar summary::-webkit-details-marker { display: none; }
+.sidebar summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-right: 1.5px solid var(--sidebar-group);
+  border-bottom: 1.5px solid var(--sidebar-group);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.sidebar details:not([open]) > summary::after {
+  transform: rotate(-45deg);
+}
 
 .sidebar ul { list-style: none; margin: 0; padding: 0; }
 
@@ -65,7 +107,7 @@ body {
   text-decoration: none;
   margin-bottom: 2px;
 }
-.sidebar li a:hover { background: #f1effc; }
+.sidebar li a:hover { background: var(--sidebar-hover); }
 .sidebar li a[aria-current="page"] {
   background: var(--accent-bg);
   color: var(--accent);
