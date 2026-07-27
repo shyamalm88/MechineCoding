@@ -29,9 +29,12 @@ npm run preview
 | `JavaScriptProblems/` | Polyfills, design patterns, async utilities, utility functions |
 | `reactHooks/` | 6 custom React hooks |
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
+| `Theory/` | Markdown reference notes (browser internals, JS core, React advanced patterns, etc.) — source of truth for `theory-notes/` |
+| `system-design/` | Markdown architecture docs (frontend system design) — source of truth for `system-design-notes/` |
 | `tools/md-site/` | Reusable markdown-to-HTML-site generator (source-agnostic) |
-| `theory-notes/` | Generated static site built from the former `Theory/*.md` notes via `tools/md-site/` — not hand-edited. `Theory/` itself was removed from the repo after this site was generated, committed, and pushed; restore it from git history (`git log -- Theory/`) if it ever needs to be regenerated or edited |
-| `system-design-notes/` | Generated static site built from the former `system-design/*.md` docs via `tools/md-site/` — not hand-edited. `system-design/` itself was removed from the repo the same way, after this site was generated, committed, and pushed; restore it from git history (`git log -- system-design/`) if it ever needs to be regenerated or edited |
+| `theory-notes/` | Generated static site built from `Theory/*.md` via `tools/md-site/` — not hand-edited |
+| `system-design-notes/` | Generated static site built from `system-design/*.md` via `tools/md-site/` — not hand-edited |
+| `index.html` (repo root) | Simple hub page: top nav across `theory-notes/`, `system-design-notes/`, and `grokking-system-design/`, each shown in an iframe |
 
 ### DSA file format
 Every DSA file follows the same convention: a JSDoc header with problem statement, intuition, and complexity, then the implementation, then test cases as plain `console.log` calls at the bottom. Run any file with Node to execute those tests.
@@ -53,11 +56,12 @@ Solution components must use a **default export** and a `.jsx` extension (Vite c
 `promise-async-problems/` is subdivided by concern: `Core/` (building blocks like retry/timeout), `execution/` (parallel/series/limit runners), `orchastration/` (compose, waterfall, dependency graphs), `reliability/` (circuit breaker, backoff), `scheduler/` (priority queues, idle runners). Each file is standalone with no imports.
 
 ### System design docs
-`system-design-notes/` (see table above) is the only surviving copy of the 25 system design docs — the source `system-design/*.md` folder was removed after generating that site. Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.
+All 25 docs in `system-design/` are canonical. Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.
 
 ### Markdown-to-site generator (`tools/md-site/`)
-Converts any folder of `.md` files into a browsable static HTML site — see `tools/md-site/README.md` for full usage. Two sources have used it so far: the former `Theory/*.md` (→ `theory-notes/`) and the former `system-design/*.md` (→ `system-design-notes/`) — both sources were removed after their sites were generated, committed, and pushed, so there is currently nothing left in the repo to regenerate from. To use this tool again (on either restored source or a new folder), the pattern is:
+Converts any folder of `.md` files into a browsable static HTML site — see `tools/md-site/README.md` for full usage. Two sources currently use it: `Theory/*.md` (→ `theory-notes/`) and `system-design/*.md` (→ `system-design-notes/`). Both source folders are kept in the repo (not deleted after generating) so new notes can just be added as `.md` files and the site regenerated — hand-editing generated HTML directly is not worth it, since every page embeds a full copy of the sidebar nav and any new topic/category would need to be propagated by hand across all of them. Regenerate after editing:
 ```bash
-python3 tools/md-site/build.py <source-dir> <output-dir>
+python3 tools/md-site/build.py Theory/ theory-notes/
+python3 tools/md-site/build.py system-design/ system-design-notes/
 ```
-Never hand-edit a generated site's `index.html`, `notes/`, or `assets/` — only its `README.md` is hand-authored. Sidebar grouping and title come from an optional `<source-dir>/site.config.json`; category order follows that file's own key order, not alphabetical filename order.
+Never hand-edit a generated site's `index.html`, `notes/`, or `assets/` — only its `README.md` is hand-authored. Sidebar grouping and title come from `<source-dir>/site.config.json`; category order follows that file's own key order, not alphabetical filename order.
