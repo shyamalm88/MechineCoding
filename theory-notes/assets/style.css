@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #fbfbfe;
   --sidebar-bg: #f8f7fc;
   --sidebar-border: #ece9f7;
@@ -20,25 +20,6 @@
      diagrams unreadable rather than adapting them. */
   --mermaid-card-bg: #ffffff;
   --mermaid-card-border: #ece9f7;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14121f;
-    --sidebar-bg: #1a1729;
-    --sidebar-border: #2c2840;
-    --sidebar-text: #dcd9ee;
-    --sidebar-group: #a9a4c9;
-    --sidebar-hover: #241f3a;
-    --accent: #9c81ff;
-    --accent-bg: #2e2650;
-    --text: #f5f3fc;
-    --text-body: #d4d0e8;
-    --code-bg: #211d36;
-    --code-text: #e2dff8;
-    --inline-code-bg: #2e2650;
-    --inline-code-text: #bda3ff;
-  }
 }
 
 * { box-sizing: border-box; }
