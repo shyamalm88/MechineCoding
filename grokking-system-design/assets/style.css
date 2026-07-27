@@ -64,7 +64,10 @@ nav.sidebar ul {
 }
 
 nav.sidebar li a {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.35rem 0.5rem 0.35rem 1rem;
   color: var(--fg);
   text-decoration: none;
@@ -79,6 +82,17 @@ nav.sidebar li a:hover {
 nav.sidebar li a[aria-current="page"] {
   background: var(--accent);
   color: #fff;
+}
+
+nav.sidebar li a .stars {
+  flex-shrink: 0;
+  color: #d69e2e;
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+nav.sidebar li a[aria-current="page"] .stars {
+  color: #ffe9a8;
 }
 
 main {
