@@ -129,7 +129,8 @@ def convert_markdown(text):
     return MERMAID_FENCE_RE.sub(replace_mermaid, body)
 
 
-def render_sidebar(groups, active_slug, title, link_prefix):
+def render_sidebar(groups, active_slug, title, link_prefix, stars=None):
+    stars = stars or {}
     parts = [f'<h2 class="brand">{html.escape(title)}</h2>']
     for category, files in groups:
         items = []
@@ -137,8 +138,15 @@ def render_sidebar(groups, active_slug, title, link_prefix):
             slug = slugify(filename)
             label = title_from_filename(filename)
             current = ' aria-current="page"' if slug == active_slug else ""
+            rating = stars.get(filename, 0)
+            stars_html = (
+                f'<span class="stars" title="Priority: {rating}/3">{"★" * rating}</span>'
+                if rating > 0
+                else ""
+            )
             items.append(
-                f'<li><a href="{link_prefix}{slug}.html"{current}>{html.escape(label)}</a></li>'
+                f'<li><a href="{link_prefix}{slug}.html"{current}>'
+                f"{html.escape(label)}{stars_html}</a></li>"
             )
         items_html = "".join(items)
         if category:
@@ -200,6 +208,7 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
     )
     md_files = discover_md_files(source_dir)
     groups = build_sidebar_groups(md_files, config)
+    stars = (config or {}).get("stars") or {}
 
     # ADDITION (carried forward from Task 2's code review): slugify()
     # lowercases, so distinct filenames like "a.md" and "A.md" can
@@ -245,7 +254,7 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
         )
         content_html = convert_markdown(source_text)
         sidebar_html = render_sidebar(
-            groups, active_slug=slug, title=site_title, link_prefix=""
+            groups, active_slug=slug, title=site_title, link_prefix="", stars=stars
         )
 
         page = PAGE_TEMPLATE.format(
@@ -266,7 +275,7 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
             f.write(page)
 
     index_sidebar = render_sidebar(
-        groups, active_slug=None, title=site_title, link_prefix="notes/"
+        groups, active_slug=None, title=site_title, link_prefix="notes/", stars=stars
     )
     index_page = PAGE_TEMPLATE.format(
         page_title=html.escape(site_title),

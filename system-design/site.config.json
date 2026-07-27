@@ -33,5 +33,32 @@
     "leetcode-online-judge.md": "Infra & Platform Building Blocks",
 
     "SystemDesignQuestions.md": "Reference"
+  },
+  "stars": {
+    "ecommerce-marketplace-amazon.md": 2,
+    "config-driven-shopping-cart-homepage.md": 2,
+    "facebook-social-media-platform.md": 2,
+    "instagram-photo-feed.md": 2,
+    "photo-grid-google-photos.md": 1,
+    "video-streaming-youtube.md": 3,
+    "video-conference-zoom.md": 2,
+    "chat-app-whatsapp-web.md": 3,
+    "bookmyshow-ticket-booking.md": 1,
+    "ride-booking-uber-rapido.md": 3,
+    "travel-booking-airbnb-makemytrip.md": 1,
+    "zomato-food-delivery.md": 2,
+    "google-docs.md": 3,
+    "google-drive-dropbox.md": 2,
+    "google-calendar-day-view.md": 1,
+    "trello-issue-manager.md": 2,
+    "notification-system.md": 3,
+    "email-delivery-system-gmail.md": 2,
+    "payment-gateway-stripe.md": 3,
+    "stock-broker-platform-zerodha-groww.md": 2,
+    "rate-limiter.md": 3,
+    "autocomplete-typeahead.md": 3,
+    "top-k-leaderboard.md": 2,
+    "leetcode-online-judge.md": 1,
+    "SystemDesignQuestions.md": 3
   }
 }

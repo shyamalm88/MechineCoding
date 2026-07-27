@@ -80,7 +80,10 @@ body {
 .sidebar ul { list-style: none; margin: 0; padding: 0; }
 
 .sidebar li a {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.4rem 0.6rem;
   border-radius: 7px;
   font-size: 0.82rem;
@@ -93,6 +96,14 @@ body {
   background: var(--accent-bg);
   color: var(--accent);
   font-weight: 600;
+}
+
+.stars {
+  flex-shrink: 0;
+  color: #d69e2e;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  white-space: nowrap;
 }
 
 main {

@@ -225,6 +225,32 @@ class TestRenderSidebar(unittest.TestCase):
         self.assertNotIn("<summary>", result)
         self.assertIn('<a href="notes/a.html">A</a>', result)
 
+    def test_renders_star_rating_when_provided(self):
+        groups = [("Group 1", ["a.md"])]
+        result = build.render_sidebar(
+            groups, active_slug=None, title="T", link_prefix="",
+            stars={"a.md": 3},
+        )
+        self.assertIn('<span class="stars"', result)
+        self.assertIn("★★★", result)
+
+    def test_omits_star_span_when_zero_or_missing(self):
+        groups = [("Group 1", ["a.md", "b.md"])]
+        result = build.render_sidebar(
+            groups, active_slug=None, title="T", link_prefix="",
+            stars={"a.md": 0},  # b.md intentionally absent from the dict
+        )
+        self.assertNotIn('class="stars"', result)
+
+    def test_render_sidebar_works_without_stars_argument(self):
+        # Backward compatibility: stars is optional, existing callers that
+        # don't pass it must keep working exactly as before.
+        groups = [("Group 1", ["a.md"])]
+        result = build.render_sidebar(
+            groups, active_slug=None, title="T", link_prefix=""
+        )
+        self.assertNotIn('class="stars"', result)
+
 
 class TestBuildIntegration(unittest.TestCase):
     def test_generates_index_and_note_pages(self):
@@ -270,6 +296,38 @@ class TestBuildIntegration(unittest.TestCase):
                 index_html = f.read()
             self.assertIn('href="notes/alpha.html"', index_html)
             self.assertIn("<summary>Group 1</summary>", index_html)
+
+    def test_star_ratings_propagate_from_config_through_build(self):
+        with tempfile.TemporaryDirectory() as source_dir, \
+                tempfile.TemporaryDirectory() as output_dir, \
+                tempfile.TemporaryDirectory() as assets_dir:
+
+            with open(os.path.join(source_dir, "alpha.md"), "w") as f:
+                f.write("# Alpha Note\n")
+            with open(os.path.join(source_dir, "beta.md"), "w") as f:
+                f.write("# Beta Note\n")
+            with open(os.path.join(source_dir, "site.config.json"), "w") as f:
+                json.dump(
+                    {
+                        "title": "Test Site",
+                        "categories": {"alpha.md": "Group 1", "beta.md": "Group 1"},
+                        "stars": {"alpha.md": 3, "beta.md": 0},
+                    },
+                    f,
+                )
+            with open(os.path.join(assets_dir, "style.css"), "w") as f:
+                f.write("/* stub */")
+
+            build.build(source_dir, output_dir, assets_dir=assets_dir)
+
+            with open(os.path.join(output_dir, "index.html"), encoding="utf-8") as f:
+                index_html = f.read()
+
+            self.assertIn("★★★", index_html)
+            # beta.md has 0 stars -- its link must not carry a stars span.
+            beta_link_start = index_html.index('href="notes/beta.html"')
+            beta_link_end = index_html.index("</a>", beta_link_start)
+            self.assertNotIn("stars", index_html[beta_link_start:beta_link_end])
 
     def test_raises_on_duplicate_slug_collision(self):
         # "a_b.md" and "a-b.md" both slugify to "a-b" (slugify treats

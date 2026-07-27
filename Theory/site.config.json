@@ -33,5 +33,32 @@
     "observability.md": "Build & Observability",
 
     "Yotube1000cuts.md": "Case Studies"
+  },
+  "stars": {
+    "javascript-core.md": 3,
+    "v8-internals.md": 2,
+    "react-advanced-patterns.md": 3,
+    "browser-internals.md": 3,
+    "browser-document-execution.md": 2,
+    "rendering-spectrum.md": 2,
+    "hydration.md": 2,
+    "core-web-vitals.md": 3,
+    "web-performance.md": 3,
+    "react-performance.md": 3,
+    "cache.md": 2,
+    "assets.md": 1,
+    "state-management.md": 3,
+    "state-machines.md": 1,
+    "optimistic-updates.md": 2,
+    "monorepo.md": 1,
+    "MicroFrontEnd Design system.md": 2,
+    "network.md": 2,
+    "cors-security.md": 2,
+    "security.md": 3,
+    "graphql.md": 2,
+    "javascript-sdk.md": 1,
+    "webpack.md": 1,
+    "observability.md": 1,
+    "Yotube1000cuts.md": 1
   }
 }
