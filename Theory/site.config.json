@@ -50,15 +50,15 @@
     "state-management.md": 3,
     "state-machines.md": 1,
     "optimistic-updates.md": 2,
-    "monorepo.md": 1,
-    "MicroFrontEnd Design system.md": 2,
+    "monorepo.md": 3,
+    "MicroFrontEnd Design system.md": 3,
     "network.md": 2,
     "cors-security.md": 2,
     "security.md": 3,
     "graphql.md": 2,
-    "javascript-sdk.md": 1,
-    "webpack.md": 1,
-    "observability.md": 1,
+    "javascript-sdk.md": 3,
+    "webpack.md": 3,
+    "observability.md": 3,
     "Yotube1000cuts.md": 1
   }
 }
