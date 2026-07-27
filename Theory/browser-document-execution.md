@@ -1,20 +1,13 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How the Browser Executes a Document: A Senior Engineer&#x27;s Guide — Theory Notes</title>
-<link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/highlight-theme.css">
-</head>
-<body>
-<div class="layout">
-<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>React &amp; Modern Patterns</summary><ul><li><a href="react-advanced-patterns.html">React Advanced Patterns</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html" aria-current="page">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
-<main><h1 id="how-the-browser-executes-a-document-a-senior-engineers-guide">How the Browser Executes a Document: A Senior Engineer's Guide</h1>
-<p>A comprehensive guide to browser document execution for system design interviews.</p>
-<hr />
-<h2 id="1-the-complete-journey-url-to-pixels">1. The Complete Journey: URL to Pixels</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+# How the Browser Executes a Document: A Senior Engineer's Guide
+
+A comprehensive guide to browser document execution for system design interviews.
+
+---
+
+## 1. The Complete Journey: URL to Pixels
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │                    URL TO PIXELS                             │
 │                                                              │
 │  1. Navigation ──▶ DNS ──▶ TCP ──▶ TLS ──▶ HTTP Request     │
@@ -25,11 +18,16 @@
 │                                                              │
 │  4. JavaScript Execution (can interrupt at multiple points) │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<hr />
-<h2 id="2-phase-1-navigation-network">2. Phase 1: Navigation &amp; Network</h2>
-<h3 id="dns-resolution">DNS Resolution</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 2. Phase 1: Navigation & Network
+
+### DNS Resolution
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  DNS LOOKUP (typically 20-120ms)                             │
 │                                                              │
 │  1. Browser DNS cache                                        │
@@ -40,9 +38,12 @@
 │                                                              │
 │  Result: example.com → 93.184.216.34                         │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="tcp-connection-3-way-handshake">TCP Connection (3-Way Handshake)</h3>
-<pre><code>Client                         Server
+```
+
+### TCP Connection (3-Way Handshake)
+
+```
+Client                         Server
    │                              │
    │──────── SYN ────────────────▶│  Seq=100
    │                              │
@@ -53,9 +54,12 @@
    │       Connection Open        │
 
 Time: ~1 RTT (Round Trip Time)
-</code></pre>
-<h3 id="tls-handshake-https">TLS Handshake (HTTPS)</h3>
-<pre><code>Client                           Server
+```
+
+### TLS Handshake (HTTPS)
+
+```
+Client                           Server
    │                               │
    │─── ClientHello ──────────────▶│
    │    (supported ciphers,        │
@@ -75,9 +79,12 @@ Time: ~1 RTT (Round Trip Time)
    │    Encrypted Connection       │
 
 Time: ~2 RTT (TLS 1.2) or ~1 RTT (TLS 1.3)
-</code></pre>
-<h3 id="http-requestresponse">HTTP Request/Response</h3>
-<pre><code>GET /index.html HTTP/1.1
+```
+
+### HTTP Request/Response
+
+```
+GET /index.html HTTP/1.1
 Host: example.com
 Accept: text/html
 Accept-Encoding: gzip, br
@@ -91,54 +98,66 @@ Content-Encoding: gzip
 Cache-Control: max-age=3600
 Content-Length: 12345
 
-&lt;!DOCTYPE html&gt;...
-</code></pre>
-<hr />
-<h2 id="3-phase-2-parsing-tree-construction">3. Phase 2: Parsing &amp; Tree Construction</h2>
-<h3 id="html-parsing">HTML Parsing</h3>
-<p>The browser converts HTML bytes into a <strong>DOM tree</strong>.</p>
-<pre><code>Bytes ──▶ Characters ──▶ Tokens ──▶ Nodes ──▶ DOM
+<!DOCTYPE html>...
+```
+
+---
+
+## 3. Phase 2: Parsing & Tree Construction
+
+### HTML Parsing
+
+The browser converts HTML bytes into a **DOM tree**.
+
+```
+Bytes ──▶ Characters ──▶ Tokens ──▶ Nodes ──▶ DOM
 
 HTML:
-&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-  &lt;head&gt;
-    &lt;title&gt;Page&lt;/title&gt;
-  &lt;/head&gt;
-  &lt;body&gt;
-    &lt;h1&gt;Hello&lt;/h1&gt;
-    &lt;p&gt;World&lt;/p&gt;
-  &lt;/body&gt;
-&lt;/html&gt;
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Page</title>
+  </head>
+  <body>
+    <h1>Hello</h1>
+    <p>World</p>
+  </body>
+</html>
 
 DOM Tree:
 Document
 └── html
     ├── head
     │   └── title
-    │       └── &quot;Page&quot;
+    │       └── "Page"
     └── body
         ├── h1
-        │   └── &quot;Hello&quot;
+        │   └── "Hello"
         └── p
-            └── &quot;World&quot;
-</code></pre>
-<h3 id="the-preload-scanner">The Preload Scanner</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+            └── "World"
+```
+
+### The Preload Scanner
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  PRELOAD SCANNER (Speculative Parser)                        │
 │                                                              │
 │  While main parser is blocked by JavaScript:                 │
 │                                                              │
 │  1. Scans ahead in HTML                                      │
-│  2. Finds &lt;link&gt;, &lt;script src&gt;, &lt;img&gt;                        │
+│  2. Finds <link>, <script src>, <img>                        │
 │  3. Starts downloading them in parallel                      │
 │                                                              │
 │  This is why resources start loading before parser           │
 │  reaches them!                                               │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="css-parsing-cssom">CSS Parsing (CSSOM)</h3>
-<pre><code>CSS:
+```
+
+### CSS Parsing (CSSOM)
+
+```
+CSS:
 body { margin: 0; }
 h1 { color: blue; font-size: 24px; }
 p { color: gray; }
@@ -152,9 +171,12 @@ StyleSheet
 │   └── font-size: 24px
 └── Rule: p
     └── color: gray
-</code></pre>
-<h3 id="parser-blocking">Parser Blocking</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+### Parser Blocking
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  PARSER BLOCKING BEHAVIOR                                    │
 │                                                              │
 │  CSS:                                                        │
@@ -173,8 +195,10 @@ StyleSheet
 │  └── Downloads parallel                                      │
 │  └── Executes after DOM complete, in order                  │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<pre><code>Timeline Example:
+```
+
+```
+Timeline Example:
 
      HTML Parsing
      ├────────────────────────────────────────────────────▶
@@ -193,29 +217,38 @@ StyleSheet
                                           ↓
                                     JS Executes (after DOM)
                                           ├──────┤
-</code></pre>
-<hr />
-<h2 id="4-phase-3-rendering-pipeline">4. Phase 3: Rendering Pipeline</h2>
-<h3 id="step-1-render-tree-construction">Step 1: Render Tree Construction</h3>
-<pre><code>DOM + CSSOM = Render Tree
+```
+
+---
+
+## 4. Phase 3: Rendering Pipeline
+
+### Step 1: Render Tree Construction
+
+```
+DOM + CSSOM = Render Tree
 
 DOM:                    CSSOM:                 Render Tree:
 ├── html                ├── html {...}         ├── html
 │   ├── head            │   ├── head           │   └── body
 │   │   └── title       │   │   └── title      │       ├── h1 (visible)
-│   └── body            │   └── body           │       │   └── &quot;Hello&quot;
+│   └── body            │   └── body           │       │   └── "Hello"
 │       ├── h1          │       ├── h1 {...}   │       └── p (visible)
-│       │   └── &quot;Hello&quot; │       └── p {...}    │           └── &quot;World&quot;
+│       │   └── "Hello" │       └── p {...}    │           └── "World"
 │       └── p           │
-│           └── &quot;World&quot; │
+│           └── "World" │
 │       └── script      │   (head, script, display:none excluded)
-</code></pre>
-<p><strong>Excluded from Render Tree:</strong>
-- <code>&lt;head&gt;</code>, <code>&lt;script&gt;</code>, <code>&lt;meta&gt;</code> (non-visual)
-- Elements with <code>display: none</code>
-- Elements with <code>visibility: hidden</code> ARE included (they affect layout)</p>
-<h3 id="step-2-layout-reflow">Step 2: Layout (Reflow)</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+**Excluded from Render Tree:**
+- `<head>`, `<script>`, `<meta>` (non-visual)
+- Elements with `display: none`
+- Elements with `visibility: hidden` ARE included (they affect layout)
+
+### Step 2: Layout (Reflow)
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  LAYOUT CALCULATION                                          │
 │                                                              │
 │  For each node in Render Tree:                               │
@@ -236,9 +269,12 @@ DOM:                    CSSOM:                 Render Tree:
 │  │  └─────────────────────────────────────┘│                │
 │  └─────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="step-3-paint">Step 3: Paint</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+### Step 3: Paint
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  PAINT OPERATIONS                                            │
 │                                                              │
 │  Convert layout boxes into actual pixels:                    │
@@ -252,17 +288,20 @@ DOM:                    CSSOM:                 Render Tree:
 │                                                              │
 │  Result: Paint records (list of draw commands)               │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="step-4-composite">Step 4: Composite</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+### Step 4: Composite
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  COMPOSITING LAYERS                                          │
 │                                                              │
 │  Elements promoted to own layer:                             │
 │  ├── position: fixed/sticky                                  │
 │  ├── transform (3D)                                          │
-│  ├── opacity &lt; 1                                             │
+│  ├── opacity < 1                                             │
 │  ├── will-change: transform                                  │
-│  ├── &lt;video&gt;, &lt;canvas&gt;                                       │
+│  ├── <video>, <canvas>                                       │
 │  └── CSS filters                                             │
 │                                                              │
 │  ┌─────────────────────────────────────────┐                │
@@ -277,11 +316,16 @@ DOM:                    CSSOM:                 Render Tree:
 │                                                              │
 │  GPU composites layers together                              │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<hr />
-<h2 id="5-reflow-vs-repaint">5. Reflow vs Repaint</h2>
-<h3 id="what-triggers-each">What Triggers Each</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 5. Reflow vs Repaint
+
+### What Triggers Each
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  REFLOW (Layout)                                             │
 │  Changes that affect geometry                                │
 │                                                              │
@@ -321,38 +365,48 @@ DOM:                    CSSOM:                 Render Tree:
 │                                                              │
 │  Cost: LOW (GPU handles it, no main thread work)             │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="layout-thrashing">Layout Thrashing</h3>
-<pre><code class="language-js">// ❌ BAD - Forces synchronous layout on each iteration
-elements.forEach(el =&gt; {
+```
+
+### Layout Thrashing
+
+```js
+// ❌ BAD - Forces synchronous layout on each iteration
+elements.forEach(el => {
   const width = el.offsetWidth;      // READ - forces layout
   el.style.width = width + 10 + 'px'; // WRITE - invalidates layout
   // Next iteration: READ forces new layout calculation
 });
 
 // ✅ GOOD - Batch reads, then batch writes
-const widths = elements.map(el =&gt; el.offsetWidth);  // All READs
-elements.forEach((el, i) =&gt; {
+const widths = elements.map(el => el.offsetWidth);  // All READs
+elements.forEach((el, i) => {
   el.style.width = widths[i] + 10 + 'px';           // All WRITEs
 });
-</code></pre>
-<pre><code class="language-js">// ✅ BETTER - Use requestAnimationFrame
+```
+
+```js
+// ✅ BETTER - Use requestAnimationFrame
 function animate() {
   // Batch DOM reads
-  const measurements = elements.map(el =&gt; el.getBoundingClientRect());
+  const measurements = elements.map(el => el.getBoundingClientRect());
 
   // Schedule writes for next frame
-  requestAnimationFrame(() =&gt; {
-    elements.forEach((el, i) =&gt; {
+  requestAnimationFrame(() => {
+    elements.forEach((el, i) => {
       el.style.transform = `translateX(${measurements[i].width}px)`;
     });
   });
 }
-</code></pre>
-<hr />
-<h2 id="6-javascript-execution">6. JavaScript Execution</h2>
-<h3 id="the-event-loop">The Event Loop</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 6. JavaScript Execution
+
+### The Event Loop
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │                      EVENT LOOP                              │
 │                                                              │
 │  ┌──────────────────┐      ┌──────────────────────────────┐ │
@@ -379,21 +433,27 @@ function animate() {
 │           │                                                  │
 │           └───────── Loop ─────────────────▶                │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="execution-order-example">Execution Order Example</h3>
-<pre><code class="language-js">console.log('1');  // Sync
+```
 
-setTimeout(() =&gt; console.log('2'), 0);  // Macro task
+### Execution Order Example
 
-Promise.resolve().then(() =&gt; console.log('3'));  // Microtask
+```js
+console.log('1');  // Sync
+
+setTimeout(() => console.log('2'), 0);  // Macro task
+
+Promise.resolve().then(() => console.log('3'));  // Microtask
 
 console.log('4');  // Sync
 
 // Output: 1, 4, 3, 2
-</code></pre>
-<h3 id="long-tasks">Long Tasks</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  LONG TASK (&gt;50ms)                                           │
+```
+
+### Long Tasks
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  LONG TASK (>50ms)                                           │
 │                                                              │
 │  Problem:                                                    │
 │  ├── Blocks main thread                                      │
@@ -409,11 +469,14 @@ console.log('4');  // Sync
 │  │                       but can't respond until task ends  │
 │  ─────────────────────────────────────────────────────────  │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="breaking-up-long-tasks">Breaking Up Long Tasks</h3>
-<pre><code class="language-js">// ❌ BAD - Single long task
+```
+
+### Breaking Up Long Tasks
+
+```js
+// ❌ BAD - Single long task
 function processItems(items) {
-  items.forEach(item =&gt; {
+  items.forEach(item => {
     expensiveOperation(item);  // Total: 500ms
   });
 }
@@ -425,7 +488,7 @@ async function processItems(items) {
 
     // Yield control back to browser
     await scheduler.yield?.() ||
-          new Promise(r =&gt; setTimeout(r, 0));
+          new Promise(r => setTimeout(r, 0));
   }
 }
 
@@ -434,7 +497,7 @@ function processItems(items) {
   const queue = [...items];
 
   function processChunk(deadline) {
-    while (queue.length &amp;&amp; deadline.timeRemaining() &gt; 0) {
+    while (queue.length && deadline.timeRemaining() > 0) {
       expensiveOperation(queue.shift());
     }
 
@@ -445,10 +508,14 @@ function processItems(items) {
 
   requestIdleCallback(processChunk);
 }
-</code></pre>
-<hr />
-<h2 id="7-document-lifecycle-events">7. Document Lifecycle Events</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 7. Document Lifecycle Events
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  DOCUMENT LIFECYCLE                                          │
 │                                                              │
 │  Parsing ──────────────────────────────────────▶            │
@@ -456,29 +523,31 @@ function processItems(items) {
 │  DOMContentLoaded: DOM tree complete                         │
 │       │            (doesn't wait for images, stylesheets)    │
 │       ▼                                                      │
-│  document.readyState = &quot;interactive&quot;                         │
+│  document.readyState = "interactive"                         │
 │                                                              │
 │  Resources loading ────────────────────────────▶            │
 │                                                              │
 │  load: Everything loaded (images, styles, iframes)          │
 │       │                                                      │
 │       ▼                                                      │
-│  document.readyState = &quot;complete&quot;                            │
+│  document.readyState = "complete"                            │
 │                                                              │
 │  User navigates away ──────────────────────────▶            │
 │                                                              │
 │  beforeunload: Chance to confirm leaving                     │
 │  unload: Cleanup                                             │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<pre><code class="language-js">// DOMContentLoaded - DOM ready, safe to query
-document.addEventListener('DOMContentLoaded', () =&gt; {
+```
+
+```js
+// DOMContentLoaded - DOM ready, safe to query
+document.addEventListener('DOMContentLoaded', () => {
   const button = document.querySelector('#myButton');
   // Safe - DOM exists
 });
 
 // load - Everything loaded
-window.addEventListener('load', () =&gt; {
+window.addEventListener('load', () => {
   // Images are loaded, can get dimensions
   const img = document.querySelector('img');
   console.log(img.naturalWidth);
@@ -490,10 +559,14 @@ if (document.readyState === 'loading') {
 } else {
   init();  // DOM already ready
 }
-</code></pre>
-<hr />
-<h2 id="8-frame-budget">8. Frame Budget</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 8. Frame Budget
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  60 FPS = 16.67ms per frame                                  │
 │                                                              │
 │  ┌───────────────────────────────────────────────────┐      │
@@ -514,70 +587,24 @@ if (document.readyState === 'loading') {
 │  │              ✗ Over budget - frame dropped!       │      │
 │  └───────────────────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<hr />
-<h2 id="9-optimization-summary">9. Optimization Summary</h2>
-<table>
-<thead>
-<tr>
-<th>Phase</th>
-<th>Optimization</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Network</strong></td>
-<td>DNS prefetch, preconnect, HTTP/2, CDN</td>
-</tr>
-<tr>
-<td><strong>Parsing</strong></td>
-<td>Defer/async scripts, inline critical CSS</td>
-</tr>
-<tr>
-<td><strong>Render Tree</strong></td>
-<td>Minimize DOM nodes, avoid deep nesting</td>
-</tr>
-<tr>
-<td><strong>Layout</strong></td>
-<td>Batch reads/writes, avoid layout thrashing</td>
-</tr>
-<tr>
-<td><strong>Paint</strong></td>
-<td>Use transform/opacity, reduce paint areas</td>
-</tr>
-<tr>
-<td><strong>Composite</strong></td>
-<td>Promote animated elements, use will-change</td>
-</tr>
-<tr>
-<td><strong>JavaScript</strong></td>
-<td>Break long tasks, use Web Workers</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="10-interview-tip">10. Interview Tip</h2>
-<blockquote>
-<p>"When a browser receives an HTML document, it goes through several phases. First, it parses HTML to build the DOM while simultaneously parsing CSS to build the CSSOM. The preload scanner runs ahead to fetch resources in parallel. JavaScript blocks parsing unless marked async or defer. Once DOM and CSSOM are ready, they're combined into a Render Tree (excluding invisible elements). Layout calculates exact positions, Paint generates draw commands, and finally Composite layers are sent to the GPU. I optimize by avoiding layout thrashing, using transform for animations, deferring non-critical JavaScript, and breaking long tasks to stay within the 16ms frame budget for 60fps."</p>
-</blockquote></main>
-</div>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
-</body>
-</html>
+```
+
+---
+
+## 9. Optimization Summary
+
+| Phase | Optimization |
+|-------|--------------|
+| **Network** | DNS prefetch, preconnect, HTTP/2, CDN |
+| **Parsing** | Defer/async scripts, inline critical CSS |
+| **Render Tree** | Minimize DOM nodes, avoid deep nesting |
+| **Layout** | Batch reads/writes, avoid layout thrashing |
+| **Paint** | Use transform/opacity, reduce paint areas |
+| **Composite** | Promote animated elements, use will-change |
+| **JavaScript** | Break long tasks, use Web Workers |
+
+---
+
+## 10. Interview Tip
+
+> "When a browser receives an HTML document, it goes through several phases. First, it parses HTML to build the DOM while simultaneously parsing CSS to build the CSSOM. The preload scanner runs ahead to fetch resources in parallel. JavaScript blocks parsing unless marked async or defer. Once DOM and CSSOM are ready, they're combined into a Render Tree (excluding invisible elements). Layout calculates exact positions, Paint generates draw commands, and finally Composite layers are sent to the GPU. I optimize by avoiding layout thrashing, using transform for animations, deferring non-critical JavaScript, and breaking long tasks to stay within the 16ms frame budget for 60fps."

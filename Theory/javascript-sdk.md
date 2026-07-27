@@ -1,100 +1,59 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JavaScript SDK Creation — Interview Reference — Theory Notes</title>
-<link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/highlight-theme.css">
-</head>
-<body>
-<div class="layout">
-<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>React &amp; Modern Patterns</summary><ul><li><a href="react-advanced-patterns.html">React Advanced Patterns</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html" aria-current="page">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
-<main><h1 id="javascript-sdk-creation-interview-reference">JavaScript SDK Creation — Interview Reference</h1>
-<hr />
-<h2 id="what-is-an-sdk">What is an SDK?</h2>
-<p>An SDK (Software Development Kit) is a <strong>packaged, versioned, opinionated interface</strong> that lets consumers interact with your platform, API, or service — without needing to know the underlying implementation details.</p>
-<blockquote>
-<p><strong>One-liner:</strong> An SDK hides HTTP, auth, retries, error normalization, and type safety behind a clean API so consumers write business logic, not infrastructure code.</p>
-</blockquote>
-<p><strong>SDK vs Library vs API Client:</strong></p>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>API Client</th>
-<th>Library</th>
-<th>SDK</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Scope</strong></td>
-<td>Just HTTP calls</td>
-<td>Utilities, helpers</td>
-<td>Full platform integration</td>
-</tr>
-<tr>
-<td><strong>Auth</strong></td>
-<td>Manual</td>
-<td>Manual</td>
-<td>Built-in, managed</td>
-</tr>
-<tr>
-<td><strong>Retries</strong></td>
-<td>Manual</td>
-<td>N/A</td>
-<td>Built-in</td>
-</tr>
-<tr>
-<td><strong>Types</strong></td>
-<td>Maybe</td>
-<td>Maybe</td>
-<td>First-class</td>
-</tr>
-<tr>
-<td><strong>Events/Hooks</strong></td>
-<td>No</td>
-<td>No</td>
-<td>Yes</td>
-</tr>
-<tr>
-<td><strong>Versioning contract</strong></td>
-<td>Loose</td>
-<td>Loose</td>
-<td>Strict semver</td>
-</tr>
-<tr>
-<td><strong>Example</strong></td>
-<td><code>fetch('/users')</code></td>
-<td>lodash</td>
-<td>Stripe.js, Sentry, Datadog</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="sdk-design-principles">SDK Design Principles</h2>
-<p>Before writing a line of code, these principles govern every decision:</p>
-<h3 id="1-minimal-surface-area">1. Minimal surface area</h3>
-<p>Every public API you expose is a contract you must maintain forever (or introduce breaking changes). Expose only what consumers need. Hide implementation details behind the interface.</p>
-<pre><code class="language-js">// ❌ Exposes internals — now you can never change httpClient
+# JavaScript SDK Creation — Interview Reference
+
+---
+
+## What is an SDK?
+
+An SDK (Software Development Kit) is a **packaged, versioned, opinionated interface** that lets consumers interact with your platform, API, or service — without needing to know the underlying implementation details.
+
+> **One-liner:** An SDK hides HTTP, auth, retries, error normalization, and type safety behind a clean API so consumers write business logic, not infrastructure code.
+
+**SDK vs Library vs API Client:**
+
+| | API Client | Library | SDK |
+|---|---|---|---|
+| **Scope** | Just HTTP calls | Utilities, helpers | Full platform integration |
+| **Auth** | Manual | Manual | Built-in, managed |
+| **Retries** | Manual | N/A | Built-in |
+| **Types** | Maybe | Maybe | First-class |
+| **Events/Hooks** | No | No | Yes |
+| **Versioning contract** | Loose | Loose | Strict semver |
+| **Example** | `fetch('/users')` | lodash | Stripe.js, Sentry, Datadog |
+
+---
+
+## SDK Design Principles
+
+Before writing a line of code, these principles govern every decision:
+
+### 1. Minimal surface area
+Every public API you expose is a contract you must maintain forever (or introduce breaking changes). Expose only what consumers need. Hide implementation details behind the interface.
+
+```js
+// ❌ Exposes internals — now you can never change httpClient
 sdk.httpClient.get('/users');
 
 // ✅ Hides implementation — you can swap axios for fetch internally
 sdk.users.list();
-</code></pre>
-<h3 id="2-fail-loudly-at-initialization-silently-at-runtime">2. Fail loudly at initialization, silently at runtime</h3>
-<p>Catch configuration errors immediately on setup — not 3 API calls later.</p>
-<pre><code class="language-js">// ❌ Error surfaces when user makes their first call
+```
+
+### 2. Fail loudly at initialization, silently at runtime
+Catch configuration errors immediately on setup — not 3 API calls later.
+
+```js
+// ❌ Error surfaces when user makes their first call
 const sdk = new SDK(); // no apiKey — works fine
 sdk.users.list();      // crashes here, far from the misconfiguration
 
 // ✅ Error surfaces at initialization
-const sdk = new SDK({ apiKey: '' }); // throws immediately: &quot;apiKey is required&quot;
-</code></pre>
-<h3 id="3-progressive-disclosure">3. Progressive disclosure</h3>
-<p>Simple things should be simple. Complex things should be possible.</p>
-<pre><code class="language-js">// Simple — zero config
+const sdk = new SDK({ apiKey: '' }); // throws immediately: "apiKey is required"
+```
+
+### 3. Progressive disclosure
+Simple things should be simple. Complex things should be possible.
+
+```js
+// Simple — zero config
 const result = await sdk.users.list();
 
 // Advanced — full control
@@ -105,10 +64,13 @@ const result = await sdk.users.list({
   timeout: 5000,
   signal: abortController.signal,
 });
-</code></pre>
-<h3 id="4-predictable-error-handling">4. Predictable error handling</h3>
-<p>Errors should always be the same type — never raw HTTP responses, never string messages, never unpredictable shapes.</p>
-<pre><code class="language-js">// All SDK errors are SDKError instances
+```
+
+### 4. Predictable error handling
+Errors should always be the same type — never raw HTTP responses, never string messages, never unpredictable shapes.
+
+```js
+// All SDK errors are SDKError instances
 try {
   await sdk.users.get('bad-id');
 } catch (err) {
@@ -120,35 +82,42 @@ try {
     err.requestId; // for support/debugging
   }
 }
-</code></pre>
-<hr />
-<h2 id="sdk-architecture">SDK Architecture</h2>
-<div class="mermaid">
-graph TD
-    C[&quot;Consumer Code&quot;]
-    SDK[&quot;SDK Entry Point\nnew MySDK({ apiKey })&quot;]
-    AUTH[&quot;Auth Manager\ntoken storage · refresh · injection&quot;]
-    HTTP[&quot;HTTP Client\nbase URL · headers · timeout&quot;]
-    RETRY[&quot;Retry Handler\nexponential backoff · jitter&quot;]
-    ERR[&quot;Error Normalizer\nHTTP errors → SDKError&quot;]
-    INTER[&quot;Interceptors\nrequest/response middleware chain&quot;]
-    RES[&quot;Resource Modules\nusers · payments · events&quot;]
-    EVT[&quot;Event Emitter\non('request') · on('error') · on('rateLimit')&quot;]
+```
 
-    C --&gt; SDK
-    SDK --&gt; AUTH
-    SDK --&gt; RES
-    RES --&gt; INTER
-    INTER --&gt; HTTP
-    HTTP --&gt; RETRY
-    RETRY --&gt; ERR
-    SDK --&gt; EVT
-    HTTP --&gt; EVT
-    ERR --&gt; EVT
-</div>
-<hr />
-<h2 id="package-structure">Package Structure</h2>
-<pre><code>my-sdk/
+---
+
+## SDK Architecture
+
+```mermaid
+graph TD
+    C["Consumer Code"]
+    SDK["SDK Entry Point\nnew MySDK({ apiKey })"]
+    AUTH["Auth Manager\ntoken storage · refresh · injection"]
+    HTTP["HTTP Client\nbase URL · headers · timeout"]
+    RETRY["Retry Handler\nexponential backoff · jitter"]
+    ERR["Error Normalizer\nHTTP errors → SDKError"]
+    INTER["Interceptors\nrequest/response middleware chain"]
+    RES["Resource Modules\nusers · payments · events"]
+    EVT["Event Emitter\non('request') · on('error') · on('rateLimit')"]
+
+    C --> SDK
+    SDK --> AUTH
+    SDK --> RES
+    RES --> INTER
+    INTER --> HTTP
+    HTTP --> RETRY
+    RETRY --> ERR
+    SDK --> EVT
+    HTTP --> EVT
+    ERR --> EVT
+```
+
+---
+
+## Package Structure
+
+```
+my-sdk/
   src/
     index.ts              ← public entry point (exports only public API)
     sdk.ts                ← main SDK class
@@ -175,17 +144,22 @@ graph TD
   dist/
     esm/                  ← ES Modules (tree-shakeable)
     cjs/                  ← CommonJS (Node.js)
-    umd/                  ← UMD bundle (CDN &lt;script&gt; tag)
+    umd/                  ← UMD bundle (CDN <script> tag)
     types/                ← TypeScript declarations (.d.ts)
   package.json
   tsconfig.json
   rollup.config.js / tsup.config.ts
-</code></pre>
-<hr />
-<h2 id="initialization-patterns">Initialization — Patterns</h2>
-<h3 id="pattern-1-constructor-most-common">Pattern 1 — Constructor (most common)</h3>
-<pre><code class="language-ts">class MySDK {
-  private config: Required&lt;SDKConfig&gt;;
+```
+
+---
+
+## Initialization — Patterns
+
+### Pattern 1 — Constructor (most common)
+
+```ts
+class MySDK {
+  private config: Required<SDKConfig>;
   public users: UsersResource;
   public payments: PaymentsResource;
 
@@ -196,7 +170,7 @@ graph TD
     this.payments = new PaymentsResource(httpClient);
   }
 
-  private validateAndNormalize(config: SDKConfig): Required&lt;SDKConfig&gt; {
+  private validateAndNormalize(config: SDKConfig): Required<SDKConfig> {
     if (!config.apiKey) throw new SDKError('CONFIG_ERROR', 'apiKey is required');
     return {
       apiKey: config.apiKey,
@@ -211,9 +185,12 @@ graph TD
 // Usage
 const sdk = new MySDK({ apiKey: 'sk_live_...' });
 await sdk.users.list();
-</code></pre>
-<h3 id="pattern-2-factory-function-functional-style-easier-to-testmock">Pattern 2 — Factory Function (functional style, easier to test/mock)</h3>
-<pre><code class="language-ts">function createSDK(config: SDKConfig): SDKInstance {
+```
+
+### Pattern 2 — Factory Function (functional style, easier to test/mock)
+
+```ts
+function createSDK(config: SDKConfig): SDKInstance {
   const validated = validateConfig(config);
   const httpClient = createHttpClient(validated);
 
@@ -224,9 +201,12 @@ await sdk.users.list();
 }
 
 const sdk = createSDK({ apiKey: 'sk_live_...' });
-</code></pre>
-<h3 id="pattern-3-builder-pattern-complex-optional-configuration">Pattern 3 — Builder Pattern (complex optional configuration)</h3>
-<pre><code class="language-ts">const sdk = new SDKBuilder()
+```
+
+### Pattern 3 — Builder Pattern (complex optional configuration)
+
+```ts
+const sdk = new SDKBuilder()
   .setApiKey('sk_live_...')
   .setBaseUrl('https://api.example.com/v1')
   .setRetries(3)
@@ -234,17 +214,23 @@ const sdk = createSDK({ apiKey: 'sk_live_...' });
   .addPlugin(loggingPlugin)
   .addPlugin(metricsPlugin)
   .build();
-</code></pre>
-<p><strong>Builder shines when:</strong> Optional config grows large, plugins/middleware need ordered setup, you want to enforce that <code>build()</code> must be called last.</p>
-<h3 id="pattern-4-singleton-analyticsmonitoring-sdks">Pattern 4 — Singleton (analytics/monitoring SDKs)</h3>
-<pre><code class="language-ts">// Sentry/Segment style — global init, access from anywhere
+```
+
+**Builder shines when:** Optional config grows large, plugins/middleware need ordered setup, you want to enforce that `build()` must be called last.
+
+### Pattern 4 — Singleton (analytics/monitoring SDKs)
+
+```ts
+// Sentry/Segment style — global init, access from anywhere
 MySDK.init({ apiKey: 'sk_live_...' });
 
 // Later, anywhere in the app:
 MySDK.captureError(new Error('oops'));
 MySDK.track('page_view', { path: '/dashboard' });
-</code></pre>
-<pre><code class="language-ts">// Implementation
+```
+
+```ts
+// Implementation
 class MySDK {
   private static instance: MySDK | null = null;
 
@@ -264,20 +250,24 @@ class MySDK {
   }
 
   // Proxy static methods to instance
-  static track(event: string, props?: Record&lt;string, unknown&gt;): void {
+  static track(event: string, props?: Record<string, unknown>): void {
     MySDK.getInstance().track(event, props);
   }
 }
-</code></pre>
-<hr />
-<h2 id="http-client-core">HTTP Client — Core</h2>
-<pre><code class="language-ts">class HttpClient {
+```
+
+---
+
+## HTTP Client — Core
+
+```ts
+class HttpClient {
   private baseUrl: string;
-  private defaultHeaders: Record&lt;string, string&gt;;
+  private defaultHeaders: Record<string, string>;
   private timeout: number;
   private interceptors: InterceptorManager;
 
-  constructor(config: Required&lt;SDKConfig&gt;) {
+  constructor(config: Required<SDKConfig>) {
     this.baseUrl = config.baseUrl;
     this.timeout = config.timeout;
     this.defaultHeaders = {
@@ -289,7 +279,7 @@ class MySDK {
     this.interceptors = new InterceptorManager();
   }
 
-  async request&lt;T&gt;(options: RequestOptions): Promise&lt;T&gt; {
+  async request<T>(options: RequestOptions): Promise<T> {
     const requestId = generateRequestId();
     const url = `${this.baseUrl}${options.path}`;
 
@@ -309,7 +299,7 @@ class MySDK {
     config = await this.interceptors.runRequest(config);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() =&gt; controller.abort(), this.timeout);
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
       const response = await fetch(config.url, {
@@ -324,7 +314,7 @@ class MySDK {
       clearTimeout(timeoutId);
 
       // Run response interceptors
-      return await this.interceptors.runResponse&lt;T&gt;(response, config);
+      return await this.interceptors.runResponse<T>(response, config);
     } catch (err) {
       clearTimeout(timeoutId);
       throw this.normalizeError(err, requestId);
@@ -333,16 +323,20 @@ class MySDK {
 
   private normalizeError(err: unknown, requestId: string): SDKError {
     if (err instanceof SDKError) return err;
-    if (err instanceof DOMException &amp;&amp; err.name === 'AbortError') {
+    if (err instanceof DOMException && err.name === 'AbortError') {
       return new SDKError('TIMEOUT', 'Request timed out', { requestId });
     }
     return new SDKError('NETWORK_ERROR', 'Network request failed', { requestId, cause: err });
   }
 }
-</code></pre>
-<hr />
-<h2 id="error-handling-normalized-errors">Error Handling — Normalized Errors</h2>
-<pre><code class="language-ts">// Base error class
+```
+
+---
+
+## Error Handling — Normalized Errors
+
+```ts
+// Base error class
 class SDKError extends Error {
   readonly code: string;
   readonly status?: number;
@@ -395,9 +389,9 @@ class NotFoundError extends SDKError {
 }
 
 class ValidationError extends SDKError {
-  readonly fields: Record&lt;string, string[]&gt;;
+  readonly fields: Record<string, string[]>;
 
-  constructor(fields: Record&lt;string, string[]&gt;, options?: { requestId?: string }) {
+  constructor(fields: Record<string, string[]>, options?: { requestId?: string }) {
     super('VALIDATION_ERROR', 'Validation failed', { status: 422, ...options });
     this.name = 'ValidationError';
     this.fields = fields;
@@ -420,24 +414,28 @@ function parseHttpError(response: Response, body: unknown, requestId: string): S
     );
   }
 }
-</code></pre>
-<hr />
-<h2 id="retry-logic-exponential-backoff-with-jitter">Retry Logic — Exponential Backoff with Jitter</h2>
-<pre><code class="language-ts">interface RetryConfig {
+```
+
+---
+
+## Retry Logic — Exponential Backoff with Jitter
+
+```ts
+interface RetryConfig {
   maxRetries: number;      // default: 3
   baseDelay: number;       // default: 500ms
   maxDelay: number;        // default: 30_000ms
   jitter: boolean;         // default: true — prevents thundering herd
 }
 
-async function withRetry&lt;T&gt;(
-  fn: () =&gt; Promise&lt;T&gt;,
+async function withRetry<T>(
+  fn: () => Promise<T>,
   config: RetryConfig,
-  onRetry?: (attempt: number, error: SDKError, delay: number) =&gt; void
-): Promise&lt;T&gt; {
+  onRetry?: (attempt: number, error: SDKError, delay: number) => void
+): Promise<T> {
   let lastError: SDKError;
 
-  for (let attempt = 0; attempt &lt;= config.maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err) {
@@ -470,49 +468,58 @@ async function withRetry&lt;T&gt;(
 // ❌ 401 Unauthorized (fix auth, not retry)
 // ❌ 404 Not Found (resource doesn't exist)
 // ❌ 422 Validation Error (fix the data, not retry)
-</code></pre>
-<div class="mermaid">
+```
+
+```mermaid
 sequenceDiagram
     participant SDK
     participant API
 
-    SDK-&gt;&gt;API: Request (attempt 1)
-    API--&gt;&gt;SDK: 503 Service Unavailable (retryable)
+    SDK->>API: Request (attempt 1)
+    API-->>SDK: 503 Service Unavailable (retryable)
     Note over SDK: wait 500ms + jitter
 
-    SDK-&gt;&gt;API: Request (attempt 2)
-    API--&gt;&gt;SDK: 503 Service Unavailable (retryable)
+    SDK->>API: Request (attempt 2)
+    API-->>SDK: 503 Service Unavailable (retryable)
     Note over SDK: wait 1000ms + jitter
 
-    SDK-&gt;&gt;API: Request (attempt 3)
-    API--&gt;&gt;SDK: 200 OK
-    SDK--&gt;&gt;SDK: return result
-</div>
-<hr />
-<h2 id="authentication-patterns">Authentication Patterns</h2>
-<h3 id="pattern-1-static-api-key">Pattern 1 — Static API Key</h3>
-<pre><code class="language-ts">// Inject on every request via header
+    SDK->>API: Request (attempt 3)
+    API-->>SDK: 200 OK
+    SDK-->>SDK: return result
+```
+
+---
+
+## Authentication Patterns
+
+### Pattern 1 — Static API Key
+
+```ts
+// Inject on every request via header
 headers['Authorization'] = `Bearer ${this.config.apiKey}`;
 // or
 headers['X-API-Key'] = this.config.apiKey;
-</code></pre>
-<h3 id="pattern-2-oauth-token-with-auto-refresh">Pattern 2 — OAuth Token with Auto-Refresh</h3>
-<pre><code class="language-ts">class AuthManager {
+```
+
+### Pattern 2 — OAuth Token with Auto-Refresh
+
+```ts
+class AuthManager {
   private accessToken: string | null = null;
   private refreshToken: string;
   private expiresAt: number = 0;
-  private refreshPromise: Promise&lt;string&gt; | null = null;
+  private refreshPromise: Promise<string> | null = null;
 
-  async getAccessToken(): Promise&lt;string&gt; {
+  async getAccessToken(): Promise<string> {
     // Token valid for 60+ more seconds — use it
-    if (this.accessToken &amp;&amp; Date.now() &lt; this.expiresAt - 60_000) {
+    if (this.accessToken && Date.now() < this.expiresAt - 60_000) {
       return this.accessToken;
     }
 
     // Token expired or expiring soon — refresh
     // Deduplicate concurrent refresh calls (only one refresh in-flight)
     if (!this.refreshPromise) {
-      this.refreshPromise = this.doRefresh().finally(() =&gt; {
+      this.refreshPromise = this.doRefresh().finally(() => {
         this.refreshPromise = null;
       });
     }
@@ -520,7 +527,7 @@ headers['X-API-Key'] = this.config.apiKey;
     return this.refreshPromise;
   }
 
-  private async doRefresh(): Promise&lt;string&gt; {
+  private async doRefresh(): Promise<string> {
     const res = await fetch('/oauth/token', {
       method: 'POST',
       body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: this.refreshToken }),
@@ -534,47 +541,55 @@ headers['X-API-Key'] = this.config.apiKey;
     return access_token;
   }
 }
-</code></pre>
-<p><strong>The deduplication trick:</strong> If three concurrent requests all find the token expired, without deduplication they'd all fire a refresh. With <code>this.refreshPromise</code>, only one refresh fires and all three <code>await</code> the same Promise.</p>
-<h3 id="pattern-3-jwt-with-claim-validation">Pattern 3 — JWT with Claim Validation</h3>
-<pre><code class="language-ts">function isTokenExpired(jwt: string): boolean {
+```
+
+**The deduplication trick:** If three concurrent requests all find the token expired, without deduplication they'd all fire a refresh. With `this.refreshPromise`, only one refresh fires and all three `await` the same Promise.
+
+### Pattern 3 — JWT with Claim Validation
+
+```ts
+function isTokenExpired(jwt: string): boolean {
   try {
     const [, payload] = jwt.split('.');
     const decoded = JSON.parse(atob(payload));
     // exp is in seconds, Date.now() is ms — add 30s buffer
-    return decoded.exp * 1000 &lt; Date.now() + 30_000;
+    return decoded.exp * 1000 < Date.now() + 30_000;
   } catch {
     return true; // malformed token — treat as expired
   }
 }
-</code></pre>
-<hr />
-<h2 id="interceptors-middleware-chain">Interceptors — Middleware Chain</h2>
-<pre><code class="language-ts">type RequestInterceptor = (config: RequestConfig) =&gt; RequestConfig | Promise&lt;RequestConfig&gt;;
-type ResponseInterceptor&lt;T&gt; = (response: Response) =&gt; T | Promise&lt;T&gt;;
+```
+
+---
+
+## Interceptors — Middleware Chain
+
+```ts
+type RequestInterceptor = (config: RequestConfig) => RequestConfig | Promise<RequestConfig>;
+type ResponseInterceptor<T> = (response: Response) => T | Promise<T>;
 
 class InterceptorManager {
   private requestInterceptors: RequestInterceptor[] = [];
-  private responseInterceptors: ResponseInterceptor&lt;any&gt;[] = [];
+  private responseInterceptors: ResponseInterceptor<any>[] = [];
 
-  useRequest(interceptor: RequestInterceptor): () =&gt; void {
+  useRequest(interceptor: RequestInterceptor): () => void {
     this.requestInterceptors.push(interceptor);
     // Return an eject function
-    return () =&gt; {
+    return () => {
       const idx = this.requestInterceptors.indexOf(interceptor);
       if (idx !== -1) this.requestInterceptors.splice(idx, 1);
     };
   }
 
-  useResponse&lt;T&gt;(interceptor: ResponseInterceptor&lt;T&gt;): () =&gt; void {
+  useResponse<T>(interceptor: ResponseInterceptor<T>): () => void {
     this.responseInterceptors.push(interceptor);
-    return () =&gt; {
+    return () => {
       const idx = this.responseInterceptors.indexOf(interceptor);
       if (idx !== -1) this.responseInterceptors.splice(idx, 1);
     };
   }
 
-  async runRequest(config: RequestConfig): Promise&lt;RequestConfig&gt; {
+  async runRequest(config: RequestConfig): Promise<RequestConfig> {
     let current = config;
     for (const interceptor of this.requestInterceptors) {
       current = await interceptor(current);
@@ -582,9 +597,9 @@ class InterceptorManager {
     return current;
   }
 
-  async runResponse&lt;T&gt;(response: Response, config: RequestConfig): Promise&lt;T&gt; {
+  async runResponse<T>(response: Response, config: RequestConfig): Promise<T> {
     // Default: parse JSON and check for errors
-    const body = await response.json().catch(() =&gt; null);
+    const body = await response.json().catch(() => null);
     if (!response.ok) {
       throw parseHttpError(response, body, config.headers['X-Request-ID']);
     }
@@ -601,23 +616,27 @@ class InterceptorManager {
 const sdk = new MySDK({ apiKey: '...' });
 
 // Log all requests
-sdk.interceptors.useRequest((config) =&gt; {
+sdk.interceptors.useRequest((config) => {
   console.log(`→ ${config.method} ${config.url}`);
   return config;
 });
 
 // Add custom header for all requests
-sdk.interceptors.useRequest((config) =&gt; ({
+sdk.interceptors.useRequest((config) => ({
   ...config,
   headers: { ...config.headers, 'X-Tenant-ID': getTenantId() }
 }));
-</code></pre>
-<hr />
-<h2 id="resource-design-fluent-api">Resource Design — Fluent API</h2>
-<pre><code class="language-ts">class UsersResource {
+```
+
+---
+
+## Resource Design — Fluent API
+
+```ts
+class UsersResource {
   constructor(private http: HttpClient) {}
 
-  async list(options: ListUsersOptions = {}): Promise&lt;PaginatedResponse&lt;User&gt;&gt; {
+  async list(options: ListUsersOptions = {}): Promise<PaginatedResponse<User>> {
     return this.http.request({
       method: 'GET',
       path: '/users',
@@ -625,20 +644,20 @@ sdk.interceptors.useRequest((config) =&gt; ({
     });
   }
 
-  async get(id: string): Promise&lt;User&gt; {
+  async get(id: string): Promise<User> {
     if (!id) throw new SDKError('INVALID_ARGUMENT', 'User id is required');
     return this.http.request({ method: 'GET', path: `/users/${id}` });
   }
 
-  async create(data: CreateUserInput): Promise&lt;User&gt; {
+  async create(data: CreateUserInput): Promise<User> {
     return this.http.request({ method: 'POST', path: '/users', body: data });
   }
 
-  async update(id: string, data: UpdateUserInput): Promise&lt;User&gt; {
+  async update(id: string, data: UpdateUserInput): Promise<User> {
     return this.http.request({ method: 'PATCH', path: `/users/${id}`, body: data });
   }
 
-  async delete(id: string): Promise&lt;void&gt; {
+  async delete(id: string): Promise<void> {
     return this.http.request({ method: 'DELETE', path: `/users/${id}` });
   }
 
@@ -647,8 +666,8 @@ sdk.interceptors.useRequest((config) =&gt; ({
 }
 
 // Fluent chaining for complex operations
-class QueryBuilder&lt;T&gt; {
-  private filters: Record&lt;string, unknown&gt; = {};
+class QueryBuilder<T> {
+  private filters: Record<string, unknown> = {};
   private sortField?: string;
   private sortOrder: 'asc' | 'desc' = 'asc';
   private limitValue = 20;
@@ -669,7 +688,7 @@ class QueryBuilder&lt;T&gt; {
     return this;
   }
 
-  async execute(): Promise&lt;T[]&gt; {
+  async execute(): Promise<T[]> {
     return this.resource.list({ filters: this.filters, sort: this.sortField, limit: this.limitValue });
   }
 }
@@ -681,22 +700,27 @@ const users = await sdk.users
   .sort('createdAt', 'desc')
   .limit(50)
   .execute();
-</code></pre>
-<hr />
-<h2 id="request-deduplication">Request Deduplication</h2>
-<p>If three components mount simultaneously and all call <code>sdk.users.get('123')</code>, without deduplication that's 3 identical HTTP requests. The SDK should coalesce them into one.</p>
-<pre><code class="language-ts">class RequestDeduplicator {
-  // Map of in-flight requests keyed by a cache key
-  private inFlight = new Map&lt;string, Promise&lt;unknown&gt;&gt;();
+```
 
-  async dedupe&lt;T&gt;(key: string, fn: () =&gt; Promise&lt;T&gt;): Promise&lt;T&gt; {
+---
+
+## Request Deduplication
+
+If three components mount simultaneously and all call `sdk.users.get('123')`, without deduplication that's 3 identical HTTP requests. The SDK should coalesce them into one.
+
+```ts
+class RequestDeduplicator {
+  // Map of in-flight requests keyed by a cache key
+  private inFlight = new Map<string, Promise<unknown>>();
+
+  async dedupe<T>(key: string, fn: () => Promise<T>): Promise<T> {
     // Already in-flight for this key — return the SAME promise
     if (this.inFlight.has(key)) {
-      return this.inFlight.get(key) as Promise&lt;T&gt;;
+      return this.inFlight.get(key) as Promise<T>;
     }
 
     // New request — start it, cache the promise
-    const promise = fn().finally(() =&gt; {
+    const promise = fn().finally(() => {
       this.inFlight.delete(key); // clean up when settled
     });
 
@@ -705,24 +729,26 @@ const users = await sdk.users
   }
 
   // Build cache key from method + URL + sorted params
-  static buildKey(method: string, url: string, params?: Record&lt;string, unknown&gt;): string {
+  static buildKey(method: string, url: string, params?: Record<string, unknown>): string {
     const sorted = params
-      ? Object.keys(params).sort().map(k =&gt; `${k}=${params[k]}`).join('&amp;')
+      ? Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&')
       : '';
     return `${method}:${url}?${sorted}`;
   }
 }
 
 // In HttpClient — wrap GET requests only (mutations are never deduped)
-async request&lt;T&gt;(options: RequestOptions): Promise&lt;T&gt; {
+async request<T>(options: RequestOptions): Promise<T> {
   if (options.method === 'GET' || !options.method) {
     const key = RequestDeduplicator.buildKey('GET', options.path, options.params);
-    return this.deduplicator.dedupe(key, () =&gt; this.doRequest&lt;T&gt;(options));
+    return this.deduplicator.dedupe(key, () => this.doRequest<T>(options));
   }
-  return this.doRequest&lt;T&gt;(options);
+  return this.doRequest<T>(options);
 }
-</code></pre>
-<pre><code>Without deduplication:
+```
+
+```
+Without deduplication:
   Component A mounts → GET /users/123 (request 1 fires)
   Component B mounts → GET /users/123 (request 2 fires)  ← redundant
   Component C mounts → GET /users/123 (request 3 fires)  ← redundant
@@ -733,16 +759,22 @@ With deduplication:
   Component B mounts → GET /users/123 (returns SAME cached Promise)
   Component C mounts → GET /users/123 (returns SAME cached Promise)
   1 HTTP call, 3 components get the result
-</code></pre>
-<p><strong>Only deduplicate idempotent requests (GET, HEAD).</strong> Never deduplicate POST/PATCH/DELETE — two concurrent POSTs are likely intentional (two separate creates).</p>
-<hr />
-<h2 id="idempotency-keys">Idempotency Keys</h2>
-<p>For state-mutating requests (POST, PATCH), the same request might be sent twice — network timeout causes a retry, but the first request actually succeeded. Without idempotency keys, you create a duplicate record.</p>
-<pre><code class="language-ts">// Stripe pattern — client generates a unique key per logical operation
-// Server: &quot;if I've seen this key, return the cached response instead of re-processing&quot;
+```
+
+**Only deduplicate idempotent requests (GET, HEAD).** Never deduplicate POST/PATCH/DELETE — two concurrent POSTs are likely intentional (two separate creates).
+
+---
+
+## Idempotency Keys
+
+For state-mutating requests (POST, PATCH), the same request might be sent twice — network timeout causes a retry, but the first request actually succeeded. Without idempotency keys, you create a duplicate record.
+
+```ts
+// Stripe pattern — client generates a unique key per logical operation
+// Server: "if I've seen this key, return the cached response instead of re-processing"
 
 class HttpClient {
-  async request&lt;T&gt;(options: RequestOptions): Promise&lt;T&gt; {
+  async request<T>(options: RequestOptions): Promise<T> {
     const config: RequestConfig = {
       method: options.method ?? 'GET',
       headers: { ...this.defaultHeaders },
@@ -755,7 +787,7 @@ class HttpClient {
         options.idempotencyKey ?? this.generateIdempotencyKey(options);
     }
 
-    return this.doRequest&lt;T&gt;(config);
+    return this.doRequest<T>(config);
   }
 
   private generateIdempotencyKey(options: RequestOptions): string {
@@ -771,24 +803,32 @@ await sdk.payments.create(
   { amount: 5000, currency: 'usd' },
   { idempotencyKey: `order-${orderId}-payment` } // stable across retries
 );
-</code></pre>
-<p><strong>What happens server-side:</strong></p>
-<pre><code>First request:  POST /payments  Idempotency-Key: order-123-payment
+```
+
+**What happens server-side:**
+```
+First request:  POST /payments  Idempotency-Key: order-123-payment
   → Server processes payment, caches response against key
   → Returns { paymentId: 'pay_abc', status: 'succeeded' }
 
 Retry (network timeout):  POST /payments  Idempotency-Key: order-123-payment
   → Server finds cached response for this key
   → Returns SAME { paymentId: 'pay_abc', status: 'succeeded' } — NO double charge
-</code></pre>
-<p><strong>Key expiry:</strong> Idempotency keys are typically stored for 24h on the server. After that, the same key will create a new resource. This is intentional — same key next day = a new intended operation.</p>
-<hr />
-<h2 id="client-side-rate-limiting">Client-Side Rate Limiting</h2>
-<p>Prevents the SDK from triggering 429s by enforcing limits before hitting the wire.</p>
-<pre><code class="language-ts">class TokenBucketRateLimiter {
+```
+
+**Key expiry:** Idempotency keys are typically stored for 24h on the server. After that, the same key will create a new resource. This is intentional — same key next day = a new intended operation.
+
+---
+
+## Client-Side Rate Limiting
+
+Prevents the SDK from triggering 429s by enforcing limits before hitting the wire.
+
+```ts
+class TokenBucketRateLimiter {
   private tokens: number;
   private lastRefill: number;
-  private queue: Array&lt;{ resolve: () =&gt; void }&gt; = [];
+  private queue: Array<{ resolve: () => void }> = [];
 
   constructor(
     private readonly capacity: number,    // max burst
@@ -798,16 +838,16 @@ Retry (network timeout):  POST /payments  Idempotency-Key: order-123-payment
     this.lastRefill = Date.now();
   }
 
-  async acquire(): Promise&lt;void&gt; {
+  async acquire(): Promise<void> {
     this.refill();
 
-    if (this.tokens &gt;= 1) {
+    if (this.tokens >= 1) {
       this.tokens -= 1;
       return; // token available — proceed immediately
     }
 
     // No tokens — queue the request
-    return new Promise((resolve) =&gt; {
+    return new Promise((resolve) => {
       this.queue.push({ resolve });
     });
   }
@@ -820,7 +860,7 @@ Retry (network timeout):  POST /payments  Idempotency-Key: order-123-payment
     this.lastRefill = now;
 
     // Drain queue if tokens available
-    while (this.tokens &gt;= 1 &amp;&amp; this.queue.length &gt; 0) {
+    while (this.tokens >= 1 && this.queue.length > 0) {
       this.tokens -= 1;
       this.queue.shift()!.resolve();
     }
@@ -833,12 +873,14 @@ const rateLimiter = new TokenBucketRateLimiter(
   5,    // sustained: 5 requests/second
 );
 
-async request&lt;T&gt;(options: RequestOptions): Promise&lt;T&gt; {
+async request<T>(options: RequestOptions): Promise<T> {
   await rateLimiter.acquire(); // wait for token — never blocks more than necessary
-  return this.doRequest&lt;T&gt;(options);
+  return this.doRequest<T>(options);
 }
-</code></pre>
-<pre><code>10 requests fire simultaneously:
+```
+
+```
+10 requests fire simultaneously:
   Requests 1–10:  tokens available (capacity=10) → all proceed immediately
   Request 11:     no tokens → queued → proceeds after 200ms (1/5 refill rate)
   Request 12:     no tokens → queued → proceeds after 400ms
@@ -846,13 +888,18 @@ async request&lt;T&gt;(options: RequestOptions): Promise&lt;T&gt; {
 
 Without rate limiter: all 11 hit server → server returns 429 for the excess
 With rate limiter:    SDK spaces requests → server never sees burst → no 429
-</code></pre>
-<hr />
-<h2 id="request-cancellation">Request Cancellation</h2>
-<p>First-class cancellation via <code>AbortController</code> — critical for SPAs where users navigate away before requests complete.</p>
-<pre><code class="language-ts">// Resource methods accept AbortSignal
+```
+
+---
+
+## Request Cancellation
+
+First-class cancellation via `AbortController` — critical for SPAs where users navigate away before requests complete.
+
+```ts
+// Resource methods accept AbortSignal
 class UsersResource {
-  async list(options: ListUsersOptions &amp; { signal?: AbortSignal } = {}): Promise&lt;PaginatedResponse&lt;User&gt;&gt; {
+  async list(options: ListUsersOptions & { signal?: AbortSignal } = {}): Promise<PaginatedResponse<User>> {
     return this.http.request({
       method: 'GET',
       path: '/users',
@@ -866,32 +913,32 @@ class UsersResource {
 function UsersList() {
   const [users, setUsers] = useState([]);
 
-  useEffect(() =&gt; {
+  useEffect(() => {
     const controller = new AbortController();
 
     sdk.users.list({ signal: controller.signal })
       .then(setUsers)
-      .catch(err =&gt; {
+      .catch(err => {
         if (err.code === 'ABORTED') return; // intentional cancel — ignore
         reportError(err);
       });
 
-    return () =&gt; controller.abort(); // cancel on unmount
+    return () => controller.abort(); // cancel on unmount
   }, []);
 }
 
 // Pattern 2 — cancel on route change (React Router)
-useEffect(() =&gt; {
+useEffect(() => {
   const controller = new AbortController();
   loadPageData(controller.signal);
-  return () =&gt; controller.abort();
+  return () => controller.abort();
 }, [location.pathname]);
 
 // Pattern 3 — cancel previous request when new one fires (search input)
 class SearchResource {
   private activeController: AbortController | null = null;
 
-  async search(query: string): Promise&lt;SearchResult[]&gt; {
+  async search(query: string): Promise<SearchResult[]> {
     // Cancel any in-flight search
     this.activeController?.abort();
     this.activeController = new AbortController();
@@ -911,29 +958,36 @@ class SearchResource {
 
 // Usage — search as user types, cancels stale requests
 const search = sdk.createSearchResource();
-inputEl.addEventListener('input', (e) =&gt; {
+inputEl.addEventListener('input', (e) => {
   search.search(e.target.value); // previous call auto-cancelled
 });
-</code></pre>
-<p><strong>In HttpClient — propagate signal + distinguish abort from other errors:</strong></p>
-<pre><code class="language-ts">async doRequest&lt;T&gt;(config: RequestConfig): Promise&lt;T&gt; {
+```
+
+**In HttpClient — propagate signal + distinguish abort from other errors:**
+
+```ts
+async doRequest<T>(config: RequestConfig): Promise<T> {
   try {
     const response = await fetch(config.url, {
       signal: config.signal,
       // ...
     });
-    return this.parseResponse&lt;T&gt;(response);
+    return this.parseResponse<T>(response);
   } catch (err) {
-    if (err instanceof DOMException &amp;&amp; err.name === 'AbortError') {
+    if (err instanceof DOMException && err.name === 'AbortError') {
       throw new SDKError('ABORTED', 'Request was cancelled', { retryable: false });
     }
     throw this.normalizeError(err);
   }
 }
-</code></pre>
-<hr />
-<h2 id="debug-mode">Debug Mode</h2>
-<pre><code class="language-ts">class MySDK {
+```
+
+---
+
+## Debug Mode
+
+```ts
+class MySDK {
   private debugMode = false;
 
   debug(enabled = true): this {
@@ -945,7 +999,7 @@ inputEl.addEventListener('input', (e) =&gt; {
   }
 
   private setupDebugInterceptors(): void {
-    this.interceptors.useRequest((config) =&gt; {
+    this.interceptors.useRequest((config) => {
       console.group(`[SDK] → ${config.method} ${config.url}`);
       console.log('Headers:', config.headers);
       if (config.body) console.log('Body:', JSON.parse(config.body));
@@ -954,16 +1008,16 @@ inputEl.addEventListener('input', (e) =&gt; {
       return config;
     });
 
-    this.on('response', ({ status, requestId }) =&gt; {
+    this.on('response', ({ status, requestId }) => {
       const duration = performance.now() - (this as any)._lastRequestStart;
       console.log(`[SDK] ← ${status} (${requestId}) in ${duration.toFixed(1)}ms`);
     });
 
-    this.on('retry', ({ attempt, delay, error }) =&gt; {
+    this.on('retry', ({ attempt, delay, error }) => {
       console.warn(`[SDK] ↻ Retry ${attempt} in ${delay}ms — ${error.code}: ${error.message}`);
     });
 
-    this.on('error', ({ error }) =&gt; {
+    this.on('error', ({ error }) => {
       console.error(`[SDK] ✗ ${error.code}: ${error.message}`, {
         status: error.status,
         requestId: error.requestId,
@@ -981,9 +1035,11 @@ const sdk = new MySDK({
   apiKey: process.env.API_KEY,
   debug: process.env.NODE_ENV === 'development',
 });
-</code></pre>
-<p><strong>Debug output example:</strong></p>
-<pre><code>[SDK] → POST https://api.example.com/v1/users
+```
+
+**Debug output example:**
+```
+[SDK] → POST https://api.example.com/v1/users
   Headers: { Authorization: 'Bearer sk_...', X-Request-ID: 'req_abc123' }
   Body: { name: 'Alice', email: 'alice@example.com' }
 
@@ -991,17 +1047,23 @@ const sdk = new MySDK({
 
 [SDK] ✗ VALIDATION_ERROR: Validation failed
   { status: 422, requestId: 'req_abc123', retryable: false }
-</code></pre>
-<p><strong>Security note:</strong> Debug mode must NEVER log full API keys or tokens — only the first/last 4 chars:</p>
-<pre><code class="language-ts">const safeKey = `${key.slice(0, 4)}...${key.slice(-4)}`;
+```
+
+**Security note:** Debug mode must NEVER log full API keys or tokens — only the first/last 4 chars:
+```ts
+const safeKey = `${key.slice(0, 4)}...${key.slice(-4)}`;
 // sk_l...k3x9 — useful for debugging, safe to log
-</code></pre>
-<hr />
-<h2 id="pagination">Pagination</h2>
-<pre><code class="language-ts">// Cursor-based pagination helper
-async function* paginate&lt;T&gt;(
-  fetcher: (cursor?: string) =&gt; Promise&lt;PaginatedResponse&lt;T&gt;&gt;,
-): AsyncGenerator&lt;T[], void, unknown&gt; {
+```
+
+---
+
+## Pagination
+
+```ts
+// Cursor-based pagination helper
+async function* paginate<T>(
+  fetcher: (cursor?: string) => Promise<PaginatedResponse<T>>,
+): AsyncGenerator<T[], void, unknown> {
   let cursor: string | undefined;
 
   do {
@@ -1019,20 +1081,25 @@ for await (const page of sdk.users.paginate()) {
 }
 
 // Or collect all into one array
-async function collectAll&lt;T&gt;(
-  fetcher: (cursor?: string) =&gt; Promise&lt;PaginatedResponse&lt;T&gt;&gt;
-): Promise&lt;T[]&gt; {
+async function collectAll<T>(
+  fetcher: (cursor?: string) => Promise<PaginatedResponse<T>>
+): Promise<T[]> {
   const all: T[] = [];
   for await (const page of paginate(fetcher)) all.push(...page);
   return all;
 }
 
-const allUsers = await collectAll((cursor) =&gt; sdk.users.list({ cursor }));
-</code></pre>
-<hr />
-<h2 id="event-system">Event System</h2>
-<p>SDKs emit lifecycle events so consumers can observe behavior without monkey-patching.</p>
-<pre><code class="language-ts">type SDKEvents = {
+const allUsers = await collectAll((cursor) => sdk.users.list({ cursor }));
+```
+
+---
+
+## Event System
+
+SDKs emit lifecycle events so consumers can observe behavior without monkey-patching.
+
+```ts
+type SDKEvents = {
   'request': { method: string; url: string; requestId: string };
   'response': { status: number; requestId: string; duration: number };
   'error': { error: SDKError; requestId: string };
@@ -1041,43 +1108,48 @@ const allUsers = await collectAll((cursor) =&gt; sdk.users.list({ cursor }));
   'tokenRefresh': { success: boolean };
 };
 
-class EventEmitter&lt;Events extends Record&lt;string, unknown&gt;&gt; {
-  private listeners = new Map&lt;keyof Events, Set&lt;Function&gt;&gt;();
+class EventEmitter<Events extends Record<string, unknown>> {
+  private listeners = new Map<keyof Events, Set<Function>>();
 
-  on&lt;K extends keyof Events&gt;(event: K, handler: (data: Events[K]) =&gt; void): () =&gt; void {
+  on<K extends keyof Events>(event: K, handler: (data: Events[K]) => void): () => void {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
     this.listeners.get(event)!.add(handler);
     // Return unsubscribe function
-    return () =&gt; this.listeners.get(event)?.delete(handler);
+    return () => this.listeners.get(event)?.delete(handler);
   }
 
-  emit&lt;K extends keyof Events&gt;(event: K, data: Events[K]): void {
-    this.listeners.get(event)?.forEach(handler =&gt; {
+  emit<K extends keyof Events>(event: K, data: Events[K]): void {
+    this.listeners.get(event)?.forEach(handler => {
       try { handler(data); } catch (e) { console.error('SDK event handler threw:', e); }
     });
   }
 }
 
 // Consumer usage
-const unsubscribe = sdk.on('retry', ({ attempt, delay, error }) =&gt; {
+const unsubscribe = sdk.on('retry', ({ attempt, delay, error }) => {
   console.warn(`Retrying (attempt ${attempt}) in ${delay}ms — ${error.message}`);
 });
 
-sdk.on('rateLimit', ({ retryAfter }) =&gt; {
+sdk.on('rateLimit', ({ retryAfter }) => {
   showRateLimitBanner(retryAfter);
 });
 
-sdk.on('error', ({ error }) =&gt; {
+sdk.on('error', ({ error }) => {
   Sentry.captureException(error);
 });
 
 // Clean up
 unsubscribe();
-</code></pre>
-<hr />
-<h2 id="bundling-multiple-output-formats">Bundling — Multiple Output Formats</h2>
-<p>Consumers use SDKs in different environments: Node.js (CommonJS), modern bundlers (ESM), CDN script tags (UMD). Ship all three.</p>
-<pre><code class="language-ts">// tsup.config.ts — simplest way to produce all formats
+```
+
+---
+
+## Bundling — Multiple Output Formats
+
+Consumers use SDKs in different environments: Node.js (CommonJS), modern bundlers (ESM), CDN script tags (UMD). Ship all three.
+
+```ts
+// tsup.config.ts — simplest way to produce all formats
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
@@ -1092,72 +1164,88 @@ export default defineConfig({
   treeshake: true,
   target: 'es2020',
 });
-</code></pre>
-<pre><code class="language-json">// package.json — tell bundlers which file to use
+```
+
+```json
+// package.json — tell bundlers which file to use
 {
-  &quot;name&quot;: &quot;@company/sdk&quot;,
-  &quot;version&quot;: &quot;1.2.0&quot;,
-  &quot;main&quot;: &quot;./dist/cjs/index.js&quot;,         // Node.js / CommonJS
-  &quot;module&quot;: &quot;./dist/esm/index.js&quot;,       // ESM bundlers (webpack, Rollup, Vite)
-  &quot;types&quot;: &quot;./dist/types/index.d.ts&quot;,    // TypeScript
-  &quot;exports&quot;: {
-    &quot;.&quot;: {
-      &quot;import&quot;: &quot;./dist/esm/index.js&quot;,   // import MySDK from '@company/sdk'
-      &quot;require&quot;: &quot;./dist/cjs/index.js&quot;,  // const MySDK = require('@company/sdk')
-      &quot;types&quot;: &quot;./dist/types/index.d.ts&quot;
+  "name": "@company/sdk",
+  "version": "1.2.0",
+  "main": "./dist/cjs/index.js",         // Node.js / CommonJS
+  "module": "./dist/esm/index.js",       // ESM bundlers (webpack, Rollup, Vite)
+  "types": "./dist/types/index.d.ts",    // TypeScript
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",   // import MySDK from '@company/sdk'
+      "require": "./dist/cjs/index.js",  // const MySDK = require('@company/sdk')
+      "types": "./dist/types/index.d.ts"
     }
   },
-  &quot;files&quot;: [&quot;dist&quot;],                     // only ship dist — not src
-  &quot;sideEffects&quot;: false                   // enable tree shaking
+  "files": ["dist"],                     // only ship dist — not src
+  "sideEffects": false                   // enable tree shaking
 }
-</code></pre>
-<h3 id="why-sideeffects-false-matters">Why <code>sideEffects: false</code> matters</h3>
-<pre><code class="language-js">// Consumer imports only UsersResource
+```
+
+### Why `sideEffects: false` matters
+
+```js
+// Consumer imports only UsersResource
 import { UsersResource } from '@company/sdk';
 
 // Without sideEffects:false — entire SDK bundled (500KB)
 // With sideEffects:false — only UsersResource + its deps bundled (~50KB)
-</code></pre>
-<hr />
-<h2 id="typescript-type-safe-sdk">TypeScript — Type-Safe SDK</h2>
-<h3 id="typed-responses-with-generics">Typed responses with generics</h3>
-<pre><code class="language-ts">// Resource methods are fully typed — no `any`
+```
+
+---
+
+## TypeScript — Type-Safe SDK
+
+### Typed responses with generics
+
+```ts
+// Resource methods are fully typed — no `any`
 class UsersResource {
-  async list(options?: ListUsersOptions): Promise&lt;PaginatedResponse&lt;User&gt;&gt; { ... }
-  async get(id: string): Promise&lt;User&gt; { ... }
-  async create(data: CreateUserInput): Promise&lt;User&gt; { ... }
+  async list(options?: ListUsersOptions): Promise<PaginatedResponse<User>> { ... }
+  async get(id: string): Promise<User> { ... }
+  async create(data: CreateUserInput): Promise<User> { ... }
 }
 
 // Generic HTTP client — preserves response type through the chain
 class HttpClient {
-  async request&lt;T&gt;(options: RequestOptions): Promise&lt;T&gt; { ... }
+  async request<T>(options: RequestOptions): Promise<T> { ... }
 }
 
 // Consumer gets full type safety + autocomplete
 const user = await sdk.users.get('123');
 user.email;    // ✅ string — TypeScript knows the type
 user.xyz;      // ❌ TypeScript error — 'xyz' doesn't exist on User
-</code></pre>
-<h3 id="conditional-types-for-options">Conditional types for options</h3>
-<pre><code class="language-ts">// Different return types based on options
+```
+
+### Conditional types for options
+
+```ts
+// Different return types based on options
 interface ListOptions {
   paginate?: boolean;
 }
 
-type ListResult&lt;T, O extends ListOptions&gt; =
-  O extends { paginate: true } ? AsyncGenerator&lt;T[]&gt; : T[];
+type ListResult<T, O extends ListOptions> =
+  O extends { paginate: true } ? AsyncGenerator<T[]> : T[];
 
 class Resource {
-  list&lt;O extends ListOptions&gt;(options?: O): ListResult&lt;User, O&gt; { ... }
+  list<O extends ListOptions>(options?: O): ListResult<User, O> { ... }
 }
 
-sdk.users.list({ paginate: true });  // → AsyncGenerator&lt;User[]&gt;
+sdk.users.list({ paginate: true });  // → AsyncGenerator<User[]>
 sdk.users.list();                    // → User[]
-</code></pre>
-<h3 id="branded-types-for-ids-prevents-mixing">Branded types for IDs (prevents mixing)</h3>
-<pre><code class="language-ts">// Prevents: sdk.payments.get(userId) — passing wrong ID type
-type UserId    = string &amp; { readonly __brand: 'UserId' };
-type PaymentId = string &amp; { readonly __brand: 'PaymentId' };
+```
+
+### Branded types for IDs (prevents mixing)
+
+```ts
+// Prevents: sdk.payments.get(userId) — passing wrong ID type
+type UserId    = string & { readonly __brand: 'UserId' };
+type PaymentId = string & { readonly __brand: 'PaymentId' };
 
 function toUserId(id: string): UserId { return id as UserId; }
 
@@ -1166,13 +1254,18 @@ const paymentId: PaymentId = toPaymentId('pay_456');
 
 sdk.users.get(userId);      // ✅
 sdk.users.get(paymentId);   // ❌ TypeScript error — wrong brand
-</code></pre>
-<hr />
-<h2 id="plugin-architecture">Plugin Architecture</h2>
-<p>Allow consumers to extend SDK behavior without forking it.</p>
-<pre><code class="language-ts">interface SDKPlugin {
+```
+
+---
+
+## Plugin Architecture
+
+Allow consumers to extend SDK behavior without forking it.
+
+```ts
+interface SDKPlugin {
   name: string;
-  install: (sdk: MySDK) =&gt; void;
+  install: (sdk: MySDK) => void;
 }
 
 class MySDK {
@@ -1185,14 +1278,14 @@ class MySDK {
 // Logging plugin
 const loggingPlugin: SDKPlugin = {
   name: 'logging',
-  install: (sdk) =&gt; {
-    sdk.interceptors.useRequest((config) =&gt; {
+  install: (sdk) => {
+    sdk.interceptors.useRequest((config) => {
       console.log(`[SDK] → ${config.method} ${config.url}`);
       config.metadata = { startTime: Date.now() };
       return config;
     });
 
-    sdk.on('response', ({ status, duration, requestId }) =&gt; {
+    sdk.on('response', ({ status, duration, requestId }) => {
       console.log(`[SDK] ← ${status} in ${duration}ms (${requestId})`);
     });
   }
@@ -1201,11 +1294,11 @@ const loggingPlugin: SDKPlugin = {
 // Metrics plugin
 const metricsPlugin: SDKPlugin = {
   name: 'metrics',
-  install: (sdk) =&gt; {
-    sdk.on('response', ({ status, duration }) =&gt; {
+  install: (sdk) => {
+    sdk.on('response', ({ status, duration }) => {
       metrics.histogram('sdk.request.duration', duration, { status });
     });
-    sdk.on('error', ({ error }) =&gt; {
+    sdk.on('error', ({ error }) => {
       metrics.increment('sdk.error', { code: error.code });
     });
   }
@@ -1215,12 +1308,16 @@ const metricsPlugin: SDKPlugin = {
 const sdk = new MySDK({ apiKey: '...' })
   .use(loggingPlugin)
   .use(metricsPlugin);
-</code></pre>
-<hr />
-<h2 id="browser-vs-node-compatibility">Browser vs Node Compatibility</h2>
-<pre><code class="language-ts">// Detect environment
+```
+
+---
+
+## Browser vs Node Compatibility
+
+```ts
+// Detect environment
 const isBrowser = typeof window !== 'undefined';
-const isNode = typeof process !== 'undefined' &amp;&amp; process.versions?.node;
+const isNode = typeof process !== 'undefined' && process.versions?.node;
 
 // Use environment-appropriate APIs
 class Storage {
@@ -1231,23 +1328,27 @@ class Storage {
   }
 }
 
-// fetch: available in browsers + Node 18+, polyfill for Node &lt; 18
+// fetch: available in browsers + Node 18+, polyfill for Node < 18
 const fetchImpl: typeof fetch = isBrowser
   ? window.fetch.bind(window)
   : (globalThis.fetch ?? require('node-fetch'));
 
 // Crypto for request IDs
 function generateRequestId(): string {
-  if (typeof crypto !== 'undefined' &amp;&amp; crypto.randomUUID) {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
   // Fallback for older environments
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
-</code></pre>
-<hr />
-<h2 id="versioning-semver-contract">Versioning &amp; Semver Contract</h2>
-<pre><code>MAJOR.MINOR.PATCH
+```
+
+---
+
+## Versioning & Semver Contract
+
+```
+MAJOR.MINOR.PATCH
 
 MAJOR — breaking changes:
   - Removed public methods/properties
@@ -1265,12 +1366,15 @@ PATCH — backwards-compatible fixes:
   - Bug fixes
   - Performance improvements
   - Internal refactors
-</code></pre>
-<h3 id="deprecation-pattern-never-remove-without-warning">Deprecation pattern (never remove without warning)</h3>
-<pre><code class="language-ts">class UsersResource {
+```
+
+### Deprecation pattern (never remove without warning)
+
+```ts
+class UsersResource {
   // Old method — deprecated
   /** @deprecated Use list() instead. Will be removed in v3.0 */
-  async getAll(): Promise&lt;User[]&gt; {
+  async getAll(): Promise<User[]> {
     console.warn(
       '[SDK deprecation] users.getAll() is deprecated. Use users.list() instead. ' +
       'Will be removed in v3.0.0. See migration guide: https://docs.example.com/migration/v3'
@@ -1280,22 +1384,27 @@ PATCH — backwards-compatible fixes:
   }
 
   // New method
-  async list(options?: ListUsersOptions): Promise&lt;PaginatedResponse&lt;User&gt;&gt; { ... }
+  async list(options?: ListUsersOptions): Promise<PaginatedResponse<User>> { ... }
 }
-</code></pre>
-<hr />
-<h2 id="testing-an-sdk">Testing an SDK</h2>
-<h3 id="unit-tests-resource-methods">Unit tests — resource methods</h3>
-<pre><code class="language-ts">describe('UsersResource', () =&gt; {
-  let httpClient: jest.Mocked&lt;HttpClient&gt;;
+```
+
+---
+
+## Testing an SDK
+
+### Unit tests — resource methods
+
+```ts
+describe('UsersResource', () => {
+  let httpClient: jest.Mocked<HttpClient>;
   let users: UsersResource;
 
-  beforeEach(() =&gt; {
+  beforeEach(() => {
     httpClient = { request: jest.fn() } as any;
     users = new UsersResource(httpClient);
   });
 
-  it('GET /users with no options', async () =&gt; {
+  it('GET /users with no options', async () => {
     httpClient.request.mockResolvedValue({ data: [mockUser], nextCursor: null });
     const result = await users.list();
     expect(httpClient.request).toHaveBeenCalledWith({
@@ -1306,48 +1415,54 @@ PATCH — backwards-compatible fixes:
     expect(result.data[0]).toEqual(mockUser);
   });
 
-  it('throws SDKError on missing id', async () =&gt; {
+  it('throws SDKError on missing id', async () => {
     await expect(users.get('')).rejects.toThrow(SDKError);
     await expect(users.get('')).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 });
-</code></pre>
-<h3 id="integration-tests-real-http-msw">Integration tests — real HTTP (MSW)</h3>
-<pre><code class="language-ts">import { setupServer } from 'msw/node';
+```
+
+### Integration tests — real HTTP (MSW)
+
+```ts
+import { setupServer } from 'msw/node';
 import { rest } from 'msw';
 
 const server = setupServer(
-  rest.get('https://api.example.com/v1/users', (req, res, ctx) =&gt; {
+  rest.get('https://api.example.com/v1/users', (req, res, ctx) => {
     return res(ctx.json({ data: [{ id: '1', name: 'Alice' }], nextCursor: null }));
   }),
 
-  rest.get('https://api.example.com/v1/users/bad-id', (req, res, ctx) =&gt; {
+  rest.get('https://api.example.com/v1/users/bad-id', (req, res, ctx) => {
     return res(ctx.status(404), ctx.json({ message: 'User not found' }));
   }),
 );
 
-beforeAll(() =&gt; server.listen());
-afterEach(() =&gt; server.resetHandlers());
-afterAll(() =&gt; server.close());
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
 
-it('lists users from real HTTP response', async () =&gt; {
+it('lists users from real HTTP response', async () => {
   const sdk = new MySDK({ apiKey: 'test' });
   const result = await sdk.users.list();
   expect(result.data[0].name).toBe('Alice');
 });
 
-it('throws NotFoundError on 404', async () =&gt; {
+it('throws NotFoundError on 404', async () => {
   const sdk = new MySDK({ apiKey: 'test' });
   await expect(sdk.users.get('bad-id')).rejects.toBeInstanceOf(NotFoundError);
 });
-</code></pre>
-<h3 id="retry-tests">Retry tests</h3>
-<pre><code class="language-ts">it('retries on 503 and succeeds on third attempt', async () =&gt; {
+```
+
+### Retry tests
+
+```ts
+it('retries on 503 and succeeds on third attempt', async () => {
   let attempts = 0;
   server.use(
-    rest.get('*/users', (req, res, ctx) =&gt; {
+    rest.get('*/users', (req, res, ctx) => {
       attempts++;
-      if (attempts &lt; 3) return res(ctx.status(503));
+      if (attempts < 3) return res(ctx.status(503));
       return res(ctx.json({ data: [], nextCursor: null }));
     })
   );
@@ -1357,16 +1472,20 @@ it('throws NotFoundError on 404', async () =&gt; {
   expect(attempts).toBe(3);
   expect(result.data).toEqual([]);
 });
-</code></pre>
-<hr />
-<h2 id="publishing-checklist">Publishing Checklist</h2>
-<pre><code class="language-bash"># 1. Build all formats
+```
+
+---
+
+## Publishing Checklist
+
+```bash
+# 1. Build all formats
 npm run build
 # → dist/esm/, dist/cjs/, dist/types/
 
 # 2. Verify exports work in both environments
-node -e &quot;const sdk = require('./dist/cjs'); console.log(sdk)&quot;
-node --input-type=module -e &quot;import sdk from './dist/esm/index.js'; console.log(sdk)&quot;
+node -e "const sdk = require('./dist/cjs'); console.log(sdk)"
+node --input-type=module -e "import sdk from './dist/esm/index.js'; console.log(sdk)"
 
 # 3. Check bundle size
 npx size-limit
@@ -1384,51 +1503,24 @@ npm pack --dry-run
 # 6. Publish
 npm version patch  # or minor or major
 npm publish --access public
-</code></pre>
-<hr />
-<h2 id="interview-summary">Interview Summary</h2>
-<h3 id="key-talking-points">Key talking points</h3>
-<ol>
-<li>
-<p>"An SDK is an organizational contract — not just an HTTP client. Every public method you expose is a promise to maintain forever. Design for minimal surface area: expose only what consumers need, hide all implementation details behind the interface."</p>
-</li>
-<li>
-<p>"Error normalization is non-negotiable. Raw HTTP responses, status codes, and string messages force every consumer to re-implement error handling. Typed error classes (<code>NotFoundError</code>, <code>RateLimitError</code>) with consistent fields (<code>code</code>, <code>status</code>, <code>requestId</code>) mean consumers write <code>instanceof NotFoundError</code> once and it works everywhere."</p>
-</li>
-<li>
-<p>"The retry strategy has three critical details: only retry retryable errors (not 4xx), use exponential backoff to avoid overwhelming a recovering server, and add jitter (random delay) to prevent the thundering herd — multiple clients retrying in lockstep at the same interval."</p>
-</li>
-<li>
-<p>"OAuth token refresh deduplication is the subtle bug everyone hits. If three concurrent requests all find the token expired, without deduplication you fire three refresh calls. One Promise stored in <code>this.refreshPromise</code>, all three await the same Promise — one refresh, three continuations."</p>
-</li>
-<li>
-<p>"Ship three bundle formats: ESM for tree-shaking in bundlers, CJS for Node.js, and <code>sideEffects: false</code> in package.json so bundlers can eliminate unused resources. A consumer importing only <code>UsersResource</code> should not bundle <code>PaymentsResource</code> or its dependencies."</p>
-</li>
-<li>
-<p>"The interceptor pattern is what separates an SDK from a fetch wrapper. Consumers shouldn't need to subclass or fork to add logging, metrics, auth headers, or tenant IDs. <code>sdk.interceptors.useRequest()</code> lets them inject behavior without touching internals."</p>
-</li>
-<li>
-<p>"Versioning discipline: MAJOR for breaking changes (removed methods, changed signatures), MINOR for additions, PATCH for fixes. Never remove without a deprecation cycle — deprecate in v2.x with a console.warn pointing to the migration guide, remove in v3.0."</p>
-</li>
-</ol></main>
-</div>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
-</body>
-</html>
+```
+
+---
+
+## Interview Summary
+
+### Key talking points
+
+1. "An SDK is an organizational contract — not just an HTTP client. Every public method you expose is a promise to maintain forever. Design for minimal surface area: expose only what consumers need, hide all implementation details behind the interface."
+
+2. "Error normalization is non-negotiable. Raw HTTP responses, status codes, and string messages force every consumer to re-implement error handling. Typed error classes (`NotFoundError`, `RateLimitError`) with consistent fields (`code`, `status`, `requestId`) mean consumers write `instanceof NotFoundError` once and it works everywhere."
+
+3. "The retry strategy has three critical details: only retry retryable errors (not 4xx), use exponential backoff to avoid overwhelming a recovering server, and add jitter (random delay) to prevent the thundering herd — multiple clients retrying in lockstep at the same interval."
+
+4. "OAuth token refresh deduplication is the subtle bug everyone hits. If three concurrent requests all find the token expired, without deduplication you fire three refresh calls. One Promise stored in `this.refreshPromise`, all three await the same Promise — one refresh, three continuations."
+
+5. "Ship three bundle formats: ESM for tree-shaking in bundlers, CJS for Node.js, and `sideEffects: false` in package.json so bundlers can eliminate unused resources. A consumer importing only `UsersResource` should not bundle `PaymentsResource` or its dependencies."
+
+6. "The interceptor pattern is what separates an SDK from a fetch wrapper. Consumers shouldn't need to subclass or fork to add logging, metrics, auth headers, or tenant IDs. `sdk.interceptors.useRequest()` lets them inject behavior without touching internals."
+
+7. "Versioning discipline: MAJOR for breaking changes (removed methods, changed signatures), MINOR for additions, PATCH for fixes. Never remove without a deprecation cycle — deprecate in v2.x with a console.warn pointing to the migration guide, remove in v3.0."

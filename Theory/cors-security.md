@@ -1,21 +1,15 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CORS Security: A Senior Engineer&#x27;s Guide — Theory Notes</title>
-<link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/highlight-theme.css">
-</head>
-<body>
-<div class="layout">
-<nav class="sidebar"><h2 class="brand">Theory Notes</h2><details open><summary>JavaScript &amp; Runtime</summary><ul><li><a href="javascript-core.html">JavaScript Core</a></li><li><a href="v8-internals.html">V8 Internals</a></li></ul></details><details open><summary>React &amp; Modern Patterns</summary><ul><li><a href="react-advanced-patterns.html">React Advanced Patterns</a></li></ul></details><details open><summary>Browser &amp; Rendering</summary><ul><li><a href="browser-document-execution.html">Browser Document Execution</a></li><li><a href="browser-internals.html">Browser Internals</a></li><li><a href="hydration.html">Hydration</a></li><li><a href="rendering-spectrum.html">Rendering Spectrum</a></li></ul></details><details open><summary>Performance</summary><ul><li><a href="assets.html">Assets</a></li><li><a href="cache.html">Cache</a></li><li><a href="core-web-vitals.html">Core Web Vitals</a></li><li><a href="react-performance.html">React Performance</a></li><li><a href="web-performance.html">Web Performance</a></li></ul></details><details open><summary>State &amp; Architecture</summary><ul><li><a href="microfrontend-design-system.html">MicroFrontEnd Design System</a></li><li><a href="monorepo.html">Monorepo</a></li><li><a href="optimistic-updates.html">Optimistic Updates</a></li><li><a href="state-machines.html">State Machines</a></li><li><a href="state-management.html">State Management</a></li></ul></details><details open><summary>Network &amp; Security</summary><ul><li><a href="cors-security.html" aria-current="page">CORS Security</a></li><li><a href="graphql.html">GraphQL</a></li><li><a href="javascript-sdk.html">JavaScript SDK</a></li><li><a href="network.html">Network</a></li><li><a href="security.html">Security</a></li></ul></details><details open><summary>Build &amp; Observability</summary><ul><li><a href="observability.html">Observability</a></li><li><a href="webpack.html">Webpack</a></li></ul></details><details open><summary>Case Studies</summary><ul><li><a href="yotube1000cuts.html">Yotube1000cuts</a></li></ul></details></nav>
-<main><h1 id="cors-security-a-senior-engineers-guide">CORS Security: A Senior Engineer's Guide</h1>
-<p>A comprehensive guide to Cross-Origin Resource Sharing for system design interviews.</p>
-<hr />
-<h2 id="1-what-is-cors">1. What is CORS?</h2>
-<p>CORS (Cross-Origin Resource Sharing) is a <strong>browser security mechanism</strong> that controls how web pages can request resources from different origins.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+# CORS Security: A Senior Engineer's Guide
+
+A comprehensive guide to Cross-Origin Resource Sharing for system design interviews.
+
+---
+
+## 1. What is CORS?
+
+CORS (Cross-Origin Resource Sharing) is a **browser security mechanism** that controls how web pages can request resources from different origins.
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  SAME-ORIGIN POLICY                                          │
 │                                                              │
 │  An origin is defined by:                                    │
@@ -29,13 +23,16 @@
 │  https://app.com     vs  https://app.com:8080 → Different   │
 │  https://app.com/a   vs  https://app.com/b    → SAME        │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="why-it-exists">Why It Exists</h3>
-<pre><code>Without CORS:
+```
+
+### Why It Exists
+
+```
+Without CORS:
 
 1. User logs into bank.com (gets session cookie)
 2. User visits evil.com
-3. evil.com runs: fetch('https://bank.com/transfer?to=hacker&amp;amount=10000')
+3. evil.com runs: fetch('https://bank.com/transfer?to=hacker&amount=10000')
 4. Browser sends bank.com cookie automatically!
 5. Money transferred 💸
 
@@ -44,14 +41,19 @@ With CORS:
 1. User logs into bank.com
 2. User visits evil.com
 3. evil.com tries fetch to bank.com
-4. Browser: &quot;Does bank.com allow requests from evil.com?&quot;
-5. bank.com: &quot;No, only from bank.com&quot;
+4. Browser: "Does bank.com allow requests from evil.com?"
+5. bank.com: "No, only from bank.com"
 6. Browser: BLOCKS the response ✋
-</code></pre>
-<hr />
-<h2 id="2-the-preflight-dance">2. The Preflight Dance</h2>
-<h3 id="simple-requests-no-preflight">Simple Requests (No Preflight)</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 2. The Preflight Dance
+
+### Simple Requests (No Preflight)
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  SIMPLE REQUEST (No Preflight)                               │
 │                                                              │
 │  Conditions:                                                 │
@@ -70,9 +72,12 @@ With CORS:
 │           200 OK                                             │
 │           Access-Control-Allow-Origin: https://app.com       │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="preflighted-requests">Preflighted Requests</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+### Preflighted Requests
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  PREFLIGHT REQUIRED                                          │
 │                                                              │
 │  Triggers:                                                   │
@@ -107,101 +112,61 @@ Browser ────────────────────────
          Content-Type: application/json
          Authorization: Bearer token123
 
-         {&quot;name&quot;: &quot;John&quot;}
+         {"name": "John"}
 
 Browser ◀────────────────────────────────────────────── Server
          201 Created
          Access-Control-Allow-Origin: https://app.com
 
-         {&quot;id&quot;: 1, &quot;name&quot;: &quot;John&quot;}
-</code></pre>
-<hr />
-<h2 id="3-cors-headers-reference">3. CORS Headers Reference</h2>
-<h3 id="response-headers-server-browser">Response Headers (Server → Browser)</h3>
-<table>
-<thead>
-<tr>
-<th>Header</th>
-<th>Purpose</th>
-<th>Example</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Access-Control-Allow-Origin</code></td>
-<td>Which origins can access</td>
-<td><code>https://app.com</code> or <code>*</code></td>
-</tr>
-<tr>
-<td><code>Access-Control-Allow-Methods</code></td>
-<td>Allowed HTTP methods</td>
-<td><code>GET, POST, PUT, DELETE</code></td>
-</tr>
-<tr>
-<td><code>Access-Control-Allow-Headers</code></td>
-<td>Allowed request headers</td>
-<td><code>Content-Type, Authorization</code></td>
-</tr>
-<tr>
-<td><code>Access-Control-Allow-Credentials</code></td>
-<td>Allow cookies/auth</td>
-<td><code>true</code></td>
-</tr>
-<tr>
-<td><code>Access-Control-Max-Age</code></td>
-<td>Preflight cache duration (seconds)</td>
-<td><code>86400</code></td>
-</tr>
-<tr>
-<td><code>Access-Control-Expose-Headers</code></td>
-<td>Headers readable by JS</td>
-<td><code>X-Custom-Header</code></td>
-</tr>
-</tbody>
-</table>
-<h3 id="request-headers-browser-server">Request Headers (Browser → Server)</h3>
-<table>
-<thead>
-<tr>
-<th>Header</th>
-<th>Purpose</th>
-<th>Set By</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Origin</code></td>
-<td>Requesting origin</td>
-<td>Browser (automatic)</td>
-</tr>
-<tr>
-<td><code>Access-Control-Request-Method</code></td>
-<td>Method for actual request</td>
-<td>Browser (preflight)</td>
-</tr>
-<tr>
-<td><code>Access-Control-Request-Headers</code></td>
-<td>Headers for actual request</td>
-<td>Browser (preflight)</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="4-common-cors-configurations">4. Common CORS Configurations</h2>
-<h3 id="allow-all-origins-development-only">Allow All Origins (Development Only!)</h3>
-<pre><code class="language-js">// Express.js - DANGEROUS for production
-app.use((req, res, next) =&gt; {
+         {"id": 1, "name": "John"}
+```
+
+---
+
+## 3. CORS Headers Reference
+
+### Response Headers (Server → Browser)
+
+| Header | Purpose | Example |
+|--------|---------|---------|
+| `Access-Control-Allow-Origin` | Which origins can access | `https://app.com` or `*` |
+| `Access-Control-Allow-Methods` | Allowed HTTP methods | `GET, POST, PUT, DELETE` |
+| `Access-Control-Allow-Headers` | Allowed request headers | `Content-Type, Authorization` |
+| `Access-Control-Allow-Credentials` | Allow cookies/auth | `true` |
+| `Access-Control-Max-Age` | Preflight cache duration (seconds) | `86400` |
+| `Access-Control-Expose-Headers` | Headers readable by JS | `X-Custom-Header` |
+
+### Request Headers (Browser → Server)
+
+| Header | Purpose | Set By |
+|--------|---------|--------|
+| `Origin` | Requesting origin | Browser (automatic) |
+| `Access-Control-Request-Method` | Method for actual request | Browser (preflight) |
+| `Access-Control-Request-Headers` | Headers for actual request | Browser (preflight) |
+
+---
+
+## 4. Common CORS Configurations
+
+### Allow All Origins (Development Only!)
+
+```js
+// Express.js - DANGEROUS for production
+app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
-</code></pre>
-<h3 id="allow-specific-origin">Allow Specific Origin</h3>
-<pre><code class="language-js">// Express.js - Production safe
+```
+
+### Allow Specific Origin
+
+```js
+// Express.js - Production safe
 const allowedOrigins = ['https://app.example.com', 'https://admin.example.com'];
 
-app.use((req, res, next) =&gt; {
+app.use((req, res, next) => {
   const origin = req.headers.origin;
 
   if (allowedOrigins.includes(origin)) {
@@ -212,22 +177,28 @@ app.use((req, res, next) =&gt; {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
-</code></pre>
-<h3 id="with-credentials-cookies">With Credentials (Cookies)</h3>
-<pre><code class="language-js">// Frontend
+```
+
+### With Credentials (Cookies)
+
+```js
+// Frontend
 fetch('https://api.example.com/data', {
   credentials: 'include'  // Send cookies
 });
 
 // Backend - MUST be specific origin (not *)
-app.use((req, res, next) =&gt; {
+app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://app.example.com');
   res.header('Access-Control-Allow-Credentials', 'true');
   next();
 });
-</code></pre>
-<h3 id="using-cors-middleware">Using cors Middleware</h3>
-<pre><code class="language-js">const cors = require('cors');
+```
+
+### Using cors Middleware
+
+```js
+const cors = require('cors');
 
 // Simple - allow all
 app.use(cors());
@@ -243,7 +214,7 @@ app.use(cors({
 
 // Dynamic origin validation
 app.use(cors({
-  origin: (origin, callback) =&gt; {
+  origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl)
     if (!origin) return callback(null, true);
 
@@ -254,10 +225,14 @@ app.use(cors({
     }
   }
 }));
-</code></pre>
-<hr />
-<h2 id="5-the-credentials-trap">5. The Credentials Trap</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 5. The Credentials Trap
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  THE CREDENTIALS RULE                                        │
 │                                                              │
 │  When credentials: 'include' is used:                        │
@@ -269,22 +244,31 @@ app.use(cors({
 │  ✅ MUST specify exact origin                                │
 │  ✅ MUST set Access-Control-Allow-Credentials: true          │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<pre><code class="language-js">// ❌ WRONG - Won't work with credentials
+```
+
+```js
+// ❌ WRONG - Won't work with credentials
 res.header('Access-Control-Allow-Origin', '*');
 res.header('Access-Control-Allow-Credentials', 'true');
 
 // ✅ CORRECT - Specific origin required
 res.header('Access-Control-Allow-Origin', 'https://app.example.com');
 res.header('Access-Control-Allow-Credentials', 'true');
-</code></pre>
-<hr />
-<h2 id="6-handling-preflight-efficiently">6. Handling Preflight Efficiently</h2>
-<h3 id="cache-preflight-results">Cache Preflight Results</h3>
-<pre><code class="language-js">// Server - Cache preflight for 24 hours
+```
+
+---
+
+## 6. Handling Preflight Efficiently
+
+### Cache Preflight Results
+
+```js
+// Server - Cache preflight for 24 hours
 res.header('Access-Control-Max-Age', '86400');
-</code></pre>
-<pre><code>Without caching:
+```
+
+```
+Without caching:
   Request 1: OPTIONS → Response → POST → Response
   Request 2: OPTIONS → Response → POST → Response
   Request 3: OPTIONS → Response → POST → Response
@@ -293,20 +277,27 @@ With Max-Age: 86400:
   Request 1: OPTIONS → Response → POST → Response
   Request 2: POST → Response (no preflight!)
   Request 3: POST → Response (no preflight!)
-</code></pre>
-<h3 id="handle-options-explicitly">Handle OPTIONS Explicitly</h3>
-<pre><code class="language-js">// Handle preflight quickly
-app.options('*', (req, res) =&gt; {
+```
+
+### Handle OPTIONS Explicitly
+
+```js
+// Handle preflight quickly
+app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Max-Age', '86400');
   res.sendStatus(204);
 });
-</code></pre>
-<hr />
-<h2 id="7-cors-vs-csrf">7. CORS vs CSRF</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
+```
+
+---
+
+## 7. CORS vs CSRF
+
+```
+┌─────────────────────────────────────────────────────────────┐
 │  CORS ≠ CSRF PROTECTION                                      │
 │                                                              │
 │  CORS:                                                       │
@@ -322,9 +313,12 @@ app.options('*', (req, res) =&gt; {
 │  ├── SameSite cookies                                        │
 │  └── Origin header validation                                │
 └─────────────────────────────────────────────────────────────┘
-</code></pre>
-<h3 id="proper-csrf-protection">Proper CSRF Protection</h3>
-<pre><code class="language-js">// Use SameSite cookies
+```
+
+### Proper CSRF Protection
+
+```js
+// Use SameSite cookies
 res.cookie('session', token, {
   httpOnly: true,
   secure: true,
@@ -332,103 +326,133 @@ res.cookie('session', token, {
 });
 
 // Validate Origin header
-app.use((req, res, next) =&gt; {
+app.use((req, res, next) => {
   const origin = req.headers.origin;
   const referer = req.headers.referer;
 
   if (req.method !== 'GET') {
-    if (!origin &amp;&amp; !referer) {
+    if (!origin && !referer) {
       return res.status(403).json({ error: 'Origin required' });
     }
 
     const allowedOrigin = 'https://app.example.com';
-    if (origin &amp;&amp; origin !== allowedOrigin) {
+    if (origin && origin !== allowedOrigin) {
       return res.status(403).json({ error: 'Invalid origin' });
     }
   }
 
   next();
 });
-</code></pre>
-<hr />
-<h2 id="8-common-cors-errors-solutions">8. Common CORS Errors &amp; Solutions</h2>
-<h3 id="error-no-access-control-allow-origin-header">Error: "No 'Access-Control-Allow-Origin' header"</h3>
-<pre><code>Cause: Server doesn't send CORS headers
+```
+
+---
+
+## 8. Common CORS Errors & Solutions
+
+### Error: "No 'Access-Control-Allow-Origin' header"
+
+```
+Cause: Server doesn't send CORS headers
 
 Fix:
-app.use((req, res, next) =&gt; {
+app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://app.example.com');
   next();
 });
-</code></pre>
-<h3 id="error-the-value-of-access-control-allow-origin-must-not-be-when-credentials-mode-is-include">Error: "The value of 'Access-Control-Allow-Origin' must not be '*' when credentials mode is 'include'"</h3>
-<pre><code>Cause: Using wildcard with credentials
+```
+
+### Error: "The value of 'Access-Control-Allow-Origin' must not be '*' when credentials mode is 'include'"
+
+```
+Cause: Using wildcard with credentials
 
 Fix:
 // Use specific origin instead of '*'
 res.header('Access-Control-Allow-Origin', req.headers.origin);
 res.header('Access-Control-Allow-Credentials', 'true');
-</code></pre>
-<h3 id="error-method-put-is-not-allowed">Error: "Method PUT is not allowed"</h3>
-<pre><code>Cause: Method not in Access-Control-Allow-Methods
+```
+
+### Error: "Method PUT is not allowed"
+
+```
+Cause: Method not in Access-Control-Allow-Methods
 
 Fix:
 res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
-</code></pre>
-<h3 id="error-request-header-x-custom-header-is-not-allowed">Error: "Request header X-Custom-Header is not allowed"</h3>
-<pre><code>Cause: Custom header not in Access-Control-Allow-Headers
+```
+
+### Error: "Request header X-Custom-Header is not allowed"
+
+```
+Cause: Custom header not in Access-Control-Allow-Headers
 
 Fix:
 res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Custom-Header');
-</code></pre>
-<hr />
-<h2 id="9-alternatives-to-cors">9. Alternatives to CORS</h2>
-<h3 id="jsonp-legacy">JSONP (Legacy)</h3>
-<pre><code class="language-html">&lt;!-- Only GET requests, security risks --&gt;
-&lt;script src=&quot;https://api.example.com/data?callback=handleData&quot;&gt;&lt;/script&gt;
+```
 
-&lt;script&gt;
+---
+
+## 9. Alternatives to CORS
+
+### JSONP (Legacy)
+
+```html
+<!-- Only GET requests, security risks -->
+<script src="https://api.example.com/data?callback=handleData"></script>
+
+<script>
 function handleData(data) {
   console.log(data);
 }
-&lt;/script&gt;
-</code></pre>
-<h3 id="proxy-server">Proxy Server</h3>
-<pre><code class="language-js">// Your server proxies requests to third-party API
+</script>
+```
+
+### Proxy Server
+
+```js
+// Your server proxies requests to third-party API
 // Same origin from browser's perspective
 
 // Frontend
 fetch('/api/proxy/external-data');
 
 // Backend
-app.get('/api/proxy/external-data', async (req, res) =&gt; {
+app.get('/api/proxy/external-data', async (req, res) => {
   const response = await fetch('https://external-api.com/data');
   const data = await response.json();
   res.json(data);
 });
-</code></pre>
-<h3 id="postmessage-cross-window">PostMessage (Cross-Window)</h3>
-<pre><code class="language-js">// Parent window
+```
+
+### PostMessage (Cross-Window)
+
+```js
+// Parent window
 const iframe = document.querySelector('iframe');
 iframe.contentWindow.postMessage({ type: 'getData' }, 'https://widget.example.com');
 
-window.addEventListener('message', (event) =&gt; {
+window.addEventListener('message', (event) => {
   if (event.origin !== 'https://widget.example.com') return;
   console.log('Received:', event.data);
 });
 
 // In iframe
-window.addEventListener('message', (event) =&gt; {
+window.addEventListener('message', (event) => {
   if (event.origin !== 'https://app.example.com') return;
   if (event.data.type === 'getData') {
     event.source.postMessage({ data: 'response' }, event.origin);
   }
 });
-</code></pre>
-<hr />
-<h2 id="10-security-best-practices">10. Security Best Practices</h2>
-<h3 id="dos">Do's ✅</h3>
-<pre><code class="language-js">// 1. Whitelist specific origins
+```
+
+---
+
+## 10. Security Best Practices
+
+### Do's ✅
+
+```js
+// 1. Whitelist specific origins
 const allowedOrigins = new Set([
   'https://app.example.com',
   'https://admin.example.com'
@@ -447,9 +471,12 @@ res.header('Vary', 'Origin');
 
 // 5. Cache preflight results
 res.header('Access-Control-Max-Age', '86400');
-</code></pre>
-<h3 id="donts">Don'ts ❌</h3>
-<pre><code class="language-js">// 1. Never reflect Origin header blindly
+```
+
+### Don'ts ❌
+
+```js
+// 1. Never reflect Origin header blindly
 res.header('Access-Control-Allow-Origin', req.headers.origin);  // Dangerous!
 
 // 2. Don't use * with credentials
@@ -461,9 +488,12 @@ res.header('Access-Control-Allow-Headers', '*');  // Too permissive
 
 // 4. Don't forget to validate on server side
 // CORS is browser-only - attackers can bypass it
-</code></pre>
-<h3 id="proper-origin-validation">Proper Origin Validation</h3>
-<pre><code class="language-js">const allowedOrigins = [
+```
+
+### Proper Origin Validation
+
+```js
+const allowedOrigins = [
   'https://app.example.com',
   'https://admin.example.com'
 ];
@@ -477,14 +507,14 @@ function isValidOrigin(origin) {
   // Subdomain match (be careful!)
   try {
     const url = new URL(origin);
-    return url.hostname.endsWith('.example.com') &amp;&amp;
+    return url.hostname.endsWith('.example.com') &&
            url.protocol === 'https:';
   } catch {
     return false;
   }
 }
 
-app.use((req, res, next) =&gt; {
+app.use((req, res, next) => {
   const origin = req.headers.origin;
 
   if (isValidOrigin(origin)) {
@@ -494,62 +524,22 @@ app.use((req, res, next) =&gt; {
 
   next();
 });
-</code></pre>
-<hr />
-<h2 id="11-quick-reference">11. Quick Reference</h2>
-<table>
-<thead>
-<tr>
-<th>Scenario</th>
-<th>Configuration</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Public API (read-only)</td>
-<td><code>Access-Control-Allow-Origin: *</code></td>
-</tr>
-<tr>
-<td>Private API with cookies</td>
-<td>Specific origin + <code>Allow-Credentials: true</code></td>
-</tr>
-<tr>
-<td>Multiple allowed origins</td>
-<td>Dynamic origin validation</td>
-</tr>
-<tr>
-<td>Reduce preflight requests</td>
-<td><code>Access-Control-Max-Age: 86400</code></td>
-</tr>
-<tr>
-<td>Custom headers needed</td>
-<td>List in <code>Allow-Headers</code></td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="12-interview-tip">12. Interview Tip</h2>
-<blockquote>
-<p>"CORS is a browser security mechanism that controls cross-origin requests. The browser sends an Origin header, and the server must respond with Access-Control-Allow-Origin to permit the request. For non-simple requests (POST with JSON, custom headers, or PUT/DELETE), the browser first sends a preflight OPTIONS request to check permissions. When using credentials like cookies, the server must specify the exact origin—wildcards aren't allowed. I optimize performance by caching preflight results with Access-Control-Max-Age. Importantly, CORS doesn't prevent CSRF attacks since it only blocks reading responses, not sending requests—for that, I use SameSite cookies and CSRF tokens."</p>
-</blockquote></main>
-</div>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
-</body>
-</html>
+```
+
+---
+
+## 11. Quick Reference
+
+| Scenario | Configuration |
+|----------|---------------|
+| Public API (read-only) | `Access-Control-Allow-Origin: *` |
+| Private API with cookies | Specific origin + `Allow-Credentials: true` |
+| Multiple allowed origins | Dynamic origin validation |
+| Reduce preflight requests | `Access-Control-Max-Age: 86400` |
+| Custom headers needed | List in `Allow-Headers` |
+
+---
+
+## 12. Interview Tip
+
+> "CORS is a browser security mechanism that controls cross-origin requests. The browser sends an Origin header, and the server must respond with Access-Control-Allow-Origin to permit the request. For non-simple requests (POST with JSON, custom headers, or PUT/DELETE), the browser first sends a preflight OPTIONS request to check permissions. When using credentials like cookies, the server must specify the exact origin—wildcards aren't allowed. I optimize performance by caching preflight results with Access-Control-Max-Age. Importantly, CORS doesn't prevent CSRF attacks since it only blocks reading responses, not sending requests—for that, I use SameSite cookies and CSRF tokens."
