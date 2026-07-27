@@ -11,33 +11,43 @@
     display: flex;
     flex-direction: column;
     font-family: ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-    background: #fbfbfe;
+    background: #0d0c14;
   }
 
   nav {
     display: flex;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.35rem;
     padding: 0.75rem 1rem;
-    background: #f8f7fc;
-    border-bottom: 1px solid #ece9f7;
+    background: linear-gradient(180deg, rgba(30, 27, 48, 0.92), rgba(20, 18, 31, 0.92));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(139, 108, 245, 0.25);
+    box-shadow: 0 1px 24px rgba(59, 42, 163, 0.25);
     flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   nav button {
     appearance: none;
-    border: none;
+    border: 1px solid transparent;
     background: transparent;
-    color: #504b6b;
+    color: #b0abcf;
     font-size: 0.9rem;
     font-weight: 600;
-    padding: 0.55rem 1rem;
-    border-radius: 8px;
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
-  nav button:hover { background: #f1effc; }
+  nav button:hover { background: rgba(139, 108, 245, 0.12); color: #e4e1f7; }
   nav button.active {
-    background: #ece9fd;
-    color: #5b3df0;
+    background: linear-gradient(135deg, rgba(91, 61, 240, 0.55), rgba(37, 99, 235, 0.55));
+    border-color: rgba(159, 133, 255, 0.6);
+    color: #ffffff;
+    box-shadow: 0 0 0 1px rgba(159, 133, 255, 0.25), 0 4px 18px rgba(76, 60, 220, 0.45);
   }
 
   main {
@@ -50,6 +60,7 @@
     height: 100%;
     border: none;
     display: block;
+    background: #0d0c14;
   }
 </style>
 </head>
