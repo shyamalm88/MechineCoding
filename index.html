@@ -89,7 +89,8 @@
   }
 
   function relativeToBase(href) {
-    var base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    var path = location.pathname.slice(0, location.pathname.lastIndexOf('/') + 1);
+    var base = location.origin + path;
     return href.indexOf(base) === 0 ? href.slice(base.length) : href;
   }
 
