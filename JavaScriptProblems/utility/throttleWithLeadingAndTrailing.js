@@ -1,25 +1,62 @@
 // Throttle with leading + trailing options
 
 function throttle(fn, delay, { leading = true, trailing = true } = {}) {
-  let timer = null;
+  let lastRun = 0; // Timestamp of the last execution
+  let timer = null; // Pending trailing timer
+
+  // Always keep the latest invocation details.
+  // These are updated on every call so that the
+  // trailing execution uses the most recent values.
   let lastArgs = null;
-  let lastRun = 0;
+  let lastThis = null;
 
   return function (...args) {
     const now = Date.now();
+
+    lastArgs = args;
+    lastThis = this;
+
+    // Special handling for leading = false.
+    // Start the throttle window without executing immediately.
+    if (!leading && lastRun === 0) {
+      lastRun = now;
+    }
+
     const remaining = delay - (now - lastRun);
 
-    if (remaining <= 0 && leading) {
-      fn.apply(this, args);
+    // ============================
+    // LEADING EDGE
+    // ============================
+    if (remaining <= 0) {
+      // Cancel any pending trailing execution since
+      // we're executing immediately now.
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      fn.apply(lastThis, lastArgs);
       lastRun = now;
-    } else if (trailing) {
-      lastArgs = args;
-      clearTimeout(timer);
+
+      lastArgs = null;
+      lastThis = null;
+    }
+
+    // ============================
+    // TRAILING EDGE
+    // ============================
+    else if (trailing && !timer) {
+      // Schedule exactly one execution at the end
+      // of the current throttle window.
       timer = setTimeout(() => {
-        fn.apply(this, lastArgs);
+        fn.apply(lastThis, lastArgs);
+
         lastRun = Date.now();
+
+        timer = null;
         lastArgs = null;
-      }, remaining > 0 ? remaining : delay);
+        lastThis = null;
+      }, remaining);
     }
   };
 }
