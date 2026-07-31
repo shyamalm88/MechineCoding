@@ -71,18 +71,46 @@
   <button type="button" data-src="grokking-system-design/index.html">Grokking System Design</button>
 </nav>
 <main>
-  <iframe id="content" src="theory-notes/index.html" title="Selected site"></iframe>
+  <iframe id="content" title="Selected site"></iframe>
 </main>
 <script>
   var buttons = document.querySelectorAll('nav button');
   var frame = document.getElementById('content');
+
+  function siteRoot(path) {
+    return path.split('/')[0] + '/';
+  }
+
+  function activateButton(path) {
+    var root = siteRoot(path);
+    buttons.forEach(function (b) {
+      b.classList.toggle('active', siteRoot(b.dataset.src) === root);
+    });
+  }
+
+  function relativeToBase(href) {
+    var base = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    return href.indexOf(base) === 0 ? href.slice(base.length) : href;
+  }
+
+  // remember the iframe's current page in the URL hash so a refresh
+  // restores the same site + note instead of resetting to the default
+  frame.addEventListener('load', function () {
+    var path = relativeToBase(frame.contentWindow.location.href);
+    if (path) {
+      history.replaceState(null, '', '#' + path);
+      activateButton(path);
+    }
+  });
+
   buttons.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      buttons.forEach(function (b) { b.classList.remove('active'); });
-      btn.classList.add('active');
       frame.src = btn.dataset.src;
     });
   });
+
+  var restored = decodeURIComponent(location.hash.slice(1));
+  frame.src = restored || buttons[0].dataset.src;
 </script>
 </body>
 </html>

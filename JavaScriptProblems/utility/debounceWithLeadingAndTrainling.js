@@ -23,38 +23,31 @@
  *      for this specific sequence (captured via closure).
  * 5. If `callNow` is true, execute immediately.
  */
-const debounceLeadingTrailing = function (
-  fn,
-  delay,
-  { leading = false, trailing = false } = {},
-) {
-  let context;
-  let lastArgs;
-  let timer;
+const debounce = (fn, delay, { leading = false, trailing = true } = {}) => {
+  let timer = null;
+  let lastArgs = null;
+  let lastThis = null;
 
-  return function debounced(...args) {
-    context = this;
+  return function (...args) {
     lastArgs = args;
+    lastThis = this;
 
-    // If no timer is active and leading is enabled, this is the start of a new burst.
-    let callNow = !timer && leading;
+    const callNow = leading && !timer;
 
-    // Reset timer to extend the delay window (debounce core logic)
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
 
     timer = setTimeout(() => {
-      // Trailing edge execution:
-      // Run if trailing is enabled AND this specific timer wasn't created
-      // by a call that already executed on the leading edge.
       if (trailing && !callNow) {
-        fn.apply(context, lastArgs);
+        fn.apply(lastThis, lastArgs);
       }
+
       timer = null;
+      lastArgs = null;
+      lastThis = null;
     }, delay);
 
-    // Leading edge execution
     if (callNow) {
-      fn.apply(context, lastArgs);
+      fn.apply(lastThis, lastArgs);
     }
   };
 };

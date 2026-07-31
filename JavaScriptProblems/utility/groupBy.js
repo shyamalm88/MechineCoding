@@ -7,8 +7,7 @@ function groupBy(array, iteratee) {
   const getKey = (item) =>
     typeof iteratee === "function" ? iteratee(item) : item[iteratee];
 
-  const result = Object.create(null); // No prototype chain — avoids collisions
-  // with inherited names like "constructor", "toString", "__proto__", etc.
+  const result = {};
 
   for (const item of array) {
     const key = getKey(item);
