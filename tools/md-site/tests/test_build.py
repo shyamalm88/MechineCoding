@@ -206,50 +206,38 @@ class TestConvertMarkdown(unittest.TestCase):
         self.assertIn('<pre><code class="language-js">', result)
 
 
-class TestRenderSidebar(unittest.TestCase):
-    def test_renders_grouped_sidebar_with_active_link(self):
+class TestBuildNavData(unittest.TestCase):
+    # The sidebar is no longer rendered server-side into each page -- it's
+    # built client-side (assets/sidebar.js) from a single JSON blob, so
+    # adding/re-categorizing a note only touches that one file, not every
+    # generated page. build_nav_data() produces that blob's data.
+    def test_groups_files_with_labels_and_slugs(self):
         groups = [("Group 1", ["a.md"]), ("Group 2", ["b.md"])]
-        result = build.render_sidebar(
-            groups, active_slug="a", title="Theory Notes", link_prefix=""
+        result = build.build_nav_data(groups, stars={}, title="Theory Notes")
+        self.assertEqual(result["title"], "Theory Notes")
+        self.assertEqual(
+            result["groups"],
+            [
+                {"category": "Group 1", "items": [{"slug": "a", "label": "A", "stars": 0}]},
+                {"category": "Group 2", "items": [{"slug": "b", "label": "B", "stars": 0}]},
+            ],
         )
-        self.assertIn('<h2 class="brand">Theory Notes</h2>', result)
-        self.assertIn("<summary>Group 1</summary>", result)
-        self.assertIn('<a href="a.html" aria-current="page">A</a>', result)
-        self.assertIn('<a href="b.html">B</a>', result)
 
-    def test_renders_flat_sidebar_when_category_is_none(self):
+    def test_flat_group_has_none_category(self):
         groups = [(None, ["a.md"])]
-        result = build.render_sidebar(
-            groups, active_slug=None, title="T", link_prefix="notes/"
-        )
-        self.assertNotIn("<summary>", result)
-        self.assertIn('<a href="notes/a.html">A</a>', result)
+        result = build.build_nav_data(groups, stars={}, title="T")
+        self.assertIsNone(result["groups"][0]["category"])
 
-    def test_renders_star_rating_when_provided(self):
+    def test_star_rating_included_when_provided(self):
         groups = [("Group 1", ["a.md"])]
-        result = build.render_sidebar(
-            groups, active_slug=None, title="T", link_prefix="",
-            stars={"a.md": 3},
-        )
-        self.assertIn('<span class="stars"', result)
-        self.assertIn("★★★", result)
+        result = build.build_nav_data(groups, stars={"a.md": 3}, title="T")
+        self.assertEqual(result["groups"][0]["items"][0]["stars"], 3)
 
-    def test_omits_star_span_when_zero_or_missing(self):
+    def test_star_rating_defaults_to_zero_when_missing(self):
         groups = [("Group 1", ["a.md", "b.md"])]
-        result = build.render_sidebar(
-            groups, active_slug=None, title="T", link_prefix="",
-            stars={"a.md": 0},  # b.md intentionally absent from the dict
-        )
-        self.assertNotIn('class="stars"', result)
-
-    def test_render_sidebar_works_without_stars_argument(self):
-        # Backward compatibility: stars is optional, existing callers that
-        # don't pass it must keep working exactly as before.
-        groups = [("Group 1", ["a.md"])]
-        result = build.render_sidebar(
-            groups, active_slug=None, title="T", link_prefix=""
-        )
-        self.assertNotIn('class="stars"', result)
+        result = build.build_nav_data(groups, stars={"a.md": 0}, title="T")
+        items = {item["slug"]: item["stars"] for item in result["groups"][0]["items"]}
+        self.assertEqual(items, {"a": 0, "b": 0})
 
 
 class TestBuildIntegration(unittest.TestCase):
@@ -294,8 +282,26 @@ class TestBuildIntegration(unittest.TestCase):
 
             with open(index_path) as f:
                 index_html = f.read()
-            self.assertIn('href="notes/alpha.html"', index_html)
-            self.assertIn("<summary>Group 1</summary>", index_html)
+            # The sidebar itself is no longer inlined into the page -- just
+            # the mount point and the shared client-side renderer script.
+            self.assertIn('<nav class="sidebar" id="sidebar"></nav>', index_html)
+            self.assertIn('src="assets/sidebar.js"', index_html)
+
+            with open(os.path.join(output_dir, "assets", "nav.json")) as f:
+                nav_data = json.load(f)
+            self.assertEqual(nav_data["title"], "Test Site")
+            self.assertEqual(
+                nav_data["groups"],
+                [
+                    {
+                        "category": "Group 1",
+                        "items": [
+                            {"slug": "alpha", "label": "Alpha", "stars": 0},
+                            {"slug": "beta", "label": "Beta", "stars": 0},
+                        ],
+                    }
+                ],
+            )
 
     def test_star_ratings_propagate_from_config_through_build(self):
         with tempfile.TemporaryDirectory() as source_dir, \
@@ -320,14 +326,17 @@ class TestBuildIntegration(unittest.TestCase):
 
             build.build(source_dir, output_dir, assets_dir=assets_dir)
 
-            with open(os.path.join(output_dir, "index.html"), encoding="utf-8") as f:
-                index_html = f.read()
+            with open(
+                os.path.join(output_dir, "assets", "nav.json"), encoding="utf-8"
+            ) as f:
+                nav_data = json.load(f)
 
-            self.assertIn("★★★", index_html)
-            # beta.md has 0 stars -- its link must not carry a stars span.
-            beta_link_start = index_html.index('href="notes/beta.html"')
-            beta_link_end = index_html.index("</a>", beta_link_start)
-            self.assertNotIn("stars", index_html[beta_link_start:beta_link_end])
+            items = {
+                item["slug"]: item["stars"]
+                for group in nav_data["groups"]
+                for item in group["items"]
+            }
+            self.assertEqual(items, {"alpha": 3, "beta": 0})
 
     def test_raises_on_duplicate_slug_collision(self):
         # "a_b.md" and "a-b.md" both slugify to "a-b" (slugify treats
@@ -433,7 +442,10 @@ class TestBuildIntegration(unittest.TestCase):
 
 class TestBundledAssetsExist(unittest.TestCase):
     def test_required_asset_files_are_present(self):
-        expected = {"style.css", "highlight.min.js", "highlight-theme.css", "mermaid.min.js"}
+        expected = {
+            "style.css", "highlight.min.js", "highlight-theme.css",
+            "mermaid.min.js", "sidebar.js",
+        }
         actual = set(os.listdir(build.ASSETS_DIR))
         self.assertTrue(expected.issubset(actual))
 
@@ -447,6 +459,7 @@ class TestBundledAssetsExist(unittest.TestCase):
             "highlight.min.js": 50_000,
             "highlight-theme.css": 200,
             "mermaid.min.js": 1_000_000,
+            "sidebar.js": 200,
         }
         for name, min_size in minimums.items():
             path = os.path.join(build.ASSETS_DIR, name)

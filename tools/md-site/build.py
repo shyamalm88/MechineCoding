@@ -21,6 +21,7 @@ ACRONYM_OVERRIDES = {
     "sdk": "SDK",
     "cdn": "CDN",
     "v8": "V8",
+    "nextjs": "Next.js",
 }
 
 
@@ -129,34 +130,19 @@ def convert_markdown(text):
     return MERMAID_FENCE_RE.sub(replace_mermaid, body)
 
 
-def render_sidebar(groups, active_slug, title, link_prefix, stars=None):
-    stars = stars or {}
-    parts = [f'<h2 class="brand">{html.escape(title)}</h2>']
+def build_nav_data(groups, stars, title):
+    data_groups = []
     for category, files in groups:
-        items = []
-        for filename in files:
-            slug = slugify(filename)
-            label = title_from_filename(filename)
-            current = ' aria-current="page"' if slug == active_slug else ""
-            rating = stars.get(filename, 0)
-            stars_html = (
-                f'<span class="stars" title="Priority: {rating}/3">{"★" * rating}</span>'
-                if rating > 0
-                else ""
-            )
-            items.append(
-                f'<li><a href="{link_prefix}{slug}.html"{current}>'
-                f"{html.escape(label)}{stars_html}</a></li>"
-            )
-        items_html = "".join(items)
-        if category:
-            parts.append(
-                f'<details open><summary>{html.escape(category)}</summary>'
-                f"<ul>{items_html}</ul></details>"
-            )
-        else:
-            parts.append(f"<ul>{items_html}</ul>")
-    return "".join(parts)
+        items = [
+            {
+                "slug": slugify(filename),
+                "label": title_from_filename(filename),
+                "stars": stars.get(filename, 0),
+            }
+            for filename in files
+        ]
+        data_groups.append({"category": category, "items": items})
+    return {"title": title, "groups": data_groups}
 
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
@@ -172,9 +158,10 @@ PAGE_TEMPLATE = """<!doctype html>
 </head>
 <body>
 <div class="layout">
-<nav class="sidebar">{sidebar_html}</nav>
+<nav class="sidebar" id="sidebar"></nav>
 <main>{content_html}</main>
 </div>
+<script src="{asset_prefix}sidebar.js"></script>
 <script src="{asset_prefix}highlight.min.js"></script>
 <script src="{asset_prefix}mermaid.min.js"></script>
 <script>
@@ -242,6 +229,14 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
         shutil.rmtree(assets_out)
     shutil.copytree(assets_dir, assets_out)
 
+    # The sidebar is shared across every page and built client-side (see
+    # assets/sidebar.js) from this single JSON file, instead of being
+    # rendered inline into each page -- so adding/removing/re-categorizing
+    # a note only touches this one file, not every generated page.
+    nav_data = build_nav_data(groups, stars, site_title)
+    with open(os.path.join(assets_out, "nav.json"), "w", encoding="utf-8") as f:
+        json.dump(nav_data, f, ensure_ascii=False, indent=2)
+
     for filename in md_files:
         with open(
             os.path.join(source_dir, filename), "r", encoding="utf-8"
@@ -253,19 +248,14 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
             source_text, fallback=title_from_filename(filename)
         )
         content_html = convert_markdown(source_text)
-        sidebar_html = render_sidebar(
-            groups, active_slug=slug, title=site_title, link_prefix="", stars=stars
-        )
 
         page = PAGE_TEMPLATE.format(
             # ADDITION (carried forward from Task 3's code review):
-            # extract_title() returns raw markdown text, not HTML-escaped
-            # (render_sidebar's title/category strings ARE already escaped
-            # internally, but page_title/site_title here are not, since
-            # they're inserted directly into <title> below). Escape both.
+            # extract_title() returns raw markdown text, not HTML-escaped.
+            # site_title is inserted directly into <title> below, so also
+            # escape it (nav.json above carries the unescaped version).
             page_title=html.escape(page_title),
             site_title=html.escape(site_title),
-            sidebar_html=sidebar_html,
             content_html=content_html,
             asset_prefix="../assets/",
         )
@@ -274,13 +264,9 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
         ) as f:
             f.write(page)
 
-    index_sidebar = render_sidebar(
-        groups, active_slug=None, title=site_title, link_prefix="notes/", stars=stars
-    )
     index_page = PAGE_TEMPLATE.format(
         page_title=html.escape(site_title),
         site_title=html.escape(site_title),
-        sidebar_html=index_sidebar,
         content_html='<p class="empty-state">Select a note from the sidebar to begin.</p>',
         asset_prefix="assets/",
     )

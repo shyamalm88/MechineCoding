@@ -1,0 +1,170 @@
+{
+  "title": "System Design Notes",
+  "groups": [
+    {
+      "category": "E-commerce & Marketplace",
+      "items": [
+        {
+          "slug": "config-driven-shopping-cart-homepage",
+          "label": "Config Driven Shopping Cart Homepage",
+          "stars": 2
+        },
+        {
+          "slug": "ecommerce-marketplace-amazon",
+          "label": "Ecommerce Marketplace Amazon",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "Social & Media Feeds",
+      "items": [
+        {
+          "slug": "facebook-social-media-platform",
+          "label": "Facebook Social Media Platform",
+          "stars": 2
+        },
+        {
+          "slug": "instagram-photo-feed",
+          "label": "Instagram Photo Feed",
+          "stars": 2
+        },
+        {
+          "slug": "photo-grid-google-photos",
+          "label": "Photo Grid Google Photos",
+          "stars": 1
+        }
+      ]
+    },
+    {
+      "category": "Media Streaming & Communication",
+      "items": [
+        {
+          "slug": "chat-app-whatsapp-web",
+          "label": "Chat App Whatsapp Web",
+          "stars": 3
+        },
+        {
+          "slug": "video-conference-zoom",
+          "label": "Video Conference Zoom",
+          "stars": 2
+        },
+        {
+          "slug": "video-streaming-youtube",
+          "label": "Video Streaming Youtube",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Booking & On-Demand Services",
+      "items": [
+        {
+          "slug": "bookmyshow-ticket-booking",
+          "label": "Bookmyshow Ticket Booking",
+          "stars": 1
+        },
+        {
+          "slug": "ride-booking-uber-rapido",
+          "label": "Ride Booking Uber Rapido",
+          "stars": 3
+        },
+        {
+          "slug": "travel-booking-airbnb-makemytrip",
+          "label": "Travel Booking Airbnb Makemytrip",
+          "stars": 1
+        },
+        {
+          "slug": "zomato-food-delivery",
+          "label": "Zomato Food Delivery",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "Productivity & Collaboration",
+      "items": [
+        {
+          "slug": "email-delivery-system-gmail",
+          "label": "Email Delivery System Gmail",
+          "stars": 2
+        },
+        {
+          "slug": "google-calendar-day-view",
+          "label": "Google Calendar Day View",
+          "stars": 1
+        },
+        {
+          "slug": "google-docs",
+          "label": "Google Docs",
+          "stars": 3
+        },
+        {
+          "slug": "google-drive-dropbox",
+          "label": "Google Drive Dropbox",
+          "stars": 2
+        },
+        {
+          "slug": "notification-system",
+          "label": "Notification System",
+          "stars": 3
+        },
+        {
+          "slug": "trello-issue-manager",
+          "label": "Trello Issue Manager",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "Fintech",
+      "items": [
+        {
+          "slug": "payment-gateway-stripe",
+          "label": "Payment Gateway Stripe",
+          "stars": 3
+        },
+        {
+          "slug": "stock-broker-platform-zerodha-groww",
+          "label": "Stock Broker Platform Zerodha Groww",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "Infra & Platform Building Blocks",
+      "items": [
+        {
+          "slug": "autocomplete-typeahead",
+          "label": "Autocomplete Typeahead",
+          "stars": 3
+        },
+        {
+          "slug": "leetcode-online-judge",
+          "label": "Leetcode Online Judge",
+          "stars": 1
+        },
+        {
+          "slug": "rate-limiter",
+          "label": "Rate Limiter",
+          "stars": 3
+        },
+        {
+          "slug": "top-k-leaderboard",
+          "label": "Top K Leaderboard",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "Reference",
+      "items": [
+        {
+          "slug": "systemdesignquestions",
+          "label": "SystemDesignQuestions",
+          "stars": 3
+        }
+      ]
+    }
+  ]
+}

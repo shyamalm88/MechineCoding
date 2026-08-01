@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next.js Deep Dive: How a Framework Solves Rendering — Theory Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><h1 id="nextjs-deep-dive-how-a-framework-solves-rendering">Next.js Deep Dive: How a Framework Solves Rendering</h1>
+<p>A senior-level reference for <em>why</em> Next.js exists and <em>how</em> it concretely implements CSR, SSR, SSG, and ISR — plus React Server Components, streaming, and Partial Prerendering. Pairs with <a href="rendering-spectrum.html">rendering-spectrum.md</a> (the framework-agnostic theory) and <a href="hydration.html">hydration.md</a> (the hydration/RSC mechanics) — this doc is about the <em>implementation</em>: which file, which config flag, which API call gets you each strategy.</p>
+<hr />
+<h2 id="1-why-nextjs-exists">1. Why Next.js Exists</h2>
+<p>React is a UI library, not a framework — it renders components, nothing else. Left on its own, a team building a production app has to hand-solve, from scratch:</p>
+<ul>
+<li><strong>Routing</strong> — React Router or a hand-rolled switch on <code>window.location</code>.</li>
+<li><strong>Code splitting</strong> — manual <code>React.lazy</code> + webpack config per route.</li>
+<li><strong>Data fetching + waterfalls</strong> — <code>useEffect</code> fetch-on-mount means the browser downloads JS <em>first</em>, then discovers what data it needs, then fetches it — three round trips before anything useful renders.</li>
+<li><strong>SSR</strong> — wiring <code>renderToString</code>, a Node server, and a hydration script by hand (this is a real interview question: "build SSR without Next.js" — it's <code>express</code> + <code>ReactDOMServer.renderToString</code> + serializing initial state into a <code>&lt;script&gt;</code> tag for hydration to pick up).</li>
+<li><strong>Build-time generation, caching, image optimization, bundling</strong> — all bespoke.</li>
+</ul>
+<p>Next.js's pitch: take every one of those cross-cutting concerns and make them a <strong>file-system convention</strong> or a <strong>single config option</strong>, so the rendering strategy becomes a per-route decision instead of an all-or-nothing architectural commitment made on day one. That last part is the actual "why" — a mid-size app almost never wants <em>one</em> strategy for every page (see <a href="rendering-spectrum.html#3-the-hybrid-approach-the-winning-answer">rendering-spectrum.md §3, the Hybrid Approach</a>); it wants SSG for the marketing site, ISR for the product catalog, SSR for checkout, and CSR for the logged-in dashboard — all in one deployable app. Next.js is the framework that makes that mixture cheap to express.</p>
+<hr />
+<h2 id="2-app-router-vs-pages-router-know-both-use-app-router">2. App Router vs Pages Router (know both, use App Router)</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Pages Router (<code>pages/</code>)</th>
+<th>App Router (<code>app/</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Default component type</td>
+<td>Client (implicitly)</td>
+<td><strong>Server Component</strong></td>
+</tr>
+<tr>
+<td>Data fetching API</td>
+<td><code>getServerSideProps</code>, <code>getStaticProps</code>, <code>getStaticPaths</code></td>
+<td><code>fetch()</code> directly inside async Server Components</td>
+</tr>
+<tr>
+<td>Layouts</td>
+<td>Manual, re-rendered per page</td>
+<td>Nested <code>layout.tsx</code>, persist across navigations</td>
+</tr>
+<tr>
+<td>Streaming</td>
+<td>Not supported</td>
+<td>Built-in via Suspense + <code>loading.tsx</code></td>
+</tr>
+<tr>
+<td>Server Components</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Status</td>
+<td>Legacy, still maintained</td>
+<td>Current standard (Next.js 13+)</td>
+</tr>
+</tbody>
+</table>
+<p>The rest of this doc is App Router-first since that's what you'll be asked about in 2025+ interviews, with Pages Router equivalents called out where the mapping matters.</p>
+<hr />
+<h2 id="3-the-core-mechanism-how-nextjs-decides-static-vs-dynamic">3. The Core Mechanism: How Next.js Decides Static vs. Dynamic</h2>
+<p>This is the single most important "how" in this document — almost everything else (SSG, SSR, ISR) is a <em>consequence</em> of this decision, not a separate mode you manually pick.</p>
+<p>At build time, Next.js renders every route it can. For each route, it asks: <strong>did rendering this route touch anything request-specific?</strong></p>
+<div class="mermaid">
+flowchart TD
+    Start[&quot;Build: render the route&quot;] --&gt; Check{&quot;Did it use a Dynamic API?\n(cookies(), headers(), searchParams,\nfetch with cache: 'no-store',\nor 'force-dynamic' config)&quot;}
+    Check -- No --&gt; Static[&quot;Static Rendering\n(HTML + RSC payload written to disk/CDN\n= same output for every user)&quot;]
+    Check -- Yes --&gt; Dynamic[&quot;Dynamic Rendering\n(deferred to request time,\nrendered fresh per request = SSR)&quot;]
+    Static --&gt; Revalidate{&quot;Does any fetch() specify\na revalidate window?&quot;}
+    Revalidate -- No --&gt; Pure[&quot;Pure static (classic SSG)\nnever regenerates&quot;]
+    Revalidate -- Yes --&gt; ISR[&quot;ISR\n(served static, regenerated\nin background after the window)&quot;]
+</div>
+<ul>
+<li><strong>No dynamic API touched → Static Rendering.</strong> This <em>is</em> SSG — the route is rendered once at build time into HTML + an RSC payload, and every request gets the identical, CDN-cached artifact.</li>
+<li><strong>A dynamic API touched → Dynamic Rendering.</strong> This <em>is</em> SSR — Next.js can't precompute the page because the output depends on the incoming request (a cookie, a search param, an explicitly uncached fetch), so it renders on every request, on your server (or Edge runtime).</li>
+<li><strong>Static + a <code>revalidate</code> window → ISR.</strong> The best of both: served instantly from the static cache, but regenerated in the background once the window expires.</li>
+</ul>
+<p>The practical upshot: you rarely "choose SSR" as a mode. You write a Server Component that calls <code>cookies()</code> or fetches with <code>cache: 'no-store'</code>, and Next.js <em>infers</em> that the route must be dynamic. This is a very common interview trap: "why did adding one <code>headers()</code> call to a layout make my entire static marketing site dynamic?" — because a dynamic API anywhere in a route's render tree opts the whole route out of static rendering.</p>
+<hr />
+<h2 id="4-csr-in-nextjs">4. CSR in Next.js</h2>
+<p>CSR isn't the default anymore (App Router defaults every component to a Server Component), but you explicitly opt into it with <code>'use client'</code>:</p>
+<pre><code class="language-tsx">'use client'
+import { useEffect, useState } from 'react'
+
+export default function LiveCartBadge() {
+  const [count, setCount] = useState(0)
+  useEffect(() =&gt; {
+    fetch('/api/cart/count').then(r =&gt; r.json()).then(d =&gt; setCount(d.count))
+  }, [])
+  return &lt;span&gt;{count}&lt;/span&gt;
+}
+</code></pre>
+<p><strong>What actually happens:</strong> Next.js still renders this component's initial output on the server (so there's HTML in the initial response — no blank shell), then ships the component's JS to the browser and hydrates it. True zero-server CSR (an empty <code>&lt;div id="root"&gt;</code> shell) is what you get <em>without</em> a framework at all, or with <code>next/dynamic(() =&gt; import(...), { ssr: false })</code> if you explicitly want to skip server rendering entirely (common for browser-only widgets — charting libraries, <code>window</code>-dependent code).</p>
+<p><strong>When to reach for it:</strong> anything that's genuinely per-user, changes on every interaction, and has no SEO value — a live cart count, a notifications dropdown, a websocket-driven ticker. See <a href="rendering-spectrum.html#csr-client-side-rendering">rendering-spectrum.md's CSR section</a> for the general case for CSR.</p>
+<hr />
+<h2 id="5-ssr-in-nextjs-dynamic-rendering">5. SSR in Next.js (Dynamic Rendering)</h2>
+<p>You get SSR by using any Dynamic API, or explicitly forcing it:</p>
+<pre><code class="language-tsx">// app/dashboard/page.tsx
+import { cookies } from 'next/headers'
+
+export const dynamic = 'force-dynamic' // explicit escape hatch, rarely needed —
+                                        // using cookies()/headers() below already implies this
+
+export default async function Dashboard() {
+  const session = cookies().get('session')
+  const user = await fetch(`https://api.example.com/users/${session?.value}`, {
+    cache: 'no-store', // don't cache this — it's per-user
+  }).then(r =&gt; r.json())
+
+  return &lt;h1&gt;Welcome back, {user.name}&lt;/h1&gt;
+}
+</code></pre>
+<p><strong>Pages Router equivalent:</strong> <code>getServerSideProps</code> — runs on every request, return value becomes <code>props</code>.</p>
+<p><strong>The bottleneck is unchanged from the general theory:</strong> TTFB is gated on your slowest fetch. Next.js's answer to that specific problem is streaming (§7) rather than making SSR itself faster — you can't out-engineer a slow database call, but you can stop making the user stare at a blank screen while it runs.</p>
+<hr />
+<h2 id="6-ssg-in-nextjs-static-rendering">6. SSG in Next.js (Static Rendering)</h2>
+<p>The <em>default</em> for any route that doesn't touch a dynamic API. For dynamic route segments (<code>[slug]</code>), you tell Next.js which pages to pre-render at build time with <code>generateStaticParams</code>:</p>
+<pre><code class="language-tsx">// app/blog/[slug]/page.tsx
+export async function generateStaticParams() {
+  const posts = await fetch('https://api.example.com/posts').then(r =&gt; r.json())
+  return posts.map((post: { slug: string }) =&gt; ({ slug: post.slug }))
+}
+
+export default async function BlogPost({ params }: { params: { slug: string } }) {
+  const post = await fetch(`https://api.example.com/posts/${params.slug}`).then(r =&gt; r.json())
+  return &lt;article&gt;{post.body}&lt;/article&gt;
+}
+</code></pre>
+<p><strong>Pages Router equivalent:</strong> <code>getStaticPaths</code> (returns the list of params, like <code>generateStaticParams</code>) + <code>getStaticProps</code> (fetches the data per path).</p>
+<p>Every path returned by <code>generateStaticParams</code> gets its own pre-rendered HTML + RSC payload at build time — this <em>is</em> the "Build Bottleneck" from <a href="rendering-spectrum.html#ssg-the-workflow">rendering-spectrum.md</a>: 100k blog posts means 100k pages rendered before the build finishes. Next.js's answer to that specific scaling wall is ISR.</p>
+<hr />
+<h2 id="7-isr-in-nextjs">7. ISR in Next.js</h2>
+<p>Two flavors, and the distinction is a favorite interview follow-up:</p>
+<h3 id="time-based-the-classic-version">Time-based (the classic version)</h3>
+<pre><code class="language-tsx">// app/products/[id]/page.tsx
+export const revalidate = 3600 // regenerate at most once per hour
+
+export default async function Product({ params }: { params: { id: string } }) {
+  const product = await fetch(`https://api.example.com/products/${params.id}`, {
+    next: { revalidate: 3600 }, // can also be set per-fetch instead of per-route
+  }).then(r =&gt; r.json())
+  return &lt;ProductView product={product} /&gt;
+}
+</code></pre>
+<p>Behavior matches <a href="rendering-spectrum.html#isr-incremental-static-regeneration">rendering-spectrum.md's ISR section</a> exactly: the first request after the window expires still gets the <strong>stale</strong> page instantly, while Next.js regenerates in the background; the <em>next</em> request gets the fresh version. Nobody blocks on a rebuild.</p>
+<h3 id="on-demand-the-version-that-actually-matters-in-production">On-demand (the version that actually matters in production)</h3>
+<p>Time-based revalidation means you're always either serving stale data for up to N seconds, or hammering your origin by setting N too low. On-demand ISR fixes this by making revalidation <em>event-driven</em> — you tell Next.js exactly when data changed:</p>
+<pre><code class="language-tsx">'use server'
+import { revalidatePath, revalidateTag } from 'next/cache'
+
+export async function updateProduct(id: string, data: FormData) {
+  await db.products.update(id, data)
+  revalidatePath(`/products/${id}`)   // or revalidateTag('products') to bust every
+                                       // route that fetched with { next: { tags: ['products'] } }
+}
+</code></pre>
+<p>This is the pattern worth naming in an interview: <strong>"static by default, invalidated on write, not on a timer."</strong> It gets you SSG's cost profile (nothing regenerates unless data actually changed) with SSR's freshness (the moment a mutation lands, the cache is correct) — without the drawback either pure strategy has on its own.</p>
+<hr />
+<h2 id="8-react-server-components-what-nextjs-actually-ships">8. React Server Components — What Next.js Actually Ships</h2>
+<p>RSC as a React concept is covered in depth in <a href="hydration.html#react-server-components-rsc">hydration.md §"React Server Components (RSC)"</a>. What's specific to Next.js is that <strong>the App Router makes Server Components the default</strong>, not an opt-in:</p>
+<pre><code class="language-tsx">// app/page.tsx — no directive needed, this IS a Server Component
+export default async function Page() {
+  const data = await db.query('SELECT * FROM posts') // direct DB access, no API route needed
+  return &lt;PostList posts={data} /&gt;
+}
+</code></pre>
+<p>Three things senior candidates should be precise about:</p>
+<ol>
+<li>
+<p><strong>Server Components ship zero JS to the client.</strong> Not "less JS" — literally none of a Server Component's code is in the client bundle. This is the actual performance win, separate from any rendering-strategy question — you could have a fully dynamic (SSR) route that still ships a smaller bundle than a static CSR one, purely because most of its component tree is Server Components.</p>
+</li>
+<li>
+<p><strong>The output isn't HTML — it's the RSC Payload.</strong> A special serialized format (not JSON, a custom streaming format React invented) describing the rendered tree, with "holes" where Client Components go. On the very first request, Next.js renders that payload down to real HTML (so there's something to paint immediately). On subsequent client-side navigations, the <em>same</em> payload format is fetched again and React reconciles it into the existing DOM directly — no full page reload, no re-fetching HTML — which is why App Router navigation feels like an SPA even though every page is server-rendered.</p>
+</li>
+<li>
+<p><strong>The composition rule that trips people up:</strong> a Client Component (<code>'use client'</code>) can't <code>import</code> a Server Component — once you cross into client code, everything imported has to be client-safe. But a Client Component <em>can</em> accept a Server Component as <code>children</code> or another prop, because that tree is rendered by the parent (server) before being handed down:</p>
+</li>
+</ol>
+<pre><code class="language-tsx">// ❌ Doesn't work — Sidebar is a Server Component, imported inside a Client Component
+'use client'
+import Sidebar from './Sidebar' // Sidebar does DB queries — can't ship that to the client
+
+// ✅ Works — Server Component passed down as children
+'use client'
+export default function ClientShell({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(true)
+  return &lt;div className={open ? 'expanded' : 'collapsed'}&gt;{children}&lt;/div&gt;
+}
+
+// app/layout.tsx (a Server Component)
+import ClientShell from './ClientShell'
+import Sidebar from './Sidebar' // Server Component — fine, rendered on the server first
+
+&lt;ClientShell&gt;&lt;Sidebar /&gt;&lt;/ClientShell&gt;
+</code></pre>
+<hr />
+<h2 id="9-streaming-nextjss-answer-to-the-ssr-bottleneck">9. Streaming — Next.js's Answer to the SSR Bottleneck</h2>
+<p><code>loading.tsx</code> is a file-system convention that wraps a route segment in a Suspense boundary automatically:</p>
+<pre><code>app/dashboard/
+  layout.tsx
+  loading.tsx     ← shown instantly while page.tsx's data fetches resolve
+  page.tsx        ← async Server Component, awaits slow data
+</code></pre>
+<p>Under the hood this is exactly the "Streaming SSR" mechanism from <a href="hydration.html#streaming-ssr">hydration.md §Streaming SSR</a> — <code>renderToReadableStream</code> plus React 18 Suspense — but Next.js turns it into a file you drop in a folder rather than manual boundary wiring. For finer-grained control than "the whole route," wrap individual slow components:</p>
+<pre><code class="language-tsx">export default function Page() {
+  return (
+    &lt;&gt;
+      &lt;ProductInfo /&gt;                 {/* fast, renders immediately */}
+      &lt;Suspense fallback={&lt;Skeleton /&gt;}&gt;
+        &lt;Recommendations /&gt;            {/* slow ML call — streams in later, doesn't block the rest */}
+      &lt;/Suspense&gt;
+    &lt;/&gt;
+  )
+}
+</code></pre>
+<p>This is the concrete implementation of YouTube's "1000 Cuts" partial-hydration idea from <a href="rendering-spectrum.html#5-the-hydration-problem-senior-level-detail">rendering-spectrum.md §5</a> — each <code>Suspense</code> boundary is an independent unit that streams and hydrates on its own schedule instead of blocking on the slowest sibling.</p>
+<hr />
+<h2 id="10-partial-prerendering-ppr-static-shell-dynamic-holes">10. Partial Prerendering (PPR) — Static Shell + Dynamic Holes</h2>
+<p><a href="rendering-spectrum.html#8-real-interview-scenario-ppr-partial-pre-rendering">rendering-spectrum.md §8</a> covers the <em>why</em> (static shell instantly, dynamic pieces streamed into reserved holes). Here's the <em>how</em>, specific to Next.js:</p>
+<pre><code class="language-tsx">export const experimental_ppr = true
+
+export default function ProductPage({ params }: { params: { id: string } }) {
+  return (
+    &lt;&gt;
+      &lt;ProductShell /&gt;                      {/* static — prerendered at build */}
+      &lt;Suspense fallback={&lt;StockSkeleton /&gt;}&gt;
+        &lt;StockLevel id={params.id} /&gt;        {/* dynamic hole — reads cookies/live data */}
+      &lt;/Suspense&gt;
+      &lt;Suspense fallback={&lt;CartSkeleton /&gt;}&gt;
+        &lt;Cart /&gt;                             {/* dynamic hole — per-user */}
+      &lt;/Suspense&gt;
+    &lt;/&gt;
+  )
+}
+</code></pre>
+<p>At build time, Next.js prerenders the entire tree but <em>pauses</em> at each Suspense boundary that contains a Dynamic API — it keeps everything outside those boundaries as a static, CDN-cacheable shell (including the Suspense fallbacks as placeholder HTML). At request time, only the paused boundaries resume rendering — server work is proportional to "how many holes," not "how big is the page." This is why PPR's server cost profile looks like SSG's (see the cost table in <a href="rendering-spectrum.html#6-scalability-cost-comparison">rendering-spectrum.md §6</a>) even though the page has genuinely dynamic, per-user content.</p>
+<hr />
+<h2 id="11-the-four-caches-the-1-why-isnt-my-update-showing-question">11. The Four Caches (the #1 "why isn't my update showing" question)</h2>
+<p>Next.js's caching is the most-misunderstood part of the framework because there are <strong>four separate caches</strong>, invalidated independently:</p>
+<table>
+<thead>
+<tr>
+<th>Cache</th>
+<th>Scope</th>
+<th>Lives for</th>
+<th>Invalidated by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Request Memoization</strong></td>
+<td>One render pass</td>
+<td>A single request</td>
+<td>Automatic — dedupes identical <code>fetch()</code> calls in the same render, no config</td>
+</tr>
+<tr>
+<td><strong>Data Cache</strong></td>
+<td>Persistent, server-wide</td>
+<td>Across requests &amp; deployments</td>
+<td><code>revalidate</code> option, <code>revalidatePath</code>/<code>revalidateTag</code>, or <code>cache: 'no-store'</code> to skip entirely</td>
+</tr>
+<tr>
+<td><strong>Full Route Cache</strong></td>
+<td>Persistent (CDN/server)</td>
+<td>Across requests, until rebuild/revalidation</td>
+<td>Rebuilding, or the route's own <code>revalidate</code> window</td>
+</tr>
+<tr>
+<td><strong>Router Cache</strong></td>
+<td>In-browser, per client</td>
+<td>~30s (dynamic) to 5min (static), session-scoped</td>
+<td>Automatic on navigation, or manually via <code>router.refresh()</code></td>
+</tr>
+</tbody>
+</table>
+<p>The classic bug this table explains: you call <code>revalidatePath()</code> after a mutation, the <em>server's</em> data is correct, but the user who just submitted the form still sees the old value — because the <strong>Router Cache</strong> (client-side, separate from everything you just invalidated) is still serving its own cached copy of that route segment. Fix: <code>router.refresh()</code> alongside the server-side revalidation, or design the mutation as a Server Action (which does this automatically for the calling client).</p>
+<hr />
+<h2 id="12-server-actions-removing-the-need-for-an-api-layer">12. Server Actions — Removing the Need for an API Layer</h2>
+<p><code>'use server'</code> marks a function as callable directly from a Client Component, but it never ships to the browser — Next.js compiles the call into a POST request to a hidden, framework-managed endpoint:</p>
+<pre><code class="language-tsx">// actions.ts
+'use server'
+export async function addToCart(productId: string) {
+  await db.cart.add(productId)
+  revalidateTag('cart')
+}
+
+// CartButton.tsx
+'use client'
+import { addToCart } from './actions'
+export default function CartButton({ id }: { id: string }) {
+  return &lt;button onClick={() =&gt; addToCart(id)}&gt;Add to cart&lt;/button&gt;
+}
+</code></pre>
+<p>Two things worth naming as senior detail:
+- <strong>Progressive enhancement for free:</strong> if used as a <code>&lt;form action={addToCart}&gt;</code>, the form works even with JS disabled/not-yet-loaded — the browser does a real form POST, Next.js handles it server-side, no client JS required for the base case.
+- <strong>This is why Next.js apps need less client-side data-fetching machinery</strong> (SWR/React Query) than a plain React SPA — mutations go through Server Actions + <code>revalidateTag</code>, reads happen directly in Server Components. Client-side fetching libraries are still useful for genuinely client-only, real-time-ish data (§4), just not for the majority-case CRUD flow.</p>
+<hr />
+<h2 id="13-runtime-choice-node-vs-edge">13. Runtime Choice: Node vs. Edge</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Node.js runtime (default)</th>
+<th>Edge runtime</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>APIs available</td>
+<td>Full Node API</td>
+<td>Web-standard APIs only (<code>fetch</code>, <code>Request</code>, no <code>fs</code>, no most npm packages)</td>
+</tr>
+<tr>
+<td>Cold start</td>
+<td>Slower</td>
+<td>Near-instant (V8 isolates, not full containers)</td>
+</tr>
+<tr>
+<td>Where it runs</td>
+<td>Your server/region</td>
+<td>Distributed at CDN edge locations, close to the user</td>
+</tr>
+<tr>
+<td>Set via</td>
+<td>Default</td>
+<td><code>export const runtime = 'edge'</code></td>
+</tr>
+<tr>
+<td>Forced for</td>
+<td>—</td>
+<td><strong>Middleware always runs on Edge</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Middleware (<code>middleware.ts</code> at the project root) runs <em>before</em> the routing/rendering decision is even made — it's the layer for auth redirects, A/B test bucketing, geolocation-based rewrites. Because it runs on every matched request at the edge, it needs to be fast and side-effect-light; it can read/rewrite the request but shouldn't be doing the actual data fetching.</p>
+<hr />
+<h2 id="14-interview-scenario-architecting-a-nextjs-e-commerce-product-page">14. Interview Scenario: Architecting a Next.js E-Commerce Product Page</h2>
+<p>Same brief as <a href="rendering-spectrum.html#8-real-interview-scenario-ppr-partial-pre-rendering">rendering-spectrum.md §8</a> — Microsoft Store-style product page, 10 million users — now expressed as concrete Next.js decisions:</p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Next.js mechanism</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Product title, images, description</td>
+<td>Static Rendering, <code>generateStaticParams</code></td>
+<td>Same for everyone — build it once, serve from CDN</td>
+</tr>
+<tr>
+<td>"In stock" count</td>
+<td><code>Suspense</code> boundary + PPR hole, or short <code>revalidate</code> window</td>
+<td>Changes often; a static shell can't show it, but full SSR is overkill for one number</td>
+</tr>
+<tr>
+<td>Cart contents</td>
+<td>Client Component (<code>'use client'</code>), or a PPR dynamic hole reading a cookie</td>
+<td>Per-user, not SEO-relevant</td>
+</tr>
+<tr>
+<td>Recommendations (ML)</td>
+<td><code>Suspense</code> boundary, streamed in after the shell paints</td>
+<td>Slowest data source — must not block LCP of the rest of the page</td>
+</tr>
+<tr>
+<td>Add-to-cart</td>
+<td>Server Action + <code>revalidateTag('cart')</code></td>
+<td>Mutation without a hand-written API route; progressive enhancement for free</td>
+</tr>
+<tr>
+<td>Price change propagation</td>
+<td><code>revalidatePath('/products/[id]')</code> called from the admin mutation</td>
+<td>On-demand ISR — correct the instant price changes, not up to N seconds later</td>
+</tr>
+<tr>
+<td>Checkout</td>
+<td><code>export const dynamic = 'force-dynamic'</code> (or implied by <code>cookies()</code>)</td>
+<td>Must be fresh and per-session; no caching layer should touch it</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="15-common-senior-level-pitfalls">15. Common Senior-Level Pitfalls</h2>
+<ul>
+<li><strong>Fetch waterfalls inside Server Components.</strong> <code>await</code>-ing sequentially in one component (<code>const a = await f1(); const b = await f2()</code>) still blocks in order even though there's no client-side <code>useEffect</code> chain. Fix: kick both off before awaiting — <code>const [a, b] = await Promise.all([f1(), f2()])</code>.</li>
+<li><strong>One dynamic API silently making a whole layout dynamic.</strong> A single <code>cookies()</code> call in a shared <code>layout.tsx</code> opts every page under it out of static rendering — always trace <em>why</em> a route became dynamic before assuming it needs to be.</li>
+<li><strong>Assuming <code>revalidatePath</code> fixes what the user sees immediately.</strong> It invalidates the server-side Full Route Cache; the client's Router Cache is separate (§11) and needs its own refresh.</li>
+<li><strong>Treating Server Components as "no hydration mismatch risk."</strong> Client Components nested inside are still hydrated normally — non-deterministic rendering (<code>Date.now()</code>, <code>Math.random()</code>, locale-dependent formatting without a fixed locale) inside a Client Component still produces the classic server/client mismatch covered in <a href="hydration.html#hydration-mismatch">hydration.md §Hydration Mismatch</a>.</li>
+<li><strong>Reaching for <code>force-dynamic</code> reflexively</strong> instead of asking whether ISR with a short <code>revalidate</code> window (or an on-demand <code>revalidateTag</code> on write) would give the same freshness with a fraction of the server cost.</li>
+</ul>
+<hr />
+<h2 id="16-interview-summary">16. Interview Summary</h2>
+<h3 id="key-talking-points">Key talking points</h3>
+<ol>
+<li>Next.js doesn't invent new rendering strategies — it makes CSR/SSR/SSG/ISR a <strong>per-route configuration</strong> instead of a whole-app architectural choice, via file conventions and a handful of <code>fetch</code>/route-segment options.</li>
+<li>The static-vs-dynamic decision is <strong>inferred</strong>, not chosen: touching a Dynamic API (<code>cookies()</code>, <code>headers()</code>, uncached <code>fetch</code>) opts a route into per-request (SSR) rendering; otherwise it's static (SSG), optionally with a <code>revalidate</code> window (ISR).</li>
+<li>On-demand ISR (<code>revalidatePath</code>/<code>revalidateTag</code>) is the production-grade answer to "stale for how long?" — invalidate on write, not on a timer.</li>
+<li>Server Components are the App Router default and ship <strong>zero JS</strong>; the wire format between server and client is the RSC Payload, not HTML — that's what makes App Router navigations feel like an SPA.</li>
+<li>Streaming (<code>loading.tsx</code>, manual <code>Suspense</code>) and PPR are both built on the same primitive: a Suspense boundary marks a "hole" that can resolve independently of the rest of the page.</li>
+<li>There are <strong>four separate caches</strong> (Request Memoization, Data Cache, Full Route Cache, Router Cache) — most "why isn't this updating" bugs are an invalidation happening in one cache but not another.</li>
+<li>Server Actions collapse the mutation + revalidation + API-route boilerplate into one <code>'use server'</code> function, with progressive enhancement as a side effect.</li>
+</ol></main>
+</div>
+<script src="../assets/sidebar.js"></script>
+<script src="../assets/highlight.min.js"></script>
+<script src="../assets/mermaid.min.js"></script>
+<script>
+hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+hljs.highlightAll();
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#ece9fd',
+    primaryBorderColor: '#5b3df0',
+    primaryTextColor: '#232037',
+    lineColor: '#5b3df0',
+    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+    fontSize: '13px'
+  }
+});
+</script>
+</body>
+</html>

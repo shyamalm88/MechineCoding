@@ -47,6 +47,16 @@ If there's no `site.config.json` at all, the tool still works: it falls back
 to a flat, alphabetically-sorted sidebar using the source folder's name as
 the title.
 
+## Sidebar
+
+The sidebar is not baked into each generated page. Every page ships an empty
+`<nav id="sidebar">` mount point and a shared `assets/sidebar.js`, which
+fetches a single `assets/nav.json` (written once per build) and renders the
+category tree, links, and star badges client-side, highlighting the active
+page by comparing `location.href` against each link. This means adding a
+note, re-categorizing one, or changing a star rating touches only
+`site.config.json` and regenerates `nav.json` — not every page in `notes/`.
+
 ## Diagrams
 
 - ` ```mermaid ` fenced code blocks render as live diagrams (Mermaid is

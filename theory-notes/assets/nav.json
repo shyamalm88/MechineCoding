@@ -1,0 +1,175 @@
+{
+  "title": "Theory Notes",
+  "groups": [
+    {
+      "category": "JavaScript & Runtime",
+      "items": [
+        {
+          "slug": "javascript-core",
+          "label": "JavaScript Core",
+          "stars": 3
+        },
+        {
+          "slug": "v8-internals",
+          "label": "V8 Internals",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "React & Modern Patterns",
+      "items": [
+        {
+          "slug": "react-advanced-patterns",
+          "label": "React Advanced Patterns",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Browser & Rendering",
+      "items": [
+        {
+          "slug": "browser-document-execution",
+          "label": "Browser Document Execution",
+          "stars": 2
+        },
+        {
+          "slug": "browser-internals",
+          "label": "Browser Internals",
+          "stars": 3
+        },
+        {
+          "slug": "hydration",
+          "label": "Hydration",
+          "stars": 2
+        },
+        {
+          "slug": "nextjs",
+          "label": "Next.js",
+          "stars": 3
+        },
+        {
+          "slug": "rendering-spectrum",
+          "label": "Rendering Spectrum",
+          "stars": 2
+        }
+      ]
+    },
+    {
+      "category": "Performance",
+      "items": [
+        {
+          "slug": "assets",
+          "label": "Assets",
+          "stars": 1
+        },
+        {
+          "slug": "cache",
+          "label": "Cache",
+          "stars": 2
+        },
+        {
+          "slug": "core-web-vitals",
+          "label": "Core Web Vitals",
+          "stars": 3
+        },
+        {
+          "slug": "react-performance",
+          "label": "React Performance",
+          "stars": 3
+        },
+        {
+          "slug": "web-performance",
+          "label": "Web Performance",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "State & Architecture",
+      "items": [
+        {
+          "slug": "microfrontend-design-system",
+          "label": "MicroFrontEnd Design System",
+          "stars": 3
+        },
+        {
+          "slug": "monorepo",
+          "label": "Monorepo",
+          "stars": 3
+        },
+        {
+          "slug": "optimistic-updates",
+          "label": "Optimistic Updates",
+          "stars": 2
+        },
+        {
+          "slug": "state-machines",
+          "label": "State Machines",
+          "stars": 1
+        },
+        {
+          "slug": "state-management",
+          "label": "State Management",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Network & Security",
+      "items": [
+        {
+          "slug": "cors-security",
+          "label": "CORS Security",
+          "stars": 2
+        },
+        {
+          "slug": "graphql",
+          "label": "GraphQL",
+          "stars": 2
+        },
+        {
+          "slug": "javascript-sdk",
+          "label": "JavaScript SDK",
+          "stars": 3
+        },
+        {
+          "slug": "network",
+          "label": "Network",
+          "stars": 2
+        },
+        {
+          "slug": "security",
+          "label": "Security",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Build & Observability",
+      "items": [
+        {
+          "slug": "observability",
+          "label": "Observability",
+          "stars": 3
+        },
+        {
+          "slug": "webpack",
+          "label": "Webpack",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Case Studies",
+      "items": [
+        {
+          "slug": "yotube1000cuts",
+          "label": "Yotube1000cuts",
+          "stars": 1
+        }
+      ]
+    }
+  ]
+}

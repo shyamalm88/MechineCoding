@@ -10,6 +10,7 @@
     "browser-document-execution.md": "Browser & Rendering",
     "rendering-spectrum.md": "Browser & Rendering",
     "hydration.md": "Browser & Rendering",
+    "nextjs.md": "Browser & Rendering",
 
     "core-web-vitals.md": "Performance",
     "web-performance.md": "Performance",
@@ -42,6 +43,7 @@
     "browser-document-execution.md": 2,
     "rendering-spectrum.md": 2,
     "hydration.md": 2,
+    "nextjs.md": 3,
     "core-web-vitals.md": 3,
     "web-performance.md": 3,
     "react-performance.md": 3,
