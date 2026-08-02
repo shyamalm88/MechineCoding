@@ -177,6 +177,8 @@ Because driver location and matching state are ephemeral — only the latest val
 
 ### From Simple to Evolved
 
+The architecture starts simple and adds Kafka and surge pricing as the system matures — here's both versions.
+
 ### Simple Design
 
 ```mermaid
@@ -556,7 +558,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ---
 
-## 9.1 Failure Scenarios
+### 9.1 Failure Scenarios
 
 | Failure | Impact | Recovery |
 |---|---|---|
@@ -571,7 +573,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ---
 
-## 9.2 Trade-offs
+### 9.2 Trade-offs
 
 ### Geohash vs Quadtree for Driver Geospatial Index
 
@@ -625,7 +627,7 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ## 10. Evaluation: Did We Meet the Requirements?
 
-Six non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.
+Seven non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.
 
 **Latency (dispatch < 300ms, location visible < 2s):** The fast path never touches a disk-backed database — `GEORADIUS` runs against an in-memory Redis sorted set, and the `WATCH/MULTI/EXEC` atomic assignment is a handful of Redis commands, not a distributed transaction. Location updates skip the database entirely and flow Driver → Redis GEOADD → Kafka → rider WebSocket, each hop sub-millisecond to low-single-digit milliseconds.
 
