@@ -316,7 +316,11 @@ sequenceDiagram
 
 ## 6. API Design
 
+The API surface splits cleanly into two actors — riders requesting and tracking trips, and drivers reporting their status and location — because the mobile clients on either side of a ride have almost nothing in common except the `ride_id` connecting them.
+
 ### Rider APIs
+
+A rider's journey through the API is short: request a ride, poll its status while a driver is being found and the trip runs, optionally cancel, and rate afterward.
 
 | Method | Path | Description |
 |---|---|---|
@@ -327,6 +331,8 @@ sequenceDiagram
 
 ### Driver APIs
 
+A driver's side is almost the mirror image, plus the constant background hum of location pings that riders never see directly.
+
 | Method | Path | Description |
 |---|---|---|
 | PUT | /api/v1/drivers/availability | Toggle online/offline with current location |
@@ -334,26 +340,33 @@ sequenceDiagram
 | PUT | /api/v1/rides/{id}/status | Update status: ARRIVED, STARTED, COMPLETED |
 | POST | /api/v1/drivers/location | GPS ping {lat, lng} every 5s |
 
-> [!NOTE]
-> **Async matching design:** POST /rides/request is synchronous only for fare estimation. Driver matching happens asynchronously — the client polls GET /rides/{id}/status. This is why the system can afford to try multiple drivers without blocking the rider.
+The one design choice worth calling out explicitly: `POST /rides/request` is synchronous only for the fare estimate — it does not wait for a driver to be found. Driver matching happens asynchronously in the background, and the rider's app discovers the result by polling `GET /rides/{id}/status`. That's what lets the system try several drivers in sequence (§8.1's dispatch expansion) without holding the rider's original request open the whole time.
 
 ---
 
 ## 7. Data Model
 
-Seven different pieces of data live in this system, and none of them belong in the same store — each has different durability, consistency, and throughput needs. Driver location needs sub-millisecond geospatial queries and can tolerate total loss (it's stale in 5 seconds anyway) — that's Redis Geo, not a relational database. Trip and payment records need ACID guarantees because they're money — that's PostgreSQL, not a cache. Ride request logs are high-volume and read for analytics, not transactional correctness — that's a wide-column/analytics store, not a relational join target. The table below maps every entity to the store whose guarantees actually match what that entity needs:
+Nine different pieces of data live in this system, and grouping them by how they're actually used — rather than treating them as one undifferentiated list — makes the storage choices almost obvious.
 
-| Entity | Storage | Key Columns | Why this store |
-|---|---|---|---|
-| Driver live location | Redis Geo sorted set | drivers:idle:city → driver_id, lng, lat | 1.67M writes/sec; ephemeral; sub-ms GEORADIUS queries |
-| Driver state | Redis key-value with TTL | driver:state:driver_id → IDLE / RESERVED / ON_TRIP | Atomic WATCH/EXEC for double-booking prevention; TTL self-heals on disconnect |
-| Trip record | PostgreSQL | trip_id, rider_id, driver_id, status, pickup, dropoff, fare, started_at, ended_at | ACID for financial correctness; strong consistency on fare and payment |
-| Payment record | PostgreSQL | payment_id, trip_id, amount, status, method, created_at | ACID; joins with trip record for reconciliation |
-| Surge multiplier | Redis key-value with TTL 60s | surge:geohash → multiplier float | Cache layer; 60s staleness acceptable; SC writes, RS reads |
-| Ride request log | Analytics DB (Cassandra or BigQuery) | request_id, geohash, vehicle_type, timestamp | High-write analytics; feeds Surge Calculator; no ACID needed |
-| Waypoints (GPS trace) | Object storage (S3) | waypoints/trip_id.jsonl | ~160 GB/day; cold after trip ends; no random access needed |
-| Driver metadata | PostgreSQL + Redis cache | driver_id, name, vehicle, rating, acceptance_rate | Static metadata; cached in Redis TTL 5m after first read |
-| User / rider profile | PostgreSQL | user_id, name, phone, email, payment_method | Relational; infrequent writes; strong consistency on payment method |
+**The ephemeral, fast-path data lives in Redis.** Driver live location needs sub-millisecond geospatial queries at 1.67 million writes per second, and it's fine to lose it on a crash since it's stale within five seconds anyway — that's a Redis Geo sorted set (`drivers:idle:city → driver_id, lng, lat`), not a relational table. Driver state (`IDLE`/`RESERVED`/`ON_TRIP`) lives in Redis too, as a key with a TTL, specifically so the atomic `WATCH/MULTI/EXEC` transition from §8.1 has something to operate on, and so a crashed driver self-heals out of the pool when their TTL expires rather than needing a cleanup job. The surge multiplier follows the same pattern for a different reason: it only needs to be roughly right for 60 seconds at a time, so a Redis key with a 60-second TTL is both the cache and the staleness bound in one mechanism.
+
+**The durable, financial data lives in PostgreSQL, because it's money.** Trip records and payment records need ACID guarantees — a trip's fare, status, and payment method can't be allowed to partially update or silently vanish — so both get a real relational database, with joins between them for reconciliation. Rider profiles (name, phone, payment method) sit in PostgreSQL for the same reason: infrequent writes, but the ones that happen need to be correct.
+
+**Everything write-heavy and read-rarely goes somewhere cheaper than either of those.** The ride request log — every fare request, whether or not it turned into a trip — feeds the Surge Calculator and gets read for analytics, not for transactional correctness, so it belongs in a wide-column or analytics store (Cassandra or BigQuery) rather than competing for space in the trip database. GPS waypoint traces are similar but colder still: roughly 160 GB a day of location history that's genuinely useful for a trip replay or a dispute, essentially never queried after the trip ends, and needs no random access at all — that's a job for object storage (S3), not a database.
+
+**Driver metadata (name, vehicle, rating) is the one entity that's genuinely both:** static enough to live in PostgreSQL as the source of truth, but read constantly enough during matching that a 5-minute Redis cache in front of it saves a database round-trip on every single match attempt.
+
+| Entity | Storage | Key Columns |
+|---|---|---|
+| Driver live location | Redis Geo sorted set | drivers:idle:city → driver_id, lng, lat |
+| Driver state | Redis key-value with TTL | driver:state:driver_id → IDLE / RESERVED / ON_TRIP |
+| Trip record | PostgreSQL | trip_id, rider_id, driver_id, status, pickup, dropoff, fare, started_at, ended_at |
+| Payment record | PostgreSQL | payment_id, trip_id, amount, status, method, created_at |
+| Surge multiplier | Redis key-value with TTL 60s | surge:geohash → multiplier float |
+| Ride request log | Analytics DB (Cassandra or BigQuery) | request_id, geohash, vehicle_type, timestamp |
+| Waypoints (GPS trace) | Object storage (S3) | waypoints/trip_id.jsonl |
+| Driver metadata | PostgreSQL + Redis cache | driver_id, name, vehicle, rating, acceptance_rate |
+| User / rider profile | PostgreSQL | user_id, name, phone, email, payment_method |
 
 ---
 
@@ -361,16 +374,13 @@ Seven different pieces of data live in this system, and none of them belong in t
 
 ### 8.1 Driver Matching with Geohash and Atomic Assignment
 
-Here is the problem we are solving: when a rider requests a trip, find the best available nearby driver, offer them the ride, and assign atomically — without double-booking — in under 300ms. Five million drivers are in the pool. Naive: scan all drivers in the DB — impossible at scale.
+Here's the problem: when a rider requests a trip, find the best available nearby driver, offer them the ride, and assign them atomically — without double-booking — in under 300ms, out of a pool of five million drivers.
 
-**Naive solution fails:** A full-table scan of 5M driver rows per ride request at 500K peak requests/sec = 2.5 trillion row scans per second. No relational DB survives this.
+The obvious approach doesn't survive contact with the numbers. Scanning the driver table for nearby idle drivers on every request, repeated across 500,000 peak requests per second against 5 million driver rows, works out to 2.5 trillion row scans per second — no relational database, however well-indexed, gets anywhere near that.
 
-**What this must prevent:**
-- Two different ride requests both being assigned the same driver at the same moment (double-booking)
-- A driver being offered a ride, timing out, and never being returned to the available pool (driver starvation)
-- Search always returning empty when there are only a few nearby available drivers rather than degrading gracefully
+Whatever replaces the naive scan has to guard against three specific ways this can go wrong: two different ride requests both landing on the same driver at the same instant (double-booking); a driver getting offered a ride, timing out without responding, and never making it back into the available pool (driver starvation); and the search simply returning empty whenever there are only a couple of nearby drivers, instead of degrading gracefully by looking a little further out.
 
-**Chosen solution — five-step pipeline:**
+The actual pipeline runs in five steps, and each one exists to solve a specific piece of that. First, a geo index search: Redis's `GEORADIUS` returns the top 100 candidates within 2km, using its built-in geohash indexing rather than anything hand-rolled. Second, an eligibility filter narrows that down to drivers who are actually `IDLE`, drive the right vehicle type, and clear a minimum rating and acceptance-rate bar. Third, the routing engine scores the surviving top 20 by predicted ETA — not raw distance, which turns out to matter a lot (more on that below). Fourth, the top-scored driver gets a sequential offer with a 15-second window to respond, moving to the next candidate if they decline or time out — this is what prevents starvation, since a driver who doesn't respond just gets skipped, not stuck. Fifth — and this is the step that actually rules out double-booking — the chosen driver's state flips from `IDLE` to `RESERVED` atomically:
 
 ```
 Step 1: Geo index search     -> GEORADIUS -> top 100 candidates within 2km
@@ -380,11 +390,9 @@ Step 4: Sequential dispatch  -> offer to top driver, 15s window; expand if exhau
 Step 5: Atomic state lock    -> WATCH/MULTI/EXEC: IDLE -> RESERVED atomically
 ```
 
-**Why H3 over plain geohash for production:**
+One detail worth pausing on before getting to that atomic lock: Redis's `GEORADIUS` is geohash-based under the hood, which means its search cells are rectangles — corner-to-corner distances are longer than edge-to-edge ones, so a radius search can be subtly inconsistent depending on which direction a driver sits from the search origin. Uber's own production system solves this with H3, a hexagonal grid where every cell has exactly six equidistant neighbors, so expanding outward is geometrically uniform in every direction. For a design at this scale, plain `GEORADIUS` is a perfectly reasonable choice — H3 is the upgrade you reach for once geohash's edge distortion actually starts costing match quality, not a day-one requirement.
 
-Geohash cells are rectangles — corner distances are longer than edge distances, causing search radius inconsistencies. Uber's H3 uses hexagons: every cell has exactly 6 equidistant neighbors, so "expand to adjacent cell" expands coverage uniformly in all directions. For this design, Redis built-in GEORADIUS (geohash-based) is acceptable; H3 is the production upgrade.
-
-**The atomic assignment — no separate lock service:**
+Now, the mechanism behind step five, since it's the one piece of this system that has to be genuinely bulletproof. Two match-service instances can legitimately race to reserve the same driver — that's not a bug, it's just what concurrency at scale looks like — so the assignment can't be a plain `SET`. `WATCH` subscribes to changes on the driver's state key; the `MULTI/EXEC` that follows only commits if that key hasn't changed since the `WATCH` began:
 
 ```
 WATCH driver:state:driver_001
@@ -398,9 +406,9 @@ EXEC
   -> OK   atomic commit -- driver is RESERVED, removed from idle pool
 ```
 
-Two servers racing to reserve the same driver: only one EXEC commits. The other gets nil and moves to the next candidate. No separate lock key. No lock service. The state is the truth.
+Whichever server's `EXEC` runs first wins and gets `OK` back; the other's `EXEC` returns `nil`, because the watched key changed underneath it, so it silently moves on to its next candidate. There's no lock key to acquire, no lock service to call, no ZooKeeper, no Redlock — the driver's own state *is* the lock, and reading it atomically is the entire mutual-exclusion mechanism.
 
-**Dispatch expansion:**
+And when nobody's close enough? The system doesn't just give up on the first empty search — it widens its net in rounds, trading a longer wait for an actual match instead of failing fast:
 
 ```
 Round 1: 2km, 2-min timeout  -- quality match (close driver, good ETA)
@@ -435,11 +443,11 @@ flowchart TD
 
 ### 8.2 Surge Pricing Algorithm
 
-Here is the problem we are solving: at peak demand, more riders request rides than drivers are available. Without price adjustment, all riders compete for the same few drivers, matching fails, and drivers earn less. Surge pricing signals scarcity to both sides — it is a market-clearing mechanism, not a revenue grab.
+Here's the problem: at peak demand, more riders want rides than there are drivers available. Without any price signal, every rider competes for the same shrinking pool of drivers, matching fails more often, and the drivers who are online earn nothing extra for absorbing that surge in demand. Surge pricing exists to fix that imbalance — it's a market-clearing mechanism, not a way to extract more revenue.
 
-**Naive solution fails:** Static per-km rates mean the same price during a 3am downpour as a sunny Tuesday morning. Matching rate drops. Rider wait times spike. Drivers have no incentive to come online.
+A static per-kilometer rate doesn't solve this: it charges the same price during a 3am downpour, when three drivers are online and thirty people want a ride, as it does on a quiet Tuesday morning. Matching rates drop, riders wait longer, and drivers have no extra incentive to come online exactly when they're needed most.
 
-**Chosen solution — demand-signal feedback loop:**
+The fix is a demand-signal feedback loop that runs entirely independently of matching itself:
 
 ```mermaid
 graph LR
@@ -451,7 +459,7 @@ graph LR
     RS -->|final fare = base x multiplier| Rider["Rider App"]
 ```
 
-**Surge formula per geohash cell:**
+Every 60 seconds, the Surge Calculator looks at each geohash cell and computes a demand ratio — active ride requests divided by idle drivers in that cell — and maps it onto a multiplier:
 
 ```
 demand_ratio = active_ride_requests / idle_drivers_in_cell
@@ -463,31 +471,30 @@ multiplier:
   ratio > 3.0   -> 3.0x  (capped -- prevents extreme pricing)
 ```
 
-- Surge Calculator runs every 60 seconds, writes `surge:{geohash}` to Redis (TTL 60s)
-- Ride Service reads the multiplier on each fare call (sub-ms Redis read)
-- Rider sees the multiplier before confirming — informed consent (legal requirement in most markets)
-- Surge does not affect matching logic — it only affects the fare shown to the rider
+That multiplier gets written to `surge:{geohash}` in Redis with a 60-second TTL, and the Ride Service reads it on every fare calculation — a sub-millisecond lookup, not a query against whatever computed it. The rider sees the multiplier before confirming the ride, which isn't just good UX — informed consent on dynamic pricing is a legal requirement in most markets.
+
+The important architectural decision here is what surge pricing *doesn't* touch: the Surge Calculator is a separate service, feeding a cache that the Ride Service reads independently, and the matching engine (§8.1) never queries it at all.
 
 > [!NOTE]
 > **Key Insight:** Surge pricing is a read-path concern only — it does not affect matching. The Surge Calculator is a separate service feeding data into Redis. The matching engine never reads it. Decoupling surge calculation from matching prevents a slow analytics query from blocking a 300ms matching window.
 
-**Trade-off — eventual consistency on surge:** A 60-second Redis TTL means surge multiplier can be up to 60s stale. A rider booking 30 seconds after a demand spike may see the old price. This is acceptable: the fare shown at request time is the fare charged (contractual), and 60s staleness does not meaningfully harm either party.
+The trade-off worth naming explicitly is that this is eventually consistent, not strongly consistent: a 60-second Redis TTL means the multiplier can be up to a minute stale, so a rider booking 30 seconds after a sudden demand spike might still see the old price. That's acceptable because the fare shown at request time is the fare actually charged — it's contractual, not a live estimate — so a bounded staleness window doesn't harm either side. The alternative, reading demand data live on every fare call, would put a much larger analytics query on the hot path of every single fare estimate — at 500K peak requests/sec that becomes the bottleneck, for a level of precision nobody actually needs from a pricing signal.
 
 ---
 
 ### 8.3 Real-Time Location Write Architecture
 
-Here is the problem we are solving: 1.67 million GPS updates arrive per second from driver devices. Each update must be indexed for sub-ms geospatial lookup. The rider tracking a trip must see the driver move smoothly on their map — but the rider and driver are on different backend servers.
+Here's the problem: 1.67 million GPS updates arrive every second from driver devices. Each one needs to be indexed for sub-millisecond geospatial lookup, so the matching pipeline in §8.1 can find it. And whoever's tracking a trip live needs to see the driver move smoothly on their map — except the rider and the driver are, in general, connected to two completely different backend servers.
 
-**Naive solution fails:** Writing 1.67M rows/sec to a relational DB creates disk I/O saturation within minutes. Direct server-to-server WebSocket push (Server A to Server B) is impossible in a stateless distributed deployment.
+Neither obvious approach survives this. Writing 1.67 million rows a second to a relational database saturates disk I/O within minutes, long before it becomes an "add an index" problem. And a direct server-to-server push — the driver's server telling the rider's server "this driver just moved" — is impossible to wire up cleanly in a stateless, horizontally scaled deployment where you can't predict which server either side is connected to.
 
-**Chosen solution — three-layer architecture:**
+The actual solution is three layers, each solving a different part of the problem.
 
-**Layer 1 — Write batching:** Location Service buffers 500ms of updates and pipeline-writes to Redis in one round-trip. This reduces Redis round-trips 3–5x without increasing visible latency to the rider (500ms is imperceptible vs 1s update tick).
+**Write batching** is the first layer. Instead of writing every GPS ping to Redis individually, the Location Service buffers 500 milliseconds of updates and pipeline-writes them to Redis in a single round trip. That cuts the number of Redis round-trips by 3-5x, and it's invisible to the rider — 500ms of batching delay is imperceptible against a 1-second update tick anyway.
 
-**Layer 2 — Redis Geo sorted set:** GEOADD overwrites the previous coordinate (O(log N) per write). GEORADIUS scans a bounding box (O(N+log M)). No locking. No transactions. This is why Redis Geo handles 1.67M concurrent writes while serving sub-10ms matching queries simultaneously.
+**The Redis Geo sorted set** is the second layer, and it's what makes the write volume tractable in the first place. `GEOADD` simply overwrites the driver's previous coordinate — an O(log N) operation — and `GEORADIUS` scans a bounding box in O(N + log M). No locking, no transactions, because there's nothing to coordinate: each write just replaces the one thing that mattered, the driver's last known position. That's the whole reason Redis Geo can absorb 1.67 million concurrent writes while simultaneously serving the sub-10ms matching queries from §8.1 — writes and reads never contend for the same lock, because there isn't one.
 
-**Layer 3 — Kafka fan-out for ON_TRIP tracking:**
+**Kafka fan-out** is the third layer, and it's what actually solves the "different servers" problem from above. When a driver is `ON_TRIP`, every location update gets published to Kafka, partitioned by `ride_id` so updates for a single trip stay strictly ordered. Whichever server the *rider's* app happens to be connected to consumes that event independently and pushes it over the rider's own WebSocket:
 
 ```mermaid
 sequenceDiagram
@@ -509,7 +516,7 @@ sequenceDiagram
     LSB->>R: WS push driver_moved lat lng eta_seconds
 ```
 
-**State-adaptive update frequency — accuracy vs cost:**
+None of this needs to run at the same intensity all the time, either. A driver who's `IDLE` and not currently near a rider doesn't need the same update frequency as one who's mid-trip with a rider staring at the map — so the update interval is derived directly from the driver's own state, not a single fixed tick applied uniformly:
 
 | Driver state | Update frequency | Redis writes/sec at 5M drivers | Why this frequency |
 |---|---|---|---|
@@ -517,9 +524,9 @@ sequenceDiagram
 | RESERVED | Every 2s | 2.5M writes/sec | Rider watching ETA countdown on map |
 | ON_TRIP | Every 1s | 5M writes/sec | Rider watching live position; smooth animation required |
 
-Sending 1-second updates from IDLE drivers wastes 60–70% of Redis write capacity for zero rider-visible benefit. The state machine already knows each driver's state — frequency is derived from it for free.
+Pinging every IDLE driver once a second regardless would waste 60-70% of the system's Redis write capacity for zero benefit anyone would ever notice — the state machine already knows which drivers actually need to be fresh, so the frequency comes for free instead of needing its own separate tuning knob.
 
-**Stale location self-healing:**
+The last piece is what happens when a driver's connection just drops — a flaky signal, a phone going into a tunnel, an app crash. There's no separate cleanup process watching for this:
 
 ```
 Driver phone disconnects -> WebSocket closes -> Location Svc detects
@@ -527,6 +534,8 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
   -> After 30s with no heartbeat: key expires -> auto-removed from idle pool
   -> No stale drivers offered to riders. No cron job needed.
 ```
+
+The same TTL mechanism from §8.1's driver state does double duty as the cleanup job here: no heartbeat for 30 seconds and the key simply expires, silently pulling that driver out of the idle pool. No stale driver ever gets offered to a rider, and nobody had to write a background sweep to make that true.
 
 > [!IMPORTANT]
 > **Fan-out via Kafka is a correctness requirement, not a performance optimization.** Without it, location updates only reach the rider if they happen to be on the same server as the driver — never guaranteed in a distributed deployment.
@@ -538,38 +547,35 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ## 9. Bottlenecks & Scaling
 
-**What breaks first as scale grows 10x:**
+Every component in this design has a point where it stops being the right shape for the traffic in front of it. Here's what breaks first as scale grows another 10x, and what actually changes when it does.
 
-| Bottleneck | Breaks at | Strategy |
-|---|---|---|
-| Redis location write throughput | ~10M writes/sec | Shard by city/region: drivers:idle:bangalore, drivers:idle:mumbai. Each shard is an independent Redis cluster. |
-| Match Service fan-out at surge | 500K ride requests/sec | Horizontal scale (stateless service); partition ride requests by pickup geohash — each Match Service shard owns a set of cells. |
-| PostgreSQL trip writes | ~100K writes/sec per primary | Kafka consumers batch-insert trips (bulk insert 1000 rows vs 1 per event). Add read replicas for ride history queries. |
-| WebSocket server connections | ~100K connections per server | Sticky load balancing by driver_id hash; horizontal scale to 70+ servers for 7M connections. |
-| Surge Calculator at 10x cities | Slow DB scan | Pre-aggregate demand counts per geohash cell using Kafka Streams (rolling 5-min window) — write results to Redis instead of scanning the full ride request DB. |
+Redis's location write throughput is the first thing to give — that ceiling sits around 10 million writes per second on a single cluster. The fix isn't a bigger Redis instance, it's sharding by city or region (`drivers:idle:bangalore`, `drivers:idle:mumbai`, and so on), so each city's write load lands on its own independent Redis cluster instead of one global one absorbing all of them.
 
-**Caching strategy:**
-- Driver metadata (name, vehicle, rating): Redis cache TTL 5 minutes — reads on every matching request
-- Surge multiplier: Redis TTL 60s — Surge Calculator writes, Ride Service reads
-- Rate table (price/km): Redis TTL 1 hour — changes infrequently
-- Ride history: read replica + application-level pagination — no caching needed (user reads once)
+The Match Service hits its own wall around 500,000 ride requests per second during a surge — but because it's stateless, scaling it out horizontally is straightforward, and partitioning ride requests by pickup geohash means each Match Service shard only ever owns a specific set of geographic cells rather than contending for the whole city.
 
-**CDN / Edge:** Not applicable to the core matching path. Rider and driver apps download static assets (map tiles, app bundles) via CDN. Dynamic API calls and WebSockets must reach origin.
+PostgreSQL's trip-write throughput tops out around 100,000 writes per second per primary — comfortably above the ~232 events/sec this system actually generates (§4), but worth knowing where the ceiling is. When it does become relevant, Kafka consumers batch-inserting 1000 rows at a time instead of one row per event buys a lot of headroom, and read replicas take ride-history queries off the primary entirely.
+
+WebSocket connections cap out around 100,000 per server, which is why reaching 7 million concurrent connections means sticky load balancing by `driver_id` hash across 70-plus servers, not one server trying to hold everyone.
+
+And the Surge Calculator, once the system spans 10x more cities, stops being able to just scan the ride request database directly — the fix there is pre-aggregating demand counts per geohash cell with Kafka Streams over a rolling 5-minute window, writing the results straight to Redis instead of re-scanning the full request log on every cycle.
+
+Caching does a lot of the quiet work here too: driver metadata (name, vehicle, rating) sits in Redis with a 5-minute TTL since it's read on every single matching request; the surge multiplier gets its own 60-second TTL as already covered in §8.2; the rate table (price per km) is cached for a full hour since it changes rarely; and ride history deliberately isn't cached at all — a read replica plus application-level pagination is enough, since a user reads their own trip history once and moves on.
+
+One thing that's explicitly *not* part of this scaling story: a CDN. It doesn't help the core matching path at all — rider and driver apps pull static assets like map tiles and app bundles from a CDN, but the dynamic API calls and WebSocket connections that actually run this system have to reach origin every time.
 
 ---
 
 ### 9.1 Failure Scenarios
 
-| Failure | Impact | Recovery |
-|---|---|---|
-| Redis primary fails (location + state) | Matching halts; active trips lose live map | Redis Sentinel / Cluster failover in < 30s. Drivers re-register within 15s via heartbeat. Active trips re-establish tracking via Kafka (reliable path unaffected). |
-| Match Service instance crashes mid-assignment | Driver reserved but no offer sent; driver stuck in RESERVED | Redis TTL on driver:state expires in 30s → auto-reverts to IDLE. Rider request retries via Kafka dead-letter queue. |
-| Kafka broker failure | Trip events delayed; live tracking fan-out delayed | Kafka cluster replication (RF=3); consumer lag; events replayed on broker recovery. No data loss. |
-| PostgreSQL primary fails | Trip write fails; billing delayed | PostgreSQL replica promoted (RDS Multi-AZ: < 60s). Kafka retains events during failover — no billing data lost. |
-| Driver app disconnects mid-trip | Location updates stop; rider map freezes | Rider shown "signal lost" UI. Driver reconnects and resumes. If no reconnect in 30s: TTL expires, trip marked as interrupted, ops notified. |
-| Payment Service unavailable | Fare not charged at trip end | Kafka retains trip_end event. Payment Service processes on recovery. Idempotency key prevents double-charge. |
-| Surge Calculator crash | Surge multiplier stale (60s TTL expiry) | Redis TTL expires → fallback to 1x. Surge Calculator restarts; resumes writing within seconds. Brief under-pricing acceptable. |
-| Double-booking race condition | Two servers attempt to reserve the same driver | Redis WATCH/MULTI/EXEC: only one EXEC succeeds. Second server gets nil, skips driver, tries next candidate. Zero double-bookings. |
+Every piece of this system can fail independently, and the recovery story is different depending on whether what failed was holding ephemeral state or durable state.
+
+When the Redis primary goes down — the store holding both location and matching state — matching halts and active trips lose their live map, but nothing is actually lost: Redis Sentinel or Cluster failover completes in under 30 seconds, drivers re-register into the pool within 15 seconds via their next heartbeat, and active trips re-establish tracking automatically because the reliable path (Kafka → PostgreSQL) was never touched by this at all. The double-booking race condition from §8.1 falls into the same bucket of "handled by design, not by luck": two servers racing to reserve the same driver always resolves to exactly one `EXEC` succeeding, the other getting `nil` and moving on — zero double-bookings, by construction.
+
+A Match Service instance crashing mid-assignment is a narrower version of the same story: a driver can end up reserved with no offer ever sent, stuck in `RESERVED`. The same 30-second TTL that handles Redis failover handles this too — the state simply expires back to `IDLE`, and the original rider's request retries via a Kafka dead-letter queue rather than hanging forever.
+
+The durable side of the system fails differently, and more slowly. A Kafka broker going down delays trip events and live-tracking fan-out, but replication factor 3 means nothing is actually lost — consumers just catch up on the backlog once the broker recovers. A PostgreSQL primary failing delays billing writes specifically, recovered by promoting a replica in under 60 seconds (RDS Multi-AZ), while Kafka keeps retaining events through the whole failover window so nothing gets dropped on the floor. If the Payment Service itself goes unavailable, the same pattern holds: Kafka retains the `trip_end` event until the service comes back, and an idempotency key on the charge prevents it from double-charging the rider once it does.
+
+Two failures are worth calling out as intentionally low-stakes. A driver's app disconnecting mid-trip just shows the rider a "signal lost" state while the driver reconnects — and only escalates to marking the trip interrupted (with ops notified) if there's no reconnect within 30 seconds. A Surge Calculator crash means the multiplier goes stale and, once its 60-second TTL expires, silently falls back to 1x — a brief window of under-pricing that costs nothing structurally, since the calculator resumes writing within seconds of restarting.
 
 ---
 
@@ -577,15 +583,9 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ### Geohash vs Quadtree for Driver Geospatial Index
 
-| Dimension | Geohash (Redis Geo) | Quadtree |
-|---|---|---|
-| Cell shape | Rectangle — uneven diagonal vs edge distance | Adaptive subdivision — cells match data density |
-| Neighbor lookup | Must check up to 9 cells for edge cases | Clean tree traversal — 4 children per node |
-| Write throughput | In-memory sorted set — 1.67M writes/sec | Tree rebalancing on write — slower at high write rates |
-| Operational cost | Redis built-in GEORADIUS — zero extra infra | Custom service or library — additional complexity |
-| Production use | Industry standard for most systems | Better for non-uniform density (dense city vs rural) |
+Redis Geo's geohash indexing divides the map into fixed rectangular cells — which means corner-to-corner distances are longer than edge-to-edge ones, and a search sitting near a cell boundary sometimes has to check up to 9 neighboring cells to be sure it hasn't missed anyone. A quadtree instead subdivides adaptively, so its cells match wherever drivers are actually dense, and neighbor lookups are a clean tree traversal — 4 children per node, no boundary special-casing. The trade is in write cost: Redis Geo's sorted set absorbs 1.67 million writes per second because there's no structure to rebalance, while a quadtree has to rebalance on write, which gets slower exactly as write volume grows. And operationally, `GEORADIUS` is one Redis command with zero extra infrastructure, where a quadtree means standing up and maintaining a custom service or library.
 
-**Chosen:** Redis Geo (geohash) — already in the stack for driver state and locks. GEORADIUS is a single command. The trade-off I accept is rectangular cells with slight edge distortion, which is acceptable because we expand to adjacent cells on radius expansion and the distortion (< 5% area difference) does not materially affect ETA accuracy.
+**Chosen:** Redis Geo — it's already in the stack for driver state and locking, and `GEORADIUS` is a single command rather than a system to build and run. The trade-off accepted is rectangular cells with slight edge distortion, which is fine here because the design already expands to adjacent cells on radius expansion (§8.1), and that distortion (under 5% area difference) doesn't meaningfully move ETA accuracy.
 
 > [!NOTE]
 > **Key Insight:** H3 hexagons (Uber's production choice) solve the corner-distance problem but require a custom indexing layer. For most systems, Redis GEORADIUS is the right default — zero extra infrastructure, built-in neighbor search, proven at scale.
@@ -594,15 +594,9 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ### WebSocket vs HTTP Polling for Live Tracking
 
-| Dimension | WebSocket | HTTP Polling |
-|---|---|---|
-| Connection overhead | Persistent — one TLS handshake, then frames | New HTTP request per update — TLS + headers each time |
-| Write volume at 5M drivers | 1.67M x 20B frames = 33 MB/s | 1.67M x 2KB headers = 3.3 GB/s |
-| Bidirectional | Yes — server pushes dispatch offer to driver | No — driver must poll for offers separately |
-| Server state | Stateful sticky routing needed | Stateless — any server handles any request |
-| Battery impact | Low — persistent connection | High — repeated TLS handshakes |
+The two options differ most in what each connection costs, repeated across 5 million drivers. WebSocket pays for one TLS handshake up front and then just streams frames — about 20 bytes per location update. HTTP polling pays full request/response overhead, TLS included, on every single update — roughly 2KB of headers and body each time. Multiplied out: 1.67 million updates a second is 33 MB/s over WebSocket versus 3.3 GB/s over HTTP polling, a 100x gap that's pure arithmetic, not a matter of preference. WebSocket is also bidirectional by default, so the server can push a dispatch offer to a driver the same way it pushes a location update — HTTP polling would need the driver to separately poll for offers on top of everything else. The one thing polling has going for it is statelessness: any server can handle any request, where WebSocket needs sticky routing to keep a driver's persistent connection pinned to one server, at some battery cost on the polling side too (repeated TLS handshakes drain a phone faster than one held-open connection).
 
-**Chosen:** WebSocket — at 5M drivers updating every 3 seconds, HTTP header overhead alone generates 3.3 GB/s of wasted bytes. WebSocket frames are ~20 bytes. The trade-off I accept is stateful sticky routing (drivers must reconnect to the same server region), which is acceptable because the Location Service is partitioned by city and drivers rarely cross region boundaries mid-shift.
+**Chosen:** WebSocket — the header-overhead math alone rules out polling at this scale. The trade-off accepted is stateful sticky routing per city region, which is workable because the Location Service is already partitioned by city and drivers rarely cross a region boundary mid-shift.
 
 > [!NOTE]
 > **Key Insight:** WebSocket vs HTTP is a math problem. 5M drivers x 1 update/3s x 2KB HTTP overhead = 3.3 GB/s in headers alone. WebSocket frames are ~20 bytes. The transport choice is arithmetic, not preference.
@@ -611,14 +605,9 @@ Driver phone disconnects -> WebSocket closes -> Location Svc detects
 
 ### Surge Pricing Consistency — Eventual vs Strong
 
-| Dimension | Strong consistency (read-your-writes) | Eventual consistency (Redis TTL 60s) |
-|---|---|---|
-| Accuracy | Multiplier always reflects latest demand | Up to 60s stale |
-| Latency impact | Must read from DB or leader on every fare call | Redis sub-ms read |
-| Complexity | Distributed transaction across Surge Calc + Ride Svc | Fire-and-forget write to Redis; Ride Svc reads independently |
-| Rider impact | Price always reflects current demand | Rider may see slightly outdated price |
+A strongly consistent surge multiplier would always reflect the latest demand exactly, but paying for that means reading from a database or a leader node on every single fare call, and coordinating a distributed transaction between the Surge Calculator and the Ride Service. The eventually consistent version — the one actually chosen — settles for a multiplier that can be up to 60 seconds stale, in exchange for a sub-millisecond Redis read and no cross-service coordination at all: the Surge Calculator fires off a write, and the Ride Service reads independently, with nothing synchronizing the two.
 
-**Chosen:** Eventual consistency with 60s TTL. The fare shown at request time is the fare charged (contractual). A 60-second staleness window does not materially harm riders or drivers. The strong-consistency alternative adds a synchronous DB read on every fare call — at 500K peak requests/sec this becomes a DB bottleneck.
+**Chosen:** Eventual consistency with a 60-second TTL. The fare shown at request time is the fare actually charged — it's contractual, not a live estimate — so a bounded staleness window doesn't materially harm either side. The strong-consistency alternative would add a synchronous database read to every fare call, and at 500,000 peak requests per second, that read becomes the bottleneck for a level of precision nobody's actually asking for.
 
 > [!NOTE]
 > **Key Insight:** Surge pricing staleness is a business tolerance decision, not a technical limitation. 60 seconds is enough granularity for a pricing signal. Exact real-time surge would require a synchronous distributed read on every fare request — the cost is not justified by the precision gained.
