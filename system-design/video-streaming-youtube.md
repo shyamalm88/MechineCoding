@@ -388,6 +388,9 @@ Segment length itself is a real trade-off, not an arbitrary constant. Short, 2-s
 
 The reason any of this scales economically at all is that segments, once transcoded, never change — `segment_0001.ts` for a given video at 720p is the same file forever, so it can carry a `Cache-Control: max-age=31536000` header (a full year) with zero risk of ever serving stale content. For a popular video, that pushes CDN hit rate toward 100%, which is the property that makes video delivery affordable in the first place — not a performance nicety layered on top.
 
+> [!NOTE]
+> **Key Insight:** Video segments are immutable content — this is the property that makes CDN caching perfect. A 99% CDN hit rate on segments means the origin only sees 1% of traffic.
+
 The last piece of this puzzle is which manifest format the player is even reading, since Apple's ecosystem and everyone else's don't agree. HLS is Apple's format, natively supported by Safari and iOS with no polyfill needed, but limited to H.264/H.265 and either MPEG-TS or fMP4 segments — it's the legacy format on YouTube and the required one on Apple platforms. DASH is the ISO standard instead, requiring Media Source Extensions outside Apple's ecosystem but supporting any codec, including VP9 and AV1, with fMP4-only segments — it's what Netflix and Disney+ lean on, and what YouTube itself has moved to for the majority of its modern delivery, because AV1 saves roughly 30% bandwidth over H.264 at the same visual quality.
 
 | Dimension | HLS (Apple) | DASH (ISO standard) |
@@ -396,9 +399,6 @@ The last piece of this puzzle is which manifest format the player is even readin
 | iOS/Safari support | Native, no polyfill needed | Requires Media Source Extensions |
 | Segment format | MPEG-TS or fMP4 | fMP4 only |
 | Adoption | YouTube (legacy), Apple | Netflix, YouTube (modern), Disney+ |
-
-> [!NOTE]
-> **Key Insight:** Video segments are immutable content — this is the property that makes CDN caching perfect. A 99% CDN hit rate on segments means the origin only sees 1% of traffic.
 
 ---
 
