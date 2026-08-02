@@ -532,7 +532,7 @@ Redis `INCR` sustains over a million operations per second on a single node, aga
 
 ### Single Transcode Job vs DAG Pipeline
 
-Transcoding a video as one job means one worker owns the whole video — simple as a plain queue consumer, but a crash means the entire video retries from zero, and all quality tiers finish together, whichever one takes longest. Splitting it into a DAG, one task per quality tier, means N workers can work the same video in parallel, a crash only costs the one tier that failed, and low tiers can go live independently of high ones — at the cost of needing a real orchestrator to track those dependencies and retries instead of a bare queue.
+Transcoding a video as one job means one worker owns the whole video — simple as a plain queue consumer, but a crash means the entire video retries from zero, and all quality tiers finish together, whichever one takes longest. Splitting it into a DAG, one task per quality tier, means N workers can work the same video in parallel, a crash only costs the one tier that failed, and low tiers can go live independently of high ones — at the cost of needing a real orchestrator (Temporal or Airflow) to track those dependencies and retries instead of a bare queue.
 
 **Chosen:** A DAG pipeline, with each quality tier published as its own Kafka message. 360p typically goes live in about a minute, with 4K following roughly ten minutes later — letting a viral upload become watchable at some quality almost immediately instead of waiting on the slowest tier. Temporal handles the dependency tracking and retry logic that this approach requires.
 
