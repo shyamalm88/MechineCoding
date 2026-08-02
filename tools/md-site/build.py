@@ -109,7 +109,8 @@ MERMAID_FENCE_RE = re.compile(
 
 def convert_markdown(text):
     body = md_lib.markdown(
-        text, extensions=["fenced_code", "tables", "toc", "attr_list"]
+        text,
+        extensions=["fenced_code", "tables", "toc", "attr_list", "md_in_html"],
     )
 
     def replace_mermaid(match):

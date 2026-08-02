@@ -205,6 +205,20 @@ class TestConvertMarkdown(unittest.TestCase):
         result = build.convert_markdown(text)
         self.assertIn('<pre><code class="language-js">', result)
 
+    def test_processes_markdown_inside_details_with_markdown_attribute(self):
+        # Points-to-Ponder blocks use <details markdown="1"> so inline
+        # formatting (bold, inline code) inside the collapsible answer
+        # renders correctly instead of showing literal ** and ` characters.
+        text = (
+            '<details markdown="1">\n'
+            "<summary>Q</summary>\n\n"
+            "Uses **strong consistency** via `WATCH/MULTI/EXEC`.\n\n"
+            "</details>\n"
+        )
+        result = build.convert_markdown(text)
+        self.assertIn("<strong>strong consistency</strong>", result)
+        self.assertIn("<code>WATCH/MULTI/EXEC</code>", result)
+
 
 class TestBuildNavData(unittest.TestCase):
     # The sidebar is no longer rendered server-side into each page -- it's
