@@ -200,10 +200,21 @@ mappings) should stay a table. During restructuring, verify per doc:
 already picked apart in conversation. User reviews the actual before/after
 result, not just this template description, before the remaining 24 proceed.
 
-**Phase 1+ (after pilot sign-off):** Remaining 24 docs, ordered by existing
-`site.config.json` star rating (3-star docs first, since those are already
-flagged as highest revision priority) — detailed phasing is for the
-implementation plan (`writing-plans` skill), not this spec.
+**Phase 1+ (after pilot sign-off):** Confirmed during Phase 1+ planning
+(`docs/superpowers/plans/2026-08-02-system-design-narrative-phase1plus.md`)
+that the remaining 24 files are not uniform: `SystemDesignQuestions.md` is a
+flat list of interview-question prompts with zero section headers (excluded
+— not a narrative-restructure candidate at all), and 6 files
+(`ecommerce-marketplace-amazon.md`, `video-conference-zoom.md`,
+`photo-grid-google-photos.md`, `instagram-photo-feed.md`,
+`bookmyshow-ticket-booking.md`, `travel-booking-airbnb-makemytrip.md`) are a
+different genre entirely — deep frontend component-architecture specs
+(Zustand stores, WebRTC signaling, virtualization), 2,000-21,000 lines each,
+not backend system designs — excluded per user decision, noted as needing
+their own template design in a future project rather than a variant of this
+one. That leaves **17 docs** in scope for this template, ordered by existing
+`site.config.json` star rating (3-star first) — detailed phasing is in the
+Phase 1+ plan above.
 
 After each doc (or each batch), rebuild `system-design-notes/`:
 ```bash
