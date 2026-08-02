@@ -12,40 +12,19 @@
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="system-design-youtube-video-streaming">System Design: YouTube / Video Streaming</h1>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>YouTube is a video platform where creators upload videos and viewers watch them globally at any quality. The core challenge is that <strong>upload throughput and watch latency are opposing forces</strong> — we solve them with separate, purpose-built pipelines.</p>
-<p><strong>In scope:</strong> Video upload, transcoding to multiple resolutions, adaptive bitrate streaming, video search, personalized recommendations, view counts, subscriptions and notifications.</p>
-<p><strong>Out of scope:</strong> Live streaming (different protocol stack — RTMP/WebRTC vs HLS), comments system (CRUD + ranking, separate deep dive), content moderation pipeline.</p>
+<h2 id="1-what-is-youtube-video-streaming">1. What Is YouTube / Video Streaming?</h2>
+<p>YouTube is a video platform where creators upload videos and viewers watch them from anywhere in the world, at whatever quality their connection can handle. A creator records something once, uploads it, and from then on anyone — on fast home wifi or spotty mobile data on a train — can press play and have it just work, with the picture quietly adjusting itself to whatever bandwidth is actually available.</p>
+<p>Underneath that simple experience are two goals pulling in opposite directions: getting a freshly uploaded video ready to watch as fast as possible, and making sure video that's already live plays back instantly and smoothly for millions of people watching at the same time. Everything in this design follows from treating those as two separate, purpose-built pipelines rather than trying to make one system do both jobs.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<p><strong>Given numbers:</strong> 500M DAU, 500 hours of video uploaded per minute, 10M concurrent streams.</p>
-<h3 id="storage-per-day">Storage Per Day</h3>
-<pre><code>Upload rate:      500 hrs/min x 1440 min/day = 720,000 hrs/day of raw video
-Raw video:        720,000 hrs x 3,600 sec/hr x ~5 Mbps avg = ~1.6 PB/day raw
-After transcode:  Store 4 quality tiers (360p/720p/1080p/4K) + original
-                  Multiplier ~3.5x = ~5.6 PB/day new video added
-Compression gain: H.265/AV1 saves ~40-50% vs H.264 -- use modern codecs
-Realistic:        ~2-3 PB/day after compression, tiered to cold storage
-</code></pre>
-<h3 id="bandwidth">Bandwidth</h3>
-<pre><code>Concurrent streams:  10M
-Avg bitrate mix:     ~3 Mbps (weighted avg across quality tiers)
-Peak bandwidth:      10M x 3 Mbps = 30 Tbps
-CDN absorbs 95%+ so origin sees: ~1.5 Tbps worst case
-</code></pre>
-<h3 id="transcoding-queue-depth">Transcoding Queue Depth</h3>
-<pre><code>500 hrs/min uploaded
-Avg video length: 7 min -&gt; 500 hrs x 60 / 7 = ~4,300 videos/min = ~72 videos/sec
-Each video needs 4 transcode jobs -&gt; 288 jobs/sec at steady state
-Peak (viral events): 3-5x -&gt; need ~1,000-1,500 workers at peak
-Auto-scaling transcoding workers is mandatory, not optional
-</code></pre>
-<blockquote>
-<p>These numbers drive three decisions: async transcoding (synchronous is impossible at 288 jobs/sec), CDN-first delivery (30 Tbps requires edge caching), and Redis for view counts (10M concurrent viewers generating events cannot write to DB directly).</p>
-</blockquote>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Maya just finished filming a cooking video and taps "Upload" from her phone. A progress bar climbs as the raw file streams up in the background — she doesn't have to sit and watch it; she closes the app and starts editing her next video's thumbnail instead. A few minutes later, a notification lands: "Your video is now live." She posts the link.</p>
+<p>On the other side of the world, Dev opens the app that evening, searches "pasta recipe," and Maya's video is already sitting in the results — even though she uploaded it only a few minutes earlier. He taps play. The video starts in about two seconds, no spinner, no wait. For the first couple of seconds the picture looks a little soft while his phone's connection settles in, then it sharpens up on its own — he doesn't touch a settings menu, and he doesn't notice the switch happening at all. He watches the whole thing, taps like, and subscribes to Maya's channel.</p>
+<p>Later that night, Maya checks her channel and sees her subscriber count has ticked up and her view count is climbing — not updating instantly, more like catching up every so often, but close enough that she never notices a delay. Neither Maya nor Dev ever thought about a transcoding job, a manifest file, or a cache — everything from here on is how that experience actually gets built.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
-<ul>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> In scope: video upload, transcoding to multiple resolutions, adaptive bitrate streaming, video search, personalized recommendations, view counts, subscriptions and notifications. Out of scope: live streaming (a different protocol stack entirely — RTMP/WebRTC instead of HLS), the comments system (its own CRUD-plus-ranking deep dive), and the content moderation pipeline.</p>
+<p><strong>Functional requirements:</strong></p>
+<ol>
 <li>Creators can upload videos up to 128GB in any common format (MP4, MOV, AVI, MKV)</li>
 <li>System transcodes every video to 360p, 720p, 1080p, and 4K (where source quality allows)</li>
 <li>Viewers stream video with adaptive bitrate — quality adjusts automatically to network conditions</li>
@@ -54,51 +33,54 @@ Auto-scaling transcoding workers is mandatory, not optional
 <li>View counts are displayed and updated in near-real-time (eventual consistency acceptable)</li>
 <li>Subscribers receive notifications when a channel uploads a new video</li>
 <li>Creators can upload custom thumbnails; system auto-generates thumbnails from video frames</li>
-</ul>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+</ol>
+<details>
+<summary><strong>Point to Ponder:</strong> View counts are only "eventually" accurate — when does that actually become a problem?</summary>
+<p>For the number a viewer sees on screen, it doesn't: 1,234,567 vs 1,234,623 is indistinguishable to a human, and nobody is watching their own view count tick up in real time. The one case where staleness would actually matter is gating — something like "unlock a feature at 1M views" — and that case deliberately doesn't use the main view-count path at all. It runs through a separate, synchronous counter backed by a real DB transaction. See §8.3 in Deep Dives for the full write-path mechanics.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real user, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
-<th>Rationale</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Video start latency</td>
 <td>&lt; 2 seconds</td>
-<td>Studies show &gt;3s abandonment rate spikes sharply</td>
+<td>Studies show abandonment rate spikes sharply past 3 seconds — a viewer who taps play and waits is a viewer who leaves.</td>
 </tr>
 <tr>
 <td>Upload processing</td>
 <td>&lt; 5 minutes for 720p to go live</td>
-<td>Creator experience; viral uploads need speed</td>
+<td>A creator who just finished editing wants to share the link now, especially for time-sensitive or viral content.</td>
 </tr>
 <tr>
 <td>Availability</td>
 <td>99.9% for streaming (8.7 hrs downtime/year)</td>
-<td>Planned maintenance windows acceptable</td>
+<td>Planned maintenance windows are acceptable, but an outage during peak viewing hours is lost watch-time for millions of people at once.</td>
 </tr>
 <tr>
 <td>Durability</td>
 <td>99.999999999% (S3 eleven-nines)</td>
-<td>Videos must never be lost</td>
+<td>A creator's video is often the only copy that exists — losing it isn't a bug, it's someone's work gone.</td>
 </tr>
 <tr>
 <td>Search freshness</td>
 <td>&lt; 30 seconds after video goes live</td>
-<td>Near-real-time indexing via Kafka -&gt; Elasticsearch</td>
+<td>A creator who just uploaded and shares the link expects it to be findable immediately, not tomorrow.</td>
 </tr>
 <tr>
 <td>View count freshness</td>
 <td>eventual, ~60 second lag</td>
-<td>Strong consistency not worth the write amplification</td>
+<td>Not user-facing patience so much as system economics — see the Consistency Model below and §8.3 for why this is a deliberate choice, not a shortcut.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="consistency-model">Consistency Model</h3>
+<p><strong>Consistency Model:</strong></p>
 <table>
 <thead>
 <tr>
@@ -130,9 +112,42 @@ Auto-scaling transcoding workers is mandatory, not optional
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> The system maintains both an HLS manifest and a DASH manifest for the same video — doesn't that mean transcoding everything twice?</summary>
+<p>No — the underlying video segments are identical (fMP4) either way; only the manifest file describing them differs. Apple devices need HLS because Safari and iOS have no other native option, while DASH covers Android and web with far more codec flexibility. The API layer picks which manifest to hand back based on the requesting device, so supporting both formats is a manifest-generation detail, not a second encode. See §9.2 Trade-offs for the full reasoning.</p>
+</details>
 <hr />
-<h2 id="mental-model">🧠 Mental Model</h2>
-<p>YouTube is two completely different systems sharing a data store. The <strong>Upload Path</strong> is a reliable, async pipeline — correctness over speed. The <strong>Watch Path</strong> is a fast, read-heavy path — latency over everything. Every design decision maps cleanly to one of these two paths.</p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking what these given numbers — 500M daily active users, 500 hours of video uploaded every minute, 10M concurrent streams — actually force on the architecture.</p>
+<p><strong>How much new video does the system store per day?</strong> 500 hours uploaded every minute, over 1,440 minutes in a day, is a lot of raw footage before any processing even starts:</p>
+<pre><code>Upload rate:      500 hrs/min x 1440 min/day = 720,000 hrs/day of raw video
+Raw video:        720,000 hrs x 3,600 sec/hr x ~5 Mbps avg = ~1.6 PB/day raw
+After transcode:  Store 4 quality tiers (360p/720p/1080p/4K) + original
+                  Multiplier ~3.5x = ~5.6 PB/day new video added
+Compression gain: H.265/AV1 saves ~40-50% vs H.264 -- use modern codecs
+Realistic:        ~2-3 PB/day after compression, tiered to cold storage
+</code></pre>
+<p>That 1.6 PB/day of raw footage alone rules out treating storage as an afterthought — even before transcoding multiplies it further, this is a problem that only tiered, compressed object storage solves economically, not a database with a blob column.</p>
+<p><strong>How much bandwidth does serving 10 million concurrent streams take?</strong> At a blended average bitrate across quality tiers of about 3 Mbps:</p>
+<pre><code>Concurrent streams:  10M
+Avg bitrate mix:     ~3 Mbps (weighted avg across quality tiers)
+Peak bandwidth:      10M x 3 Mbps = 30 Tbps
+CDN absorbs 95%+ so origin sees: ~1.5 Tbps worst case
+</code></pre>
+<p>30 Tbps is not a number any origin data center is provisioned to push directly to end users — that figure alone is what makes a CDN mandatory rather than a nice-to-have. The system only works because the CDN absorbs 95%+ of that traffic at the edge, leaving origin servers to handle roughly 1.5 Tbps of actual cache misses.</p>
+<p><strong>What does the upload side imply for the transcoding pipeline?</strong> 500 hours of video arriving every minute, at an average video length of 7 minutes, works out to:</p>
+<pre><code>500 hrs/min uploaded
+Avg video length: 7 min -&gt; 500 hrs x 60 / 7 = ~4,300 videos/min = ~72 videos/sec
+Each video needs 4 transcode jobs -&gt; 288 jobs/sec at steady state
+Peak (viral events): 3-5x -&gt; need ~1,000-1,500 workers at peak
+Auto-scaling transcoding workers is mandatory, not optional
+</code></pre>
+<p>288 transcoding jobs arriving every second rules out doing this work synchronously on the upload request — there's no way to hold a creator's connection open through that. And because viral events can spike demand 3-5x with no warning, the worker pool has to auto-scale on its own; a fixed-size pool sized for steady state would fall behind the moment a video goes viral.</p>
+<p>Put together, these three numbers are what drive nearly every major decision in this design: async transcoding via Kafka (synchronous processing is impossible at 288 jobs/sec), CDN-first delivery (30 Tbps requires edge caching, since no origin absorbs that directly), and Redis for view counts (10M concurrent viewers generating events cannot write straight to a database).</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Maya's upload and Dev's watch from the story above — here's what's actually happening underneath both of them.</p>
+<p>YouTube is really two completely different systems sharing a data store. The <strong>Upload Path</strong> is a reliable, async pipeline where correctness matters more than speed — Maya's video can take a few minutes to become watchable, but it must never be silently lost along the way. The <strong>Watch Path</strong> is a fast, read-heavy path where latency matters above everything else — Dev's video has to start in about two seconds, no matter how many other people are streaming at that exact moment. Every design decision in this system maps cleanly onto one of these two paths.</p>
 <pre><code>UPLOAD PATH (Write-heavy, async, correctness-first)
 ================================================================
 Creator --&gt; Chunked Upload --&gt; Raw S3
@@ -165,7 +180,7 @@ Viewer --&gt; API Gateway --&gt; Metadata Service --&gt; Redis Cache
                                      CDN serves video segments (ts files)
                                    (95%+ cache hit -- segments are immutable)
 </code></pre>
-<h3 id="core-design-principles">⚡ Core Design Principles</h3>
+<h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
 <tr>
@@ -197,142 +212,15 @@ Viewer --&gt; API Gateway --&gt; Metadata Service --&gt; Redis Cache
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> Why does the transcoding worker fetch the raw video from S3, instead of the Upload Service handing it directly to the worker?</summary>
+<p>Because whatever holds the raw video has to survive a worker crashing mid-job. If the raw bytes only existed in the Upload Service's memory or local disk, a crashed worker would mean the source video is simply gone — there'd be nothing left to retry from. Writing raw video to S3 first means any worker, including a freshly spun-up replacement, can pick the job back up from scratch. Durability is the input contract. See §8.2 for the full transcoding pipeline.</p>
+</details>
+<details>
+<summary><strong>Point to Ponder:</strong> View events flow through a Kafka topic (KF2) before reaching the batch job — why not have the client just call Redis INCR directly?</summary>
+<p>Because Kafka is what makes the view-count pipeline survive a Redis outage without losing data. If the client wrote straight to Redis and Redis went down, every view event during that window would simply vanish. Routing events through Kafka first means they're durably queued regardless of whether Redis is currently up — when Redis recovers, a batch replayer catches up from the Kafka log, so the worst case is a few extra minutes of lag, not lost view counts. See §9.1 Failure Scenarios for how this plays out end to end.</p>
+</details>
 <hr />
-<h2 id="6-api-design">6. API Design</h2>
-<table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Path</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>POST</td>
-<td>/api/v1/videos/upload/init</td>
-<td>Initiate upload, returns {video_id, upload_url} — direct-to-S3 pre-signed URL</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/videos/upload/complete</td>
-<td>Confirm upload done, triggers transcoding pipeline</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/videos/{id}</td>
-<td>Video metadata + manifest URL (.m3u8 or .mpd) for player</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/videos/{id}/stream</td>
-<td>Redirects to CDN manifest — this is what the player fetches</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/search?q=&amp;page=</td>
-<td>Full-text search via Elasticsearch</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/feed/recommendations?user_id=</td>
-<td>Personalized feed — collaborative filtering results</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/videos/{id}/views</td>
-<td>Record a view event (fire-and-forget, eventual consistency)</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>[!NOTE]
-<code>GET /videos/{id}/stream</code> is architecturally important — it returns a CDN URL (m3u8 manifest), not video bytes. The app server's job is just to hand off to CDN. Every subsequent segment fetch goes directly to CDN edge — the app server is never in the video data path again.</p>
-</blockquote>
-<hr />
-<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
-<h3 id="upload-flow">Upload Flow</h3>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>Creator clicks "Upload" — client calls <code>POST /videos/upload/init</code> with filename, size, and format.</li>
-<li>Upload Service returns a <code>video_id</code> and a pre-signed S3 PUT URL. The video bytes never go through the app server.</li>
-<li>Client uploads the raw video file directly to S3 in chunks (multipart upload). Resumable if the connection drops.</li>
-<li>S3 notifies the Upload Service that all parts are received. Creator confirms via <code>POST /videos/upload/complete</code>.</li>
-<li>Upload Service publishes a <code>transcode_job</code> event to Kafka: <code>{video_id, s3_raw_path, target_qualities: [360p, 720p, 1080p, 4K]}</code>.</li>
-<li>Transcode Workers consume the job from Kafka. They auto-scale based on queue depth — more uploads = more workers spun up.</li>
-<li>Each worker fetches the raw video from S3, transcodes it into multiple resolutions using FFmpeg, and generates thumbnail images.</li>
-<li>Workers write the transcoded segments and an HLS manifest file (<code>.m3u8</code>) to S3. The manifest lists every segment URL for every quality tier.</li>
-<li>Worker writes video metadata to Cassandra: status = LIVE, manifest_url, thumbnail_url, duration.</li>
-<li>CDN is instructed to prefetch the manifest and first few segments. Video is now streamable — creator gets notified.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant C as Creator
-    participant US as Upload Service
-    participant S3r as S3 Raw
-    participant KF as Kafka
-    participant TW as Transcode Worker
-    participant S3t as S3 Transcoded
-    participant DB as Cassandra
-    participant CDN as CDN
-
-    C-&gt;&gt;US: Initiate multipart upload (filename, size, format)
-    US--&gt;&gt;C: Upload ID + presigned S3 URLs for each chunk
-    C-&gt;&gt;S3r: Upload chunks directly to S3 (parallel, resumable)
-    S3r--&gt;&gt;US: S3 event: all parts received
-    US-&gt;&gt;KF: Publish transcode job (video_id, s3_raw_path, target_qualities)
-    Note over KF,TW: Workers consume jobs independently -- auto-scale to queue depth
-    TW-&gt;&gt;S3r: Fetch raw video
-    TW-&gt;&gt;TW: Transcode to 360p, 720p, 1080p, 4K + generate thumbnails
-    TW-&gt;&gt;S3t: Write transcoded segments and manifest (m3u8)
-    TW-&gt;&gt;DB: Write video metadata (status=live, manifest_url, thumbnail_url)
-    TW-&gt;&gt;CDN: Trigger prefetch of manifest + first segments
-    CDN--&gt;&gt;C: Video is now streamable
-</div>
-<h3 id="watch-flow">Watch Flow</h3>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>Viewer clicks a video. Client calls <code>GET /videos/{id}</code> to fetch metadata.</li>
-<li>Metadata Service checks Redis cache first. Cache hit: returns in &lt; 1ms. Cache miss: reads from Cassandra, populates Redis with a 5-minute TTL.</li>
-<li>Response includes the manifest URL (a CDN URL pointing to the <code>.m3u8</code> file) — not any video bytes.</li>
-<li>The ABR player fetches the manifest from the CDN edge node. The manifest is a plain text file listing all quality tiers and their segment URLs.</li>
-<li>Player picks an initial quality based on current bandwidth estimate. Starts downloading 2-second video segments from the CDN.</li>
-<li>CDN serves segments from the edge cache — segments are immutable content with long TTLs, so cache hit rate is very high (&gt; 95%). If cache miss, CDN fetches from S3 origin.</li>
-<li>Player continuously monitors download speed and buffer fill. If bandwidth drops, it switches to a lower quality tier on the next segment boundary — seamless, no rebuffering.</li>
-<li>Meanwhile, the client fires a <code>POST /view-event</code> — a fire-and-forget call. API increments a Redis counter. A batch job flushes Redis counts to Cassandra every 60 seconds. Eventual consistency is fine for view counts.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant V as Viewer
-    participant AG as API Gateway
-    participant MS as Metadata Service
-    participant RC as Redis Cache
-    participant CS as Cassandra
-    participant CDN as CDN Edge
-    participant P as ABR Player
-
-    V-&gt;&gt;AG: GET /watch?v=video_id
-    AG-&gt;&gt;MS: Fetch video metadata
-    MS-&gt;&gt;RC: Cache lookup (video_id)
-    alt Cache hit
-        RC--&gt;&gt;MS: Return metadata (manifest URL, thumbnail, title)
-    else Cache miss
-        MS-&gt;&gt;CS: Query Cassandra
-        CS--&gt;&gt;MS: Metadata row
-        MS-&gt;&gt;RC: Populate cache (TTL 5 min)
-    end
-    MS--&gt;&gt;V: Video page with manifest URL
-    V-&gt;&gt;CDN: Fetch m3u8 manifest (playlist file)
-    CDN--&gt;&gt;P: Manifest listing segment URLs per quality tier
-    P-&gt;&gt;CDN: Fetch segments for selected quality tier
-    Note over P,CDN: Player monitors buffer + bandwidth estimate
-    P-&gt;&gt;CDN: Switch quality tier if bandwidth changes
-    V-&gt;&gt;AG: POST /view-event (video_id, timestamp)
-    AG-&gt;&gt;RC: INCR view counter in Redis
-    Note over RC: Batch job flushes Redis counts to Cassandra every 60s
-</div>
-<hr />
-<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
 <h3 id="simple-design-start-here-in-the-interview">Simple Design (Start Here in the Interview)</h3>
 <div class="mermaid">
 graph TD
@@ -399,19 +287,134 @@ graph TD
     REC --&gt; RC
     TW --&gt; NS
 </div>
+<p>Scaling this out is what turns one Kafka queue and one database into the fuller picture above — a dedicated view-event/search-event queue (KF2) feeding batch jobs, a recommendation service reading from that same pipeline, and a notification service fanning out off the back of the transcode workers. None of that is optional once the numbers from §4 are in play.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> The CDN is not a performance optimization — at 30 Tbps, it is the only way the system physically works. Origin servers cannot absorb that bandwidth.</p>
 </blockquote>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>The diagrams above show the components; this shows the actual message sequence between them, end to end — first the upload, then the watch.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant C as Creator
+    participant US as Upload Service
+    participant S3r as S3 Raw
+    participant KF as Kafka
+    participant TW as Transcode Worker
+    participant S3t as S3 Transcoded
+    participant DB as Cassandra
+    participant CDN as CDN
+
+    C-&gt;&gt;US: Initiate multipart upload (filename, size, format)
+    US--&gt;&gt;C: Upload ID + presigned S3 URLs for each chunk
+    C-&gt;&gt;S3r: Upload chunks directly to S3 (parallel, resumable)
+    S3r--&gt;&gt;US: S3 event: all parts received
+    US-&gt;&gt;KF: Publish transcode job (video_id, s3_raw_path, target_qualities)
+    Note over KF,TW: Workers consume jobs independently -- auto-scale to queue depth
+    TW-&gt;&gt;S3r: Fetch raw video
+    TW-&gt;&gt;TW: Transcode to 360p, 720p, 1080p, 4K + generate thumbnails
+    TW-&gt;&gt;S3t: Write transcoded segments and manifest (m3u8)
+    TW-&gt;&gt;DB: Write video metadata (status=live, manifest_url, thumbnail_url)
+    TW-&gt;&gt;CDN: Trigger prefetch of manifest + first segments
+    CDN--&gt;&gt;C: Video is now streamable
+</div>
+<div class="mermaid">
+sequenceDiagram
+    participant V as Viewer
+    participant AG as API Gateway
+    participant MS as Metadata Service
+    participant RC as Redis Cache
+    participant CS as Cassandra
+    participant CDN as CDN Edge
+    participant P as ABR Player
+
+    V-&gt;&gt;AG: GET /watch?v=video_id
+    AG-&gt;&gt;MS: Fetch video metadata
+    MS-&gt;&gt;RC: Cache lookup (video_id)
+    alt Cache hit
+        RC--&gt;&gt;MS: Return metadata (manifest URL, thumbnail, title)
+    else Cache miss
+        MS-&gt;&gt;CS: Query Cassandra
+        CS--&gt;&gt;MS: Metadata row
+        MS-&gt;&gt;RC: Populate cache (TTL 5 min)
+    end
+    MS--&gt;&gt;V: Video page with manifest URL
+    V-&gt;&gt;CDN: Fetch m3u8 manifest (playlist file)
+    CDN--&gt;&gt;P: Manifest listing segment URLs per quality tier
+    P-&gt;&gt;CDN: Fetch segments for selected quality tier
+    Note over P,CDN: Player monitors buffer + bandwidth estimate
+    P-&gt;&gt;CDN: Switch quality tier if bandwidth changes
+    V-&gt;&gt;AG: POST /view-event (video_id, timestamp)
+    AG-&gt;&gt;RC: INCR view counter in Redis
+    Note over RC: Batch job flushes Redis counts to Cassandra every 60s
+</div>
 <hr />
-<h2 id="9-data-model">9. Data Model</h2>
+<h2 id="6-api-design">6. API Design</h2>
+<p>The API surface splits along the same line as everything else in this design: endpoints that get a video <strong>in</strong> (upload) and endpoints that get a video <strong>out</strong> (watch, search, discovery, engagement). The two client flows barely overlap — a creator's upload session and a viewer's playback session touch almost none of the same code paths, except that they eventually meet at the same <code>video_id</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td>/api/v1/videos/upload/init</td>
+<td>Initiate upload, returns {video_id, upload_url} — direct-to-S3 pre-signed URL</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/videos/upload/complete</td>
+<td>Confirm upload done, triggers transcoding pipeline</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/videos/{id}</td>
+<td>Video metadata + manifest URL (.m3u8 or .mpd) for player</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/videos/{id}/stream</td>
+<td>Redirects to CDN manifest — this is what the player fetches</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/search?q=&amp;page=</td>
+<td>Full-text search via Elasticsearch</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/feed/recommendations?user_id=</td>
+<td>Personalized feed — collaborative filtering results</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/videos/{id}/views</td>
+<td>Record a view event (fire-and-forget, eventual consistency)</td>
+</tr>
+</tbody>
+</table>
+<p>Two of these rows are doing more work than they look like they are. <code>POST /videos/{id}/views</code> is deliberately fire-and-forget — the client doesn't wait for a response that confirms the count updated, because view counts are eventually consistent by design (§3, §8.3). And <code>GET /videos/{id}/stream</code> is the one worth pausing on:</p>
+<blockquote>
+<p>[!NOTE]
+<code>GET /videos/{id}/stream</code> is architecturally important — it returns a CDN URL (m3u8 manifest), not video bytes. The app server's job is just to hand off to CDN. Every subsequent segment fetch goes directly to CDN edge — the app server is never in the video data path again.</p>
+</blockquote>
+<hr />
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Eight different pieces of data live in this system, and grouping them by how they're actually used — rather than as one flat list — makes the storage choices almost obvious.</p>
+<p><strong>The ephemeral, fast-path data lives in Redis.</strong> View counts are the clearest case: 10 million concurrent viewers generating events works out to roughly 100K writes/sec, and Redis <code>INCR</code> handles that atomically, in-memory, at sub-millisecond latency, with a batch job flushing the delta to Cassandra every 60 seconds — a video's exact view count at any given instant simply doesn't need to be durable on its own. Upload sessions follow the same logic for a different reason: <code>upload_id -&gt; chunk_bitmask, expiry</code> is ephemeral, short-lived tracking state, and putting it in a real database would just be write amplification for data that TTLs itself away once the upload finishes. Recommendations sit in Redis too, but as a cache in front of an ML pipeline rather than a live computation — the actual <code>user_id -&gt; [video_id list]</code> results are precomputed every few hours from watch history in Cassandra, and Redis just serves the last computed list in under a millisecond.</p>
+<p><strong>The durable, high-write data lives in Cassandra, because the write volume rules out a single relational primary.</strong> Video metadata (<code>video_id</code>, <code>title</code>, <code>channel_id</code>, <code>manifest_url</code>, <code>status</code>, <code>view_count</code>, and so on) sees roughly 500 videos going live per second plus the same 10M-view-count-updates-per-minute traffic layered on top — and a PostgreSQL primary saturates around 50K writes/sec, well below what this workload needs. Cassandra's multi-master model absorbs it instead, keyed by <code>video_id</code> as the partition key. Subscriptions live in Cassandra for a related but distinct reason: the access pattern is always "give me every subscriber for channel X," and partitioning by <code>channel_id</code> turns that fan-out query into a single-node read rather than a scatter-gather across a relational schema.</p>
+<p><strong>The genuinely relational, low-write data still belongs in PostgreSQL.</strong> User accounts — <code>user_id</code>, <code>email</code>, <code>channel_id</code>, <code>created_at</code>, <code>subscription_list</code> — need real ACID guarantees, but they're read-mostly and rarely written, so none of the write-throughput pressure that pushed video metadata to Cassandra applies here. This is the same reasoning the Trade-offs section returns to (§9.2): Cassandra was never chosen because the metadata schema demanded it — it was chosen because of the view-count write load riding along with it.</p>
+<p><strong>Search and video bytes are their own category entirely.</strong> The search index — <code>video_id</code>, <code>title</code>, <code>description</code>, <code>tags</code>, <code>channel</code>, <code>upload_time</code> — needs an inverted index for full-text search across billions of videos, something Cassandra simply can't do efficiently, so it lives in Elasticsearch. Video segments themselves (<code>bucket/video_id/quality/segment_N.ts</code> plus <code>video_id/master.m3u8</code>) are immutable objects at effectively unlimited scale, which is exactly what object storage is for — S3, with native CDN integration, not a database at all.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why This Store</th>
 </tr>
 </thead>
 <tbody>
@@ -419,68 +422,61 @@ graph TD
 <td>Video metadata</td>
 <td>Cassandra</td>
 <td>video_id (partition), created_at, title, channel_id, manifest_url, status, view_count</td>
-<td>Write-heavy (500 videos/sec going live + 10M view count updates/min). Cassandra multi-master handles this; PostgreSQL primary would saturate at ~50K writes/sec</td>
 </tr>
 <tr>
 <td>Video segments</td>
 <td>S3</td>
 <td>bucket/video_id/quality/segment_N.ts + video_id/master.m3u8</td>
-<td>Immutable objects, unlimited scale, CDN-native integration</td>
 </tr>
 <tr>
 <td>User accounts</td>
 <td>PostgreSQL</td>
 <td>user_id, email, channel_id, created_at, subscription_list</td>
-<td>Relational data with ACID requirements; user records are low-write, read-mostly</td>
 </tr>
 <tr>
 <td>Search index</td>
 <td>Elasticsearch</td>
 <td>video_id, title, description, tags, channel, upload_time</td>
-<td>Inverted index for full-text search across billions of videos; Cassandra cannot do text search efficiently</td>
 </tr>
 <tr>
 <td>View counts (hot)</td>
 <td>Redis HyperLogLog / INCR</td>
 <td>video_id -&gt; count</td>
-<td>10M concurrent viewers generating events = ~100K writes/sec. Redis INCR is atomic, in-memory, sub-millisecond. Flushed to Cassandra every 60s by batch job</td>
 </tr>
 <tr>
 <td>Recommendations</td>
 <td>Redis + ML Feature Store</td>
 <td>user_id -&gt; [video_id list]</td>
-<td>Pre-computed recommendations served from Redis (&lt; 1ms). Recomputed every few hours by ML pipeline using watch history from Cassandra</td>
 </tr>
 <tr>
 <td>Subscriptions</td>
 <td>Cassandra</td>
 <td>channel_id (partition), subscriber_id</td>
-<td>Fan-out query: "give me all subscribers for channel X" — Cassandra partition key makes this a single-node read</td>
 </tr>
 <tr>
 <td>Upload sessions</td>
 <td>Redis</td>
 <td>upload_id -&gt; chunk_bitmask, expiry</td>
-<td>Ephemeral state, TTL-based cleanup. DB would create write amplification for short-lived upload state</td>
 </tr>
 </tbody>
 </table>
+<p>The table is a compact recap of storage location, not a repeat of the reasoning above — but one line in it is easy to misread as a schema choice rather than a load choice:</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Cassandra for video metadata is a write-throughput decision, not a schema decision. The moment view count updates hit 100K/sec, SQL primary write ceiling becomes the bottleneck.</p>
 </blockquote>
 <hr />
-<h2 id="10-deep-dives">10. Deep Dives</h2>
-<h3 id="71-adaptive-bitrate-streaming-abr">7.1 Adaptive Bitrate Streaming (ABR)</h3>
-<p>Here is the problem we are solving: a viewer on a mobile network experiences bandwidth swings from 500 Kbps to 20 Mbps in a single session. A fixed-quality stream either buffers (if too high) or looks terrible (if too low). ABR lets the player choose quality dynamically without the server knowing.</p>
-<p><strong>How HLS works:</strong></p>
-<p>The transcoding pipeline outputs a <strong>master manifest</strong> (<code>master.m3u8</code>) that lists every quality tier and their individual playlists. Each quality playlist lists segment URLs (2-10 second <code>.ts</code> files). The player fetches segments, measures how fast each download completed, and picks the next segment from a higher or lower quality tier accordingly.</p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-adaptive-bitrate-streaming-abr">8.1 Adaptive Bitrate Streaming (ABR)</h3>
+<p>Here's the problem ABR exists to solve: a viewer's phone might have a rock-solid 20 Mbps wifi connection one moment and a spotty 500 Kbps cell signal the next, sometimes within the same viewing session. A video encoded at one fixed quality can't survive that swing in either direction — encode it high and the bandwidth drops turn into stalling and rebuffering, encode it low and a viewer on a great connection is stuck looking at a needlessly blurry picture for no reason. What ABR has to guard against, specifically, is those two failure modes — rebuffering when bandwidth drops, and wasted quality when it doesn't — and it has to do it without the server ever knowing in advance which situation any given viewer is in.</p>
+<p>The pieces that make this possible are simple by design: a single <strong>master manifest</strong> that lists every quality tier and points to that tier's own playlist; a <strong>per-quality playlist</strong> listing that tier's individual segment files; <strong>segments</strong> themselves, short chunks of video a few seconds long; and, entirely on the client side, the player's own <strong>bandwidth and buffer estimator</strong>, which is the part actually making the quality decisions — the server never gets involved in picking a tier.</p>
+<p>The workflow that ties those pieces together is what runs on every single playback session: the player fetches the master manifest first, picks an initial quality tier based on whatever bandwidth estimate it can make before playback even starts, and begins downloading segments in that tier. From there, it continuously measures how fast each segment download completed and how full its buffer is, and if bandwidth drops or rises, it switches to a different quality tier — but only at the next segment boundary, never mid-segment, which is what makes the switch invisible instead of a visible stutter.</p>
 <pre><code>master.m3u8
   ├── 360p/playlist.m3u8   -&gt; segment_0001.ts, segment_0002.ts ...
   ├── 720p/playlist.m3u8   -&gt; segment_0001.ts, segment_0002.ts ...
   └── 1080p/playlist.m3u8  -&gt; segment_0001.ts, segment_0002.ts ...
 </code></pre>
-<p><strong>Segment size trade-off:</strong></p>
+<p>Segment length itself is a real trade-off, not an arbitrary constant. Short, 2-second chunks let a stream start fast and let the player react to a bandwidth change almost immediately — but that fine-grained switching comes at the cost of a very high object count, since every couple of seconds of every quality tier is its own file to store and cache. Long, 10-second chunks flip every one of those properties: startup is slower because the player needs at least two chunks buffered before it can safely begin, quality switches lag behind real bandwidth changes since the player is committed to a tier for the whole 10 seconds, but the object count driving storage and cache overhead drops accordingly. YouTube settles on roughly 2-second segments as its balance point; Netflix, weighing the trade differently, uses 4 seconds.</p>
 <table>
 <thead>
 <tr>
@@ -505,9 +501,8 @@ graph TD
 </tr>
 </tbody>
 </table>
-<p>YouTube uses ~2 second segments for a balance. Netflix uses 4 seconds.</p>
-<p><strong>Why CDN caching is perfect for video segments:</strong> Segments are immutable — once transcoded, <code>segment_0001.ts</code> for video X at 720p never changes. Cache-Control: max-age=31536000 (1 year). CDN hit rate for popular videos approaches 100%. This is the key property that makes video delivery economically feasible.</p>
-<p><strong>HLS vs DASH:</strong></p>
+<p>The reason any of this scales economically at all is that segments, once transcoded, never change — <code>segment_0001.ts</code> for a given video at 720p is the same file forever, so it can carry a <code>Cache-Control: max-age=31536000</code> header (a full year) with zero risk of ever serving stale content. For a popular video, that pushes CDN hit rate toward 100%, which is the property that makes video delivery affordable in the first place — not a performance nicety layered on top.</p>
+<p>The last piece of this puzzle is which manifest format the player is even reading, since Apple's ecosystem and everyone else's don't agree. HLS is Apple's format, natively supported by Safari and iOS with no polyfill needed, but limited to H.264/H.265 and either MPEG-TS or fMP4 segments — it's the legacy format on YouTube and the required one on Apple platforms. DASH is the ISO standard instead, requiring Media Source Extensions outside Apple's ecosystem but supporting any codec, including VP9 and AV1, with fMP4-only segments — it's what Netflix and Disney+ lean on, and what YouTube itself has moved to for the majority of its modern delivery, because AV1 saves roughly 30% bandwidth over H.264 at the same visual quality.</p>
 <table>
 <thead>
 <tr>
@@ -539,17 +534,14 @@ graph TD
 </tr>
 </tbody>
 </table>
-<p>YouTube has moved to DASH + fMP4 for better codec flexibility (AV1 saves ~30% bandwidth at same quality vs H.264).</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Video segments are immutable content — this is the property that makes CDN caching perfect. A 99% CDN hit rate on segments means the origin only sees 1% of traffic.</p>
 </blockquote>
 <hr />
-<h3 id="72-transcoding-pipeline">7.2 Transcoding Pipeline</h3>
-<p>Here is the problem we are solving: 500 hours of video uploaded every minute cannot be transcoded synchronously. A single 1-hour 4K video takes 20-40 minutes to transcode even on powerful hardware. At 72 videos/sec arriving, we need a distributed async pipeline that auto-scales.</p>
-<p><strong>Why raw video goes to S3 before transcoding, not after:</strong></p>
-<p>If the transcoding worker crashes mid-job, we need to re-read the raw input. If raw video was buffered in the Upload Service's memory or local disk, it is gone. S3-first means any worker can pick up a failed job from scratch. <strong>Durability is the input contract.</strong></p>
-<p><strong>Pipeline flow:</strong></p>
+<h3 id="82-transcoding-pipeline">8.2 Transcoding Pipeline</h3>
+<p>Here's the problem: 500 hours of video arrive every minute, and a single one-hour 4K video alone can take 20-40 minutes to transcode even on powerful hardware. At roughly 72 videos arriving per second (§4), there's no way to run this work synchronously — what's needed is a distributed, async pipeline that auto-scales with demand rather than a fixed pool sized for an average day.</p>
+<p>The reason raw video lands in S3 before transcoding starts, and not sometime after, comes straight from thinking through what happens when a worker crashes mid-job. If the raw bytes only ever lived in the Upload Service's memory or local disk, a crash would mean the source video is simply gone with nothing left to retry. Writing it to S3 first means any worker — including a brand-new one spun up to replace the crashed one — can pick the job back up from scratch. Durability is the input contract.</p>
 <div class="mermaid">
 flowchart TD
     A[&quot;Raw Video in S3&quot;] --&gt; B[&quot;Kafka: transcode_jobs topic&quot;]
@@ -566,291 +558,137 @@ flowchart TD
     K --&gt; L[&quot;Notification Service fans out to subscribers&quot;]
     K --&gt; M[&quot;Search indexer writes to Elasticsearch&quot;]
 </div>
-<p><strong>Output formats:</strong> H.264 for compatibility (all devices), H.265 for 4K (50% smaller than H.264), VP9 for web (better than H.264, free), AV1 for modern devices (best compression, slow encode — use for popular videos only).</p>
-<p><strong>Worker auto-scaling:</strong> Kafka consumer lag metric drives scaling. If queue depth &gt; 1,000 jobs, spin up more EC2 spot instances. Transcoding is CPU-bound and embarrassingly parallel — perfect for spot instances with checkpointing.</p>
+<p>Which codec a video ends up transcoded into is itself a compatibility-versus-efficiency trade made per output, not one blanket choice: H.264 covers every device for broad compatibility, H.265 gets used for 4K since it's about 50% smaller than H.264 at the same quality, VP9 covers the web with better-than-H.264 compression at no licensing cost, and AV1 — the best compression available, but slow to encode — is reserved for popular videos where the encode cost is worth paying repeatedly across millions of views.</p>
+<p>Scaling the worker pool itself is driven by a single signal: Kafka consumer lag. Once queue depth crosses 1,000 jobs, more EC2 spot instances spin up automatically. Transcoding is CPU-bound and embarrassingly parallel — exactly the kind of workload spot instances with checkpointing are built for, since a preempted instance just means the checkpoint resumes on another one.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> The transcoding queue is a correctness requirement, not a performance optimization. Without it, a worker crash loses the video permanently. Kafka's durable log guarantees the job survives any single worker failure.</p>
+</blockquote>
+<p>None of that crash recovery works, though, unless retrying a job from scratch is actually safe to do — otherwise a redelivered message just trades a stuck video for a corrupted one.</p>
+<blockquote>
 <p>[!IMPORTANT]
 Idempotency is mandatory: if a worker crashes after writing 720p but before writing 1080p, the job must be safe to retry. Workers use video_id + quality as the S3 key — writing the same key twice is idempotent in S3.</p>
 </blockquote>
 <hr />
-<h3 id="73-view-count-at-scale">7.3 View Count at Scale</h3>
-<p>Here is the problem we are solving: 10M concurrent viewers each generate multiple view events per session. At 1 event per viewer per minute, that is 167K writes/sec just for view counts. A naive DB increment per event would immediately saturate any single SQL database.</p>
-<p><strong>Naive solution and why it fails:</strong></p>
+<h3 id="83-view-count-at-scale">8.3 View Count at Scale</h3>
+<p>Here's the problem: 10 million concurrent viewers, each generating multiple view events per session, adds up fast — even at a conservative one event per viewer per minute, that's already 167K writes/sec for view counts alone.</p>
+<p>The obvious approach is a direct row update, and it fails almost immediately at this volume:</p>
 <pre><code>UPDATE videos SET view_count = view_count + 1 WHERE video_id = X
 </code></pre>
-<p>This is a row-level write lock. PostgreSQL handles ~10K-50K writes/sec on a single row before lock contention kills throughput. At 167K/sec for a single viral video, this is 3-17x over the ceiling before fanout.</p>
-<p><strong>Chosen solution — Redis INCR with batch flush:</strong></p>
+<p>Every one of those statements takes a row-level write lock, and PostgreSQL tops out around 10K-50K writes/sec on a single row before lock contention eats the rest of the throughput. A single viral video pushing 167K writes/sec against that one row is already 3-17x past the ceiling — and that's before accounting for every other video being watched at the same time.</p>
+<p>The fix is to stop writing to a durable row on every event at all:</p>
 <pre><code>On view event:  INCR views:video_id   # atomic, in-memory, sub-millisecond
 Every 60s:      Batch job reads Redis counts, writes delta to Cassandra, resets Redis counter
 </code></pre>
-<p>Redis <code>INCR</code> is atomic and lock-free. A single Redis node handles 1M+ operations/sec. The 60-second lag in Cassandra is imperceptible to users.</p>
-<p><strong>Unique view counting with HyperLogLog:</strong></p>
-<p>Unique views (deduplicated per user) use Redis HyperLogLog: <code>PFADD unique_views:video_id user_id</code>. HyperLogLog provides ~0.81% error rate using only 12KB per key regardless of set size. Storing a set of 10M user IDs would cost gigabytes; HyperLogLog costs 12KB. The approximation error is acceptable — view counts are never exact anyway.</p>
-<p><strong>When does eventual consistency become a problem?</strong></p>
-<p>For view counts: it does not. A video showing 1,234,567 vs 1,234,623 views is indistinguishable to users. The only case where strong consistency matters is gating (e.g., "unlock at 1M views") — this uses a separate synchronous counter with a DB transaction, not the main view count path.</p>
+<p>Redis's <code>INCR</code> is atomic and lock-free by construction, and a single Redis node absorbs over a million operations per second — nowhere near the same contention problem, because there's no disk-backed row being locked. The 60-second lag before that count lands in Cassandra is, as covered in §3, imperceptible to anyone actually watching the number.</p>
+<p>Counting <em>unique</em> viewers is a related but separate problem, and it gets its own trick: <code>PFADD unique_views:video_id user_id</code> into a Redis HyperLogLog. A HyperLogLog estimates the size of a set using about 12KB per key, regardless of whether that set has a thousand members or ten million — storing an actual set of 10 million user IDs the naive way would cost gigabytes per video. The trade is a roughly 0.81% error rate, which is a non-issue here, since view counts were never meant to be exact in the first place.</p>
+<p>There's exactly one place this eventual-consistency model would actually cause a problem: gating a feature behind a view-count threshold, something like "unlock at 1M views." That case is deliberately routed around this entire pipeline — it uses a separate, synchronous counter backed by a real database transaction, precisely because it's the one scenario where staleness has a real consequence rather than just being an approximate number on a page.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> View count at scale is a write-throughput problem, not a consistency problem. Eventual consistency is not a compromise — it is the correct model. Nobody needs to see their view reflected in under 60 seconds.</p>
 </blockquote>
 <hr />
-<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
-<p><strong>CDN cache hit rate is the #1 metric.</strong> If this drops below 90%, origin bandwidth costs explode and latency degrades. Causes of low hit rate: too-short TTLs, poor cache key design, unpredictable access patterns. Fix: set segment TTL to 1 year (immutable), use consistent cache keys, pre-warm CDN for scheduled releases.</p>
-<p><strong>Transcoding worker pool sizing.</strong> At 288 jobs/sec steady state and ~5 min per job per worker, steady-state pool = 288 × 300s = ~86,400 concurrent transcode slots. Each worker processes 1 job at a time. So ~86K worker processes — use auto-scaling groups of spot instances. Monitor Kafka consumer lag as the scaling signal.</p>
-<p><strong>Elasticsearch at billions of videos.</strong> YouTube has ~800M videos. Elasticsearch handles this with index sharding (partition by video_id hash). Search queries fan out to all shards and merge results. Bottleneck: write throughput for new video indexing. Solution: Kafka -&gt; Logstash -&gt; Elasticsearch pipeline, not synchronous API calls. Index refresh interval set to 5-30 seconds (not real-time) to batch writes.</p>
-<p><strong>Recommendation cold start.</strong> New users have no watch history. New videos have no engagement signals. Solution: new users get popularity-based recommendations (trending + category); new videos get boosted into a sampling pool to gather initial signals within 24 hours.</p>
+<h2 id="9-bottlenecks-scaling">9. Bottlenecks &amp; Scaling</h2>
+<p>Every component in this design has a point where it stops being the right shape for the traffic in front of it. Here's what breaks first as scale grows, and what actually changes when it does.</p>
+<p>CDN cache hit rate is the single most important metric in the whole system — if it drops below 90%, origin bandwidth costs explode and latency degrades immediately, since every miss falls back to the much slower, much more expensive origin path. The usual causes are too-short TTLs, poor cache key design, or unpredictable access patterns; the fix is to set segment TTLs to a full year (they're immutable, so this is safe), keep cache keys consistent, and pre-warm the CDN ahead of scheduled releases rather than waiting for organic misses.</p>
+<p>The transcoding worker pool has to be sized against steady-state load, not peak: at 288 jobs/sec and roughly 5 minutes per job per worker, that's 288 × 300s ≈ 86,400 concurrent transcode slots needed just to keep up, since each worker handles one job at a time. That means running on the order of 86K worker processes via auto-scaling groups of spot instances, with Kafka consumer lag as the signal that drives scaling up or down.</p>
+<p>Elasticsearch has its own ceiling once the catalog reaches YouTube's actual scale of roughly 800 million videos. Index sharding — partitioning by a hash of <code>video_id</code> — is what lets search queries fan out across shards and merge results instead of hitting one unmanageable index. The real bottleneck there isn't query time, it's write throughput for indexing every newly live video; the fix is routing writes through a Kafka → Logstash → Elasticsearch pipeline rather than synchronous API calls, with the index refresh interval set to 5-30 seconds so writes batch instead of committing in real time.</p>
+<p>Recommendations have a cold-start problem that's really two separate problems wearing one name: new users have no watch history to build on, and new videos have no engagement signal yet either. New users fall back to popularity-based recommendations — trending content and category defaults — until enough watch history accumulates. New videos get boosted into a sampling pool so they can gather initial engagement signals within their first 24 hours, rather than being invisible to the recommendation engine until they've organically earned views some other way.</p>
 <hr />
-<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Transcoding worker crashes mid-job</td>
-<td>Video stuck in processing state</td>
-<td>Kafka message not ACKed, job redelivered to another worker within visibility timeout (30 min). Idempotent S3 writes make retry safe.</td>
-</tr>
-<tr>
-<td>CDN origin overload</td>
-<td>High latency for cache misses</td>
-<td>Multiple S3 origins across regions. Circuit breaker on origin: if error rate &gt; 5%, serve stale cached manifest. Origin shield (a single CDN PoP that fronts origin) absorbs miss traffic.</td>
-</tr>
-<tr>
-<td>Redis view count service down</td>
-<td>View count writes lost during outage</td>
-<td>View events buffered in Kafka. When Redis recovers, batch replayer catches up from Kafka log. At-most ~5 min lag on view counts.</td>
-</tr>
-<tr>
-<td>S3 region unavailable</td>
-<td>Uploads and streaming fail for that region</td>
-<td>S3 cross-region replication keeps transcoded segments in 2+ regions. CDN reroutes to healthy origin automatically. Upload service retries to secondary region.</td>
-</tr>
-<tr>
-<td>Kafka consumer lag spikes</td>
-<td>Transcoding backlog grows, videos delayed</td>
-<td>Auto-scale workers immediately on lag &gt; 1000. New uploads get estimated wait time shown in Creator Studio. SLA: 720p live within 5 min for videos under 30 min.</td>
-</tr>
-<tr>
-<td>Elasticsearch index lag</td>
-<td>Search misses new videos</td>
-<td>Acceptable per design (eventual consistency on search). If lag &gt; 5 min, alerting triggers. Fallback: metadata service can serve direct title-match queries against Cassandra.</td>
-</tr>
-<tr>
-<td>Cassandra node failure</td>
-<td>Read/write latency spike on affected token range</td>
-<td>Cassandra replication factor 3 means data survives 1-node failure with no data loss. Hinted handoff for temporary node outage.</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Grouping these by what actually failed makes the recovery story easier to follow than reading them as an unordered list.</p>
+<p><strong>Compute failures — workers and consumers falling behind or crashing — are the most self-healing category.</strong> A transcoding worker crashing mid-job leaves a video stuck in a processing state, but the fix requires no manual intervention: the Kafka message was never ACKed, so it gets redelivered to another worker once the visibility timeout (30 minutes) passes, and because S3 writes are idempotent, replaying the job from scratch is safe. Kafka consumer lag spiking — the backlog growing faster than workers can drain it — triggers the same auto-scaling response covered above the moment lag crosses 1,000 jobs; in the meantime, new uploads simply show an estimated wait time in Creator Studio rather than failing outright, with an SLA of 720p live within 5 minutes for videos under 30 minutes long.</p>
+<p><strong>Storage failures are handled through replication rather than retries.</strong> If an S3 region goes unavailable, uploads and streaming fail for that region specifically, but cross-region replication already keeps transcoded segments in two or more regions, so the CDN simply reroutes to a healthy origin automatically while the upload service retries against a secondary region. A Cassandra node failure causes a latency spike only on the affected token range, not data loss — replication factor 3 means the data already exists on two other nodes, and hinted handoff absorbs the temporary outage until the node rejoins.</p>
+<p><strong>Hot-path and cache failures are the ones designed to degrade gracefully rather than fail hard.</strong> If the Redis view-count service goes down, writes during the outage aren't lost — they're already buffered in Kafka, so once Redis recovers, a batch replayer catches up from the Kafka log, with at most about 5 minutes of lag on view counts. A CDN origin overload shows up as high latency specifically for cache misses; multiple S3 origins across regions plus a circuit breaker (serving a stale cached manifest once the error rate passes 5%) plus an origin shield — a single CDN PoP that fronts the origin and absorbs miss traffic — keep that from cascading. And an Elasticsearch index lag simply means search misses very recently uploaded videos, which is acceptable by design given the eventual consistency already committed to for search (§3); if lag exceeds 5 minutes, alerting fires, and the metadata service can fall back to direct title-match queries against Cassandra in the meantime.</p>
 <hr />
-<h2 id="13-trade-offs">13. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="hls-vs-dash">HLS vs DASH</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>HLS</th>
-<th>DASH</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>iOS/Safari support</td>
-<td>Native</td>
-<td>Requires MSE polyfill</td>
-</tr>
-<tr>
-<td>Codec flexibility</td>
-<td>H.264/H.265</td>
-<td>Any codec (VP9, AV1)</td>
-</tr>
-<tr>
-<td>Industry adoption</td>
-<td>Dominant on Apple devices</td>
-<td>Dominant on Android/Web</td>
-</tr>
-<tr>
-<td>DRM integration</td>
-<td>FairPlay</td>
-<td>Widevine / PlayReady</td>
-</tr>
-<tr>
-<td>Segment format</td>
-<td>MPEG-TS or fMP4</td>
-<td>fMP4 only</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Both — HLS for Apple devices, DASH for everything else. The manifest URL is device-detected at the API layer. The segments are identical (fMP4) — only the manifest format differs. This avoids double-transcoding.</p>
+<p>The two formats diverge most on platform support and codec flexibility. HLS is natively supported on iOS and Safari with no polyfill needed, but it's locked to H.264/H.265 and either MPEG-TS or fMP4 segments, with FairPlay as its DRM. DASH needs a Media Source Extensions polyfill outside Apple's ecosystem, but in exchange it supports any codec — including VP9 and AV1 — uses fMP4-only segments, and pairs with Widevine or PlayReady for DRM. Industry adoption splits along the same line: HLS dominates on Apple devices, DASH dominates on Android and web.</p>
+<p><strong>Chosen:</strong> Both. Apple's ecosystem leaves no real alternative to HLS, while DASH covers everything else with the codec flexibility HLS can't offer. Which manifest a viewer gets is decided per-device at the API layer, but the underlying segments are the same fMP4 files either way — so supporting both formats never means encoding a video twice.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> HLS vs DASH is a client compatibility problem, not a backend architecture problem. Same segments, two manifest formats. The CDN caches both.</p>
 </blockquote>
 <hr />
 <h3 id="push-cdn-vs-pull-cdn">Push CDN vs Pull CDN</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Push CDN</th>
-<th>Pull CDN</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Storage cost</td>
-<td>High (pay for all PoPs)</td>
-<td>Low (pay only for what is fetched)</td>
-</tr>
-<tr>
-<td>Cache warmth</td>
-<td>Pre-warmed (good for viral)</td>
-<td>Cold on first request (bad for live uploads)</td>
-</tr>
-<tr>
-<td>Operational complexity</td>
-<td>High (need to push to all PoPs)</td>
-<td>Low (CDN handles it)</td>
-</tr>
-<tr>
-<td>Best for</td>
-<td>Predictable, popular content</td>
-<td>Long-tail content</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Pull CDN as the default with selective push for known viral content (trending videos, scheduled premieres). Long-tail videos (90% of catalog) are rarely watched — paying to push to all PoPs would waste enormous storage cost.</p>
+<p>A push CDN means paying to pre-populate every point of presence in advance — high storage cost and real operational overhead maintaining that push, but content is already warm everywhere the moment it's needed, which suits predictable, popular releases well. A pull CDN flips that: low cost, since it only stores what's actually been fetched, and the CDN handles propagation with no manual push step — but the first request to any given edge is a cold miss, which is a poor fit for content that needs to be warm the instant it's published.</p>
+<p><strong>Chosen:</strong> Pull CDN as the default, with selective push reserved for known viral content — trending videos, scheduled premieres. Long-tail videos make up roughly 90% of the catalog, which is exactly the case pull's pay-only-for-what's-fetched model is built for.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Pull CDN + selective push warming is a cost optimization. Most videos are never watched after 30 days. Pushing all of them to all CDN PoPs would cost more than the bandwidth savings.</p>
 </blockquote>
 <hr />
 <h3 id="redis-vs-db-for-view-counts">Redis vs DB for View Counts</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Redis INCR</th>
-<th>DB direct write</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Write throughput</td>
-<td>1M+ ops/sec per node</td>
-<td>10-50K/sec per node</td>
-</tr>
-<tr>
-<td>Consistency</td>
-<td>Eventual (60s lag)</td>
-<td>Strong</td>
-</tr>
-<tr>
-<td>Durability</td>
-<td>In-memory (RDB/AOF persistence)</td>
-<td>ACID</td>
-</tr>
-<tr>
-<td>Cost at scale</td>
-<td>Low (one Redis cluster)</td>
-<td>High (sharded DB cluster + write replicas)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Redis INCR with 60-second batch flush to Cassandra. Strong consistency for view counts is not a business requirement — no revenue or access control depends on real-time view count accuracy.</p>
+<p>Redis <code>INCR</code> sustains over a million operations per second on a single node, against 10-50K/sec for a direct database write on the same row — a difference driven entirely by lock contention, since Redis never takes a disk-backed row lock. What Redis gives up is strong consistency (there's a 60-second lag baked into the batch flush) in exchange for that throughput, and durability shifts from ACID guarantees to RDB/AOF persistence — good enough for a number that was never meant to be exact, at a fraction of the infrastructure cost of a sharded database cluster with write replicas.</p>
+<p><strong>Chosen:</strong> Redis <code>INCR</code> with a 60-second batch flush to Cassandra. Strong consistency for view counts was never a business requirement in the first place — no revenue and no access control depends on the number being accurate to the second.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Eventual consistency for view counts is not a compromise — it is the correct model. The write load for strong consistency would cost 10x more infrastructure to serve a number that users interpret as "approximately N."</p>
 </blockquote>
 <hr />
 <h3 id="single-transcode-job-vs-dag-pipeline">Single Transcode Job vs DAG Pipeline</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Single job per video</th>
-<th>DAG pipeline (each quality = separate task)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Parallelism</td>
-<td>One worker per video</td>
-<td>N workers per video (N = quality count)</td>
-</tr>
-<tr>
-<td>Failure granularity</td>
-<td>Whole video retries on crash</td>
-<td>Only failed quality tier retries</td>
-</tr>
-<tr>
-<td>Complexity</td>
-<td>Simple queue consumer</td>
-<td>Orchestrator needed (Temporal/Airflow)</td>
-</tr>
-<tr>
-<td>Time to first quality</td>
-<td>All qualities done together</td>
-<td>360p done first, 4K done last</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> DAG pipeline where each quality tier is a separate Kafka message. 360p goes live in ~1 minute, 4K follows in ~10 minutes. This makes viral videos watchable faster. The orchestrator (we use Temporal) handles dependency tracking and retry logic.</p>
+<p>Transcoding a video as one job means one worker owns the whole video — simple as a plain queue consumer, but a crash means the entire video retries from zero, and all quality tiers finish together, whichever one takes longest. Splitting it into a DAG, one task per quality tier, means N workers can work the same video in parallel, a crash only costs the one tier that failed, and low tiers can go live independently of high ones — at the cost of needing a real orchestrator to track those dependencies and retries instead of a bare queue.</p>
+<p><strong>Chosen:</strong> A DAG pipeline, with each quality tier published as its own Kafka message. 360p typically goes live in about a minute, with 4K following roughly ten minutes later — letting a viral upload become watchable at some quality almost immediately instead of waiting on the slowest tier. Temporal handles the dependency tracking and retry logic that this approach requires.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> "360p first" is a product decision with architectural consequences. It requires a DAG pipeline instead of a monolithic transcode job — complexity is justified by creator experience.</p>
 </blockquote>
 <hr />
 <h3 id="postgresql-vs-cassandra-for-video-metadata">PostgreSQL vs Cassandra for Video Metadata</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>PostgreSQL</th>
-<th>Cassandra</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Write throughput</td>
-<td>~50K/sec (single primary)</td>
-<td>500K+/sec (multi-master)</td>
-</tr>
-<tr>
-<td>Read patterns</td>
-<td>Flexible (JOINs, secondary indexes)</td>
-<td>Partition key only (no JOINs)</td>
-</tr>
-<tr>
-<td>Consistency</td>
-<td>Strong (ACID)</td>
-<td>Tunable (eventual by default)</td>
-</tr>
-<tr>
-<td>Operational complexity</td>
-<td>Low</td>
-<td>Medium-high</td>
-</tr>
-<tr>
-<td>Best for</td>
-<td>Low-write, complex queries</td>
-<td>High-write, known access patterns</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Cassandra for video metadata. The access pattern is always by video_id (known partition key). View count updates at 100K+/sec make SQL primary a hard bottleneck within 12 months of scale. The trade-off accepted: no ad-hoc queries, no JOINs — analytics runs on a separate Spark/BigQuery pipeline that reads from Cassandra backups.</p>
+<p>PostgreSQL offers flexible reads — JOINs, secondary indexes, ad-hoc queries — with strong ACID consistency and low operational complexity, but a single primary caps out around 50K writes/sec. Cassandra gives up JOINs entirely, restricted to partition-key access with tunable (default eventual) consistency and meaningfully higher operational overhead, in exchange for 500K+ writes/sec across a multi-master cluster.</p>
+<p><strong>Chosen:</strong> Cassandra. The access pattern for video metadata is always by <code>video_id</code>, a known partition key, so the lack of JOINs costs nothing in practice — while view count updates alone push past 100K/sec, which would turn a PostgreSQL primary into a hard bottleneck within roughly 12 months of growth. The trade-off accepted is no ad-hoc queries: analytics runs on a separate Spark/BigQuery pipeline reading from Cassandra backups instead.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Cassandra is chosen because of view count write load, not because of video metadata schema complexity. The metadata schema is simple enough for PostgreSQL — the write amplification from view events is what breaks SQL.</p>
 </blockquote>
 <hr />
-<h2 id="14-interview-summary">14. Interview Summary</h2>
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Six non-functional requirements were set out in §3. Here's how the design actually satisfies each one — the specific mechanism doing the work, not just the promise.</p>
+<p><strong>Video start latency (&lt; 2 seconds):</strong> The watch fast path never touches origin for a cache hit — the CDN edge serves the manifest and segments directly, Redis answers metadata lookups in under a millisecond, and the ABR player starts playback from whatever's already cached at the edge. Origin is a fallback for misses only, not something every playback has to wait on.</p>
+<p><strong>Upload processing (&lt; 5 minutes for 720p):</strong> The DAG transcoding pipeline (§8.2, §9.2) publishes each quality tier as its own job, so 720p doesn't wait behind 4K — combined with a worker pool that auto-scales on Kafka consumer lag rather than sitting fixed at steady-state size, this is what keeps a viral upload from blowing past the 5-minute target.</p>
+<p><strong>Availability (99.9% for streaming):</strong> Multi-region CDN origins, a circuit breaker that serves a stale cached manifest once error rates cross 5%, and an origin shield absorbing miss traffic all keep a single origin failure from becoming a viewer-facing outage — and on the metadata side, Redis falling back to Cassandra on a cache miss means a Redis blip doesn't take down playback either.</p>
+<p><strong>Durability (eleven-nines):</strong> Raw video is written to S3 before transcoding ever begins, specifically so a crashed worker never means a lost source file — any worker can retry from scratch. Transcoded segments are cross-region replicated in S3, and Cassandra's replication factor of 3 plus hinted handoff means a single node failure never costs a byte.</p>
+<p><strong>Search freshness (&lt; 30 seconds):</strong> New videos flow through a Kafka → Elasticsearch indexing pipeline rather than a synchronous write, with the index refresh interval tuned to 5-30 seconds — fast enough that a creator sharing a link minutes after upload finds it already searchable.</p>
+<p><strong>View count freshness (eventual, ~60s lag):</strong> This one isn't "met" so much as deliberately chosen — Redis <code>INCR</code> absorbs the write volume no database row could survive, with a 60-second batch flush to Cassandra (§8.3). The lag is a designed trade, not a limitation being tolerated.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Technique</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Video start latency &lt; 2s</td>
+<td>CDN edge cache + Redis metadata cache, origin only on miss</td>
+</tr>
+<tr>
+<td>Upload processing &lt; 5 min</td>
+<td>DAG transcoding pipeline (360p first) + auto-scaling workers</td>
+</tr>
+<tr>
+<td>Availability 99.9%</td>
+<td>Multi-region CDN origins, circuit breaker, origin shield, Redis→Cassandra fallback</td>
+</tr>
+<tr>
+<td>Durability (eleven-nines)</td>
+<td>Raw-to-S3-first, cross-region replication, Cassandra RF=3 + hinted handoff</td>
+</tr>
+<tr>
+<td>Search freshness &lt; 30s</td>
+<td>Kafka → Elasticsearch pipeline, 5-30s refresh interval</td>
+</tr>
+<tr>
+<td>View count freshness ~60s</td>
+<td>Redis INCR + 60s batch flush to Cassandra</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats YouTube as two pipelines wearing one app: an async, correctness-first upload path that would rather take a few extra minutes than ever lose a creator's video, and a latency-first, CDN-dominated watch path built around the fact that origin servers physically cannot serve 30 Tbps directly. The hardest problem wasn't any single component — it was recognizing which data can tolerate being wrong for sixty seconds (a view count) and which can never be wrong at all (a video file, a manifest URL), and then choosing storage and delivery mechanisms accordingly. Cassandra over PostgreSQL, Redis <code>INCR</code> over a database row, a DAG transcoding pipeline over a monolithic job, dual HLS/DASH manifests over a single format — every one of those decisions falls out of getting that distinction right.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
