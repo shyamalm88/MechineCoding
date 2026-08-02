@@ -98,7 +98,7 @@ categories: `ride-booking-uber-rapido.md`, `config-driven-shopping-cart-homepage
    gets expanded to full standalone-lesson treatment: what it does, what to
    prevent/guard against, its own components, its own plain-English
    workflow, the chosen mechanism explained step by step.
-9. **Bottlenecks, Failure Scenarios, Trade-offs** — *old §11-13, unchanged.*
+9. **Bottlenecks, Failure Scenarios, Trade-offs** — *old §11-13, unchanged.* Failure Scenarios and Trade-offs render as `###` (h3) subsections nested under this section's `##` (h2) heading — matching the `8.1`/`8.2`/`8.3` precedent in Deep Dives, not siblings at the same heading level as §9 itself (a mismatch caught in the pilot's code-quality review).
 10. **Evaluation: Did We Meet the Requirements?** — *NEW.* A prose
     paragraph per non-functional requirement from section 3, explaining the
     actual mechanism that satisfies it (not just restating the requirement),
@@ -125,6 +125,7 @@ content without a destination. During restructuring, verify per doc:
 - The five genuinely new elements (intro, user-journey rewrite, Points to
   Ponder, Evaluation, Conclusion) are the only wholly-new prose — everything
   else is existing content moved and given connective sentences.
+- Any sentence stating a count of items in another section (e.g. "N requirements were set out in §3") has that count verified against the actual number of rows/items in the referenced section before the doc is considered done — this class of error isn't caught by the word-count or mermaid-count checks above.
 
 ## Rollout
 
