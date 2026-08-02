@@ -502,6 +502,10 @@ sequenceDiagram
 </tbody>
 </table>
 <p>The reason any of this scales economically at all is that segments, once transcoded, never change — <code>segment_0001.ts</code> for a given video at 720p is the same file forever, so it can carry a <code>Cache-Control: max-age=31536000</code> header (a full year) with zero risk of ever serving stale content. For a popular video, that pushes CDN hit rate toward 100%, which is the property that makes video delivery affordable in the first place — not a performance nicety layered on top.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Video segments are immutable content — this is the property that makes CDN caching perfect. A 99% CDN hit rate on segments means the origin only sees 1% of traffic.</p>
+</blockquote>
 <p>The last piece of this puzzle is which manifest format the player is even reading, since Apple's ecosystem and everyone else's don't agree. HLS is Apple's format, natively supported by Safari and iOS with no polyfill needed, but limited to H.264/H.265 and either MPEG-TS or fMP4 segments — it's the legacy format on YouTube and the required one on Apple platforms. DASH is the ISO standard instead, requiring Media Source Extensions outside Apple's ecosystem but supporting any codec, including VP9 and AV1, with fMP4-only segments — it's what Netflix and Disney+ lean on, and what YouTube itself has moved to for the majority of its modern delivery, because AV1 saves roughly 30% bandwidth over H.264 at the same visual quality.</p>
 <table>
 <thead>
@@ -534,10 +538,6 @@ sequenceDiagram
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> Video segments are immutable content — this is the property that makes CDN caching perfect. A 99% CDN hit rate on segments means the origin only sees 1% of traffic.</p>
-</blockquote>
 <hr />
 <h3 id="82-transcoding-pipeline">8.2 Transcoding Pipeline</h3>
 <p>Here's the problem: 500 hours of video arrive every minute, and a single one-hour 4K video alone can take 20-40 minutes to transcode even on powerful hardware. At roughly 72 videos arriving per second (§4), there's no way to run this work synchronously — what's needed is a distributed, async pipeline that auto-scales with demand rather than a fixed pool sized for an average day.</p>
