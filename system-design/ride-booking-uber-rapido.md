@@ -380,7 +380,7 @@ The obvious approach doesn't survive contact with the numbers. Scanning the driv
 
 Whatever replaces the naive scan has to guard against three specific ways this can go wrong: two different ride requests both landing on the same driver at the same instant (double-booking); a driver getting offered a ride, timing out without responding, and never making it back into the available pool (driver starvation); and the search simply returning empty whenever there are only a couple of nearby drivers, instead of degrading gracefully by looking a little further out.
 
-The actual pipeline runs in five steps, and each one exists to solve a specific piece of that. First, a geo index search: Redis's `GEORADIUS` returns the top 100 candidates within 2km, using its built-in geohash indexing rather than anything hand-rolled. Second, an eligibility filter narrows that down to drivers who are actually `IDLE`, drive the right vehicle type, and clear a minimum rating and acceptance-rate bar. Third, the routing engine scores the surviving top 20 by predicted ETA — not raw distance, which turns out to matter a lot (more on that below). Fourth, the top-scored driver gets a sequential offer with a 15-second window to respond, moving to the next candidate if they decline or time out — this is what prevents starvation, since a driver who doesn't respond just gets skipped, not stuck. Fifth — and this is the step that actually rules out double-booking — the chosen driver's state flips from `IDLE` to `RESERVED` atomically:
+The pipeline that replaces the naive scan starts with a geo index search: Redis's `GEORADIUS` returns the top 100 candidates within 2km, using its built-in geohash indexing rather than anything hand-rolled. From there, an eligibility filter narrows that pool down to drivers who are actually `IDLE`, drive the right vehicle type, and clear a minimum rating and acceptance-rate bar — no point offering a ride to someone who's already on one. The routing engine then scores whoever survives that filter by predicted ETA, not raw distance, which turns out to matter a lot (more on that below). The top-scored driver gets a sequential offer with a 15-second window to respond, moving to the next candidate if they decline or time out — which is what prevents starvation, since a driver who doesn't respond just gets skipped, not stuck waiting on a request that'll never resolve. And the very last step, the one that actually rules out double-booking, is the driver's state flipping from `IDLE` to `RESERVED` atomically — not a plain write, for reasons worth walking through separately:
 
 ```
 Step 1: Geo index search     -> GEORADIUS -> top 100 candidates within 2km
@@ -406,7 +406,7 @@ EXEC
   -> OK   atomic commit -- driver is RESERVED, removed from idle pool
 ```
 
-Whichever server's `EXEC` runs first wins and gets `OK` back; the other's `EXEC` returns `nil`, because the watched key changed underneath it, so it silently moves on to its next candidate. There's no lock key to acquire, no lock service to call, no ZooKeeper, no Redlock — the driver's own state *is* the lock, and reading it atomically is the entire mutual-exclusion mechanism.
+Whichever server's `EXEC` runs first wins and gets `OK` back; the other's `EXEC` returns `nil`, because the watched key changed underneath it, so it silently moves on to its next candidate.
 
 And when nobody's close enough? The system doesn't just give up on the first empty search — it widens its net in rounds, trading a longer wait for an actual match instead of failing fast:
 
@@ -473,7 +473,7 @@ multiplier:
 
 That multiplier gets written to `surge:{geohash}` in Redis with a 60-second TTL, and the Ride Service reads it on every fare calculation — a sub-millisecond lookup, not a query against whatever computed it. The rider sees the multiplier before confirming the ride, which isn't just good UX — informed consent on dynamic pricing is a legal requirement in most markets.
 
-The important architectural decision here is what surge pricing *doesn't* touch: the Surge Calculator is a separate service, feeding a cache that the Ride Service reads independently, and the matching engine (§8.1) never queries it at all.
+One architectural decision is worth pausing on before getting to the trade-off below: what surge pricing *doesn't* touch.
 
 > [!NOTE]
 > **Key Insight:** Surge pricing is a read-path concern only — it does not affect matching. The Surge Calculator is a separate service feeding data into Redis. The matching engine never reads it. Decoupling surge calculation from matching prevents a slow analytics query from blocking a 300ms matching window.
@@ -516,15 +516,13 @@ sequenceDiagram
     LSB->>R: WS push driver_moved lat lng eta_seconds
 ```
 
-None of this needs to run at the same intensity all the time, either. A driver who's `IDLE` and not currently near a rider doesn't need the same update frequency as one who's mid-trip with a rider staring at the map — so the update interval is derived directly from the driver's own state, not a single fixed tick applied uniformly:
+None of this needs to run at the same intensity all the time, either. A driver who's `IDLE` and not currently near a rider doesn't need the same update frequency as one who's mid-trip with a rider staring at the map — pinging every `IDLE` driver once a second regardless would waste 60-70% of the system's Redis write capacity for zero benefit anyone would ever notice. So the update interval is derived directly from the driver's own state, not a single fixed tick applied uniformly — the state machine already knows which drivers actually need to be fresh, so the frequency comes for free instead of needing its own separate tuning knob:
 
 | Driver state | Update frequency | Redis writes/sec at 5M drivers | Why this frequency |
 |---|---|---|---|
 | IDLE | Every 5s | 1M writes/sec | No rider watching — coarse position enough for matching |
 | RESERVED | Every 2s | 2.5M writes/sec | Rider watching ETA countdown on map |
 | ON_TRIP | Every 1s | 5M writes/sec | Rider watching live position; smooth animation required |
-
-Pinging every IDLE driver once a second regardless would waste 60-70% of the system's Redis write capacity for zero benefit anyone would ever notice — the state machine already knows which drivers actually need to be fresh, so the frequency comes for free instead of needing its own separate tuning knob.
 
 The last piece is what happens when a driver's connection just drops — a flaky signal, a phone going into a tunnel, an app crash. There's no separate cleanup process watching for this:
 
@@ -594,7 +592,7 @@ Redis Geo's geohash indexing divides the map into fixed rectangular cells — wh
 
 ### WebSocket vs HTTP Polling for Live Tracking
 
-The two options differ most in what each connection costs, repeated across 5 million drivers. WebSocket pays for one TLS handshake up front and then just streams frames — about 20 bytes per location update. HTTP polling pays full request/response overhead, TLS included, on every single update — roughly 2KB of headers and body each time. Multiplied out: 1.67 million updates a second is 33 MB/s over WebSocket versus 3.3 GB/s over HTTP polling, a 100x gap that's pure arithmetic, not a matter of preference. WebSocket is also bidirectional by default, so the server can push a dispatch offer to a driver the same way it pushes a location update — HTTP polling would need the driver to separately poll for offers on top of everything else. The one thing polling has going for it is statelessness: any server can handle any request, where WebSocket needs sticky routing to keep a driver's persistent connection pinned to one server, at some battery cost on the polling side too (repeated TLS handshakes drain a phone faster than one held-open connection).
+The two options differ most in what each connection costs, repeated across 5 million drivers. WebSocket pays for one TLS handshake up front and then just streams frames — about 20 bytes per location update. HTTP polling pays full request/response overhead, TLS included, on every single update — roughly 2KB of headers and body each time. Multiplied out: 1.67 million updates a second is 33 MB/s over WebSocket versus 3.3 GB/s over HTTP polling — a hundredfold gap. WebSocket is also bidirectional by default, so the server can push a dispatch offer to a driver the same way it pushes a location update — HTTP polling would need the driver to separately poll for offers on top of everything else. The one thing polling has going for it is statelessness: any server can handle any request, where WebSocket needs sticky routing to keep a driver's persistent connection pinned to one server, at some battery cost on the polling side too (repeated TLS handshakes drain a phone faster than one held-open connection).
 
 **Chosen:** WebSocket — the header-overhead math alone rules out polling at this scale. The trade-off accepted is stateful sticky routing per city region, which is workable because the Location Service is already partitioned by city and drivers rarely cross a region boundary mid-shift.
 
@@ -607,7 +605,7 @@ The two options differ most in what each connection costs, repeated across 5 mil
 
 A strongly consistent surge multiplier would always reflect the latest demand exactly, but paying for that means reading from a database or a leader node on every single fare call, and coordinating a distributed transaction between the Surge Calculator and the Ride Service. The eventually consistent version — the one actually chosen — settles for a multiplier that can be up to 60 seconds stale, in exchange for a sub-millisecond Redis read and no cross-service coordination at all: the Surge Calculator fires off a write, and the Ride Service reads independently, with nothing synchronizing the two.
 
-**Chosen:** Eventual consistency with a 60-second TTL. The fare shown at request time is the fare actually charged — it's contractual, not a live estimate — so a bounded staleness window doesn't materially harm either side. The strong-consistency alternative would add a synchronous database read to every fare call, and at 500,000 peak requests per second, that read becomes the bottleneck for a level of precision nobody's actually asking for.
+**Chosen:** Eventual consistency with a 60-second TTL. The fare shown at request time is the fare actually charged — it's contractual, not a live estimate — so a bounded staleness window doesn't materially harm either side.
 
 > [!NOTE]
 > **Key Insight:** Surge pricing staleness is a business tolerance decision, not a technical limitation. 60 seconds is enough granularity for a pricing signal. Exact real-time surge would require a synchronous distributed read on every fare request — the cost is not justified by the precision gained.
