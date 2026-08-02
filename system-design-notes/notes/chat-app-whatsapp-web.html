@@ -12,45 +12,19 @@
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="system-design-chat-application-whatsapp-facebook-messenger">System Design: Chat Application (WhatsApp / Facebook Messenger)</h1>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design a real-time chat application at WhatsApp scale — 1 billion users, 100 billion messages/day. The system must support 1:1 messaging, group messaging, media sharing, and message status tracking (sent, delivered, read) with zero message loss and sub-300ms end-to-end latency.</p>
-<p><strong>In Scope:</strong> user registration, 1:1 real-time messaging, group messaging (small and large groups), message history with pagination, media sharing, message status (1 tick / 2 ticks / blue ticks), offline message delivery.</p>
-<p><strong>Out of Scope:</strong> voice/video calls, Stories/Status features, end-to-end encryption design, payments.</p>
+<h2 id="1-what-is-whatsapp-facebook-messenger">1. What Is WhatsApp / Facebook Messenger?</h2>
+<p>WhatsApp and Messenger are chat apps: someone types a message to a friend or a group, taps send, and it shows up on the other person's phone within a second or two — whether they're across the table or across the world. Under that message sit little checkmarks that quietly tell the sender what happened to it: did it leave my phone, did it reach theirs, did they actually open and read it.</p>
+<p>At the scale these apps run at — a billion people, a hundred billion messages exchanged every single day — the hard part was never sending one message. It's doing that instantly, for everyone, on every kind of network, without ever losing a single message, even when the recipient's phone is turned off.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<pre><code>Total users:                    1,000,000,000   (1 billion)
-DAU (50% of total):               500,000,000   (500 million)
-Messages per user per day:               ~100
-Total messages per day:       100,000,000,000   (100 billion)
-
-Average throughput:  100B / 86,400 sec  ~  1,157,000 msg/sec
-Peak throughput (2x avg):               ~  2,300,000 msg/sec
-
-Kafka partitions needed (1 partition = ~50K msg/sec):
-  2.3M / 50K = ~46 partitions minimum
-
-WebSocket connections at peak:
-  Assume 10% DAU online simultaneously = 50M concurrent WS connections
-  Chat Server handles 50K connections each -&gt; 1,000 Chat Server instances
-
-Storage (text, avg 1 KB/message):
-  100B messages/day x 1 KB = 100 TB/day
-  100 TB/day x 365 = ~36.5 PB/year
-  With 3x Cassandra replication: ~110 PB/year
-
-Media (10% of messages, avg 500 KB):
-  10B media/day x 500 KB = ~5 PB/day (S3 + CDN)
-
-Redis session map memory:
-  50M active users x ~100 bytes/entry = ~5 GB -- fits in a single Redis node
-</code></pre>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> These numbers drive every decision below. 1.16M writes/sec breaks PostgreSQL. 50M concurrent connections require sticky sessions. 5 GB session map fits comfortably in Redis Cluster. Always show the math before naming a technology.</p>
-</blockquote>
-<p><em>These numbers drive the following decisions: Cassandra over SQL, Kafka over direct calls, Redis for session routing, WebSocket over polling.</em></p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Meera is running late and taps out a quick message to Raj: "stuck in traffic, 5 min." The second she hits send, a single grey check appears under it — her message is safely on its way. A moment later a second check joins it — Raj's phone has it now, sitting on his lock screen. She doesn't think about any of this; she just sees two little checks and knows he'll see it.</p>
+<p>Raj is on the subway with no signal, so his phone doesn't actually get the message right away. It's fine — Meera's checks stay at two grey ticks, not blue, and neither of them worries about it. A few minutes later, Raj resurfaces, his phone reconnects, and the message lands along with a couple of others he missed underground. He reads it, and back on Meera's screen, the ticks quietly turn blue.</p>
+<p>That evening, Meera sends one more message — a reminder about tomorrow's book club — but this time to a group of twelve friends instead of just Raj. She types it once, hits send once, and within a couple of seconds all twelve phones buzz with it, roughly at the same time, without her doing anything differently than she did for Raj's one-on-one message.</p>
+<p>Neither Meera nor Raj ever thought about a socket connection, a queue, or a database — from here on, this is how that experience actually gets built.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> In scope: user registration, 1:1 real-time messaging, group messaging (small and large groups), message history with pagination, media sharing, message status (1 tick / 2 ticks / blue ticks), offline message delivery. Out of scope: voice/video calls, Stories/Status features, end-to-end encryption design, payments.</p>
+<p><strong>Functional requirements:</strong></p>
 <ol>
 <li><strong>User registration</strong> — Phone-number-based sign-up; JWT issued on successful OTP verification.</li>
 <li><strong>1:1 real-time messaging</strong> — Two users exchange text messages with sub-300ms delivery.</li>
@@ -60,43 +34,54 @@ Redis session map memory:
 <li><strong>Message status</strong> — Each message tracks: single tick (stored), double tick (delivered to device), blue ticks (opened by recipient).</li>
 <li><strong>Offline delivery</strong> — Messages delivered via push notification (APNs/FCM) when recipient is offline; full history fetched on reconnect.</li>
 </ol>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> Meera and Raj could, in theory, both send a message in the same conversation at the exact same millisecond — how does the system guarantee they both see the two messages in the same order?</summary>
+<p>It doesn't use one global counter across every message in the system — a single counter serializing 1.16 million writes a second would itself become the bottleneck. Instead, ordering is scoped to the conversation: each message carries a per-conversation sequence number, and Cassandra's clustering key stores messages in that order. If a client ever sees a gap in the sequence, it explicitly asks for the missing message rather than assuming it never existed. See §8.2 in Deep Dives for the full mechanism.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real user, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Availability</td>
 <td>99.99% uptime</td>
+<td>For a huge share of users this app is their only line of contact with family and friends — any downtime is people who simply can't reach each other.</td>
 </tr>
 <tr>
 <td>Latency</td>
 <td>&lt; 300ms end-to-end message delivery</td>
+<td>Texting is supposed to feel like a live conversation; a message that takes seconds to land feels broken, not just slow.</td>
 </tr>
 <tr>
 <td>Consistency</td>
 <td>Eventual consistency (AP — availability over strong consistency)</td>
+<td>Users barely notice a message rendering a beat late or a tick updating slightly out of order — they absolutely notice a message that never arrives.</td>
 </tr>
 <tr>
 <td>Durability</td>
 <td>Zero message loss</td>
+<td>A dropped message might be someone's address, a password reset code, or a plan to meet — there's no such thing as an acceptable message to lose.</td>
 </tr>
 <tr>
 <td>Throughput</td>
 <td>1.16M msg/sec sustained, 2.3M msg/sec peak</td>
+<td>Not a promise to any one user directly — it's the load the system must sustain merely to keep the latency promise above true for everyone at once.</td>
 </tr>
 <tr>
 <td>Storage</td>
 <td>100 TB/day text; 5 PB/day media</td>
+<td>Same idea — this is what "durable and instant for a billion people" costs in raw bytes per day.</td>
 </tr>
 <tr>
 <td>CAP choice</td>
 <td>AP — chat tolerates brief inconsistency; we must never drop a message</td>
+<td>This is the single sentence that justifies every consistency decision below it — chat picks availability, deliberately, and only where losing a message is truly impossible does it pick strong consistency instead.</td>
 </tr>
 </tbody>
 </table>
@@ -132,9 +117,64 @@ Redis session map memory:
 </tr>
 </tbody>
 </table>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>CAP Theorem framing:</strong> This isn't one global answer — it's a decision made per component. Messages and presence lean toward availability because a slightly stale or reordered read is harmless and a dropped message is not. Group membership and user accounts lean toward strong consistency because getting either one wrong is a correctness bug, not a UX nuisance — sending a message to a stale member list or letting an unauthenticated user in isn't something eventual consistency can be allowed to shrug off.</p>
+</blockquote>
+<details>
+<summary><strong>Point to Ponder:</strong> What happens to a message Meera sends to Raj while his phone has no signal at all?</summary>
+<p>It isn't held in memory somewhere waiting for him to come back online — it's already durably written to Cassandra the instant Meera hits send, regardless of whether Raj's phone is reachable. The system separately notices he has no active connection, sends a lightweight push notification purely to wake his phone up, and once his app reconnects it pulls everything it missed in one request. The push is a doorbell, never the delivery itself. See §8.3 in Deep Dives for the full three-stage fallback.</p>
+</details>
 <hr />
-<h2 id="5-mental-model">5. 🧠 Mental Model</h2>
-<p>Chat systems run <strong>two independent flows concurrently</strong>: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to deliver a message instantly. The reliable path (Cassandra write) ensures the message is durable the moment it lands. Production chat is the careful orchestration of both — never conflating them.</p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking: at 1 billion total users, how much traffic does this system actually have to survive every single second — and what does that force onto the architecture before a single technology gets chosen?</p>
+<p><strong>How many messages does the system handle per second?</strong> Start from the user base and work down to a rate:</p>
+<pre><code>Total users:                    1,000,000,000   (1 billion)
+DAU (50% of total):               500,000,000   (500 million)
+Messages per user per day:               ~100
+Total messages per day:       100,000,000,000   (100 billion)
+
+Average throughput:  100B / 86,400 sec  ~  1,157,000 msg/sec
+Peak throughput (2x avg):               ~  2,300,000 msg/sec
+</code></pre>
+<p>1.16 million writes a second, sustained, all day — that number alone rules out a single relational primary for message storage before any other requirement is even considered.</p>
+<p><strong>What does that throughput mean for the delivery pipeline?</strong> Kafka has to move every one of those messages between servers, and a single partition tops out around 50,000 messages/sec:</p>
+<pre><code>Kafka partitions needed (1 partition = ~50K msg/sec):
+  2.3M / 50K = ~46 partitions minimum
+</code></pre>
+<p>46 partitions at peak is a modest number — the throughput math is what justifies Kafka's presence in the design at all, not the partition count itself.</p>
+<p><strong>How many people are actually connected live at once?</strong> Real-time delivery means holding an open connection to everyone who might receive a message right now:</p>
+<pre><code>WebSocket connections at peak:
+  Assume 10% DAU online simultaneously = 50M concurrent WS connections
+  Chat Server handles 50K connections each -&gt; 1,000 Chat Server instances
+</code></pre>
+<p>50 million simultaneous open connections is the number that rules out HTTP polling outright — see the protocol comparison in §8.1 — and it's also what turns "how many chat servers do we need" into a straightforward division problem: 1,000 instances, each holding its slice of those 50 million sockets.</p>
+<p><strong>What does storing every message forever actually cost?</strong> Every message is roughly 1KB of text:</p>
+<pre><code>Storage (text, avg 1 KB/message):
+  100B messages/day x 1 KB = 100 TB/day
+  100 TB/day x 365 = ~36.5 PB/year
+  With 3x Cassandra replication: ~110 PB/year
+</code></pre>
+<p>100 terabytes a day, before replication, is squarely in "no single database server" territory — it's a distributed, horizontally-scaled store or nothing.</p>
+<p><strong>What about the media people actually send — photos and videos?</strong> Roughly a tenth of all messages carry an attachment, and those attachments are much bigger than a text message:</p>
+<pre><code>Media (10% of messages, avg 500 KB):
+  10B media/day x 500 KB = ~5 PB/day (S3 + CDN)
+</code></pre>
+<p>5 petabytes a day of binary blobs is not a database problem at all — it's an object-storage-and-CDN problem, which is exactly why media never touches the message database directly; only its URL does.</p>
+<p><strong>And how much memory does knowing who's online right now actually take?</strong> This is the one number in this whole exercise that turns out to be small:</p>
+<pre><code>Redis session map memory:
+  50M active users x ~100 bytes/entry = ~5 GB -- fits in a single Redis node
+</code></pre>
+<p>5 GB is nothing — it comfortably fits a single Redis node, let alone a cluster, which is exactly why session routing can be "just" a Redis lookup rather than its own distributed subsystem.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> These numbers drive every decision below. 1.16M writes/sec breaks PostgreSQL. 50M concurrent connections require sticky sessions. 5 GB session map fits comfortably in Redis Cluster. Always show the math before naming a technology.</p>
+</blockquote>
+<p>These numbers — 1.16M msg/sec, 50M concurrent connections, 100TB/day of text alone — are what drive the following decisions, in order: Cassandra over SQL for messages, Kafka over direct server calls for cross-server delivery, Redis for session routing, and WebSocket over polling for the connection itself.</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Meera's message to Raj from the story above — here's what actually happens underneath it, and underneath every message like it.</p>
+<p>Chat systems run <strong>two independent flows concurrently</strong>: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to get Meera's message onto Raj's screen as quickly as possible. The reliable path (a Cassandra write) makes the message durable the instant it lands, regardless of whether the fast path succeeds, fails, or takes a detour through a push notification because Raj is on the subway. Production chat is the careful orchestration of both paths — never conflating them.</p>
 <pre><code>                        +-----------------------------------------------------+
                         |                    FAST PATH                         |
    +--------+  WS frame |  +------------+  Redis  +------+  Kafka  +--------+ |  WS push  +--------+
@@ -180,147 +220,10 @@ Redis session map memory:
 <p>[!NOTE]
 <strong>Key Insight:</strong> Both paths run concurrently on every message send — not sequentially. The single tick fires when Cassandra ACKs, regardless of fast path outcome. This is what makes zero message loss possible while keeping latency low.</p>
 </blockquote>
-<hr />
-<h2 id="6-api-design">6. API Design</h2>
-<table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Path</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>POST</td>
-<td>/api/v1/auth/register</td>
-<td>Register user, returns JWT</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/auth/login</td>
-<td>Login, returns JWT + session</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/conversations</td>
-<td>List conversations with last message + unread count</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/conversations/{id}/messages?before=&amp;limit=</td>
-<td>Paginated message history (cursor-based)</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/conversations/{id}/messages</td>
-<td SENT="SENT" message_id_="message_id," status:="status:">Send message, returns</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/conversations/group</td>
-<td member_ids="member_ids" name_="name,">Create group with</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>[!NOTE]
-<strong>WebSocket (/ws) is used for real-time delivery</strong> — the REST APIs above are for initial load and history. The message send endpoint returns <code>SENT</code> immediately; <code>DELIVERED</code> and <code>READ</code> come back asynchronously over WebSocket.</p>
-</blockquote>
-<hr />
-<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
-<h3 id="71-message-send-and-delivery-11">7.1 Message Send and Delivery (1:1)</h3>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>User A types a message and hits send — the app sends it over the existing WebSocket connection to Chat Server 1.</li>
-<li>Chat Server 1 immediately writes the message to Cassandra. The message is now durable. Single tick appears on User A's screen.</li>
-<li>Chat Server 1 checks Redis for User B's session: "which server is User B connected to?"</li>
-<li>Redis returns "Chat Server 2". Server 1 publishes the message to Kafka on User B's inbox topic.</li>
-<li>Chat Server 2 consumes the Kafka event and pushes the message to User B over their open WebSocket. Double tick appears.</li>
-<li>User B's app sends a read receipt when they open the chat. This flows back through Kafka to Server 1, then to User A. Blue ticks appear.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant A as User A
-    participant CS1 as Chat Server 1
-    participant Cass as Cassandra
-    participant R as Redis
-    participant K as Kafka
-    participant CS2 as Chat Server 2
-    participant B as User B
-
-    A-&gt;&gt;CS1: WS send_message [to: UserB, content, clientMsgId]
-    CS1-&gt;&gt;Cass: Write message, status=stored
-    CS1-&gt;&gt;R: GET ws:session:UserB
-    R--&gt;&gt;CS1: chat_server_2
-    CS1-&gt;&gt;K: Publish to user.UserB.inbox
-    CS1--&gt;&gt;A: ACK single tick [stored]
-    K-&gt;&gt;CS2: Consume delivery event
-    CS2-&gt;&gt;B: WS push new_message
-    CS2-&gt;&gt;K: Publish delivery_ack
-    K-&gt;&gt;CS1: Consume delivery_ack
-    CS1--&gt;&gt;A: ACK double tick [delivered]
-    B-&gt;&gt;CS2: WS read_receipt [last_read_msg_id]
-    CS2-&gt;&gt;K: Publish read_ack
-    K-&gt;&gt;CS1: Consume read_ack
-    CS1--&gt;&gt;A: ACK blue ticks [read]
-</div>
-<h3 id="72-read-receipt-state-machine">7.2 Read Receipt State Machine</h3>
-<p><strong>The story in plain English:</strong></p>
-<p>A message moves through 4 states — each one maps to a tick indicator users recognize:
-1. PENDING — message is in the client's outbox, not yet sent.
-2. SENT — Cassandra has acknowledged the write. One grey tick.
-3. DELIVERED — recipient's device received the WebSocket push. Two grey ticks.
-4. READ — recipient opened the conversation. Two blue ticks.
-Each transition is driven by an ACK flowing back from the recipient through Kafka to the sender's server.</p>
-<div class="mermaid">
-stateDiagram-v2
-    direction LR
-    [*] --&gt; PENDING : User taps send
-    PENDING --&gt; SENT : Cassandra ACK, message_id assigned
-    SENT --&gt; DELIVERED : Recipient device received WS push
-    DELIVERED --&gt; READ : Recipient opens conversation
-</div>
-<h3 id="73-offline-delivery-push-fallback">7.3 Offline Delivery / Push Fallback</h3>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>User A sends a message. Chat Server 1 writes to Cassandra — message is safe regardless of what happens next.</li>
-<li>Server checks Redis: User B has no active WebSocket session — they're offline.</li>
-<li>Server sends a push notification via APNs (iOS) or FCM (Android). This is just a wake-up signal, not the message itself.
-   Why not deliver the message in the push payload? Payload size limits, no ordering guarantees, unreliable delivery.</li>
-<li>User B's device wakes up and the app opens a new WebSocket connection.</li>
-<li>App calls <code>GET /messages?since=lastSeen</code> — fetches all missed messages from Cassandra in one pull.</li>
-<li>App sends delivery ACKs for each message → double ticks appear for User A.</li>
-</ol>
-<div class="mermaid">
-flowchart TD
-    A[&quot;User A sends message&quot;]
-    CS1[&quot;Chat Server 1&quot;]
-    Cass[(&quot;Cassandra - status: stored&quot;)]
-    R{&quot;Redis: User B online?&quot;}
-    Push[&quot;Send push via APNs / FCM&quot;]
-    Wake[&quot;User B device wakes, opens app&quot;]
-    Reconnect[&quot;User B establishes new WS connection&quot;]
-    Fetch[&quot;GET /chats/chatId/messages since lastSeen&quot;]
-    Ack[&quot;Client sends delivery ACKs&quot;]
-    Notify[&quot;Server sends double tick to User A&quot;]
-
-    A --&gt; CS1
-    CS1 --&gt; Cass
-    CS1 --&gt; R
-    R --&gt;|not connected| Push
-    Push --&gt; Wake
-    Wake --&gt; Reconnect
-    Reconnect --&gt; Fetch
-    Fetch --&gt; Ack
-    Ack --&gt; Notify
-</div>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> Push notification = wake-up call, not delivery vehicle. APNs/FCM have payload size limits and no ordering guarantee. Cassandra has neither. Always treat push as a signal to pull, not as the delivery mechanism itself.</p>
-</blockquote>
-<hr />
-<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> Why don't the two paths just run one after the other — write to Cassandra, wait for confirmation, then push over WebSocket?</summary>
+<p>Because that would tie Raj's real-time delivery latency to Cassandra's write latency on every single message, even though the two guarantees don't actually depend on each other — durability doesn't need the WebSocket push to succeed, and the push doesn't need to wait for a durable write to be useful. Running them concurrently means the single tick fires the moment Cassandra ACKs, and the double tick fires independently the moment the push lands — whichever happens to finish first, without either one blocking the other.</p>
+</details>
 <h3 id="simple-design-starting-point">Simple Design (starting point)</h3>
 <div class="mermaid">
 graph TD
@@ -342,7 +245,6 @@ graph TD
     GS --&gt; GDB
 </div>
 <p><strong>Limitations:</strong> REST polling wastes bandwidth. Single PostgreSQL message DB cannot handle 100B writes/day. No real-time push capability.</p>
-<hr />
 <h3 id="evolved-production-design">Evolved Production Design</h3>
 <div class="mermaid">
 graph TD
@@ -438,15 +340,120 @@ graph TD
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> Meera's book club message goes to 12 people at once — what if it were a 10,000-member community group instead? Does it still go through the same path?</summary>
+<p>Not identically — the fan-out mechanism itself changes with group size, and the Fan-out Service pictured above exists specifically for the middle tier of that range. Small groups fan out synchronously, mid-size groups go through the async Fan-out Service shown here, and very large groups get routed to a dedicated, rate-limited broadcast pipeline instead. See §9 Bottlenecks &amp; Scaling for the exact thresholds and why they exist.</p>
+</details>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>The diagrams above show the components; this shows the actual message sequence between them for a 1:1 message like Meera's — the send, the fast-path push, and the read receipt flowing back:</p>
+<ol>
+<li>Meera's app sends the message over her existing WebSocket connection to Chat Server 1.</li>
+<li>Chat Server 1 immediately writes the message to Cassandra. The message is now durable — single tick appears on Meera's screen.</li>
+<li>Chat Server 1 checks Redis for Raj's session: which server is he connected to?</li>
+<li>Redis returns "Chat Server 2." Server 1 publishes the message to Kafka on Raj's inbox topic.</li>
+<li>Chat Server 2 consumes the Kafka event and pushes the message to Raj over his open WebSocket — double tick appears.</li>
+<li>When Raj opens the chat, his app sends a read receipt, which flows back through Kafka to Server 1 and on to Meera — blue ticks appear.</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant A as User A
+    participant CS1 as Chat Server 1
+    participant Cass as Cassandra
+    participant R as Redis
+    participant K as Kafka
+    participant CS2 as Chat Server 2
+    participant B as User B
+
+    A-&gt;&gt;CS1: WS send_message [to: UserB, content, clientMsgId]
+    CS1-&gt;&gt;Cass: Write message, status=stored
+    CS1-&gt;&gt;R: GET ws:session:UserB
+    R--&gt;&gt;CS1: chat_server_2
+    CS1-&gt;&gt;K: Publish to user.UserB.inbox
+    CS1--&gt;&gt;A: ACK single tick [stored]
+    K-&gt;&gt;CS2: Consume delivery event
+    CS2-&gt;&gt;B: WS push new_message
+    CS2-&gt;&gt;K: Publish delivery_ack
+    K-&gt;&gt;CS1: Consume delivery_ack
+    CS1--&gt;&gt;A: ACK double tick [delivered]
+    B-&gt;&gt;CS2: WS read_receipt [last_read_msg_id]
+    CS2-&gt;&gt;K: Publish read_ack
+    K-&gt;&gt;CS1: Consume read_ack
+    CS1--&gt;&gt;A: ACK blue ticks [read]
+</div>
+<h3 id="message-status-state-machine">Message Status State Machine</h3>
+<p>Every tick Meera sees maps directly onto one of four states a message moves through, each transition driven by an ACK flowing back from the recipient through Kafka to the sender's server:</p>
+<ol>
+<li>PENDING — message is in the client's outbox, not yet sent.</li>
+<li>SENT — Cassandra has acknowledged the write. One grey tick.</li>
+<li>DELIVERED — recipient's device received the WebSocket push. Two grey ticks.</li>
+<li>READ — recipient opened the conversation. Two blue ticks.</li>
+</ol>
+<div class="mermaid">
+stateDiagram-v2
+    direction LR
+    [*] --&gt; PENDING : User taps send
+    PENDING --&gt; SENT : Cassandra ACK, message_id assigned
+    SENT --&gt; DELIVERED : Recipient device received WS push
+    DELIVERED --&gt; READ : Recipient opens conversation
+</div>
 <hr />
-<h2 id="9-data-model">9. Data Model</h2>
+<h2 id="6-api-design">6. API Design</h2>
+<p>The API splits by what a client needs at each moment of the journey, not by actor the way a ride-booking or marketplace API might — there's really only one kind of user here, so the split instead runs along sync-vs-async lines: REST handles anything that needs a definite answer right now (register, log in, load history, create a group), while the WebSocket connection carries everything that happens continuously and asynchronously after that.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td>/api/v1/auth/register</td>
+<td>Register user, returns JWT</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/auth/login</td>
+<td>Login, returns JWT + session</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/conversations</td>
+<td>List conversations with last message + unread count</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/conversations/{id}/messages?before=&amp;limit=</td>
+<td>Paginated message history (cursor-based)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/conversations/{id}/messages</td>
+<td SENT="SENT" message_id_="message_id," status:="status:">Send message, returns</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/conversations/group</td>
+<td member_ids="member_ids" name_="name,">Create group with</td>
+</tr>
+</tbody>
+</table>
+<p>The one design choice worth naming explicitly: the send-message endpoint above is not where delivery and read status come from. It returns <code>SENT</code> immediately and nothing more — <code>DELIVERED</code> and <code>READ</code> arrive later over the WebSocket (<code>/ws</code>), asynchronously, exactly as traced through §5's Full Sequence and Message Status State Machine. Folding delivery/read status into the REST response would mean holding that HTTP request open until Raj's phone actually acknowledges it — which could be instantly, or could be however long he's underground.</p>
+<hr />
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Eight entities live in this system, and grouping them by how they're actually used — rather than as one flat list — makes the storage choices close to self-explanatory.</p>
+<p><strong>The one entity that dwarfs everything else in write volume gets its own store.</strong> Messages arrive at 1.16 million writes a second, sustained — no relational primary survives that, and messages don't need joins anyway, since a conversation's history is read as one contiguous range, not assembled from multiple tables. Cassandra partitions messages by <code>conversation_id</code>, so every message in a single chat co-locates on the same nodes, and the clustering key (<code>client_seq DESC, message_id</code>) keeps them in the exact order §8.2 relies on for correct rendering.</p>
+<p><strong>The ephemeral, fast-path data lives in Redis, because none of it needs to survive a crash.</strong> A WebSocket session entry (<code>ws:session:user_id</code>) only matters for as long as the connection is open — if it's lost, the client simply reconnects and a new one is written, so a 30-second TTL is a feature, not a risk. Presence (<code>presence:user_id</code>) follows the identical pattern for the identical reason: high-frequency heartbeat writes, natural expiry, no cleanup job required. Dedup keys (<code>dedup:client_msg_id</code>) round out this group for a different but related reason — they exist purely to convert Kafka's at-least-once delivery into effectively-once at the application layer, and a 24-hour TTL is far longer than any realistic retry window, so they too can simply expire rather than being explicitly deleted.</p>
+<p><strong>The durable, relational data lives in PostgreSQL, because getting it wrong is a correctness bug, not a UX nuisance.</strong> User accounts need to be authoritative for auth — there's no "eventually correct" version of who's allowed to log in. Groups and group membership need real joins and transactional add/remove — fanning a message out to a stale or partially-updated member list is exactly the kind of bug that eventual consistency is not allowed to produce.</p>
+<p><strong>Media itself never touches either database — it's a blob, so it goes to blob storage.</strong> Media objects live in S3, addressed by <code>media/conv_id/msg_id/filename</code>, with presigned URLs letting clients upload directly without routing gigabytes of binary data through a Chat Server, and a CDN in front serving reads at the edge.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why this store</th>
 </tr>
 </thead>
 <tbody>
@@ -454,56 +461,48 @@ graph TD
 <td>messages</td>
 <td>Cassandra</td>
 <td>partition: conversation_id; cluster: client_seq DESC, message_id; cols: sender_id, content, media_url, status, sent_at</td>
-<td>1.16M writes/sec exceeds PostgreSQL ceiling. Partition by conversation co-locates all messages for fast range reads. No joins needed.</td>
 </tr>
 <tr>
 <td>users</td>
 <td>PostgreSQL</td>
 <td>user_id PK, phone, display_name, created_at</td>
-<td>Low write rate. Needs relational integrity. Auth must be authoritative.</td>
 </tr>
 <tr>
 <td>groups</td>
 <td>PostgreSQL</td>
 <td>group_id PK, name, owner_id, created_at</td>
-<td>Relational — group_members is a join table; membership queries need joins.</td>
 </tr>
 <tr>
 <td>group_members</td>
 <td>PostgreSQL</td>
 <td>group_id + user_id composite PK, joined_at, role</td>
-<td>Foreign key relationships to users and groups. Transactional add/remove.</td>
 </tr>
 <tr>
 <td>ws_sessions</td>
 <td>Redis</td>
 <td>key: ws:session:user_id, value: chat_server_id, TTL: 30s</td>
-<td>Ephemeral — expires on disconnect. 1.16M lookups/sec needs &lt; 1ms. DB disk I/O would blow latency budget.</td>
 </tr>
 <tr>
 <td>presence</td>
 <td>Redis</td>
 <td>key: presence:user_id, value: last_seen_ts, TTL: 60s</td>
-<td>Same as session — ephemeral, high-frequency writes (every heartbeat). TTL auto-cleans on disconnect.</td>
 </tr>
 <tr>
 <td>dedup_keys</td>
 <td>Redis</td>
 <td>key: dedup:client_msg_id, value: 1, TTL: 24h</td>
-<td>Converts at-least-once Kafka delivery into effectively-once at app layer.</td>
 </tr>
 <tr>
 <td>media_objects</td>
 <td>S3</td>
 <td>object key: media/conv_id/msg_id/filename</td>
-<td>Binary blobs; S3 = unlimited scale, presigned URLs for direct client upload. CDN serves reads.</td>
 </tr>
 </tbody>
 </table>
 <hr />
-<h2 id="10-deep-dives">10. Deep Dives</h2>
-<h3 id="101-websocket-sticky-sessions">10.1 WebSocket + Sticky Sessions</h3>
-<p><strong>Here's the problem we're solving:</strong> At 500M DAU we need to push messages to clients in real time. HTTP polling is the naive solution. Let's show why it fails.</p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-websocket-sticky-sessions">8.1 WebSocket + Sticky Sessions</h3>
+<p>Here's the problem: at 500 million daily active users, the system needs to push messages to clients the instant they arrive, not whenever the client happens to check back in. HTTP polling is the obvious first idea, so it's worth seeing exactly why it fails at this scale before reaching for anything else.</p>
 <table>
 <thead>
 <tr>
@@ -535,9 +534,9 @@ graph TD
 </tr>
 </tbody>
 </table>
-<p><strong>Why WebSocket wins:</strong> It is a math problem. 500M users x 1 poll/sec = 500M wasted requests/sec. WebSocket reduces that to zero. One persistent connection, server pushes on arrival.</p>
-<p><strong>Sticky sessions problem:</strong> Each Chat Server holds WS connection objects in memory. If User A is on Chat Server 1 and a load balancer routes their next frame to Chat Server 2, there is no connection object there. Solution: WebSocket Gateway uses consistent hashing on <code>user_id</code> to always route to the same server.</p>
-<p><strong>Redis for connection routing:</strong> When User A connects to Chat Server 1, it writes <code>ws:session:{user_id} = chat_server_1</code> with a 30s TTL. Any Chat Server routing a message to User A does a single Redis GET — sub-1ms from memory. On heartbeat (every 25s), the Chat Server refreshes the TTL. On disconnect or missed heartbeat, the key expires automatically.</p>
+<p>It really is just arithmetic: 500 million users each polling once a second is 500 million requests a second, the overwhelming majority of which return nothing, because most people aren't receiving a message in any given second. WebSocket reduces that to zero wasted requests — one persistent connection per user, and the server writes to it only when there's actually something to deliver.</p>
+<p>Making that connection persistent, though, introduces a problem HTTP never had: each Chat Server holds WebSocket connection objects in memory, so if Meera is connected to Chat Server 1 and a load balancer routes her next frame to Chat Server 2 instead, there's no connection object there to receive it — the frame has nowhere to go. The fix is a WebSocket Gateway that uses consistent hashing on <code>user_id</code>, so every frame from a given user is always routed to the same server, deterministically, without needing to look anything up first.</p>
+<p>Redis is what makes that routing work for everyone <em>else</em> trying to reach that user. The moment Meera connects to Chat Server 1, it writes <code>ws:session:{user_id} = chat_server_1</code> with a 30-second TTL. From then on, any Chat Server that needs to route a message to her does a single Redis <code>GET</code> — sub-millisecond, served entirely from memory. Every 25 seconds, a heartbeat refreshes that TTL; if 25 seconds pass with no heartbeat, the key simply expires on its own, and the connection is treated as gone without anyone having to notice and clean it up explicitly.</p>
 <div class="mermaid">
 sequenceDiagram
     participant C as Client
@@ -562,19 +561,17 @@ sequenceDiagram
 <strong>Key Insight:</strong> Presence is ephemeral -&gt; Redis with TTL is ideal. DB creates write amplification for data with a natural expiry. Redis TTL handles cleanup automatically — no cron job needed.</p>
 </blockquote>
 <hr />
-<h3 id="102-message-ordering">10.2 Message Ordering</h3>
-<p><strong>Here's the problem we're solving:</strong> Two users send messages at the same millisecond. Network jitter means either could arrive at the Chat Server first. With Cassandra's eventual consistency, two replicas could briefly serve different orderings to different clients. How do we guarantee users see messages in the correct order?</p>
-<p><strong>Naive solution and why it fails:</strong> A global sequence counter (single atomic counter across all messages) would force every write to serialize through one node — a bottleneck at 1.16M msg/sec. That bottleneck defeats horizontal scaling.</p>
-<p><strong>Chosen solution:</strong></p>
-<ol>
-<li>
-<p><strong>TIMEUUID clustering key</strong> — Cassandra's TIMEUUID encodes nanosecond-precision timestamp plus a random component for uniqueness. Messages stored by TIMEUUID are naturally time-ordered on disk, making range reads efficient even with concurrent writes at the same nanosecond.</p>
-</li>
-<li>
-<p><strong>Per-conversation sequence numbers</strong> — Each client tracks a monotonically increasing <code>client_seq</code> per conversation. Every outgoing message includes <code>{conversation_id, client_seq}</code>. Cassandra primary key: <code>PRIMARY KEY ((conversation_id), client_seq, message_id)</code>. If a client receives <code>seq=44</code> when <code>last_seen=42</code>, it knows seq 43 is missing and issues a gap-fill: <code>GET /chats/{id}/messages?from_seq=43&amp;limit=5</code>.</p>
-</li>
-</ol>
-<p><strong>Trade-off accepted:</strong> We guarantee monotonic reads within a session and per-conversation eventual convergence. We do not guarantee strict global ordering across conversations — and do not need it.</p>
+<h3 id="82-message-ordering">8.2 Message Ordering</h3>
+<p>This is the hardest correctness problem this system has to solve, precisely because of the trade-off §3 already committed to: messages are stored with eventual consistency, not strong consistency, which means it's entirely possible for two Cassandra replicas to briefly disagree about what order two messages arrived in. If Meera and a friend both send a message into the same conversation within the same millisecond, network jitter alone can mean either one reaches the Chat Server first — and without a deliberate mechanism, different clients could end up seeing them in different orders on screen.</p>
+<p><strong>What this has to prevent:</strong> two people never see the same conversation rendered in two different orders, a client never silently drops a message because it arrived "out of turn," and none of this can come at the cost of the 1.16 million writes/sec the system has to sustain.</p>
+<p><strong>The obvious fix doesn't survive the throughput requirement.</strong> A single global sequence counter — one atomic counter incremented for every message in the entire system, across every conversation — would guarantee a strict global order. But every one of those 1.16 million writes a second would have to serialize through that one counter to get a number, turning the single most scalable part of the design (Cassandra's ability to add nodes for more write capacity) into a system bottlenecked on one node. Global ordering, at this throughput, is a distributed-counter bottleneck by construction — not a detail to optimize around later, a reason to not do it at all.</p>
+<p><strong>The actual mechanism scopes ordering down to the one place it's actually needed: a single conversation.</strong> Two pieces do this work together. First, Cassandra's <code>TIMEUUID</code> clustering key encodes a nanosecond-precision timestamp plus a random component for uniqueness, so messages land on disk already time-ordered even when two writes hit the same nanosecond. Second, and more importantly for what a client actually sees, each client tracks its own monotonically increasing <code>client_seq</code> per conversation, and stamps every outgoing message with <code>{conversation_id, client_seq}</code>. Cassandra's primary key is <code>((conversation_id), client_seq, message_id)</code> — every message in one conversation partitions together and clusters in exact sequence order. That sequence number is also what lets a client detect a gap on its own: if it receives <code>seq=44</code> while the last one it saw was <code>seq=42</code>, it knows immediately that <code>43</code> is missing and can ask for it directly, rather than silently rendering an incomplete conversation:</p>
+<pre><code>Client sees seq=44, last_seen=42
+  -&gt; gap detected: seq=43 missing
+  -&gt; GET /chats/{id}/messages?from_seq=43&amp;limit=5
+  -&gt; gap filled, conversation renders complete and in order
+</code></pre>
+<p>The trade-off this accepts, explicitly: the system guarantees monotonic ordering within a conversation and eventual convergence across replicas of that conversation — it does not guarantee any ordering relationship <em>between</em> different conversations, and it doesn't need to, since nobody is comparing the timestamp of a message in one chat against a message in an entirely different one.</p>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>Ordering is per-conversation, not global.</strong> A global sequence number at 1.16M msg/sec is a distributed counter bottleneck — a single serialization point. Scoping ordering to <code>conversation_id</code> gives strong enough guarantees for chat at zero added cost, because the partition key already co-locates all messages for a conversation.</p>
@@ -582,64 +579,45 @@ sequenceDiagram
 <strong>Key Insight:</strong> Global ordering at scale = distributed counter bottleneck. Scope ordering to partition key. Per-conversation ordering is all a chat app needs and it comes for free from the Cassandra partition design.</p>
 </blockquote>
 <hr />
-<h3 id="103-offline-delivery-and-push-fallback">10.3 Offline Delivery and Push Fallback</h3>
-<p><strong>Here's the problem we're solving:</strong> User B is offline — no entry in the Redis session map. Chat Server has a message to deliver but no WebSocket connection to push to. We still need User B to receive the message, and we need User A to eventually see double ticks.</p>
-<p><strong>Naive solution and why it fails:</strong> Drop the message if the user is offline, or retry infinitely in memory. Either drops messages or leaks memory during extended offline periods.</p>
-<p><strong>Chosen solution — two-stage fallback:</strong></p>
-<p>Stage 1 — Durable persistence: The message is already in Cassandra from the reliable path. It will not be lost regardless of what happens next.</p>
-<p>Stage 2 — Push notification as wake-up: Chat Server detects no Redis session entry for User B. It publishes a push event to Kafka, consumed by the Push Notification Service, which sends an APNs (iOS) or FCM (Android) notification. This is a wake-up signal — payload is minimal (sender name, preview text), not the full message.</p>
-<p>Stage 3 — Pull on reconnect: User B's device wakes and opens the app. The app re-establishes the WebSocket connection, then immediately fetches missed messages: <code>GET /chats/{id}/messages?since={last_seen_msg_id}</code>. Client ACKs receipt, triggering double-tick back to User A.</p>
-<p><strong>Trade-off accepted:</strong> Push notifications are best-effort (OS may throttle or drop them on low-battery mode). The message is always in Cassandra — worst case the user sees it when they next open the app. We accept this graceful degradation over message loss.</p>
+<h3 id="83-offline-delivery-and-push-fallback">8.3 Offline Delivery and Push Fallback</h3>
+<p>Here's the problem: Raj's phone has no WebSocket connection at all — Redis has no session entry for him. Chat Server 1 has a message to deliver and nowhere to push it. The system still has to get that message to him eventually, and Meera still needs to eventually see double ticks, without either of them doing anything differently than they would for an online recipient.</p>
+<p>The naive options both fail in an obvious way: dropping the message because the recipient is offline loses data outright, and retrying indefinitely in memory just trades a dropped message for a slow memory leak every time someone stays offline for an extended stretch — neither is acceptable at any scale, let alone a billion users.</p>
+<p>The actual mechanism is three stages, and the first one is already done by the time this problem is even detected: the message is already sitting in Cassandra, written by the reliable path the instant Meera hit send, regardless of Raj's connection state. Losing it was never on the table.</p>
+<p>Stage two is where the offline case actually diverges from the online one. Chat Server 1 checks Redis, finds no session entry for Raj, and publishes a push event to Kafka instead of a delivery event. The Push Notification Service consumes it and sends an APNs (iOS) or FCM (Android) notification — deliberately minimal, just a sender name and preview text, not the message itself. That's a design choice, not a shortcut: push payloads are capped in size and carry no ordering guarantee, so shipping the actual message content through APNs/FCM would mean losing exactly the ordering guarantee §8.2 just went to such lengths to build.</p>
+<p>Stage three is the pull. When Raj's device wakes up and the app reopens, it re-establishes its WebSocket connection and immediately calls <code>GET /chats/{id}/messages?since={last_seen_msg_id}</code> — fetching everything it missed in one request, from the same durable Cassandra store, rather than trusting whatever pushes may or may not have arrived. The client ACKs each message it receives, and those ACKs are what finally flip Meera's ticks from single to double.</p>
+<div class="mermaid">
+flowchart TD
+    A[&quot;User A sends message&quot;]
+    CS1[&quot;Chat Server 1&quot;]
+    Cass[(&quot;Cassandra - status: stored&quot;)]
+    R{&quot;Redis: User B online?&quot;}
+    Push[&quot;Send push via APNs / FCM&quot;]
+    Wake[&quot;User B device wakes, opens app&quot;]
+    Reconnect[&quot;User B establishes new WS connection&quot;]
+    Fetch[&quot;GET /chats/chatId/messages since lastSeen&quot;]
+    Ack[&quot;Client sends delivery ACKs&quot;]
+    Notify[&quot;Server sends double tick to User A&quot;]
+
+    A --&gt; CS1
+    CS1 --&gt; Cass
+    CS1 --&gt; R
+    R --&gt;|not connected| Push
+    Push --&gt; Wake
+    Wake --&gt; Reconnect
+    Reconnect --&gt; Fetch
+    Fetch --&gt; Ack
+    Ack --&gt; Notify
+</div>
+<p>The trade-off accepted here is that push notifications are best-effort — the OS can throttle or drop them, especially under low-battery power saving — but that's tolerable precisely because the push was never the delivery mechanism to begin with. Worst case, Raj sees the message the next time he opens the app rather than the moment it's sent; the message itself was never at risk.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Push notification = wake-up call, not delivery vehicle. APNs/FCM have a 4KB payload limit and no ordering guarantee. Cassandra has neither. The reliable path (Cassandra) is the delivery vehicle; push is just the notification.</p>
 </blockquote>
 <hr />
-<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
-<p><strong>What breaks first at 10x scale (10x = 11.6M msg/sec, 500M concurrent WS connections):</strong></p>
-<table>
-<thead>
-<tr>
-<th>Component</th>
-<th>Current ceiling</th>
-<th>What breaks at 10x</th>
-<th>Fix</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Chat Server fleet</td>
-<td>1K servers x 50K connections</td>
-<td>Memory per server becomes the limit</td>
-<td>Reduce connections per server, auto-scale horizontally; WS Gateway consistent hashing distributes evenly</td>
-</tr>
-<tr>
-<td>Kafka throughput</td>
-<td>~46 partitions for 2.3M/sec</td>
-<td>Consumer lag grows, delivery latency climbs</td>
-<td>Increase partition count linearly; scale consumer fleet in parallel</td>
-</tr>
-<tr>
-<td>Cassandra write path</td>
-<td>Linear scale by adding nodes</td>
-<td>Hot partitions on viral conversations</td>
-<td>Shard partition key: (conversation_id, bucket) where bucket = day or hour; limits max partition size</td>
-</tr>
-<tr>
-<td>Redis session map</td>
-<td>~5 GB for 50M users</td>
-<td>~50 GB at 500M — still fits in Redis Cluster</td>
-<td>Add Redis Cluster nodes; session map is read-heavy so read replicas help</td>
-</tr>
-<tr>
-<td>Fan-out for large groups</td>
-<td>Async fan-out service</td>
-<td>10M-member broadcast = 10M Kafka events per message</td>
-<td>Tiered fan-out: small groups direct, large groups use a dedicated broadcast pipeline with rate limiting</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Fan-out strategy by group size:</strong></p>
+<h2 id="9-bottlenecks-scaling">9. Bottlenecks &amp; Scaling</h2>
+<p>At 10x today's scale — 11.6 million messages/sec, 500 million concurrent WebSocket connections — five parts of this design hit a ceiling, and each one breaks for a different underlying reason.</p>
+<p>The Chat Server fleet is the most direct one: 1,000 servers each holding 50,000 connections is a memory-per-server ceiling, not a CPU one, and it's solved the same way it was built in the first place — reduce connections per server, auto-scale the fleet horizontally, and let the WebSocket Gateway's consistent hashing keep the load spread evenly rather than piling onto whichever servers happen to be handling active conversations. Kafka's ~46 partitions, sized for 2.3 million messages/sec, hits a subtler ceiling: consumer lag starts growing and delivery latency climbs well before the partitions themselves run out of capacity, so the fix is simply increasing partition count linearly alongside the consumer fleet, keeping the two in lockstep. Cassandra scales its write path linearly by adding nodes — that part doesn't break — but a viral group conversation can create a hot partition, since every message for one <code>conversation_id</code> still lands on the same set of nodes; sharding the partition key into <code>(conversation_id, bucket)</code>, bucketed by day or hour, bounds how large any single partition can ever grow, no matter how active the conversation gets. Redis's session map, sitting at roughly 5GB for 50 million users today, simply grows to about 50GB at 500 million — still comfortably inside what a Redis Cluster holds, and since the workload is read-heavy, adding read replicas absorbs the growth without adding write contention. And group fan-out is the one that breaks by a completely different mechanism: the async Fan-out Service that works fine for ordinary groups turns a single message into 10 million Kafka events the moment a group has 10 million members — the fix isn't scaling that service harder, it's routing large groups to a dedicated, rate-limited broadcast pipeline instead of asking the general-purpose fan-out path to absorb a load it was never sized for.</p>
+<p>That last point is really a difference in strategy by group size, not just scale, and it's worth showing as its own decision tree:</p>
 <div class="mermaid">
 flowchart TD
     Msg[&quot;Group message arrives&quot;]
@@ -658,92 +636,15 @@ flowchart TD
 <strong>Key Insight:</strong> Fan-out strategy is a function of group size — the threshold is tuneable. Small group = synchronous is fine (bounded work). Large group = synchronous blocks the sender and overloads the Chat Server. The threshold (100 members) is an engineering decision, not a fixed rule.</p>
 </blockquote>
 <hr />
-<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>WebSocket drop (client network)</td>
-<td>Client loses real-time push</td>
-<td>Client reconnects with exponential backoff (1s, 2s, 4s, max 30s); fetches missed messages via REST on reconnect</td>
-</tr>
-<tr>
-<td>Chat Server crash</td>
-<td>All WS connections on that server drop</td>
-<td>Clients reconnect to another server; Redis session key expires (30s TTL); in-flight Kafka messages are redelivered to another consumer in the group</td>
-</tr>
-<tr>
-<td>Kafka outage</td>
-<td>Cross-server delivery pauses; no fan-out</td>
-<td>Messages already in Cassandra (reliable path ran before Kafka publish); delivery resumes when Kafka recovers; clients pull from Cassandra on reconnect</td>
-</tr>
-<tr>
-<td>Cassandra node failure</td>
-<td>Writes/reads may miss one replica</td>
-<td>Cassandra replication factor 3 + quorum writes — tolerates 1 node failure; coordinator retries to healthy replica automatically</td>
-</tr>
-<tr>
-<td>Cassandra full outage</td>
-<td>Message writes fail</td>
-<td>Chat Server returns error to client; client shows send failure with retry option; no silent message loss</td>
-</tr>
-<tr>
-<td>Redis node failure</td>
-<td>Session map lookups fail for affected keys</td>
-<td>Redis Cluster redirects to replica; on total Redis failure, Chat Server falls back to delivering via Kafka to all servers (broadcast fan-out at cost of efficiency)</td>
-</tr>
-<tr>
-<td>Push notification failure</td>
-<td>User not woken when offline</td>
-<td>Message is in Cassandra; user sees it on next app open; no data loss</td>
-</tr>
-<tr>
-<td>Fan-out service crash</td>
-<td>Group messages not fanned out</td>
-<td>Kafka offset not committed; on restart, Fan-out Service replays from last committed offset; idempotent delivery via Redis dedup keys prevents duplicates</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Every failure here recovers differently depending on whether what failed was holding ephemeral connection state or durable message data.</p>
+<p>The connection-layer failures are the mildest, because nothing durable was ever at risk. A WebSocket dropping from a flaky client network just means the client reconnects with exponential backoff — 1s, 2s, 4s, up to a 30-second cap — and fetches whatever it missed over REST once it's back. A Chat Server crashing outright takes every WebSocket connection it was holding down with it, but clients simply reconnect to a different server, the now-stale Redis session key expires on its own after its 30-second TTL, and any Kafka messages that were still in flight to that server get redelivered to another consumer in the same group. A Redis node failing is handled the same way one layer down — Redis Cluster redirects lookups to a replica, and in the rare case Redis is fully unavailable, the Chat Server falls back to broadcasting the message via Kafka to every server rather than doing a targeted lookup, trading efficiency for correctness rather than dropping anything.</p>
+<p>The durable-pipeline failures recover more slowly, but recover completely, because Cassandra already has the message before any of them can happen. A Kafka outage pauses cross-server delivery and group fan-out entirely, but every message it would have carried is already sitting in Cassandra — the reliable path ran before the Kafka publish ever happened — so delivery simply resumes once Kafka recovers, and reconnecting clients pull straight from Cassandra in the meantime. A single Cassandra node failing is absorbed structurally: replication factor 3 plus quorum writes tolerate one node down without any visible effect, and the coordinator just retries against a healthy replica. A full Cassandra outage is the one scenario where a write can actually fail — the Chat Server returns an explicit error to the client, which shows a send failure with a retry option, so the failure is visible and recoverable rather than a message silently vanishing. And if the Fan-out Service itself crashes mid-job, its Kafka offset was never committed, so on restart it simply replays from the last committed offset — the Redis dedup keys from §9.2 below prevent that replay from delivering the same message twice.</p>
+<p>One failure is deliberately low-stakes by design: if push notification delivery itself fails, the recipient simply isn't woken up early — but the message is already durably in Cassandra, so they see it the next time they open the app, and nothing is actually lost.</p>
 <hr />
-<h2 id="13-trade-offs">13. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="websocket-vs-http-polling">WebSocket vs HTTP Polling</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>WebSocket</th>
-<th>HTTP Polling</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Latency</td>
-<td>&lt; 50ms push</td>
-<td>1-10s polling delay</td>
-</tr>
-<tr>
-<td>Server load</td>
-<td>Low — 1 persistent conn/user</td>
-<td>Very high — 500M empty requests/sec</td>
-</tr>
-<tr>
-<td>Complexity</td>
-<td>Stateful, requires sticky sessions</td>
-<td>Stateless, horizontally trivial</td>
-</tr>
-<tr>
-<td>Direction</td>
-<td>Full-duplex</td>
-<td>Half-duplex (client initiates only)</td>
-</tr>
-</tbody>
-</table>
+<p>The two protocols mostly differ in what they cost per user, multiplied across 500 million of them. WebSocket delivers push in under 50ms and holds one persistent connection per user, with the server writing to it only when there's data — full-duplex, so the same connection carries offers and acknowledgments in either direction. HTTP polling instead costs a request every 1-10 seconds per user regardless of whether anything happened, which at this scale means hundreds of millions of empty requests a second and a server load WebSocket never generates. What polling has going for it is that it's stateless and trivially horizontal to scale, where WebSocket's persistent connections require the sticky-session machinery from §8.1.</p>
 <p><strong>Chosen: WebSocket</strong> — At 500M DAU polling generates hundreds of millions of empty requests/sec. The trade-off I accept is stateful connections requiring sticky sessions, which is solved by the Redis session map.</p>
 <blockquote>
 <p>[!NOTE]
@@ -751,42 +652,7 @@ flowchart TD
 </blockquote>
 <hr />
 <h3 id="cassandra-vs-sql-for-messages">Cassandra vs SQL for Messages</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Cassandra</th>
-<th>PostgreSQL</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Write throughput</td>
-<td>Millions/sec per node, linear scaling</td>
-<td>~100K/sec, single primary bottleneck</td>
-</tr>
-<tr>
-<td>Scaling model</td>
-<td>Add nodes = add capacity, no resharding</td>
-<td>Vertical first, then complex manual sharding</td>
-</tr>
-<tr>
-<td>Consistency</td>
-<td>Eventual (tunable quorum)</td>
-<td>Strong ACID</td>
-</tr>
-<tr>
-<td>Joins / Transactions</td>
-<td>Not supported</td>
-<td>First-class</td>
-</tr>
-<tr>
-<td>Best fit for messages</td>
-<td>Append-heavy, time-series, partition by conversation_id</td>
-<td>Would require hundreds of shards to reach this scale</td>
-</tr>
-</tbody>
-</table>
+<p>The two data stores diverge most sharply on write throughput: Cassandra sustains millions of writes per second per node and scales by adding nodes with no resharding required, where PostgreSQL tops out around 100,000 writes/sec on a single primary and, past that, needs vertical scaling first and then a manual, complex sharding effort. That gap comes at a cost — Cassandra gives up joins and transactions entirely and only offers tunable eventual consistency, where PostgreSQL's ACID guarantees and joins are first-class. Messages themselves are append-heavy, time-series data naturally partitioned by <code>conversation_id</code>, which is exactly the shape Cassandra is built for and exactly the shape that would force PostgreSQL into hundreds of shards to reach this scale at all.</p>
 <p><strong>Chosen: Cassandra for messages, PostgreSQL for users and groups</strong> — 1.16M writes/sec exceeds PostgreSQL's ceiling. The trade-off I accept is no joins and eventual consistency — acceptable for chat where message tables need no relational queries.</p>
 <blockquote>
 <p>[!NOTE]
@@ -794,37 +660,7 @@ flowchart TD
 </blockquote>
 <hr />
 <h3 id="at-least-once-vs-exactly-once-delivery">At-Least-Once vs Exactly-Once Delivery</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>At-least-once</th>
-<th>Exactly-once</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Mechanism</td>
-<td>Kafka default — retry on consumer crash</td>
-<td>Kafka transactions (2-phase commit)</td>
-</tr>
-<tr>
-<td>Latency impact</td>
-<td>None</td>
-<td>+20-100ms per message</td>
-</tr>
-<tr>
-<td>Complexity</td>
-<td>Low</td>
-<td>Very high — distributed transactions</td>
-</tr>
-<tr>
-<td>Duplicate risk</td>
-<td>Rare — only on crash mid-ack</td>
-<td>None</td>
-</tr>
-</tbody>
-</table>
+<p>Kafka's default at-least-once delivery retries on consumer crash, adds no extra latency, and is simple to reason about — its only real cost is a rare duplicate, and only when a crash happens mid-acknowledgment. Kafka transactions can upgrade that to genuine exactly-once delivery via two-phase commit, eliminating duplicates entirely, but at the cost of 20-100ms of added latency per message and the operational complexity of distributed transactions — a heavy price for a problem that, in practice, is both rare and cheap to solve a different way.</p>
 <p><strong>Chosen: At-least-once + application-layer dedup</strong> — Every message carries a <code>client_message_id</code> (UUID from sender). Before delivery, Chat Server checks <code>Redis: GET dedup:{client_message_id}</code>. If seen, discard. If new, deliver and set key with 24h TTL. This makes Kafka at-least-once behave as effectively-once at near-zero cost.</p>
 <blockquote>
 <p>[!NOTE]
@@ -832,44 +668,60 @@ flowchart TD
 </blockquote>
 <hr />
 <h3 id="kafka-vs-direct-server-to-server-calls">Kafka vs Direct Server-to-Server Calls</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Kafka</th>
-<th>Direct gRPC / HTTP</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Durability</td>
-<td>Message persisted in log — survives CS2 crash</td>
-<td>Message lost if CS2 is down at call time</td>
-</tr>
-<tr>
-<td>Coupling</td>
-<td>Producers and consumers fully decoupled</td>
-<td>Tight coupling — CS1 must know CS2 address</td>
-</tr>
-<tr>
-<td>Latency</td>
-<td>+5-20ms (write + consume)</td>
-<td>Lower (direct call)</td>
-</tr>
-<tr>
-<td>Group fan-out</td>
-<td>Natural — publish once, N consumers</td>
-<td>Must call N servers explicitly</td>
-</tr>
-</tbody>
-</table>
+<p>A direct gRPC or HTTP call from Chat Server 1 to Chat Server 2 is lower latency and simpler on paper, but it only works if Server 2 happens to be up and reachable at the exact moment Server 1 calls it — and it ties the two servers together, since Server 1 has to know Server 2's address, and fan-out to a group means calling every member's server explicitly. Kafka gives up that raw latency — adding 5-20ms for the write-then-consume round trip — in exchange for a durable log that survives Server 2 being down entirely, full decoupling between producer and consumer, and a fan-out story that's just "publish once, N consumers read it" instead of N explicit calls.</p>
 <p><strong>Chosen: Kafka</strong> — Direct server calls create a silent message drop risk on any recipient server failure. The trade-off is +5-20ms latency, well within our 300ms budget.</p>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>The queue is a correctness requirement, not a performance optimization.</strong> Without Kafka, any server crash between receive and forward = silent message loss. With Kafka, zero message loss is a guarantee, not a hope.</p>
 </blockquote>
 <hr />
-<h2 id="14-interview-summary">14. Interview Summary</h2>
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Seven non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.</p>
+<p><strong>Availability (99.99% uptime):</strong> No single component failure takes the whole system down — §9.1's Failure Scenarios walk through Chat Server crashes, Redis node loss, Kafka outages, and Cassandra node failures, and in every one of them either the reliable path (Cassandra) already has the message, or clients reconnect and self-heal via TTL expiry and Kafka consumer group rebalancing.</p>
+<p><strong>Latency (&lt; 300ms end-to-end):</strong> The fast path never waits on a durable write — WS frame → Chat Server → Redis session lookup → Kafka publish → WS push is a handful of in-memory hops, each sub-millisecond to low-single-digit milliseconds, exactly as walked through in §5's Full Sequence.</p>
+<p><strong>Consistency (eventual, AP over CP):</strong> This is the one requirement the design deliberately doesn't try to make strong everywhere — §3's Consistency Model keeps messages and presence eventual because a stale read is harmless, while keeping group membership and user accounts strongly consistent in PostgreSQL because getting either wrong is an actual correctness bug, not a UX nuisance.</p>
+<p><strong>Durability (zero message loss):</strong> Every message is written to Cassandra (3x replicated) before anything else happens — not after the WebSocket push succeeds, concurrently with it. §8.3 shows that this holds even when the recipient is entirely offline: the message was already durable before the system even noticed there was no one to push it to.</p>
+<p><strong>Throughput (1.16M sustained / 2.3M peak msg/sec) and Storage (100TB/day text, 5PB/day media):</strong> These aren't retrofitted onto the design — they're the numbers from §4 that ruled out PostgreSQL and a single-node store before Cassandra, Kafka, and S3 were ever chosen. The architecture exists because of these numbers, not despite them.</p>
+<p><strong>CAP choice (AP, with per-component exceptions):</strong> Stated explicitly in §3's CAP callout and enforced consistently everywhere else in the design — the system never claims to be one or the other everywhere, only availability-first by default with named, deliberate exceptions.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Availability 99.99%</td>
+<td>Ephemeral state self-heals via TTL; durable state survives via Kafka retention + Cassandra replication</td>
+</tr>
+<tr>
+<td>Latency &lt; 300ms</td>
+<td>In-memory fast path: WS → Chat Server → Redis → Kafka → WS, no disk-backed DB on the critical hop</td>
+</tr>
+<tr>
+<td>Consistency — eventual (AP), strong where it matters</td>
+<td>Cassandra quorum for messages; PostgreSQL ACID for accounts and group membership</td>
+</tr>
+<tr>
+<td>Durability — zero message loss</td>
+<td>Cassandra write (3x replication) happens concurrently with, not after, the fast-path push</td>
+</tr>
+<tr>
+<td>Throughput 1.16M/2.3M msg/sec, Storage 100TB+5PB/day</td>
+<td>Architectural constraints that selected Cassandra, Kafka, and S3 up front (§4)</td>
+</tr>
+<tr>
+<td>CAP choice — AP by default, CP where correctness demands it</td>
+<td>Explicit per-component consistency model (§3), not one global answer</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats chat as two concurrent systems sharing one conversation: a fast path racing to get a message onto a screen in under 300ms, and a reliable path making sure that same message can never simply vanish — regardless of whether the fast path succeeds, degrades into a push notification, or waits patiently for a phone to resurface from underground. The hardest problem wasn't moving messages quickly; it was guaranteeing that a billion people, sending a hundred billion messages a day under only eventual consistency, never see their own conversations arrive out of order or disappear — solved not with a single global lock or counter, but by scoping every guarantee to exactly the boundary where it's actually needed: per-conversation ordering, per-session routing, per-recipient delivery. Every other decision in this system — Cassandra over SQL, Kafka over direct calls, Redis for session routing, WebSocket over polling — falls out of protecting that one distinction between what can be lost for a moment and what must never be lost at all.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
