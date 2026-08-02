@@ -84,21 +84,69 @@ categories: `ride-booking-uber-rapido.md`, `config-driven-shopping-cart-homepage
 5. **High-Level Architecture** — *merge of old §5 (Mental Model) + old §8.*
    Same diagrams, each component introduced as solving a problem surfaced in
    the user journey. 1-2 more Points to Ponder at key architectural forks.
-6. **API Design** — *old §6, unchanged.*
-7. **Data Model** — *old §9, reframed.* Storage/technology selection
-   narrated as prose reasoning first ("this store must satisfy X, Y →
-   therefore Postgres/Cassandra/Redis"), *then* the existing table.
-8. **Deep Dives** — *old §10, content unchanged* (already matches Grokking's
-   "naive solution fails → chosen solution" arc — verified against the
-   actual chapter text, not assumed). One deep dive per doc — whichever is
-   the system's hardest domain-specific cross-cutting concern (fraud/payment
-   for Uber-style docs; may be encryption for a chat app, adaptive bitrate
-   for video streaming, order-matching for a stock broker, etc. — a
-   per-doc judgment call made during restructuring, not decided up front)
-   gets expanded to full standalone-lesson treatment: what it does, what to
-   prevent/guard against, its own components, its own plain-English
+6. **API Design** — *old §6, reframed.* A short prose lead-in explaining why
+   the API splits the way it does (e.g. by actor), plus one explicit sentence
+   naming the one or two design choices that aren't self-evident from the
+   table (async vs sync, why a field exists). The parameter tables themselves
+   stay — they're genuine reference material, the same way Grokking shows
+   `functionName(params)` signatures — but they are not allowed to be the
+   *only* content in the section.
+7. **Data Model** — *old §9, reframed.* Do not keep a "why this store"
+   *column* in the table. Instead, group entities by how they're actually
+   used (e.g. ephemeral/fast-path vs durable/financial vs analytics/cold) and
+   explain the reasoning for each group in prose paragraphs — a reader should
+   understand *why* before they ever reach the table. The table that follows
+   drops to compact reference columns only (Entity / Storage / Key Columns),
+   since the reasoning already lives in the prose above it and repeating it
+   in a table cell is pure redundancy, not reinforcement.
+8. **Deep Dives** — *old §10, reframed as continuous narration, not left
+   as-is.* **Correction from the pilot's second review round:** the original
+   version of this spec said Deep Dives' content was "already unchanged" and
+   needed no prose conversion, on the theory that its existing
+   "naive solution fails → chosen solution" labels already matched Grokking's
+   arc. That was wrong in practice — user feedback on the pilot was explicit
+   ("not some grid, but explain things properly") specifically because this
+   section was still bolded labels and step-numbered lists with a thin prose
+   wrapper, not real narration. The actual bar: rewrite each deep dive as
+   flowing paragraphs that walk through *why* the naive approach fails, *how*
+   the chosen mechanism actually works, and *why* each piece of it is there
+   — the same voice as Grokking's quadtree explanation ("The main problem
+   is... We have the following issues... To overcome this, we can..."), not
+   a labeled sequence of facts. Numbered/stepped code blocks may still be
+   *kept*, but only as a compact recap after the prose has already explained
+   the sequence in words — never as the first or only place a step is named
+   (a pilot draft initially said the same 5 steps twice in a row, once as
+   ordinal prose and once as a code block; the fix was to make the prose
+   causal instead of ordinal and let the code block be the sole enumeration).
+   `[!NOTE]`/`[!IMPORTANT]` callouts stay as the closing "key insight" device,
+   but the prose immediately before a callout must not restate its content —
+   build up to it, don't repeat it back-to-back. One deep dive per doc —
+   whichever is the system's hardest domain-specific cross-cutting concern
+   (fraud/payment for Uber-style docs; may be encryption for a chat app,
+   adaptive bitrate for video streaming, order-matching for a stock broker,
+   etc. — a per-doc judgment call made during restructuring, not decided up
+   front) gets expanded to full standalone-lesson treatment: what it does,
+   what to prevent/guard against, its own components, its own plain-English
    workflow, the chosen mechanism explained step by step.
-9. **Bottlenecks, Failure Scenarios, Trade-offs** — *old §11-13, unchanged.* Failure Scenarios and Trade-offs render as `###` (h3) subsections nested under this section's `##` (h2) heading — matching the `8.1`/`8.2`/`8.3` precedent in Deep Dives, not siblings at the same heading level as §9 itself (a mismatch caught in the pilot's code-quality review).
+9. **Bottlenecks, Failure Scenarios, Trade-offs** — *old §11-13, reframed as
+   prose, not left as tables.* Same correction as Deep Dives above: these
+   were originally specified as "unchanged" and that undersold what was
+   needed. Bottlenecks and Failure Scenarios convert to grouped prose
+   paragraphs (group by cause/mechanism, e.g. "ephemeral-state failures
+   recover this way, durable-state failures recover that way") with no
+   table at all if the item count is small enough to read cleanly as
+   paragraphs (roughly 5-8 items) — the original comparison table's specific
+   numbers (thresholds, TTLs, recovery times) must all still appear, just
+   inside sentences instead of cells. Trade-offs convert each
+   dimension-by-dimension comparison table into a compare-and-contrast
+   paragraph, keeping the existing bolded "**Chosen:**" reasoning paragraph
+   and the closing `[!NOTE]` callout — but trim the "Chosen:" paragraph and
+   the callout so they don't restate the same punchline in both places (pick
+   one to deliver the final insight, not both). Failure Scenarios and
+   Trade-offs render as `###` (h3) subsections nested under this section's
+   `##` (h2) heading — matching the `8.1`/`8.2`/`8.3` precedent in Deep
+   Dives, not siblings at the same heading level as §9 itself (a mismatch
+   caught in the pilot's code-quality review).
 10. **Evaluation: Did We Meet the Requirements?** — *NEW.* A prose
     paragraph per non-functional requirement from section 3, explaining the
     actual mechanism that satisfies it (not just restating the requirement),
@@ -114,17 +162,36 @@ categories: `ride-booking-uber-rapido.md`, `config-driven-shopping-cart-homepage
 ## Content-Preservation Guarantee
 
 Every old section maps to a specific new section above — there is no old
-content without a destination. During restructuring, verify per doc:
+content without a destination. **This is preservation of facts and figures,
+not preservation of table-as-a-format.** A table whose entire content is
+reasoning (a "why" column, a dimension-by-dimension comparison) is expected
+to be converted to prose per §6-9 above — that is not content loss, provided
+every number/fact it contained reappears in the new prose. A table of pure
+reference data (API parameters, a post-explanation recap of entity → storage
+mappings) should stay a table. During restructuring, verify per doc:
 
-- Every mermaid diagram, code block, and table from the original survives
-  somewhere in the new version (spot-checked by extracting fenced blocks
-  before/after and confirming the same count and content, not just eyeballing
-  prose).
-- New word count is *higher* than the original (new sections are additive;
-  a shrink would indicate accidental content loss, not tightening).
-- The five genuinely new elements (intro, user-journey rewrite, Points to
-  Ponder, Evaluation, Conclusion) are the only wholly-new prose — everything
-  else is existing content moved and given connective sentences.
+- Every mermaid diagram and code block from the original survives somewhere
+  in the new version, unchanged (spot-checked by extracting fenced blocks
+  before/after and confirming the same count and content).
+- Every *fact and number* a removed/shrunk table contained is traceable to a
+  specific sentence in the new prose — checked entity-by-entity or
+  row-by-row against the original, not just "the section got longer so
+  nothing was probably lost."
+- Word count is not a reliable signal on its own for sections converted from
+  table to prose (prose can be shorter *or* longer than the table it
+  replaced depending on how much redundant restatement is trimmed) — use it
+  only as a sanity check for the doc as a whole, not a per-section gate.
+- The genuinely new elements (intro, user-journey rewrite, Points to Ponder,
+  Evaluation, Conclusion, plus the Deep-Dive/Bottleneck/Trade-off narration
+  from §6-9) read as connected reasoning — problem, why the obvious fix
+  fails, why the actual mechanism works — not facts restated in sentence
+  form with no causal thread between them. This is the actual bar the pilot
+  was held to on its second review pass; a doc that mechanically converts
+  "| Bottleneck | Breaks at | Strategy |" rows into "X breaks at Y. The fix
+  is Z." sentences without any reasoning connecting them has not met it.
+- No paragraph immediately preceding a `[!NOTE]`/`[!IMPORTANT]` callout (or
+  a code-block recap) restates that callout's/recap's content — the prose
+  should build up to the payoff, not deliver it twice.
 - Any sentence stating a count of items in another section (e.g. "N requirements were set out in §3") has that count verified against the actual number of rows/items in the referenced section before the doc is considered done — this class of error isn't caught by the word-count or mermaid-count checks above.
 
 ## Rollout
