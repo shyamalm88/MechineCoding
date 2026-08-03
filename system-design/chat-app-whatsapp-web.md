@@ -387,7 +387,7 @@ Here's the problem: at 500 million daily active users, the system needs to push 
 | SSE | Server pushes events, unidirectional | Client still needs a separate POST to send — not full-duplex |
 | WebSocket | Full-duplex persistent TCP | One connection per user; server pushes only when there is data |
 
-It really is just arithmetic: 500 million users each polling once a second is 500 million requests a second, the overwhelming majority of which return nothing, because most people aren't receiving a message in any given second. WebSocket reduces that to zero wasted requests — one persistent connection per user, and the server writes to it only when there's actually something to deliver.
+It really is just arithmetic: 500 million users each polling once a second is 500 million requests a second, the overwhelming majority of which return nothing, because most people aren't receiving a message in any given second. Long Polling looks like a fix at first glance — the server holds the request open instead of replying immediately — but the connection still can't stay open forever, so it's forced to reconnect roughly every 30 seconds; at 500 million users, that reconnect churn alone roughly doubles the number of connections the fleet has to accept and tear down. SSE fixes the polling-frequency problem by letting the server push events over one long-lived connection, but the connection is one-directional by design — the client still needs a separate HTTP request every time it sends a message, so it never actually becomes the single full-duplex channel this system needs. WebSocket is what closes both gaps at once: one persistent, bidirectional connection per user, with zero wasted requests, and the server writes to it only when there's actually something to deliver.
 
 Making that connection persistent, though, introduces a problem HTTP never had: each Chat Server holds WebSocket connection objects in memory, so if Meera is connected to Chat Server 1 and a load balancer routes her next frame to Chat Server 2 instead, there's no connection object there to receive it — the frame has nowhere to go. The fix is a WebSocket Gateway that uses consistent hashing on `user_id`, so every frame from a given user is always routed to the same server, deterministically, without needing to look anything up first.
 
@@ -441,7 +441,7 @@ The trade-off this accepts, explicitly: the system guarantees monotonic ordering
 > **Ordering is per-conversation, not global.** A global sequence number at 1.16M msg/sec is a distributed counter bottleneck — a single serialization point. Scoping ordering to `conversation_id` gives strong enough guarantees for chat at zero added cost, because the partition key already co-locates all messages for a conversation.
 
 > [!NOTE]
-> **Key Insight:** Global ordering at scale = distributed counter bottleneck. Scope ordering to partition key. Per-conversation ordering is all a chat app needs and it comes for free from the Cassandra partition design.
+> **Two different mechanisms, two different jobs.** `TIMEUUID` is what keeps writes on disk correctly ordered even when Cassandra's own replicas briefly disagree — it's a storage-layer guarantee, invisible to the client. `client_seq` is the client-facing one: it's what a client actually reads to detect a gap and request a replay, and it's assigned by the client itself, not derived from wall-clock time at all.
 
 ---
 
