@@ -231,6 +231,13 @@ The diagrams above show the components; here's the actual message sequence betwe
 
 When Devesh's client connects, it sends the `doc_id` and the last version number it knows about. The OT Server checks Redis for the canonical document state first — on a cache hit, Devesh gets the current document instantly without the server ever touching Cassandra. When Devesh types "R" at position 29, his client applies the change to its own screen immediately, before the server has seen it at all — this optimistic local apply is what makes typing feel instant rather than waiting on a round trip. His client then sends the operation to the server tagged with the version it was generated against: `{insert, position: 29, char: "R", based_on_version: 42}` — that version tag is what lets the server figure out exactly which operations Devesh's client didn't know about yet. The server checks whether anything has been committed since version 42, and finds that it has: Maya deleted a character at position 15 a moment earlier. It transforms Devesh's operation against Maya's — position 29 is still valid after a deletion at 15, so the operation stays as-is (had Maya deleted at position 20 instead, Devesh's position would have shifted down to 28 to account for the character that's no longer there). Before broadcasting anything to anyone, the server appends the transformed operation to Cassandra — if the server crashed at this exact instant, the operation would still be safe, recoverable on reconnect. It then updates the Redis canonical copy, so the next person who opens this document gets the latest state without any replay, and only after both of those are done does it ACK Devesh with the newly committed version number (43), letting his client promote that operation from "pending" to "committed." Finally, the server broadcasts the transformed operation to Maya's client, which applies it on top of whatever she's typed since. Both of their screens now show the identical document — even though they were typing into it at the same time.
 
+The same sequence, compressed to one line:
+
+```
+Client → apply locally → send op → OT Server → transform against concurrent ops
+       → append to log → broadcast transformed op → other clients apply
+```
+
 ```mermaid
 sequenceDiagram
     participant A as Client A (Alice)
@@ -336,11 +343,11 @@ Laid side by side, every dimension trades one mechanism's strength for the other
 | Deletion | Final immediately | Tombstone until all peers confirm |
 | Compaction overhead | None | Required — tombstone GC |
 | Data structures | Linear text | Arbitrary — JSON trees, vector shapes |
-| Used by | Google Docs (historically), Notion | VS Code Live Share (Yjs), Figma |
+| Used by | Google Docs (historically), Notion | VS Code Live Share (Yjs), Figma, Automerge |
 
 That last row matters as much as any of the technical ones: OT's transform math is built around linear text positions, which is exactly what a document body is — but it doesn't generalize cleanly to arbitrary structures like a JSON tree or a vector shape, where CRDT's identity-anchored approach fits naturally instead.
 
-**Chosen: OT** for the real-time hot path. A central server already exists for auth and versioning, so OT's single-ordering-point requirement adds no new infrastructure — it just reuses what's already there. The trade-off accepted is exactly the offline-editing weakness named in the table above, and it's not free: an hour of offline edits, as in Devesh's flight from the Day in the Life story, genuinely doesn't fit the "server reconciles a few concurrent ops" model OT was designed around.
+**Chosen: OT** for the real-time hot path. Beyond fitting the fast-path architecture, a central server here is already mandatory for auth, versioning, and — as the Trade-offs discussion in §9.2 spells out — billing, so OT's single-ordering-point requirement reuses infrastructure that has to exist anyway rather than adding anything new. The cost accepted is the offline-editing weakness named in the table above: an hour of offline edits, as in Devesh's flight from the Day in the Life story, genuinely doesn't fit the "server reconciles a few concurrent ops" model OT was designed around.
 
 > [!NOTE]
 > **Key Insight:** OT vs CRDT is a topology choice, not a quality comparison. OT is right when a central server already exists and offline windows are short. CRDT's advantage — no server, offline-native — only matters when peer-to-peer or long offline windows are a genuine requirement. For Google Docs: OT for the real-time hot path; CRDT-style merge for long offline reconciliation and structured non-text data.
@@ -478,6 +485,10 @@ Every recovery story here splits along the same line the whole architecture does
 ---
 
 ### 9.2 Trade-offs
+
+**OT vs CRDT for conflict resolution.** §8.1 walks through the full mechanism; the short version is a topology trade — OT needs one ordering server per document but costs nothing extra when a server already exists, while CRDT removes the server requirement at the cost of tombstones and compaction overhead.
+
+**Chosen: OT** — a central server is already required here for access control, versioning, and billing, so OT's single-ordering-point requirement isn't an added constraint, it's reusing infrastructure that has to exist regardless. See §8.1 for why this specifically breaks down on long offline windows.
 
 **Cassandra vs SQL for the operations log.** The two databases diverge hardest on write throughput: Cassandra sustains multi-million writes per second with linear horizontal scaling via its append-only LSM-tree design, while a single PostgreSQL primary tops out somewhere around 50,000-100,000 writes per second, with row-level locking and B-tree write amplification working against it well before that ceiling. What PostgreSQL keeps that Cassandra gives up is full SQL joins and aggregations, plus true ACID transactions instead of Cassandra's tunable, quorum-based consistency — the operations log doesn't need either of those, since it's write-once and read back sequentially by `(doc_id, version range)`, never joined against anything.
 
