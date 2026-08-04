@@ -350,7 +350,7 @@ That last row matters as much as any of the technical ones: OT's transform math 
 **Chosen: OT** for the real-time hot path. Beyond fitting the fast-path architecture, a central server here is already mandatory for other reasons entirely — §9.2's Trade-offs discussion spells out exactly which ones — so OT's single-ordering-point requirement rides along on infrastructure that has to exist regardless, rather than adding anything of its own. The cost accepted is the offline-editing weakness named in the table above: an hour of offline edits, as in Devesh's flight from the Day in the Life story, genuinely doesn't fit the "server reconciles a few concurrent ops" model OT was designed around.
 
 > [!NOTE]
-> **Key Insight:** OT vs CRDT is a topology choice, not a quality comparison. OT is right when a central server already exists and offline windows are short. CRDT's advantage — no server, offline-native — only matters when peer-to-peer or long offline windows are a genuine requirement. For Google Docs: OT for the real-time hot path; CRDT-style merge for long offline reconciliation and structured non-text data.
+> **Key Insight:** OT vs CRDT is a topology choice, not a quality comparison. CRDT's advantage — no server, offline-native — only matters when peer-to-peer coordination or long offline windows are a genuine requirement; for Google Docs, that's the offline-reconciliation and structured-non-text-data cases, not the real-time hot path.
 
 ---
 
