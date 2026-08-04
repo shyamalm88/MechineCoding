@@ -629,24 +629,13 @@ Key Insight: Without single-transaction atomicity, a crash between the two write
 <p><strong>Chosen:</strong> two-store. Analytics queries never touch the operational database.</p>
 <hr />
 <h2 id="10-frontend-notes">10. Frontend Notes</h2>
-<p><em>Notification system is 95% backend / 5% frontend. The frontend problem is the client dashboard and the template builder.</em></p>
+<p>Notification system work is roughly 95% backend and 5% frontend, and that 5% comes down to two pieces worth building deliberately rather than as an afterthought: a client-facing delivery status dashboard, and a template builder, plus a small preference UI that gets embedded in the client's own product for their end users.</p>
 <h3 id="delivery-status-dashboard">Delivery Status Dashboard</h3>
-<ul>
-<li>Poll <code>GET /notifications?clientId=X&amp;status=pending&amp;page_cursor=Y</code> every 30 seconds (not WebSocket — delivery events are infrequent enough that polling is fine; WebSocket adds connection management overhead for marginal UX gain)</li>
-<li>Cursor pagination on notification list (never offset — millions of rows)</li>
-<li>Status filters: All / Pending / Sent / Delivered / Failed</li>
-</ul>
+<p>The dashboard polls <code>GET /notifications?clientId=X&amp;status=pending&amp;page_cursor=Y</code> every 30 seconds rather than holding a WebSocket open, because delivery events are infrequent enough that polling comfortably keeps up — a WebSocket would add connection-management overhead for a marginal UX gain over a 30-second refresh. Pagination through the notification list uses a cursor rather than an offset, because the underlying table holds millions of rows and an offset-based query only gets slower the further a client pages back through their history, whereas a cursor keeps every page roughly the same cost regardless of depth. The dashboard also exposes status filters — All, Pending, Sent, Delivered, Failed — so a client can jump straight to the subset they actually care about, which in practice is usually the failed ones.</p>
 <h3 id="template-builder">Template Builder</h3>
-<ul>
-<li>Variable placeholders highlighted in editor: <code>{{product_name}}</code>, <code>{{user_name}}</code></li>
-<li>Preview panel renders template with sample variables</li>
-<li>Version history shown as numbered list (latest active = highlighted)</li>
-</ul>
+<p>The template builder's job is to make it obvious what a template will actually render before it goes out to a million recipients. Variable placeholders like <code>{{product_name}}</code> and <code>{{user_name}}</code> are highlighted directly in the editor, so it's immediately clear which parts of a template are static copy and which get substituted per recipient. A preview panel renders the template against sample variable values, catching formatting mistakes before a real send rather than after one. And because templates are versioned (§7), the builder shows version history as a numbered list with the currently active version highlighted, so it's always obvious which version is live without cross-referencing anything else.</p>
 <h3 id="preference-ui-end-user-facing-embedded-by-client">Preference UI (End-User Facing, embedded by client)</h3>
-<ul>
-<li>Toggle per channel: Email / SMS / Push</li>
-<li><code>PUT /users/{id}/preferences</code> on toggle change (debounced 500ms — avoid rapid-fire updates)</li>
-</ul>
+<p>The preference UI is the one piece of frontend surface end users interact with directly, and it's embedded inside the client's own product rather than hosted by this system. It stays deliberately minimal: a toggle per channel — Email, SMS, Push — that fires <code>PUT /users/{id}/preferences</code> on change. That call is debounced by 500ms rather than sent on every toggle, because a user flipping through several channels in quick succession would otherwise trigger a burst of redundant writes to the same preference record; debouncing collapses that burst into the single write that actually reflects where the user landed.</p>
 <hr />
 <h2 id="11-evaluation-did-we-meet-the-requirements">11. Evaluation: Did We Meet the Requirements?</h2>
 <p>Six non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.</p>
