@@ -12,46 +12,19 @@
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="system-design-payment-gateway-stripe-razorpay-paypal">System Design: Payment Gateway (Stripe / Razorpay / PayPal)</h1>
 <hr />
-<h2 id="0-problem-scope">0. Problem + Scope</h2>
-<p>Design a payment gateway (like Stripe or Razorpay) that merchants integrate into checkout flows to accept card payments. The gateway handles secure card collection, tokenization, fraud scoring, processor routing, immutable ledger maintenance, and merchant webhook delivery.</p>
-<p><strong>In scope:</strong> payment intent creation, gateway-hosted checkout sessions, card tokenization via vault, pre-auth fraud scoring, double-entry ledger, transaction state machine, webhook delivery, hourly reconciliation.</p>
-<p><strong>Out of scope:</strong> actual bank-level money movement (payment processor is a black box), partial payments and installments, ML model training for fraud (inference is in scope), refunds and chargebacks (extensions worth mentioning).</p>
+<h2 id="1-what-is-a-payment-gateway">1. What Is a Payment Gateway?</h2>
+<p>A payment gateway is the piece of infrastructure an online store plugs into its checkout flow so it can accept a card payment without ever touching the card number itself. A shopper types their card details into a page during checkout; from that moment on, the gateway takes over — collecting the card securely, deciding in a fraction of a second whether the transaction looks like fraud, sending it to a bank for approval, and telling the merchant whether the money is on its way. Stripe, Razorpay, and PayPal are all this same kind of system: a merchant's own website or app calls a handful of APIs and hands the shopper off to a page the gateway controls, and the gateway owns everything about handling money and card data safely from that point forward.</p>
+<p>At the scale a payment gateway actually runs at, the hard part was never authorizing one card once. It's guaranteeing that a dropped connection during that one authorization never turns into a shopper being charged twice, and that every unit of money that moves through the system is provably accounted for — not just today, but months later when someone asks where it went.</p>
 <hr />
-<h2 id="1-assumptions-scale">1. Assumptions &amp; Scale</h2>
-<pre><code>Scale target:    10,000 TPS peak
-Each payment:    3 API calls (intent + session + pay) → 30,000 req/sec peak
-
-Payment intents:
-  10,000/sec * 86,400s = 864M intents/day at peak
-  Real average ~10x lower → ~86M/day
-  Record size ~500 bytes → ~43 GB/day
-  PostgreSQL sharded by merchant_id
-
-Ledger entries:
-  4 rows per payment (2 on capture + 2 on settlement)
-  10,000 TPS * 4 = 40,000 ledger writes/sec — append-only, partitioned by month
-
-Sessions (Redis):
-  10,000 concurrent active sessions * 2 KB = ~20 MB — trivial for Redis
-  TTL = 10 min; auto-expiry means no cleanup job
-
-Idempotency key store (Redis):
-  10,000 keys/sec * 86,400s = 864M keys/day churn
-  ~200 bytes per key → ~173 GB/day; Redis cluster with LRU eviction
-  TTL = 24h (covers realistic retry windows)
-
-Webhook deliveries:
-  10,000 payments/sec → ~15,000 deliveries/sec at peak (at-least-once)
-  Kafka topic partitioned per merchant
-
-Fraud scoring:
-  10,000 TPS → 10,000 checks/sec
-  Fast rules via Redis: under 5ms
-  ML inference service: under 50ms (40ms timeout — fallback to rules on timeout)
-</code></pre>
-<p>These numbers drive the following decisions: append-only ledger partitioning for write throughput, Redis for sessions and idempotency (not PostgreSQL), Kafka for webhook fan-out, and synchronous fraud scoring with an ML timeout fallback.</p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Farhan is buying a jacket from Devika's online store. He adds it to his cart, checks out, and types his card number, expiry date, and CVV into a payment page that looks exactly like it belongs to Devika's site — same colors, same logo — though he has no idea it's actually hosted somewhere else entirely. He taps "Pay ₹4,999." For about a second and a half, the button just spins.</p>
+<p>Behind that spinner, in an instant he never sees, the system checks that his card isn't stolen or being used from five different countries in the last hour, sends it off to his bank for approval, gets an "approved" back, and records — permanently, in a form nobody can quietly edit later — that the money now belongs to Devika's business instead of Farhan's account.</p>
+<p>The spinner stops. Farhan sees "Payment successful," and a minute later an email lands: order confirmed, jacket on the way. On Devika's side, at almost the same instant, her own store's system gets told the payment went through, and her fulfillment team starts packing the order — she never had to ask her gateway "did it work?"; it told her the moment it happened.</p>
+<p>Later that night, Farhan's phone briefly loses signal right as he's checking his order status. The app spins for a couple of extra seconds and then just shows him the same "Payment successful" screen it would have shown anyway. Nothing charged him twice, nothing broke, and neither Farhan nor Devika ever thought about a token vault, a ledger, or a webhook. Everything from here on is how those fifteen seconds of Farhan's life actually get built.</p>
 <hr />
-<h2 id="2-functional-requirements">2. Functional Requirements</h2>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> Farhan's fifteen seconds are really three separate phases wearing one spinner: a merchant registering what's about to be paid for, a secure page collecting the card, and an authorization that has to be correct no matter what goes wrong along the way. In scope: payment intent creation, gateway-hosted checkout sessions, card tokenization via a vault, pre-auth fraud scoring, a double-entry ledger, a transaction state machine, webhook delivery to merchants, and hourly reconciliation against the bank. Out of scope: the actual bank-level movement of money (the payment processor is treated as a black box), partial payments and installments, and training the ML fraud model (inference is in scope, training isn't) — with refunds and chargebacks flagged as worthwhile extensions rather than something this design covers end to end.</p>
+<p><strong>Functional requirements:</strong></p>
 <ol>
 <li><strong>Payment Intent</strong> — merchant creates an intent with amount, currency, and order reference before card data is collected</li>
 <li><strong>Checkout Session</strong> — gateway generates a secure, hosted card-entry page tied to the intent (10-min TTL)</li>
@@ -62,51 +35,64 @@ Fraud scoring:
 <li><strong>Webhook notification</strong> — gateway notifies merchant backend on payment.succeeded, payment.failed, and payment.pending events</li>
 <li><strong>Reconciliation</strong> — hourly job aligns gateway ledger with processor settlement file to resolve gaps from network partitions</li>
 </ol>
-<hr />
-<h2 id="3-non-functional-requirements">3. Non-Functional Requirements</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> A merchant's request to create a payment intent times out on their end and they retry it — does Farhan get charged twice?</summary>
+<p>No — the retry carries the same idempotency key as the original request, and the gateway recognizes it. Instead of creating a second intent, it returns the exact same <code>intent_id</code> it returned the first time, so the merchant's retry is safe by construction and never needs to guess whether its earlier attempt actually landed. See §8 Deep Dives for the full mechanism, including how two <em>concurrent</em> retries racing each other are handled without a duplicate slipping through.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real shopper or merchant, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Throughput</td>
 <td>10,000 TPS peak</td>
+<td>This is what "everyone can check out at once" actually costs the system — a flash sale that exceeds it means real shoppers see checkout failures at the exact moment merchants need sales the most.</td>
 </tr>
 <tr>
 <td>Gateway latency</td>
 <td>under 200ms (fraud + tokenization + session validation + ledger write)</td>
+<td>Every extra hundred milliseconds Farhan stares at that spinner is doubt creeping in about whether the payment actually went through.</td>
 </tr>
 <tr>
 <td>Fraud check latency</td>
 <td>under 50ms synchronous, on critical path</td>
+<td>This budget has to fit entirely inside the 200ms above without Farhan ever noticing a separate step happened.</td>
 </tr>
 <tr>
 <td>Availability</td>
 <td>99.99% (four nines)</td>
+<td>A gateway outage doesn't take down one merchant's checkout — it takes down every merchant on the platform at once, all simultaneously unable to take money.</td>
 </tr>
 <tr>
 <td>Consistency</td>
 <td>CP — consistency over availability; double charges are unacceptable</td>
+<td>A double charge isn't a UX bug — it's a real line on someone's bank statement that shouldn't be there, and it's the fastest way to lose a merchant's trust permanently.</td>
 </tr>
 <tr>
 <td>Durability</td>
 <td>Zero payment record loss — ACID PostgreSQL with point-in-time recovery</td>
+<td>A lost payment record means a shopper who paid has no proof they paid, and a merchant who shipped has no record they were ever paid for it.</td>
 </tr>
 <tr>
 <td>Idempotency</td>
 <td>All payment operations must be retry-safe — network retries must never double-charge</td>
+<td>Card networks and mobile connections drop constantly, exactly like Farhan's phone did — if a retry after a dropped connection could double-charge, every flaky moment of network signal becomes a real financial risk to a real person.</td>
 </tr>
 <tr>
 <td>Security</td>
 <td>PCI DSS Level 1 — raw card numbers must never leave the vault</td>
+<td>Raw card numbers are the single most valuable thing to steal anywhere in this system; if they never exist outside one small vault, a breach anywhere else has nothing worth stealing.</td>
 </tr>
 <tr>
 <td>Ledger correctness</td>
 <td>SUM(debits) = SUM(credits) per payment_id at all times</td>
+<td>This is the mathematical proof that no money was silently created or destroyed — the thing that lets the gateway say, with certainty, exactly where every unit of money went, even months later.</td>
 </tr>
 </tbody>
 </table>
@@ -146,9 +132,29 @@ Fraud scoring:
 <p>[!NOTE]
 <strong>Key Insight:</strong> Most design decisions flow from three constraints: PCI DSS compliance, idempotency, and ledger correctness. Every major component — hosted checkout page, token vault, double-entry ledger, idempotency keys, reconciliation — exists to satisfy one or more of these three.</p>
 </blockquote>
+<details>
+<summary><strong>Point to Ponder:</strong> The payment processor approves Farhan's card, but the gateway crashes a split second later, before the ledger entries get written — is that money just lost track of?</summary>
+<p>No — the ledger write is designed to be the thing that happens <em>before</em> the result is returned to the user in the normal flow, but when a crash lands in that exact gap, the hourly reconciliation job is what catches it: it compares the gateway's ledger against the processor's own settlement file, notices the authorization the processor recorded that the ledger doesn't have, and writes the missing entries itself. Correctness here is never conditional on the happy path completing. See §9 for the full failure-recovery story.</p>
+</details>
 <hr />
-<h2 id="4-mental-model">4. 🧠 Mental Model</h2>
-<p>A payment gateway is not simply a transaction processor — it is a correctness-first orchestration layer that moves money safely across multiple financial entities while maintaining an immutable audit trail. Three sequential phases drive every payment: the merchant registers a <strong>payment intent</strong>, the gateway creates a <strong>secure session</strong> and hosts the card entry page, and the user submits card details for <strong>authorization</strong>. The gateway tokenizes, scores for fraud, routes to a payment processor, writes the double-entry ledger, and fans webhooks out to the merchant — all while guaranteeing idempotency across every step.</p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking what "10,000 transactions per second" — the number this whole system is built around — actually forces onto every component downstream of it.</p>
+<p><strong>Starting assumption:</strong></p>
+<pre><code>Scale target: 10,000 TPS peak
+Each payment: 3 API calls (intent + session + pay) → 30,000 req/sec peak
+</code></pre>
+<p>One payment isn't one request — it's three, spread across the three phases of Farhan's checkout. That triples the effective request rate before a single database or cache gets chosen.</p>
+<p><strong>How many payment intents does that create, and how much does it cost to store them?</strong> At peak, <code>10,000/sec × 86,400s = 864M intents/day</code> — though real traffic averages roughly 10x lower than peak, landing closer to <code>~86M/day</code>. At roughly 500 bytes a record, that's <code>~43 GB/day</code>, sharded across PostgreSQL by <code>merchant_id</code> so one merchant's write volume never contends with another's.</p>
+<p><strong>How many ledger rows does that create?</strong> Every payment produces 4 immutable rows — two on capture, two on settlement — so <code>10,000 TPS × 4 = 40,000 ledger writes/sec</code>, append-only and partitioned by month. That's four times the base transaction rate landing on the one table this design can least afford to get wrong.</p>
+<p><strong>What about the checkout sessions sitting in Redis while a shopper is on the card-entry page?</strong> <code>10,000 concurrent active sessions × 2 KB = ~20 MB</code> — trivial for Redis to hold. Each session gets a 10-minute TTL, so auto-expiry handles cleanup on its own; nothing has to sweep for abandoned checkouts.</p>
+<p><strong>And the idempotency key store — the thing standing between a network retry and a double charge?</strong> <code>10,000 keys/sec × 86,400s = 864M keys/day</code> of churn. At roughly 200 bytes a key, that's <code>~173 GB/day</code> moving through a Redis cluster with LRU eviction, each key living for a 24-hour TTL — long enough to cover any realistic retry window a shopper or merchant might hit.</p>
+<p><strong>How many webhook deliveries does the gateway have to push out to merchants?</strong> <code>10,000 payments/sec</code> translates to roughly <code>~15,000 deliveries/sec</code> at peak, since a single payment can fan out to more than one event — and because delivery is at-least-once (more on why in §8), that number is a floor, not a ceiling. A Kafka topic partitioned per merchant is what carries that load.</p>
+<p><strong>And fraud scoring — the one synchronous check sitting directly in the critical path?</strong> <code>10,000 TPS</code> means <code>10,000 checks/sec</code>, split across two budgets: fast rules running against Redis in under 5ms, and an ML inference service adding under 50ms more, with a hard 40ms timeout that falls back to the rules-only score if the model doesn't answer in time.</p>
+<p>These numbers are what drive every major decision that follows: append-only ledger partitioning for write throughput, Redis instead of PostgreSQL for sessions and idempotency (PostgreSQL simply can't absorb 864M key writes a day on top of its existing payment load), Kafka for webhook fan-out, and synchronous fraud scoring with an ML timeout fallback rather than either blocking indefinitely on a model or skipping the check entirely.</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Farhan's fifteen seconds from the story above — here's what actually happens underneath that spinner.</p>
+<p>A payment gateway is not simply a transaction processor — it's a correctness-first orchestration layer that moves money safely across multiple financial entities while keeping an immutable audit trail the whole way through. Three sequential phases drive every payment: the merchant registers a <strong>payment intent</strong>, the gateway creates a <strong>secure session</strong> and hosts the card-entry page, and the shopper submits their card for <strong>authorization</strong>. In that third phase, the gateway tokenizes the card, scores it for fraud, routes it to a payment processor, writes the double-entry ledger, and fans a webhook out to the merchant — all while guaranteeing idempotency across every single step.</p>
 <pre><code>Phase 1: INTENT                 Phase 2: SESSION               Phase 3: PAY
 Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card on GW page
          |                               |                              |
@@ -159,105 +165,112 @@ Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card
   Redis: SET key-&gt;intent_id       User browser opens GW page    Ledger write (4 rows)
   EX 86400 (dedup 24h)            countdown timer starts        Kafka -&gt; Webhook -&gt; Merchant
 </code></pre>
-<h3 id="core-design-principles">⚡ Core Design Principles</h3>
-<table>
-<thead>
-<tr>
-<th>Path</th>
-<th>Optimized For</th>
-<th>Mechanism</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Fast Path</td>
-<td>Latency under 200ms gateway</td>
-<td>Redis session lookup + fraud rules + Vault tokenization + sync processor call</td>
-</tr>
-<tr>
-<td>Reliable Path</td>
-<td>Correctness — zero double-charges, zero lost money</td>
-<td>Idempotency keys, append-only ledger, ACID PostgreSQL, reconciliation job</td>
-</tr>
-<tr>
-<td>Audit Path</td>
-<td>Immutable money trail</td>
-<td>Double-entry bookkeeping — debits = credits invariant per payment_id</td>
-</tr>
-</tbody>
-</table>
+<p>Three concurrent paths run through this pipeline, each optimized for something different: a <strong>fast path</strong> optimized for staying under the 200ms gateway budget (Redis session lookup, fraud rules, vault tokenization, and a synchronous processor call, all chained together); a <strong>reliable path</strong> optimized purely for correctness — zero double-charges, zero lost money — built from idempotency keys, an append-only ledger, ACID PostgreSQL, and the reconciliation job; and an <strong>audit path</strong> whose entire job is an immutable money trail, enforced by the double-entry bookkeeping invariant that debits always equal credits per <code>payment_id</code>.</p>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>The gateway hosts the checkout page — not the merchant.</strong> Card data enters on gateway infrastructure only. This is not a UX decision — it is the PCI DSS compliance boundary. Merchants never see raw card numbers.</p>
+</blockquote>
+<details>
+<summary><strong>Point to Ponder:</strong> Why does the gateway host the checkout page itself instead of letting Devika build her own card-entry form?</summary>
+<p>Because whoever's servers the card number touches, however briefly, fall inside PCI DSS scope — and that scope is expensive and risky to hold. If Devika built her own card form, her entire infrastructure would need an annual PCI audit and would become a target the moment it ever handled a raw card number. By keeping card entry exclusively on gateway-controlled infrastructure, only the gateway's checkout page and vault ever need to be in scope — a breach anywhere else in Devika's stack exposes zero card data. See the PCI Scope Reduction trade-off in §9 for the full comparison.</p>
+</details>
+<blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Money movement must be correct (no duplication), durable (never lost), and auditable (fully traceable). Latency is secondary to correctness. A 50ms fraud check on the critical path is the right trade-off — a double-charged payment cannot be silently fixed.</p>
 </blockquote>
-<hr />
-<h2 id="5-api-design">5. API Design</h2>
-<table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Path</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>POST</td>
-<td>/api/v1/payment-intents</td>
-<td>Create payment intent {amount, currency, idempotency_key}, returns {intent_id, client_secret}</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/payment-intents/{id}/confirm</td>
-<td>Confirm payment with tokenized card, triggers bank charge</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/payment-intents/{id}</td>
-<td>Poll payment status</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/refunds</td>
-<td amount="amount" payment_intent_id_="payment_intent_id,">Initiate refund</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/webhooks</td>
-<td>Receive async events from payment processors (idempotent)</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/tokens</td>
-<td>Tokenize card details → returns opaque token (PCI scope boundary)</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>[!IMPORTANT]
-The <code>idempotency_key</code> on <code>POST /payment-intents</code> is the most critical design decision in the API — it's what prevents double charges on network retries. The webhooks endpoint must be idempotent too because payment processors deliver at-least-once.</p>
-</blockquote>
-<hr />
-<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
-<p>The complete 3-phase charge flow: client → payment service → gateway → bank → webhook callback.</p>
-<p><strong>The story in plain English:</strong></p>
-<p><strong>Phase 1 — Intent:</strong>
-1. Merchant backend calls <code>POST /payment-intents</code> with an idempotency key in the header.
-2. Payment Intent Service checks Redis: has this idempotency key been seen before? If yes, return the cached response — this is what prevents double charges on network retries.
-3. If new: create an intent record in PostgreSQL (status = CREATED), cache the idempotency key in Redis for 24 hours, return <code>intent_id</code> to the merchant.</p>
-<p><strong>Phase 2 — Session:</strong>
-4. Merchant creates a checkout session using the intent_id. Session context is stored in Redis with a 10-minute TTL.
-5. Merchant redirects the user to the hosted checkout page with the session token.</p>
-<p><strong>Phase 3 — Authorization:</strong>
-6. User enters card details on the checkout page. The card data goes to the Token Vault first — it never touches the merchant's servers. This is how PCI scope is reduced.
-7. Fraud Service scores the transaction in real-time: checks velocity counters in Redis (how many transactions from this card in the last hour?), device fingerprint, IP reputation.
-8. If risk score is acceptable, the tokenized card is sent to the Payment Processor (Visa/Mastercard network).
-9. Processor returns an authorization code. The Ledger Service writes two entries atomically: debit customer, credit gateway liability. Append-only — never updated.
-10. Payment status updates to AUTHORIZED in PostgreSQL.
-11. A <code>payment.succeeded</code> event is published to Kafka. Webhook Worker consumes it, signs the payload with HMAC-SHA256, and delivers it to the merchant's webhook URL.
-12. User is redirected to the merchant's success page.</p>
+<details>
+<summary><strong>Point to Ponder:</strong> Why is the fraud check synchronous and sitting directly in the critical path, instead of scoring the transaction after the money has already moved?</summary>
+<p>Because pre-auth scoring is cheaper than post-auth reversal by every measure that matters: no processor authorization fee gets spent, no reversal flow has to run, and no shopper is confused by a payment that succeeded and then unwound itself. A 50ms budget on the critical path is intentional — <code>FRAUD_DECLINED</code> is the cheapest terminal state anywhere in this system, precisely because it happens before the processor call, not after. See §8.3 Deep Dives for the full two-phase fraud architecture.</p>
+</details>
+<h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
+<p>The architecture starts simple and grows a token vault, Kafka, and a separate ledger database as the system matures — here's both versions.</p>
+<p><strong>Simple Design:</strong></p>
+<div class="mermaid">
+graph TD
+    User[&quot;User Browser&quot;]
+    Merchant[&quot;Merchant Backend&quot;]
+    APIGW[&quot;API Gateway + Load Balancer&quot;]
+    PIS[&quot;Payment Intent Service&quot;]
+    CSS[&quot;Checkout Session Service&quot;]
+    FraudSvc[&quot;Fraud and Risk Service&quot;]
+    PPS[&quot;Payment Processing Service&quot;]
+    LedgerSvc[&quot;Ledger Service&quot;]
+    Processor[&quot;Payment Processor - External&quot;]
+    WebhookSvc[&quot;Webhook Service&quot;]
+    IntentDB[(&quot;PostgreSQL - Intents + Transactions + Ledger&quot;)]
+    Redis[(&quot;Redis - Sessions + Idempotency + Fraud counters&quot;)]
+
+    User --&gt;|clicks Buy Now| Merchant
+    Merchant --&gt;|POST /payment-intents| APIGW
+    APIGW --&gt; PIS
+    PIS --&gt;|idempotency check| Redis
+    PIS --&gt; IntentDB
+    PIS --&gt;|intent_id| Merchant
+    Merchant --&gt;|POST /checkout/sessions| APIGW
+    APIGW --&gt; CSS
+    CSS --&gt; Redis
+    CSS --&gt;|checkout_url| Merchant
+    Merchant --&gt;|redirect user| User
+    User --&gt;|POST /payments| APIGW
+    APIGW --&gt; FraudSvc
+    FraudSvc --&gt;|risk score| APIGW
+    APIGW --&gt; PPS
+    PPS --&gt;|authorize| Processor
+    Processor --&gt;|auth response| PPS
+    PPS --&gt; LedgerSvc
+    LedgerSvc --&gt; IntentDB
+    PPS --&gt; WebhookSvc
+    WebhookSvc --&gt;|webhook| Merchant
+</div>
+<p><strong>Evolved Design — Token Vault + Kafka + Separate Ledger DB:</strong></p>
+<div class="mermaid">
+graph TD
+    User[&quot;User Browser - gateway checkout page&quot;]
+    Merchant[&quot;Merchant Backend&quot;]
+    APIGW[&quot;API Gateway - Auth, TLS, Rate Limiting&quot;]
+    PIS[&quot;Payment Intent Service&quot;]
+    CSS[&quot;Checkout Session Service&quot;]
+    FraudSvc[&quot;Fraud and Risk Service - velocity + ML&quot;]
+    PPS[&quot;Payment Processing Service&quot;]
+    Vault[&quot;Token Vault - PCI DSS isolated segment&quot;]
+    LedgerSvc[&quot;Ledger Service - double-entry, immutable&quot;]
+    Processor[&quot;Payment Processor - External&quot;]
+    Kafka[[&quot;Kafka - Webhook and Ledger events&quot;]]
+    WebhookWorker[&quot;Webhook Worker - retry + HMAC sign&quot;]
+    ReconcileJob[&quot;Reconciliation Job - runs hourly&quot;]
+    IntentDB[(&quot;PostgreSQL - Intents and Transactions - sharded by merchant_id&quot;)]
+    LedgerDB[(&quot;PostgreSQL - Ledger entries - append-only, partitioned by month&quot;)]
+    Redis[(&quot;Redis - Sessions TTL 10min, Idempotency TTL 24h, Fraud counters&quot;)]
+
+    Merchant --&gt;|POST /payment-intents + Idempotency-Key| APIGW
+    APIGW --&gt; PIS
+    PIS --&gt;|check idempotency key| Redis
+    PIS --&gt; IntentDB
+    Merchant --&gt;|redirect user| User
+    User --&gt;|POST /payments - card data| APIGW
+    APIGW --&gt;|validate session| Redis
+    APIGW --&gt;|fraud check sync 50ms| FraudSvc
+    FraudSvc --&gt;|velocity counters| Redis
+    FraudSvc --&gt;|risk score - allow or block| APIGW
+    APIGW --&gt; PPS
+    PPS --&gt;|tokenize card data| Vault
+    Vault --&gt;|token| PPS
+    PPS --&gt;|token + amount| Processor
+    Processor --&gt;|auth response| PPS
+    PPS --&gt;|write debit + credit entries| LedgerSvc
+    LedgerSvc --&gt; LedgerDB
+    PPS --&gt; IntentDB
+    PPS --&gt; Kafka
+    Kafka --&gt; WebhookWorker
+    WebhookWorker --&gt;|HMAC-signed webhook| Merchant
+    ReconcileJob --&gt;|compare ledger vs processor| LedgerDB
+    ReconcileJob --&gt;|fetch settlement file| Processor
+</div>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>The diagrams above show the components; this shows the actual message sequence between them, end to end — the same fifteen seconds from Farhan's story, now traced hop by hop.</p>
+<p><strong>Phase 1 — Intent:</strong> Devika's backend calls <code>POST /payment-intents</code> with an idempotency key in the header. The Payment Intent Service checks Redis first — has this key been seen before? If so, it returns the cached response, which is exactly what prevents a double charge on a network retry. If it's genuinely new, the service inserts an intent record into PostgreSQL with <code>status = CREATED</code>, caches the idempotency key in Redis for 24 hours, and hands <code>intent_id</code> back to Devika's backend.</p>
+<p><strong>Phase 2 — Session:</strong> Devika's backend creates a checkout session against that <code>intent_id</code>; the session context lands in Redis with a 10-minute TTL, and Devika's backend redirects Farhan to the hosted checkout page carrying that session token.</p>
+<p><strong>Phase 3 — Authorization:</strong> Farhan types his card details into that page, and the data goes to the Token Vault first — it never touches Devika's servers at all, which is the whole mechanism behind reducing her PCI scope. The Fraud Service scores the transaction in real time against velocity counters, device fingerprint, and IP reputation, all read from Redis. If the risk score comes back acceptable, the tokenized card goes to the Payment Processor. When the processor returns an authorization code, the Ledger Service writes two entries atomically — debit customer, credit gateway liability — append-only, never updated. Payment status flips to <code>AUTHORIZED</code> in PostgreSQL, a <code>payment.succeeded</code> event publishes to Kafka, the Webhook Worker signs it with HMAC-SHA256 and delivers it to Devika's webhook URL, and Farhan is redirected to the success page.</p>
 <div class="mermaid">
 sequenceDiagram
     participant M as Merchant Backend
@@ -315,98 +328,68 @@ sequenceDiagram
 <strong>Key Insight:</strong> The ledger write happens BEFORE returning the result to the user. If the gateway crashes after the processor authorizes but before writing the ledger, reconciliation detects the gap and writes the missing entries. Correctness is never conditional on the happy path completing.</p>
 </blockquote>
 <hr />
-<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
-<h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    User[&quot;User Browser&quot;]
-    Merchant[&quot;Merchant Backend&quot;]
-    APIGW[&quot;API Gateway + Load Balancer&quot;]
-    PIS[&quot;Payment Intent Service&quot;]
-    CSS[&quot;Checkout Session Service&quot;]
-    FraudSvc[&quot;Fraud and Risk Service&quot;]
-    PPS[&quot;Payment Processing Service&quot;]
-    LedgerSvc[&quot;Ledger Service&quot;]
-    Processor[&quot;Payment Processor - External&quot;]
-    WebhookSvc[&quot;Webhook Service&quot;]
-    IntentDB[(&quot;PostgreSQL - Intents + Transactions + Ledger&quot;)]
-    Redis[(&quot;Redis - Sessions + Idempotency + Fraud counters&quot;)]
-
-    User --&gt;|clicks Buy Now| Merchant
-    Merchant --&gt;|POST /payment-intents| APIGW
-    APIGW --&gt; PIS
-    PIS --&gt;|idempotency check| Redis
-    PIS --&gt; IntentDB
-    PIS --&gt;|intent_id| Merchant
-    Merchant --&gt;|POST /checkout/sessions| APIGW
-    APIGW --&gt; CSS
-    CSS --&gt; Redis
-    CSS --&gt;|checkout_url| Merchant
-    Merchant --&gt;|redirect user| User
-    User --&gt;|POST /payments| APIGW
-    APIGW --&gt; FraudSvc
-    FraudSvc --&gt;|risk score| APIGW
-    APIGW --&gt; PPS
-    PPS --&gt;|authorize| Processor
-    Processor --&gt;|auth response| PPS
-    PPS --&gt; LedgerSvc
-    LedgerSvc --&gt; IntentDB
-    PPS --&gt; WebhookSvc
-    WebhookSvc --&gt;|webhook| Merchant
-</div>
-<h3 id="evolved-design-token-vault-kafka-separate-ledger-db">Evolved Design — Token Vault + Kafka + Separate Ledger DB</h3>
-<div class="mermaid">
-graph TD
-    User[&quot;User Browser - gateway checkout page&quot;]
-    Merchant[&quot;Merchant Backend&quot;]
-    APIGW[&quot;API Gateway - Auth, TLS, Rate Limiting&quot;]
-    PIS[&quot;Payment Intent Service&quot;]
-    CSS[&quot;Checkout Session Service&quot;]
-    FraudSvc[&quot;Fraud and Risk Service - velocity + ML&quot;]
-    PPS[&quot;Payment Processing Service&quot;]
-    Vault[&quot;Token Vault - PCI DSS isolated segment&quot;]
-    LedgerSvc[&quot;Ledger Service - double-entry, immutable&quot;]
-    Processor[&quot;Payment Processor - External&quot;]
-    Kafka[[&quot;Kafka - Webhook and Ledger events&quot;]]
-    WebhookWorker[&quot;Webhook Worker - retry + HMAC sign&quot;]
-    ReconcileJob[&quot;Reconciliation Job - runs hourly&quot;]
-    IntentDB[(&quot;PostgreSQL - Intents and Transactions - sharded by merchant_id&quot;)]
-    LedgerDB[(&quot;PostgreSQL - Ledger entries - append-only, partitioned by month&quot;)]
-    Redis[(&quot;Redis - Sessions TTL 10min, Idempotency TTL 24h, Fraud counters&quot;)]
-
-    Merchant --&gt;|POST /payment-intents + Idempotency-Key| APIGW
-    APIGW --&gt; PIS
-    PIS --&gt;|check idempotency key| Redis
-    PIS --&gt; IntentDB
-    Merchant --&gt;|redirect user| User
-    User --&gt;|POST /payments - card data| APIGW
-    APIGW --&gt;|validate session| Redis
-    APIGW --&gt;|fraud check sync 50ms| FraudSvc
-    FraudSvc --&gt;|velocity counters| Redis
-    FraudSvc --&gt;|risk score - allow or block| APIGW
-    APIGW --&gt; PPS
-    PPS --&gt;|tokenize card data| Vault
-    Vault --&gt;|token| PPS
-    PPS --&gt;|token + amount| Processor
-    Processor --&gt;|auth response| PPS
-    PPS --&gt;|write debit + credit entries| LedgerSvc
-    LedgerSvc --&gt; LedgerDB
-    PPS --&gt; IntentDB
-    PPS --&gt; Kafka
-    Kafka --&gt; WebhookWorker
-    WebhookWorker --&gt;|HMAC-signed webhook| Merchant
-    ReconcileJob --&gt;|compare ledger vs processor| LedgerDB
-    ReconcileJob --&gt;|fetch settlement file| Processor
-</div>
+<h2 id="6-api-design">6. API Design</h2>
+<p>Six endpoints cover the whole surface, and none of them are ever called directly by a shopper's browser talking to a merchant-authenticated route — a shopper is never a trusted party in this API's model, only a browser session sitting on the gateway's own hosted checkout page for a few minutes. The split instead runs by <em>who's asking</em>: a merchant's backend drives intent creation, confirmation, status polling, refunds, and tokenization; the gateway itself is the caller for outbound status, and — separately — the <em>receiver</em> when a payment processor pushes its own async events back in.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td>/api/v1/payment-intents</td>
+<td>Create payment intent {amount, currency, idempotency_key}, returns {intent_id, client_secret}</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/payment-intents/{id}/confirm</td>
+<td>Confirm payment with tokenized card, triggers bank charge</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/payment-intents/{id}</td>
+<td>Poll payment status</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/refunds</td>
+<td amount="amount" payment_intent_id_="payment_intent_id,">Initiate refund</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/webhooks</td>
+<td>Receive async events from payment processors (idempotent)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/tokens</td>
+<td>Tokenize card details → returns opaque token (PCI scope boundary)</td>
+</tr>
+</tbody>
+</table>
+<p>Two design choices here aren't obvious from the table alone. The first is that <code>/api/v1/webhooks</code> is an <em>inbound</em> endpoint — it's the gateway receiving events from the payment processor's own bank-side systems, not the merchant-facing webhook delivery described in §5 and §8.2; those are two entirely separate flows that happen to share the word "webhook." The second is <code>/api/v1/tokens</code>: it exists as its own endpoint specifically to draw the PCI scope boundary in the API itself — tokenization is the one operation in this whole surface where raw card data crosses the wire at all, and isolating it to a single-purpose endpoint is what lets every other endpoint in this table stay entirely outside PCI scope.</p>
+<blockquote>
+<p>[!IMPORTANT]
+The <code>idempotency_key</code> on <code>POST /payment-intents</code> is the most critical design decision in the API — it's what prevents double charges on network retries. The webhooks endpoint must be idempotent too because payment processors deliver at-least-once.</p>
+</blockquote>
 <hr />
-<h2 id="8-data-model">8. Data Model</h2>
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Seven kinds of data live in this system, and grouping them by how they're actually used — rather than treating them as one flat list — makes the storage choices close to self-evident.</p>
+<p><strong>The durable, financial data lives in PostgreSQL, because it's money and it can never quietly disappear or partially update.</strong> <code>payment_intents</code> needs ACID guarantees for every write, and sharding it by <code>merchant_id</code> distributes write load evenly since each merchant's own transactions naturally land on a single shard. <code>payment_events</code> is append-only by design — it's the immutable audit trail of every status transition, and the payment's current state is simply whichever row is most recent for that <code>payment_id</code>. <code>ledger_entries</code> follows the same append-only philosophy, partitioned by month so older months can be archived off to cold storage without touching anything active, and its amounts are stored as <code>BIGINT</code> in minor units rather than <code>FLOAT</code> — because IEEE 754 can't represent a value like 0.10 exactly, and across ten thousand transactions that imprecision compounds into real drift. Storing ₹5000.00 as the integer <code>500000</code> paise eliminates rounding error entirely: no floats, no lost money.</p>
+<p><strong>The ephemeral, fast-path data lives in Redis, because losing it costs nothing but a retry.</strong> Idempotency keys need sub-millisecond lookups on the critical path and a 24-hour TTL that expires them automatically, with no cleanup job ever needing to run. Checkout sessions are ephemeral for the same reason Farhan's session was — a 10-minute TTL enforces its own expiry, and at 10,000 TPS the total footprint is roughly 20 MB, trivial for Redis to hold.</p>
+<p><strong>Card data itself lives nowhere the rest of the system can reach it.</strong> <code>card_tokens</code> sits in a Token Vault — a PostgreSQL instance in its own PCI-isolated network segment, protected by AES-256 encryption and HSM-managed keys — and it's the only component in the entire architecture that ever holds a raw card number.</p>
+<p><strong>And the record of what got delivered to whom lives in Kafka plus a delivery log.</strong> <code>webhook_events</code> combines Kafka's reliable fan-out with a PostgreSQL delivery log tracking attempt count and next-retry time — Kafka moves the event, the log is what a merchant's support team actually queries when they ask "did you even try to deliver this?"</p>
+<p><strong>Ledger correctness invariant:</strong> for every <code>payment_id</code>, <code>SUM(amount WHERE type=debit) = SUM(amount WHERE type=credit)</code>. Any row failing this invariant means money was created or destroyed — immediate ops alert. This query is run by the reconciliation job after every batch.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why this store</th>
 </tr>
 </thead>
 <tbody>
@@ -414,60 +397,50 @@ graph TD
 <td>payment_intents</td>
 <td>PostgreSQL (sharded by merchant_id)</td>
 <td>intent_id, merchant_id, amount, currency, status, created_at</td>
-<td>ACID for financial records; sharding by merchant_id distributes write load evenly</td>
 </tr>
 <tr>
 <td>payment_events</td>
 <td>PostgreSQL (append-only)</td>
 <td>event_id, payment_id, from_status, to_status, fraud_score, processor_ref, created_at</td>
-<td>Immutable audit trail; current state = latest row per payment_id</td>
 </tr>
 <tr>
 <td>ledger_entries</td>
 <td>PostgreSQL (partitioned by month)</td>
 <td>entry_id, account_id, payment_id, type (debit/credit), amount_minor_units, currency, created_at</td>
-<td>Append-only by design; monthly partitions allow archival; BIGINT for amounts avoids float drift</td>
 </tr>
 <tr>
 <td>idempotency_keys</td>
 <td>Redis (TTL 24h)</td>
 <td>idempotency:key → intent_id</td>
-<td>Under 1ms lookup; auto-expiry covers retry window; no cleanup job</td>
 </tr>
 <tr>
 <td>checkout_sessions</td>
 <td>Redis (TTL 10 min)</td>
 <td>session:sess_id → intent context</td>
-<td>Ephemeral by nature; TTL enforces expiry; 20 MB total at 10K TPS — trivial</td>
 </tr>
 <tr>
 <td>card_tokens</td>
 <td>Token Vault (PCI-isolated PostgreSQL)</td>
 <td>token_id, encrypted_pan, card_last4, card_brand, created_at</td>
-<td>AES-256 + HSM key management; isolated network segment; only component with raw card data</td>
 </tr>
 <tr>
 <td>webhook_events</td>
 <td>Kafka + PostgreSQL (delivery log)</td>
 <td>event_id, payment_id, merchant_id, status (pending/delivered/failed), attempt_count, next_retry_at</td>
-<td>Kafka for reliable fan-out; delivery log for retry tracking and merchant support queries</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Ledger correctness invariant:</strong></p>
-<p>For every <code>payment_id</code>, <code>SUM(amount WHERE type=debit) = SUM(amount WHERE type=credit)</code>. Any row failing this invariant means money was created or destroyed — immediate ops alert. This query is run by the reconciliation job after every batch.</p>
-<p><strong>Why amounts are BIGINT in minor units (never FLOAT):</strong></p>
-<p>IEEE 754 cannot represent 0.10 exactly. Across 10,000 transactions, float arithmetic drifts. Storing 5000.00 INR as the integer <code>500000</code> (paise) eliminates all rounding errors. No floats, no lost money.</p>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>The ledger is the most important table in the system.</strong> If the intent table is lost and the ledger is intact, system state can be reconstructed. The reverse is not true. The ledger must be append-only, ACID-compliant, and backed up with point-in-time recovery.</p>
 </blockquote>
 <hr />
-<h2 id="9-deep-dives">9. Deep Dives</h2>
-<h3 id="91-idempotency-keys-preventing-double-charges">9.1 Idempotency Keys — Preventing Double Charges</h3>
-<p><strong>Here is the problem we are solving:</strong> Merchant calls <code>POST /payment-intents</code>, network times out. Merchant does not know if the gateway received the request. Merchant retries. Without idempotency: two intents created, user charged twice.</p>
-<p><strong>Naive solution and why it fails:</strong> Checking by amount + merchant_id + timestamp is not unique enough — the same merchant can legitimately issue two payments for the same amount within seconds.</p>
-<p><strong>Chosen solution:</strong></p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-idempotency-keys-preventing-double-charges">8.1 Idempotency Keys — Preventing Double Charges</h3>
+<p>This is the single mechanism the rest of this design leans on hardest — the one that turns Farhan's dropped signal at the end of §2 into a non-event instead of a duplicate charge — so it's worth walking through in full.</p>
+<p><strong>Here's the problem it solves:</strong> a merchant calls <code>POST /payment-intents</code>, the network times out before the response comes back. The merchant now genuinely doesn't know whether the gateway received the request or not — from their side, a timeout looks identical whether the intent was created or never arrived. If they retry blindly, and the first request actually did land, the shopper now has two intents and, downstream, a real risk of being charged twice.</p>
+<p><strong>Why the obvious dedup approach fails:</strong> deduplicating by amount, merchant_id, and timestamp sounds reasonable until you notice it isn't actually unique — the same merchant can legitimately fire two genuine payments for the same amount within a few seconds of each other (two customers buying the same ₹999 item, say), and a naive dedup rule would silently collapse them into one.</p>
+<p><strong>The mechanism that actually works:</strong> the merchant generates its own idempotency key — a UUID it controls, not one the server assigns — and sends it in the request header. The gateway checks Redis for that exact key before doing anything else. If it's not there, the gateway creates the intent, stores the key with a 24-hour TTL mapping to the new <code>intent_id</code>, and returns <code>201</code>. If the same key shows up again, the gateway skips creation entirely and returns the same <code>intent_id</code> with a <code>200</code> — the merchant's retry is safe by construction, and it never has to reason about whether its first attempt succeeded.</p>
 <div class="mermaid">
 sequenceDiagram
     participant M as Merchant
@@ -488,7 +461,8 @@ sequenceDiagram
     Redis--&gt;&gt;GW: pi_abc - found
     GW--&gt;&gt;M: 200 - same intent_id: pi_abc - no duplicate
 </div>
-<p>Idempotency applies at every layer:</p>
+<p>That GET-then-SET pattern itself has a subtler race inside it — two concurrent retries could both pass the <code>GET</code> before either one's <code>SET</code> lands, which is a distinct failure mode from the one this deep dive is solving and gets its own atomic fix (Redis <code>SET NX</code>) in §9's Failure Scenarios.</p>
+<p>Idempotency doesn't stop at the intent-creation endpoint, either — it has to be re-earned at every layer a payment passes through, because a retry can, in principle, re-enter the pipeline at any point:</p>
 <table>
 <thead>
 <tr>
@@ -519,16 +493,17 @@ sequenceDiagram
 </tr>
 </tbody>
 </table>
-<p><strong>Trade-off accepted:</strong> Merchant must generate and include a UUID idempotency key. This is a contract requirement on the API. The 24h TTL covers realistic retry windows — longer TTLs would inflate Redis memory without benefit.</p>
+<p>At the checkout page itself, the session ID is single-use, invalidated the moment it's first submitted, so a resubmitted form can't fire a second authorization. At the processor call, an <code>auth_request_id</code> travels with the request so the processor deduplicates on its own side too — idempotency isn't only the gateway's problem, it has to hold across the boundary to the bank. At webhook delivery, <code>payment_id</code> is the dedup key the merchant is expected to check before fulfilling an order, since delivery itself is at-least-once (§8.2). And at the very last hop, the ledger write, a uniqueness constraint on <code>payment_id</code> per entry type means a duplicate write is simply a no-op rather than a second set of debit/credit rows.</p>
+<p><strong>The trade-off accepted:</strong> the merchant has to generate and include a UUID idempotency key on every call — a contract requirement on the API, not an optional nicety. The 24-hour TTL is chosen specifically to cover realistic retry windows without inflating Redis memory for no benefit; a longer TTL wouldn't buy meaningfully more retry-safety, just more storage.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Idempotency is a correctness requirement, not an optimization. Without it, every network retry is a potential double charge. The 24h Redis TTL is the retry window contract — not a performance parameter.</p>
 </blockquote>
 <hr />
-<h3 id="92-webhook-reliability-retry">9.2 Webhook Reliability + Retry</h3>
-<p><strong>Here is the problem we are solving:</strong> After a payment is authorized, the merchant's server must be notified so it can fulfill the order. Webhook delivery is a synchronous HTTP call to an external server the gateway does not control — that server can be down, slow, or unreachable for hours.</p>
-<p><strong>Naive solution and why it fails:</strong> A direct HTTP call from the Payment Processing Service to the merchant after authorization introduces a blocking dependency on an external server. A slow merchant server holds a connection open, back-pressures the processing service, and loses the event entirely on timeout.</p>
-<p><strong>Chosen solution — Kafka-backed retry queue with exponential backoff:</strong></p>
+<h3 id="82-webhook-reliability-retry">8.2 Webhook Reliability + Retry</h3>
+<p><strong>Here's the problem it solves:</strong> once a payment is authorized, the merchant's own server has to be told so it can fulfill the order — but that notification is a synchronous HTTP call to a server the gateway does not control, and that server can be down, slow, or simply unreachable for hours at a time.</p>
+<p><strong>Why calling it directly fails:</strong> a direct HTTP call from the Payment Processing Service straight to the merchant, made the instant authorization completes, ties the gateway's own throughput to whatever that one merchant's server can currently handle. A slow merchant server holds the connection open, applies back-pressure to the processing service, and — worse — the event is simply gone if that call times out, with nothing left to retry it.</p>
+<p><strong>The chosen mechanism — a Kafka-backed retry queue with exponential backoff:</strong> rather than calling the merchant directly, the Payment Processing Service publishes <code>payment.succeeded</code> onto Kafka and moves on immediately. A dedicated Webhook Worker consumes that event, builds the payload, signs it with HMAC-SHA256, and only then makes the actual outbound call — decoupling "the payment succeeded" from "the merchant was told" completely.</p>
 <div class="mermaid">
 sequenceDiagram
     participant PPS as Payment Processing Service
@@ -546,18 +521,19 @@ sequenceDiagram
     Note over WW: Backoff: 1s - 5s - 30s - 5min - 30min - 2h
     Note over WW: After 7 attempts - dead-letter queue - ops alert
 </div>
-<p><strong>HMAC signing — why it is mandatory:</strong> Without signing, an attacker can POST a fake <code>payment.succeeded</code> to a merchant's webhook URL and receive goods for free. HMAC-SHA256 with the merchant's secret key ensures the payload came from the gateway. Merchants must reject any webhook where <code>HMAC(body, secret)</code> does not match the <code>X-Gateway-Signature</code> header.</p>
-<p><strong>Merchant-side idempotency:</strong> Webhook worker delivers at-least-once. A correct merchant handler extracts <code>payment_id</code>, checks if that payment was already fulfilled, and skips if yes. This is documented as a contract requirement — the same way Stripe documents it.</p>
-<p><strong>Trade-off accepted:</strong> At-least-once delivery means merchants can receive duplicate webhooks. Exactly-once would require distributed 2PC across the gateway and merchant system — prohibitively complex. Duplication is safe because merchants can implement idempotent handlers.</p>
+<p>A non-2xx response or a timeout triggers a retry on a backoff schedule of 1s, 5s, 30s, 5 minutes, then 30 minutes, then 2 hours — and after 7 attempts with no success, the event moves to a dead-letter queue and ops gets paged, rather than retrying forever against a merchant server that's clearly not coming back soon.</p>
+<p><strong>HMAC signing is mandatory, not optional, and here's why:</strong> without it, an attacker can simply <code>POST</code> a fake <code>payment.succeeded</code> payload straight at a merchant's webhook URL and walk away with goods for free. HMAC-SHA256, signed with the merchant's own secret key, proves the payload actually came from the gateway — a correct merchant handler recomputes <code>HMAC(body, secret)</code> and rejects anything where it doesn't match the <code>X-Gateway-Signature</code> header.</p>
+<p><strong>And because delivery is at-least-once, the merchant's own handler has to be idempotent too:</strong> a webhook worker delivering the same event twice is expected behavior, not a bug, so a correct handler extracts <code>payment_id</code>, checks whether that payment was already fulfilled, and skips if it was — documented as a contract requirement in exactly the way Stripe documents the same expectation for its own merchants.</p>
+<p><strong>The trade-off accepted:</strong> at-least-once delivery means merchants can and will receive duplicate webhooks. Exactly-once would require a distributed two-phase commit spanning the gateway and every merchant's own system — prohibitively complex for a guarantee that duplication already makes unnecessary, since merchants can (and must) implement idempotent handlers instead.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Never process a webhook without verifying the HMAC signature. An unverified webhook endpoint is a free-order vulnerability. Signature verification is the authentication layer for server-to-server callbacks.</p>
 </blockquote>
 <hr />
-<h3 id="93-fraud-detection-two-phase-architecture">9.3 Fraud Detection — Two-Phase Architecture</h3>
-<p><strong>Here is the problem we are solving:</strong> At 10,000 TPS, fraudulent cards from card testing attacks, stolen credentials, and geo-anomaly attacks arrive in the same traffic as legitimate payments. Without a fraud gate, every fraudulent authorization is a direct financial loss plus processor fees plus reversal cost.</p>
-<p><strong>Naive solution and why it fails:</strong> Running a full ML model synchronously on every transaction at 10,000 TPS requires either very low-latency model serving or accepting high latency on the critical path. A single slow inference blocks the payment.</p>
-<p><strong>Chosen solution — two-phase gated architecture:</strong></p>
+<h3 id="83-fraud-detection-two-phase-architecture">8.3 Fraud Detection — Two-Phase Architecture</h3>
+<p><strong>Here's the problem it solves:</strong> at 10,000 TPS, fraudulent cards from card-testing attacks, stolen credentials, and geo-anomaly attacks arrive mixed into the exact same traffic as legitimate payments. Without a gate in front of authorization, every fraudulent transaction that gets through is a direct financial loss, plus processor fees, plus the cost of unwinding it after the fact.</p>
+<p><strong>Why the obvious approach fails:</strong> running a full ML model synchronously on every one of those 10,000 transactions a second means either investing in very low-latency model serving, or accepting real latency directly on the critical path — and a single slow inference call blocks the payment behind it, which is exactly the kind of dependency this design otherwise goes out of its way to avoid.</p>
+<p><strong>The chosen mechanism — a two-phase gated architecture:</strong></p>
 <div class="mermaid">
 graph LR
     Payment[&quot;Incoming payment&quot;]
@@ -574,225 +550,115 @@ graph LR
     Decision --&gt;|challenge - 3DS| PostAuth
     Processor --&gt; PostAuth
 </div>
-<p><strong>Phase 1a — Fast rules via Redis (under 5ms):</strong>
-- Velocity: <code>INCR velocity:card:hash:1h</code> — if count over 5 in 1h → risk += 40 (card testing signal)
-- Blocklist: if card hash or IP in blocklist → risk += 60 or instant decline
-- Amount anomaly: current amount over 5x 30-day rolling average → risk += 20
-- Geo anomaly: card issuer country vs request IP country mismatch → risk += 30</p>
-<p><strong>Phase 1b — ML score (under 50ms, 40ms timeout):</strong> transaction sequence, device fingerprint, merchant category code vs history. Output: risk_delta 0–40 added to Phase 1a score. On ML timeout, fall back to Phase 1a score only — the critical path is never blocked on ML availability.</p>
-<p><strong>Trade-off accepted:</strong> Pre-auth fraud check adds 50ms to the critical path on every payment. This is the correct trade-off — a slightly slower payment is recoverable; a fraudulent authorization that completes incurs processor fees, chargeback risk, and reversal complexity.</p>
+<p>Phase 1a runs four independent checks against Redis, each contributing its own slice of a running risk score, and all of them finishing in well under 5ms because they're pure in-memory lookups and counters — no external call, no disk read. A velocity check increments a per-card-hash counter for the last hour; crossing five transactions in that window — the classic signature of a card-testing attack — adds 40 points. A blocklist check adds 60 points, or triggers an instant decline outright, if the card hash or the requesting IP is already known-bad. An amount-anomaly check adds 20 points if the current transaction is more than five times the card's own 30-day rolling average. And a geo-anomaly check adds 30 points if the card's issuing country doesn't match the country the request is actually coming from.</p>
+<p>Phase 1b hands whatever survives Phase 1a to an ML inference service, which looks at the transaction sequence, device fingerprint, and merchant category code against the card's own history, and adds a <code>risk_delta</code> of 0–40 on top of the Phase 1a score — all within a 50ms budget, with a hard 40ms timeout. If the model doesn't answer in time, the system falls back to the Phase 1a score alone rather than blocking the payment on model availability — the critical path is never held hostage to whether the ML service happens to be healthy.</p>
+<p>The combined score then sorts into one of three outcomes: 0–30 allows the transaction straight through to the processor, 31–70 routes it into a 3D Secure challenge rather than an automatic authorization, and 71–100 is treated as high enough risk to stop before it ever reaches the processor at all.</p>
+<p><strong>The trade-off accepted:</strong> pre-auth fraud checking adds a full 50ms to every single payment's critical path. That's the correct trade to make here — a slightly slower payment is completely recoverable, while a fraudulent authorization that's allowed to complete carries processor fees, chargeback risk, and reversal complexity that a 50ms delay never costs anyone.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Pre-auth fraud scoring is cheaper than post-auth reversal by every measure — no processor authorization fee, no reversal flow, no user confusion. The 50ms budget on the critical path is intentional. FRAUD_DECLINED is the cheapest terminal state in the system.</p>
 </blockquote>
 <hr />
-<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
-<h3 id="peak-transaction-volume-10000-tps">Peak Transaction Volume (10,000 TPS)</h3>
-<p><strong>What breaks first:</strong> The PostgreSQL payment_intents table becomes a write bottleneck as a single primary handles 10,000 inserts/sec plus 40,000 ledger writes/sec.</p>
-<p><strong>Scaling strategy:</strong>
-- Shard <code>payment_intents</code> by <code>merchant_id</code> — consistent hash distributes merchants across shards; each merchant's transactions land on one shard, making per-merchant queries fast
-- Shard <code>ledger_entries</code> by <code>payment_id</code> with monthly partitioning — even distribution across partitions; older months archived to cold storage (S3)
-- Read replicas for <code>GET /payments/{id}</code> and balance queries — all reads served by replicas, writes to primary only
-- Redis idempotency store scales horizontally as a cluster — LRU eviction after TTL expiry keeps memory bounded at ~173 GB/day churn</p>
-<h3 id="webhook-fan-out-at-scale">Webhook Fan-Out at Scale</h3>
-<p><strong>What breaks first:</strong> 15,000 webhook deliveries/sec with external HTTP calls to merchant servers — any slow merchant server backs up the delivery queue.</p>
-<p><strong>Scaling strategy:</strong>
-- Kafka topic partitioned by <code>merchant_id</code> — each merchant's events land on one partition, ensuring ordered delivery per merchant; slow merchants don't block fast merchants
-- Webhook worker pool scales horizontally — each worker consumes from its assigned partitions; auto-scaling on consumer lag metric
-- Per-merchant concurrency cap — max N concurrent outbound connections per merchant prevents any single merchant from monopolizing worker threads
-- Dead-letter queue after 7 attempts — ops alert fires; merchant is notified via dashboard rather than indefinite retries</p>
-<h3 id="reconciliation-at-scale">Reconciliation at Scale</h3>
-<p><strong>What breaks first:</strong> Hourly reconciliation job doing full table scans on <code>ledger_entries</code> at 43 GB/day growth becomes slow without proper indexing.</p>
-<p><strong>Scaling strategy:</strong>
-- Reconciliation queries only the last 2-hour window (<code>created_at &gt; NOW() - interval '2 hours'</code>) with a composite index on <code>(payment_id, created_at)</code>
-- Processor settlement file is ingested incrementally — chunked by time window, not a full file scan
-- Invariant check (<code>debits = credits per payment_id</code>) runs on the delta, not the full ledger — O(new rows) not O(total rows)
-- Monthly partitions on <code>ledger_entries</code> mean old data is not scanned at all during reconciliation</p>
+<h2 id="9-bottlenecks-failure-scenarios-trade-offs">9. Bottlenecks, Failure Scenarios &amp; Trade-offs</h2>
+<p>Every component in this design has a point where it stops being the right shape for the traffic in front of it — worth knowing where those points sit even though today's 10,000 TPS target sits comfortably under most of them.</p>
+<p>The <code>payment_intents</code> table is the first thing under real pressure, since a single PostgreSQL primary would otherwise be absorbing 10,000 inserts a second on top of 40,000 ledger writes a second at the same time. Sharding <code>payment_intents</code> by <code>merchant_id</code> fixes the intent side of that — a consistent hash spreads merchants evenly across shards, and because each merchant's own transactions land on one shard, per-merchant queries stay fast. <code>ledger_entries</code> gets the same sharding treatment by <code>payment_id</code>, layered with the monthly partitioning already in place, so writes spread evenly and older months can be archived to cold storage (S3) without touching anything active. Reads get pulled off the write path entirely too — <code>GET /payments/{id}</code> and balance queries go to read replicas, leaving the primary to do nothing but writes. And the Redis idempotency store, already carrying ~173 GB/day of churn (§4), scales horizontally as a cluster, with LRU eviction after TTL expiry keeping memory bounded regardless of how much traffic grows.</p>
+<p>Webhook fan-out hits its own wall from a different direction: 15,000 deliveries a second, each one an external HTTP call to a merchant server the gateway doesn't control, means any one slow merchant risks backing up the delivery queue for everyone behind it. Partitioning the Kafka topic by <code>merchant_id</code> is what prevents that — each merchant's events land on one partition, guaranteeing ordered delivery per merchant while keeping a slow merchant's backlog from ever touching a fast merchant's. The webhook worker pool scales horizontally on top of that, each worker consuming from its own assigned partitions and auto-scaling on consumer-lag, with a per-merchant concurrency cap stopping any single merchant from monopolizing worker threads outright. And the dead-letter queue after 7 attempts (§8.2) is itself part of the scaling story — it converts "retry forever" into "alert ops and notify the merchant via dashboard," which keeps a permanently-down merchant server from consuming capacity indefinitely.</p>
+<p>Reconciliation scales differently again, because its bottleneck isn't throughput, it's the shape of its own queries: an hourly job doing a full table scan over <code>ledger_entries</code> growing at 43 GB/day (§4) would slow down on its own regardless of how well everything upstream scales. The fix is scoping every query to the recent window that actually matters — <code>created_at &gt; NOW() - interval '2 hours'</code> against a composite index on <code>(payment_id, created_at)</code> — rather than scanning history that's already settled. The processor's settlement file gets ingested incrementally, chunked by time window instead of read in one pass, and the ledger-correctness invariant check itself runs only on the delta since the last batch — O(new rows), not O(total rows) — with the monthly partitions from §7 meaning old, already-reconciled data never gets scanned at all.</p>
 <hr />
-<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Gateway timeout before processor call</td>
-<td>Payment never sent to bank; intent stuck in PENDING</td>
-<td>Reconciliation fetches status from processor; writes missing ledger entries or marks FAILED</td>
-</tr>
-<tr>
-<td>Processor returns success but gateway crashes before writing ledger</td>
-<td>Processor holds authorization; ledger has no entry</td>
-<td>Reconciliation detects gap via settlement file; writes missing ledger entries; sends webhook</td>
-</tr>
-<tr>
-<td>Double charge — idempotency key race condition</td>
-<td>Two concurrent retries both pass Redis GET before SET</td>
-<td>Redis SET NX (set-if-not-exists) atomic operation prevents race; only one intent is created</td>
-</tr>
-<tr>
-<td>Webhook delivery failure — merchant server down</td>
-<td>Merchant does not fulfill order</td>
-<td>Kafka retry with exponential backoff (1s, 5s, 30s, 5min, 30min, 2h); DLQ after 7 attempts; ops alert</td>
-</tr>
-<tr>
-<td>Redis session store restart</td>
-<td>Active checkout sessions lost — users mid-checkout lose session</td>
-<td>User sees "session expired" error; merchant must re-create checkout session; no money moved yet</td>
-</tr>
-<tr>
-<td>Fraud service timeout</td>
-<td>Unable to compute risk score before processor call</td>
-<td>ML timeout → fall back to fast rules score only; never block payment on ML availability</td>
-</tr>
-<tr>
-<td>Token vault unavailable</td>
-<td>Cannot tokenize card data; payment cannot proceed</td>
-<td>Return 503 to user; no ledger entry; no processor call; PCI scope is not breached</td>
-</tr>
-<tr>
-<td>Ledger invariant violation detected by reconciliation</td>
-<td>SUM(debits) != SUM(credits) for a payment_id</td>
-<td>Immediate ops page; manual investigation; compensating ledger entry written with audit note</td>
-</tr>
-<tr>
-<td>PostgreSQL primary failover</td>
-<td>Write path unavailable during failover (~30–60s)</td>
-<td>Read replica promoted; new writes accepted after promotion; inflight transactions retry via idempotency key</td>
-</tr>
-<tr>
-<td>Processor outage — primary gateway</td>
-<td>100% payment failures while processor is down</td>
-<td>Multi-processor routing: failover to secondary processor in under 1s via health check; no manual intervention</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Every piece of this system can fail on its own, and which recovery path applies depends entirely on whether what failed sits before or after the ledger write — the one moment this whole design treats as the actual point of no return.</p>
+<p>The failures that land <em>before</em> the ledger write both resolve the same way, through reconciliation: if the gateway times out before ever reaching the processor, the intent is simply stuck in <code>PENDING</code>, and reconciliation fetches the real status from the processor directly and either writes the missing ledger entries or marks the payment <code>FAILED</code>. If the processor comes back with success but the gateway crashes before the ledger entries are actually written, the processor is holding a valid authorization the ledger doesn't yet know about — and reconciliation catches exactly that gap via the settlement file, writing the missing entries and sending the webhook after the fact, just later than the happy path would have.</p>
+<p>Concurrency failures get handled at the mechanism level rather than by retrying and hoping. The idempotency race flagged in §8.1 — two concurrent retries both passing a Redis <code>GET</code> before either one's <code>SET</code> lands — is closed by using an atomic <code>SET NX</code> (set-if-not-exists) instead of a plain read-then-write, so only one of the two racing requests can actually create an intent.</p>
+<p>Downstream dependencies fail independently, and each has its own fallback rather than taking the whole payment down with it. A webhook delivery failure because a merchant's server is down means that merchant simply doesn't get told to fulfill the order yet — Kafka's exponential backoff (1s, 5s, 30s, 5min, 30min, 2h) keeps retrying, landing in a dead-letter queue with an ops alert after 7 attempts, exactly as described in §8.2. A Redis session store restart loses any checkout sessions that were active mid-flow — a shopper mid-checkout just sees "session expired" and the merchant re-creates the checkout session, which is a mild inconvenience rather than a real failure, since no money has moved yet at that point in the flow. A fraud service timeout means the ML score in §8.3's Phase 1b never comes back in time, and the system falls back to the fast-rules score alone rather than ever blocking a payment on ML availability. Token vault unavailability is treated as a hard stop rather than a degraded path — the payment simply cannot proceed without tokenization, so the gateway returns a <code>503</code>, writes no ledger entry, makes no processor call, and PCI scope is never at risk of being breached by a workaround.</p>
+<p>Infrastructure-level failures recover on their own timelines. A PostgreSQL primary failover makes the write path unavailable for roughly 30–60 seconds while a read replica gets promoted; once promotion completes, new writes resume, and any transactions that were in flight during the gap simply retry through the same idempotency-key mechanism as any other retry. A processor outage on the primary payment processor would otherwise mean 100% of payments failing while it's down — multi-processor routing is what prevents that, failing over to a secondary processor in under a second via health check, with no manual intervention required.</p>
+<p>And the one failure mode with no automated recovery path by design is a ledger invariant violation caught by reconciliation — <code>SUM(debits) != SUM(credits)</code> for some <code>payment_id</code>. That triggers an immediate page to ops for manual investigation, closed out with a compensating ledger entry written alongside an audit note, because an automatic "fix" to a broken money invariant is exactly the kind of silent correction this design refuses to make.</p>
 <hr />
-<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="idempotency-key-storage-redis-vs-postgresql">Idempotency Key Storage — Redis vs PostgreSQL</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Redis with TTL 24h (chosen)</th>
-<th>PostgreSQL idempotency table</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Lookup latency</td>
-<td>under 1ms</td>
-<td>5–50ms (disk I/O)</td>
-</tr>
-<tr>
-<td>TTL support</td>
-<td>Native key expiry — no cleanup job</td>
-<td>Requires background DELETE job on old rows</td>
-</tr>
-<tr>
-<td>Durability</td>
-<td>Non-durable — restart loses keys</td>
-<td>Durable — survives restarts</td>
-</tr>
-<tr>
-<td>Scale at 10K TPS</td>
-<td>864M keys/day churn; Redis cluster handles this</td>
-<td>864M rows/day; PostgreSQL write bottleneck</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen: Redis with 24h TTL.</strong> At 10,000 TPS, PostgreSQL cannot absorb 864M idempotency key writes/day on top of existing payment writes. Redis under 1ms lookup keeps idempotency check off the critical path. The durability trade-off is acceptable: a Redis restart loses keys in-flight. The only consequence is a small window where a retry could create a duplicate — caught by the PostgreSQL <code>payment_id</code> uniqueness constraint as a safety net.</p>
+<p>The two options split almost entirely on lookup speed versus durability. Redis answers an idempotency check in under 1ms and expires keys natively on a TTL with no cleanup job ever needing to run, but a Redis restart loses whatever keys were in flight — it isn't durable across a crash. A PostgreSQL idempotency table would survive a restart intact, but every lookup costs 5–50ms of disk I/O instead of sub-millisecond memory access, and because rows don't expire on their own, a background <code>DELETE</code> job would have to run continuously just to keep the table from growing forever. At the volume this system actually runs at — 864M idempotency keys a day (§4) — that gap widens further: Redis absorbs that churn as a matter of course, while PostgreSQL would be taking on 864M extra row writes a day on top of the payment writes it's already handling, becoming its own bottleneck.</p>
+<p><strong>Chosen: Redis with 24h TTL.</strong> PostgreSQL simply cannot absorb 864M idempotency key writes a day on top of existing payment writes at this throughput. Redis keeps the idempotency check off the critical path entirely with a sub-1ms lookup. The durability trade-off is acceptable because it's bounded: a Redis restart losing in-flight keys only opens a small window where a retry could theoretically create a duplicate intent — and that window is caught by the PostgreSQL <code>payment_id</code> uniqueness constraint as a second line of defense, not the only one.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Redis TTL makes idempotency key management zero-maintenance. PostgreSQL would need a background job deleting millions of rows per day. TTL expiry is free.</p>
 </blockquote>
 <hr />
 <h3 id="at-least-once-webhook-delivery-vs-exactly-once">At-Least-Once Webhook Delivery vs Exactly-Once</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>At-Least-Once with Kafka (chosen)</th>
-<th>Exactly-Once delivery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Implementation complexity</td>
-<td>Kafka retry queue + HMAC signing</td>
-<td>Distributed 2PC spanning gateway + merchant</td>
-</tr>
-<tr>
-<td>Risk</td>
-<td>Merchant receives duplicate webhook</td>
-<td>None</td>
-</tr>
-<tr>
-<td>Mitigation</td>
-<td>Merchant implements idempotent handler</td>
-<td>Not needed</td>
-</tr>
-<tr>
-<td>Infrastructure cost</td>
-<td>Low</td>
-<td>High — 2PC adds significant latency and complexity</td>
-</tr>
-<tr>
-<td>Industry standard</td>
-<td>Stripe, Razorpay, Braintree all use at-least-once</td>
-<td>No major payment gateway uses exactly-once</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen: At-least-once with HMAC signing and documented idempotency contract.</strong> Exactly-once delivery requires distributed transactions across systems the gateway does not control. At-least-once is safe because merchants can (and must) implement idempotent webhook handlers. This is standard across the payments industry — it is a documented API contract, not a limitation.</p>
+<p>At-least-once, backed by Kafka's retry queue and HMAC signing, is comparatively simple to build and run, but it comes with a real cost passed on to merchants: they will, on occasion, receive the same webhook twice and have to handle it. Exactly-once delivery would remove that burden entirely — no duplicate ever reaches the merchant — but only by wiring up a distributed two-phase commit spanning the gateway and every merchant's own system, which is expensive infrastructure to build and expensive latency to pay on every single delivery, for a guarantee most merchants don't actually need once their handler is idempotent anyway. It's also not an outlier choice: Stripe, Razorpay, and Braintree all deliver at-least-once — no major payment gateway in the industry actually offers exactly-once webhook delivery.</p>
+<p><strong>Chosen: at-least-once with HMAC signing and a documented idempotency contract.</strong> Exactly-once delivery requires distributed transactions across systems this gateway doesn't control, and at-least-once is safe precisely because merchants can — and are required to — implement idempotent webhook handlers, which is the same standard the rest of the payments industry has already settled on.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> The queue (Kafka) is a correctness requirement for webhook delivery, not a performance optimization. Without it, webhook delivery is a synchronous call on the critical path — one slow merchant server backs up payment processing for everyone.</p>
 </blockquote>
 <hr />
 <h3 id="pci-scope-reduction-via-tokenization">PCI Scope Reduction via Tokenization</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Token Vault (chosen)</th>
-<th>Merchant stores card data</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>PCI DSS scope</td>
-<td>Only vault and checkout page in scope</td>
-<td>Entire merchant infrastructure in scope</td>
-</tr>
-<tr>
-<td>Breach impact</td>
-<td>Token exposed = useless without vault mapping</td>
-<td>Card number exposed = immediate fraud risk</td>
-</tr>
-<tr>
-<td>Audit cost</td>
-<td>Gateway absorbs annual PCI audit</td>
-<td>Every merchant needs annual PCI audit</td>
-</tr>
-<tr>
-<td>Integration</td>
-<td>Merchant redirects to gateway checkout URL</td>
-<td>Merchant builds own card form</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen: Token Vault with gateway-hosted checkout page.</strong> The vault isolates all raw card data into a single, audited, HSM-backed component. A breach anywhere outside the vault — Intent Service, Fraud Service, Ledger, Webhook Worker — exposes zero card data. This is the value proposition of Stripe and Razorpay: merchants accept payments without ever entering PCI scope.</p>
+<p>Letting the gateway's own Token Vault hold every card number means only the vault and the checkout page ever fall inside PCI DSS scope, and a breach anywhere else in the architecture — the Intent Service, the Fraud Service, the Ledger, the Webhook Worker — exposes zero card data, because none of them ever had it. The alternative, a merchant storing card data on their own infrastructure, puts their entire stack inside PCI scope instead of one isolated component, meaning every merchant needs their own annual PCI audit rather than relying on the gateway's, and a breach anywhere in their systems is an immediate, direct fraud risk rather than an exposed token that's useless without the vault's own mapping back to a real card. The integration cost runs the opposite direction, though: a merchant using the vault just redirects to the gateway's hosted checkout URL, while building a card form themselves means owning that UI and the risk that comes with it.</p>
+<p><strong>Chosen: Token Vault with a gateway-hosted checkout page.</strong> The vault isolates every raw card number into one single, audited, HSM-backed component. This is, in a very literal sense, the value proposition Stripe and Razorpay sell to merchants in the first place — accepting payments without ever stepping inside PCI scope at all.</p>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>Tokenization is not about security theatre.</strong> The vault's network isolation means an attacker who compromises the Ledger Service or Fraud Service gets transaction metadata — amounts, merchant IDs, timestamps — but zero card numbers. The blast radius of any breach outside the vault is bounded.</p>
 </blockquote>
 <hr />
-<h2 id="13-interview-summary">13. Interview Summary</h2>
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Nine non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.</p>
+<p><strong>Throughput (10,000 TPS peak):</strong> This isn't a target the design was tuned to hit after the fact — sharding <code>payment_intents</code> and <code>ledger_entries</code> by <code>merchant_id</code>/<code>payment_id</code>, moving idempotency and session state to Redis instead of PostgreSQL, and buffering webhook fan-out through Kafka were all decisions made <em>because</em> 10,000 TPS ruled out a single-writer relational database before any component got chosen (§4, §9).</p>
+<p><strong>Gateway latency (under 200ms) and fraud check latency (under 50ms):</strong> The entire fast path stays in memory or bounded-latency calls: Redis session validation, fast fraud rules under 5ms, an ML score under 50ms with a hard 40ms timeout and rules-only fallback, vault tokenization, and a synchronous processor call — each budgeted so the whole chain fits inside 200ms without the fraud check alone consuming the entire budget.</p>
+<p><strong>Availability (99.99%):</strong> No single dependency takes the whole gateway down. Multi-processor routing fails over to a secondary processor in under a second if the primary goes down; a PostgreSQL primary failover promotes a replica within 30–60 seconds; Redis runs as a cluster rather than a single point of failure (§9.1).</p>
+<p><strong>Consistency (CP — double charges unacceptable):</strong> This is the one place the design deliberately refuses to trade correctness for availability. The idempotency key mechanism (§8.1) makes retries safe by construction, and the PostgreSQL <code>payment_id</code> uniqueness constraint backstops even the rare race where two concurrent Redis operations might otherwise slip through.</p>
+<p><strong>Durability (zero payment record loss):</strong> ACID PostgreSQL with point-in-time recovery is the record of truth, and nothing downstream of a crash is treated as unrecoverable — the reconciliation job specifically exists to detect and repair any gap left by a mid-flow failure (§9.1).</p>
+<p><strong>Idempotency (retry-safe operations):</strong> Threaded through every single layer, not just the intent-creation endpoint — session single-use, processor-side dedup via <code>auth_request_id</code>, webhook <code>payment_id</code> dedup, and a ledger uniqueness constraint that turns a duplicate write into a no-op (§8.1).</p>
+<p><strong>Security (PCI DSS Level 1):</strong> The Token Vault is the only component in the system that ever holds a raw card number, isolated in its own network segment with AES-256 and HSM key management — a breach anywhere else in the stack has nothing worth stealing (§7, §9.2).</p>
+<p><strong>Ledger correctness (debits = credits):</strong> Enforced as a literal SQL invariant — <code>SUM(debits) = SUM(credits)</code> per <code>payment_id</code> — checked by the reconciliation job after every batch, with <code>BIGINT</code> minor-unit amounts eliminating the float drift that would otherwise make the invariant unreliable at scale (§7).</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Throughput 10,000 TPS</td>
+<td>Sharded PostgreSQL (merchant_id / payment_id), Redis for session + idempotency, Kafka for webhook fan-out</td>
+</tr>
+<tr>
+<td>Gateway latency under 200ms</td>
+<td>In-memory fast path: Redis session check, fraud rules, tokenization, sync processor call</td>
+</tr>
+<tr>
+<td>Fraud check under 50ms</td>
+<td>Two-phase architecture, 40ms ML timeout, fallback to fast rules</td>
+</tr>
+<tr>
+<td>Availability 99.99%</td>
+<td>Multi-processor failover (&lt;1s), PostgreSQL replica promotion (30–60s), Redis cluster</td>
+</tr>
+<tr>
+<td>Consistency — CP</td>
+<td>Idempotency keys + PostgreSQL uniqueness constraint as backstop</td>
+</tr>
+<tr>
+<td>Durability — zero loss</td>
+<td>ACID PostgreSQL PITR + reconciliation job repairs any gap</td>
+</tr>
+<tr>
+<td>Idempotency — retry-safe</td>
+<td>Layered dedup: session, processor auth_request_id, webhook payment_id, ledger constraint</td>
+</tr>
+<tr>
+<td>Security — PCI DSS Level 1</td>
+<td>Token Vault isolated PCI segment; raw card data never leaves it</td>
+</tr>
+<tr>
+<td>Ledger correctness</td>
+<td>SUM(debits)=SUM(credits) SQL invariant, checked every reconciliation batch</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats a payment gateway as three obligations wearing one checkout button: move money exactly once no matter how many times a network retries, keep an audit trail complete enough that money can never quietly appear or vanish, and never let a raw card number exist anywhere outside one small, heavily guarded vault. The hardest problem wasn't authorizing a card — it was making "the merchant was told this succeeded" and "the ledger actually has two matching rows for it" the same atomic fact, one that survives a crash landing at literally any point in between. Every other decision here — Redis idempotency keys backstopped by a PostgreSQL uniqueness constraint, a gateway-hosted checkout page instead of merchant-built card forms, Kafka-buffered webhooks with HMAC signing, an hourly reconciliation job that treats the bank's own settlement file as the final word — falls out of protecting that one fact under every kind of failure this system can hit.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
