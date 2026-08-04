@@ -566,21 +566,19 @@ A single PostgreSQL store answers "is this notification delivered?" in a fast, O
 
 ## 10. Frontend Notes
 
-*Notification system is 95% backend / 5% frontend. The frontend problem is the client dashboard and the template builder.*
+Notification system work is roughly 95% backend and 5% frontend, and that 5% comes down to two pieces worth building deliberately rather than as an afterthought: a client-facing delivery status dashboard, and a template builder, plus a small preference UI that gets embedded in the client's own product for their end users.
 
 ### Delivery Status Dashboard
-- Poll `GET /notifications?clientId=X&status=pending&page_cursor=Y` every 30 seconds (not WebSocket — delivery events are infrequent enough that polling is fine; WebSocket adds connection management overhead for marginal UX gain)
-- Cursor pagination on notification list (never offset — millions of rows)
-- Status filters: All / Pending / Sent / Delivered / Failed
+
+The dashboard polls `GET /notifications?clientId=X&status=pending&page_cursor=Y` every 30 seconds rather than holding a WebSocket open, because delivery events are infrequent enough that polling comfortably keeps up — a WebSocket would add connection-management overhead for a marginal UX gain over a 30-second refresh. Pagination through the notification list uses a cursor rather than an offset, because the underlying table holds millions of rows and an offset-based query only gets slower the further a client pages back through their history, whereas a cursor keeps every page roughly the same cost regardless of depth. The dashboard also exposes status filters — All, Pending, Sent, Delivered, Failed — so a client can jump straight to the subset they actually care about, which in practice is usually the failed ones.
 
 ### Template Builder
-- Variable placeholders highlighted in editor: `{{product_name}}`, `{{user_name}}`
-- Preview panel renders template with sample variables
-- Version history shown as numbered list (latest active = highlighted)
+
+The template builder's job is to make it obvious what a template will actually render before it goes out to a million recipients. Variable placeholders like `{{product_name}}` and `{{user_name}}` are highlighted directly in the editor, so it's immediately clear which parts of a template are static copy and which get substituted per recipient. A preview panel renders the template against sample variable values, catching formatting mistakes before a real send rather than after one. And because templates are versioned (§7), the builder shows version history as a numbered list with the currently active version highlighted, so it's always obvious which version is live without cross-referencing anything else.
 
 ### Preference UI (End-User Facing, embedded by client)
-- Toggle per channel: Email / SMS / Push
-- `PUT /users/{id}/preferences` on toggle change (debounced 500ms — avoid rapid-fire updates)
+
+The preference UI is the one piece of frontend surface end users interact with directly, and it's embedded inside the client's own product rather than hosted by this system. It stays deliberately minimal: a toggle per channel — Email, SMS, Push — that fires `PUT /users/{id}/preferences` on change. That call is debounced by 500ms rather than sent on every toggle, because a user flipping through several channels in quick succession would otherwise trigger a burst of redundant writes to the same preference record; debouncing collapses that burst into the single write that actually reflects where the user landed.
 
 ---
 
