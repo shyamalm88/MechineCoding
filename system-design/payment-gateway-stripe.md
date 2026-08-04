@@ -40,7 +40,7 @@ Later that night, Farhan's phone briefly loses signal right as he's checking his
 <details markdown="1">
 <summary><strong>Point to Ponder:</strong> A merchant's request to create a payment intent times out on their end and they retry it — does Farhan get charged twice?</summary>
 
-No — the retry carries the same idempotency key as the original request, and the gateway recognizes it. Instead of creating a second intent, it returns the exact same `intent_id` it returned the first time, so the merchant's retry is safe by construction and never needs to guess whether its earlier attempt actually landed. See §8 Deep Dives for the full mechanism, including how two *concurrent* retries racing each other are handled without a duplicate slipping through.
+No — the retry carries the same idempotency key as the original request, and the gateway recognizes it. Instead of creating a second intent, it returns the exact same `intent_id` it returned the first time, so the merchant's retry is safe by construction and never needs to guess whether its earlier attempt actually landed. See §8.1 for the full mechanism, and §9.1 Failure Scenarios for how two *concurrent* retries racing each other are handled without a duplicate slipping through.
 
 </details>
 
@@ -403,7 +403,7 @@ At the checkout page itself, the session ID is single-use, invalidated the momen
 **The trade-off accepted:** the merchant has to generate and include a UUID idempotency key on every call — a contract requirement on the API, not an optional nicety. The 24-hour TTL is chosen specifically to cover realistic retry windows without inflating Redis memory for no benefit; a longer TTL wouldn't buy meaningfully more retry-safety, just more storage.
 
 > [!NOTE]
-> **Key Insight:** Idempotency is a correctness requirement, not an optimization. Without it, every network retry is a potential double charge. The 24h Redis TTL is the retry window contract — not a performance parameter.
+> **Key Insight:** Idempotency is a correctness requirement, not an optimization — without it, every network retry is a potential double charge.
 
 ---
 
