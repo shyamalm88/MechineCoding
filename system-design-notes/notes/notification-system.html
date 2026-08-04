@@ -12,87 +12,33 @@
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="notification-system-design">Notification System Design</h1>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design an industry-grade, multi-tenant notification platform that any third-party application (Amazon, Uber, Flipkart) can integrate with to deliver notifications to their end users across three channels: Email, SMS, and In-App Push.</p>
-<blockquote>
-<p><strong>Core problem:</strong> Build an event-driven fanout system that takes user actions, fans them out to multiple delivery channels, and guarantees reliable delivery with retries, preferences, and prioritisation — without spamming users or overwhelming external providers.</p>
-</blockquote>
-<p><strong>In scope:</strong> Template management, real-time and scheduled notifications, user preference management, delivery status tracking, OTP/critical vs promotional priority handling, multi-tenant client isolation.
-<strong>Out of scope:</strong> Building FCM/APNs/Twilio internals, user identity management (clients own their user IDs), notification content moderation.</p>
-<blockquote>
-<p><strong>Key distinction:</strong> In this system, <strong>Client = the organization</strong> (Amazon, Uber) and <strong>User = the end person</strong> using that organization's app. This matters because user preferences are user-owned, not client-owned.</p>
-</blockquote>
+<h2 id="1-what-is-a-notification-system">1. What Is a Notification System?</h2>
+<p>A notification platform is the piece of infrastructure that sits behind an app you never see directly: when Amazon needs to tell you your order shipped, when Uber needs to text you a ride OTP, or when Flipkart wants to email you about a sale, none of those companies builds its own delivery pipeline to your phone — they call a system like this one instead. It takes one instruction ("send this notification to this user") and gets it out across whichever channel — email, SMS, or an in-app push — actually reaches that person, tracks whether it arrived, and does this reliably for many different client companies at once, for the organization sending the message (the <em>client</em> — Amazon, Uber, Flipkart) and the person receiving it (the <em>user</em>), without ever mixing up whose users belong to whom.</p>
+<p>At the scale this operates at — a client bulk-messaging fifty million people during a single sale, an OTP that expires if it takes more than five seconds — the hard part was never sending one message to one person. It's doing that instantly for the ones where instant actually matters, staying durable for the ones where losing a message means real money, and never letting one client's flood of promotional email delay another client's password-reset text.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<table>
-<thead>
-<tr>
-<th>Signal</th>
-<th>Number</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Notifications/minute (peak)</td>
-<td>1M</td>
-</tr>
-<tr>
-<td>Notifications/second (avg)</td>
-<td>~16,700/sec</td>
-</tr>
-<tr>
-<td>Peak burst (3×)</td>
-<td>~50,000/sec</td>
-</tr>
-<tr>
-<td>Channels per notification (avg)</td>
-<td>1–2 (multi-channel fan-out)</td>
-</tr>
-<tr>
-<td>Kafka events/minute (with fan-out)</td>
-<td>~2–3M events/min</td>
-</tr>
-<tr>
-<td>Avg notification payload</td>
-<td>500 bytes</td>
-</tr>
-<tr>
-<td>Storage (Notification DB, /day)</td>
-<td>~720 GB/day (1M/min × 500B × 60 × 24)</td>
-</tr>
-<tr>
-<td>BigQuery event log (/day)</td>
-<td>~3–5 events per notification = 4B events/day</td>
-</tr>
-<tr>
-<td>Template versions per client</td>
-<td>~50–200 active templates</td>
-</tr>
-<tr>
-<td>Notification types</td>
-<td>3: Email, SMS, InApp Push</td>
-</tr>
-<tr>
-<td>Priority tiers</td>
-<td>3: Critical (OTP/bank), Standard, Promotional</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Hardest flow:</strong> OTP delivery — must reach end user in &lt;5 seconds. Any path involving disk writes or CDC adds 2–5s of latency. OTP must bypass the outbox pattern entirely.</p>
-<p><strong>Fan-out math:</strong> A bulk promotional campaign (Flipkart Big Billion Day) = 50M users × 1 notification = 50M events in a short window. Kafka must absorb this burst; providers consume at their own pace.</p>
-<p><em>These numbers drive the following decisions: dual write paths (fast vs reliable), dedicated OTP Kafka topics with more consumer replicas, and BigQuery (not PostgreSQL) for event-level analytics.</em></p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Ananya opens the Flipkart app to buy a pair of shoes during their Big Billion Day sale. She adds them to her cart, and by the time she reaches checkout she's asked to confirm with a one-time code. She taps "Send OTP," and before she's even fully looked up from the screen, a text message lands: a six-digit code. She types it in and the order goes through — the whole OTP round trip felt instant, not because she thought about it, but because she didn't have time to.</p>
+<p>A minute later, an order confirmation lands in her email inbox: order number, delivery estimate, a receipt. This one she doesn't rush to open — it can sit in her inbox for a few seconds before it shows up, and that's completely fine, because nothing about it was time-critical the way the OTP was.</p>
+<p>She'd turned off SMS notifications for Flipkart a few weeks ago, keeping just email and push, after getting one too many promotional texts. So later that evening, when Flipkart blasts a sale reminder to every one of the fifty million people who added something to a cart that day, Ananya's phone buzzes once with a push notification — and stays silent on SMS, exactly as she asked, even though millions of other users are getting that exact same promo on all three channels at once.</p>
+<p>Neither Ananya nor the engineer at Flipkart who triggered that campaign ever thought about a Kafka topic, an outbox table, or a preference cache — from here on, this is how that experience actually gets built.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
-<ul>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> Ananya's OTP, her order-confirmation email, and the sale-day push notification are all instances of the same underlying problem: <em>build an event-driven fan-out system that takes user actions, fans them out to multiple delivery channels, and guarantees reliable delivery with retries, preferences, and prioritisation — without spamming users or overwhelming external providers.</em> In scope: template management, real-time and scheduled notifications, user preference management, delivery status tracking, OTP/critical vs promotional priority handling, multi-tenant client isolation. Out of scope: building FCM/APNs/Twilio's own internals, user identity management (clients own their user IDs), notification content moderation.</p>
+<p><strong>One piece of vocabulary matters before anything else.</strong> In this system, <em>Client</em> is the organization integrating with the platform — Amazon, Uber, Flipkart — and <em>User</em> is the end person receiving the notification on their phone or in their inbox. That distinction isn't cosmetic: user preferences belong to the user, not to the client. Amazon doesn't get to decide that a user's SMS opt-out doesn't apply to it — the preference is the user's, enforced the same way no matter which client is sending.</p>
+<p><strong>Functional requirements:</strong></p>
+<ol>
 <li>Support three notification channels: Email, SMS, In-App Push (FCM/APNs)</li>
 <li>Support real-time notifications (OTP, transaction alerts) and scheduled notifications (promotions)</li>
 <li>Template system with variable substitution — clients define templates once, personalise per user at send time</li>
 <li>User-level channel preference — end users can opt out of specific channels (e.g., no SMS, email only)</li>
 <li>Delivery status dashboard for clients — see pending / sent / delivered per notification</li>
 <li>Multi-tenant — client isolation (Amazon's templates and users never mix with Uber's)</li>
-</ul>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+</ol>
+<details>
+<summary><strong>Point to Ponder:</strong> What happens if a client's own system times out on a request and retries it — does the user get the same notification twice?</summary>
+<p>No — every send request carries a <code>notification_id</code> UUID that the client itself generates, not one the server assigns. If the same ID arrives twice, the Notification Service's <code>UNIQUE(notification_id)</code> constraint catches the duplicate and simply returns the already-existing record instead of creating a second one. The client's retry is safe by construction; it doesn't need to know or care whether its first attempt actually landed. See §6 API Design for the full idempotency mechanism.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real user, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
@@ -134,7 +80,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="consistency-model">Consistency Model</h3>
+<p><strong>Consistency Model:</strong></p>
 <table>
 <thead>
 <tr>
@@ -166,54 +112,66 @@
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> Ananya opts out of SMS at 2:00pm — does a promotional campaign that fires at 2:00:30pm respect that immediately?</summary>
+<p>Not necessarily, and that's a deliberate trade-off, not a bug: preferences are cached in Redis with a 60-second TTL specifically so providers don't have to hit PostgreSQL on every single one of a million notifications a minute. For up to 60 seconds after Ananya's change, a provider might still be reading the stale cached value and send her an SMS anyway. The system accepts this because the alternative — a database read in the hot path of every send — doesn't scale at this throughput. See §8.4 in Deep Dives for the full mechanism.</p>
+</details>
 <hr />
-<h2 id="mental-model">🧠 Mental Model</h2>
-<p><strong>A notification system is an event-driven pipeline that takes user actions, fans them out to multiple delivery channels, and ensures reliable delivery with retries and preferences.</strong></p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking: how much traffic does "industrial scale" for a platform serving Amazon, Uber, and Flipkart at once actually mean — and what does that force onto the architecture before any technology gets picked?</p>
+<p><strong>How many notifications hit the system every second?</strong> Start from the peak minute and work down to a rate:</p>
+<pre><code>Notifications/minute (peak):  1,000,000
+Notifications/second (avg):   ~16,700/sec
+Peak burst (3x normal):       ~50,000/sec
+</code></pre>
+<p>That burst number — 50,000/sec, not the calmer 16,700/sec average — is the one that has to hold true through every layer of the pipeline, not just at the API's front door, because a flash sale doesn't announce itself in advance.</p>
+<p><strong>What does each notification actually turn into downstream?</strong> A single triggering event isn't one Kafka write — most notifications go out on one or two channels at once (a bank OTP might be SMS and push together; a promo might be email and push), and that fan-out is what turns 1M notifications/min at the API into roughly 2–3M Kafka events/min actually moving through the pipeline. The event volume the system has to sustain is already 2–3x the request volume before a single message reaches a provider.</p>
+<p><strong>What does that mean for storage?</strong> Each notification payload averages about 500 bytes:</p>
+<pre><code>Notification DB storage: 1M/min x 500B x 60 x 24 = ~720 GB/day
+</code></pre>
+<p>And because every one of those notifications throws off roughly 3–5 lifecycle events for the client dashboard (queued, sent, delivered, failed), that's an entirely different scale of data landing in the analytics store — about 4 billion events a day. 720 GB/day of operational records and 4B/day of append-only events are two completely different shapes of storage problem, which is exactly why they end up in two different databases (§7 Data Model), not one.</p>
+<p><strong>How many templates does the Template Service actually need to hold?</strong> Somewhere between 50 and 200 active templates per client. That's a small number in absolute terms, but it's the reason templates need real versioning rather than being edited in place — with that many active templates per client, an in-flight campaign has to keep using the exact version it started with, not whatever a designer happens to be editing at that moment.</p>
+<p><strong>Now the number that dominates every other decision in this design: the five-second OTP deadline.</strong> The hardest flow in the system is OTP delivery, which must reach the end user in under five seconds. Any path that involves a disk write or a change-data-capture hop adds two to five seconds of latency on its own — which is most or all of the entire budget, before the message has even reached Kafka. That single constraint is what rules out routing OTP through the same write path as everything else, before any other requirement even gets considered: OTP must bypass the outbox pattern entirely.</p>
+<p><strong>And what happens when one client fires a bulk campaign?</strong> Take Flipkart's Big Billion Day: one promotional notification sent to fifty million users at once is fifty million events landing in a short window. Kafka has to absorb that burst instantly, while providers — SendGrid, Twilio — consume it at whatever pace their own rate limits allow, not the pace it arrived at.</p>
+<p>Three channels, three priority tiers — nine possible combinations of the two — is also worth flagging here, because it's what later becomes the exact shape of the Kafka topic layout (§8.3).</p>
+<p>These numbers are what drive every decision that follows: two separate write paths (fast vs. reliable) so the five-second OTP deadline never has to compete with a fifty-million-event promotional burst, dedicated OTP Kafka topics with extra consumer replicas so consumer lag never touches critical traffic, and BigQuery instead of PostgreSQL for event-level analytics, since four billion events a day would drown an operational database built for single-row lookups.</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Ananya's OTP landing in under five seconds while her order-confirmation email quietly took a little longer — here's what actually happens underneath both, and why they don't take the same route through the system.</p>
+<p>A notification platform isn't really a messaging app at its core — it's a pipeline. Something happens in a client's own system (a login attempt, an order, a sale going live), and from there the job is entirely mechanical: fan that one event out to whichever channels are relevant, check it against what the recipient actually wants to receive, deliver it, retry if delivery fails, and never let go of the guarantee that it'll either be delivered or explicitly given up on — never silently dropped.</p>
 <pre><code>This system is NOT about sending messages.
 It is about:
   Event → Queue → Fan-out → Preference Check → Delivery → Retry → Guarantee
 </code></pre>
-<h3 id="fan-out-strategy">Fan-out Strategy</h3>
-<p>Every notification must be fanned out from one event to potentially millions of recipients. Two models:</p>
+<p>Before that, there's a more basic question every fan-out design has to answer: when an event fires, does the system generate every recipient's notification immediately (push, fan-out on write), or does it wait and generate them on demand when each recipient actually checks (pull, fan-out on read)? Push gives low read latency, since everything is pre-generated by the time anyone looks — but the write cost scales directly with the audience: fifty million recipients means fifty million database inserts at the moment the event fires, and that's exactly where it breaks, since a bulk campaign at that size overwhelms the database outright. Pull flips the trade entirely: write cost stays low, just one row per event regardless of audience size, but read latency goes up because each notification is generated on demand — and it breaks the opposite way, when a read storm hits, such as ten million users opening the app at once and all triggering generation simultaneously. Neither one is right for every case here, so this system doesn't pick just one: it uses push for OTP and other single-recipient transactional sends, where instant delivery to one person is what matters, and a pull-leaning model for bulk promotional campaigns, where Kafka is the actual fan-out mechanism — one event published in, N consumers reading it out at their own pace, async and batched rather than fifty million synchronous writes at once.</p>
+<p>That guarantee is also where a decision has to get made early: how strong a delivery promise does this system actually make? A fully synchronous exactly-once guarantee (Kafka transactions, two-phase commit) exists, but it's expensive enough — and unnecessary enough for this domain — that it's ruled out up front. Instead the system builds <em>effectively-once</em> delivery out of two cheaper pieces: Kafka's own at-least-once semantics (a consumer that crashes mid-processing just replays the event on restart) plus the <code>notification_id</code> UUID the client generates and sends with the request. The Delivery Consumer uses that same ID as an idempotent key when it writes status back to the Notification DB (<code>INSERT ... ON CONFLICT notification_id DO NOTHING</code>), so a Kafka replay that delivers the same event twice never produces a duplicate database write or a duplicate send.</p>
 <table>
 <thead>
 <tr>
-<th></th>
-<th>Push (fan-out on write)</th>
-<th>Pull (fan-out on read)</th>
+<th>Guarantee</th>
+<th>How</th>
+<th>When to use here</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>When</td>
-<td>Event fires → generate all notifications immediately</td>
-<td>User opens app → fetch their notifications</td>
+<td>At-most-once</td>
+<td>Fire to Kafka, no retry</td>
+<td>Never — silent message loss</td>
 </tr>
 <tr>
-<td>Latency</td>
-<td>Low read latency (pre-generated)</td>
-<td>High read latency (generated on demand)</td>
+<td>At-least-once</td>
+<td>Kafka consumer replay on crash</td>
+<td>Standard/promo — duplicates handled by idempotency key</td>
 </tr>
 <tr>
-<td>Write cost</td>
-<td>High — 50M users × 1 write = 50M DB inserts</td>
-<td>Low — one row written at event time</td>
-</tr>
-<tr>
-<td>Best for</td>
-<td>Small to medium scale; real-time feel</td>
-<td>Large-scale bulk campaigns; celebrity senders</td>
-</tr>
-<tr>
-<td>Breaks when</td>
-<td>Bulk campaign = 50M writes = DB overwhelmed</td>
-<td>App opened by 10M users at once = read storm</td>
+<td>Exactly-once</td>
+<td>Kafka 2PC transactions</td>
+<td>Too expensive; overkill for notifications</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Reality:</strong> This system uses <strong>push for OTP/transactional</strong> (one recipient, instant delivery) and <strong>pull-heavy via Kafka fan-out for bulk promotional</strong> (50M recipients, async batch). The Kafka topic is the fan-out mechanism — one event in, N consumer reads out.</p>
-<h3 id="two-write-paths-one-critical-distinction">Two write paths, one critical distinction:</h3>
-<p>Three actors, two write paths, one critical distinction:</p>
+<p>Every request funnels through one Notification Service, but from there it splits onto one of two paths, decided purely by priority at the moment the request comes in:</p>
 <pre><code>Client (Amazon/Uber) → Notification Service
                             |
            ┌────────────────┴─────────────────┐
@@ -244,7 +202,6 @@ It is about:
                           |
                   Reporting Service → Client Dashboard
 </code></pre>
-<p><strong>⚡ Core Design Principles</strong></p>
 <table>
 <thead>
 <tr>
@@ -271,206 +228,10 @@ It is about:
 </tr>
 </tbody>
 </table>
-<hr />
-<h2 id="5-api-design">5. API Design</h2>
-<table>
-<thead>
-<tr>
-<th>Endpoint</th>
-<th>Method</th>
-<th>Actor</th>
-<th>Key Params</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>/templates</code></td>
-<td>POST</td>
-<td>Client</td>
-<td><code>name, type, channel, content, variables[]</code></td>
-</tr>
-<tr>
-<td><code>/templates/{id}</code></td>
-<td>GET</td>
-<td>Client</td>
-<td><code>version</code> (optional, defaults to latest active)</td>
-</tr>
-<tr>
-<td><code>/notifications/send</code></td>
-<td>POST</td>
-<td>Client</td>
-<td><code>templateId, recipientId, variables, channel, priority, scheduledAt</code></td>
-</tr>
-<tr>
-<td><code>/notifications/{id}/status</code></td>
-<td>GET</td>
-<td>Client</td>
-<td>—</td>
-</tr>
-<tr>
-<td><code>/users/{externalUserId}/preferences</code></td>
-<td>PUT</td>
-<td>User (via Client)</td>
-<td><code>clientId, emailEnabled, smsEnabled, pushEnabled</code></td>
-</tr>
-</tbody>
-</table>
-<p><strong><code>POST /notifications/send</code> payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;templateId&quot;: &quot;tmpl_abc123&quot;,
-  &quot;recipientId&quot;: &quot;user_789&quot;,        // client's external user ID
-  &quot;variables&quot;: { &quot;product&quot;: &quot;iPhone 15&quot;, &quot;discount&quot;: &quot;20%&quot; },
-  &quot;channel&quot;: [&quot;email&quot;, &quot;sms&quot;],
-  &quot;priority&quot;: &quot;standard&quot;,           // critical | standard | promotional
-  &quot;scheduledAt&quot;: null               // null = send now
-}
-</code></pre>
-<p><strong>Notes:</strong>
-- <code>priority: critical</code> bypasses outbox — goes directly to Kafka
-- <code>channel</code> is an array — client can fan-out to multiple channels per notification
-- Clients must register with API key; API Gateway validates on every call
-- <strong>Idempotency:</strong> <code>notification_id</code> is a UUID generated by the client and sent in the request. If the same <code>notification_id</code> is received twice (client retry after timeout), Notification Service detects the duplicate via <code>UNIQUE(notification_id)</code> and returns the existing record — no duplicate delivery.</p>
-<hr />
-<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Queue-First Architecture — two distinct Kafka pipelines</strong></p>
-<h3 id="delivery-guarantee-levels">Delivery Guarantee Levels</h3>
-<table>
-<thead>
-<tr>
-<th>Guarantee</th>
-<th>How</th>
-<th>When to use</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>At-most-once</td>
-<td>Fire to Kafka, no retry</td>
-<td>Never — silent message loss</td>
-</tr>
-<tr>
-<td><strong>At-least-once</strong> ✅</td>
-<td>Kafka consumer replay on crash</td>
-<td>Standard/promo — duplicates handled by idempotency key</td>
-</tr>
-<tr>
-<td>Exactly-once</td>
-<td>Kafka 2PC transactions</td>
-<td>Too expensive; overkill for notifications</td>
-</tr>
-</tbody>
-</table>
-<p><strong>This system uses at-least-once + idempotency key = effectively-once.</strong>
-- <code>notification_id</code> (UUID) is unique per notification. Delivery Consumer uses it as an idempotent key when writing status to Notification DB (<code>INSERT ... ON CONFLICT notification_id DO NOTHING</code>). Duplicate Kafka events from consumer replay never cause duplicate DB writes or duplicate deliveries.</p>
-<p><strong>Pipeline 1 — Reliable Delivery (Standard/Promotional via Outbox → CDC → Kafka)</strong>
-- WHY async: 1M notifications/min cannot be delivered synchronously. Kafka absorbs the burst; 3 provider types consume independently.
-- WHY outbox: If Notification Service crashes after writing to Kafka but before DB write → client got ACK but we have no record. Outbox writes DB first — Kafka publish happens via CDC (atomic from DB perspective).
-- Retry: exponential backoff (1s → 2s → 4s) + DLQ after 3 failures</p>
-<p><strong>Pipeline 2 — OTP/Critical (direct Kafka, no DB pre-write)</strong>
-- WHY bypass outbox: OTP must be delivered in &lt;5s. DB write + CDC adds 2–5s latency — OTP would expire.
-- Trade-off accepted: at-most-once on Kafka crash. Acceptable — user can request OTP resend; resend is a product feature for exactly this scenario.</p>
-<p><em>The outbox pattern is a correctness requirement, not a performance choice. Without it, an ACK to the client is a lie — we have no durability guarantee.</em></p>
-</blockquote>
-<h3 id="61-standardpromotional-notification-write-path">6.1 Standard/Promotional Notification Write Path</h3>
-<ol>
-<li>Client calls <code>POST /notifications/send</code> with <code>priority: standard</code>. I route this to the <strong>Notification Service</strong> via API Gateway — the gateway validates the API key, applies rate limiting, and routes by URL.</li>
-</ol>
-<p><strong>Rate limiting is mandatory here at two levels</strong> (connecting to the distributed rate limiter pattern):
-   - <strong>Inbound (API Gateway):</strong> Token bucket per <code>clientId</code> — prevents a single client (Flipkart) from flooding the platform and starving other clients (Uber). E.g., max 100K notifications/min per client.
-   - <strong>Outbound (Provider level):</strong> Token bucket per external service — SendGrid = 100 emails/sec, Twilio = 1K SMS/sec. Without this, one bulk campaign exceeds provider rate limits and messages are silently dropped with no error surfaced to the client.
-2. Notification Service does <strong>two writes in a single DB transaction</strong> to the Notification DB:
-   - Inserts a row into <code>notification</code> table (status = <code>PENDING</code>)
-   - Inserts a row into <code>outbox</code> table (status = <code>UNPUBLISHED</code>)</p>
-<p>Only after both succeed does it return <code>202 Accepted</code> to the client. I chose this because if I ACK the client before the DB write, a crash between ACK and Kafka publish loses the message permanently.</p>
-<ol>
-<li>
-<p><strong>CDC pipeline</strong> (Debezium or similar) watches the <code>outbox</code> table for new rows. On insert, it publishes the event to the correct Kafka topic based on <code>(priority, channel)</code>. Example: <code>standard-email</code> topic. CDC publishes atomically from the DB's perspective — if Kafka is unavailable, the row stays in <code>outbox</code> until Kafka recovers.</p>
-</li>
-<li>
-<p><strong>Email/SMS/InApp Provider</strong> (consumer services) reads from their subscribed Kafka topic. Before forwarding to the external service, the provider checks <strong>User Preference Cache</strong> (Redis, TTL=60s). If user has <code>emailEnabled: false</code>, the message is discarded — no external call. I chose Redis cache (not DB lookup) because hitting PostgreSQL on every single notification at 1M/min would bottleneck the preference DB immediately.</p>
-</li>
-<li>
-<p>Provider forwards to external service: SendGrid (email), Twilio (SMS), FCM/APNs (push). External service sends to the end user.</p>
-</li>
-<li>
-<p>External service fires a <strong>webhook</strong> back to our Provider service with delivery status. Provider publishes to <code>delivery-status</code> Kafka topic.</p>
-</li>
-<li>
-<p><strong>Delivery Consumer</strong> reads <code>delivery-status</code> topic and does two things:</p>
-</li>
-<li>Updates <code>notification</code> table in Notification DB: <code>status = DELIVERED</code></li>
-<li>
-<p>Appends an event row to <strong>BigQuery</strong> (immutable event log: <code>notification_id, event_type, timestamp</code>)</p>
-</li>
-<li>
-<p><strong>Reporting Service</strong> serves the client dashboard by reading from Notification DB (final status) and BigQuery (granular event timeline per notification).</p>
-</li>
-</ol>
-<h3 id="62-otp-critical-notification-fast-path">6.2 OTP / Critical Notification Fast Path</h3>
-<ol>
-<li>Client calls <code>POST /notifications/send</code> with <code>priority: critical</code>.</li>
-<li>Notification Service detects <code>critical</code> priority — skips the outbox and <strong>writes directly to Kafka</strong> on the <code>critical-sms</code> / <code>critical-email</code> topic.</li>
-<li><strong>OTP Provider</strong> (dedicated consumer, horizontally scaled with more replicas than standard provider) consumes immediately. More replicas = lower consumer lag = faster delivery.</li>
-<li>Provider calls Twilio/FCM. OTP reaches user in &lt;5 seconds.</li>
-<li>If delivery fails: user requests OTP resend → new Kafka event → retry. This is acceptable because OTP is designed for resend; we don't need the outbox guarantee here.</li>
-<li>A separate lightweight async consumer writes the OTP notification to Notification DB eventually (for the dashboard) — this does not block the delivery path.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant C as Client (Amazon)
-    participant AG as API Gateway
-    participant NS as Notification Service
-    participant NDB as Notification DB + Outbox
-    participant CDC as CDC Pipeline
-    participant K as Kafka
-    participant EP as Email Provider
-    participant RC as Redis Pref Cache
-    participant EXT as SendGrid
-    participant WH as Webhook
-    participant DC as Delivery Consumer
-    participant BQ as BigQuery
-
-    C-&gt;&gt;AG: POST /notifications/send (standard, email)
-    AG-&gt;&gt;NS: validated + rate-limited request
-    NS-&gt;&gt;NDB: BEGIN TX - insert notification(PENDING) + outbox(UNPUBLISHED) - COMMIT
-    NS--&gt;&gt;C: 202 Accepted (message durably stored)
-    NDB-&gt;&gt;CDC: detect outbox INSERT
-    CDC-&gt;&gt;K: publish to standard-email topic
-    K-&gt;&gt;EP: consume event
-    EP-&gt;&gt;RC: GET user:pref:{userId} (emailEnabled?)
-    RC--&gt;&gt;EP: true
-    EP-&gt;&gt;EXT: send email via SendGrid API
-    EXT--&gt;&gt;EP: 200 OK (queued)
-    EXT-&gt;&gt;WH: webhook delivery receipt (DELIVERED)
-    WH-&gt;&gt;K: publish to delivery-status topic
-    K-&gt;&gt;DC: consume status event
-    DC-&gt;&gt;NDB: UPDATE notification SET status=DELIVERED
-    DC-&gt;&gt;BQ: INSERT event(notif_id, DELIVERED, ts)
-</div>
-<div class="mermaid">
-sequenceDiagram
-    participant C as Client (Bank)
-    participant AG as API Gateway
-    participant NS as Notification Service
-    participant K as Kafka critical-sms topic
-    participant OP as OTP Provider (scaled)
-    participant TW as Twilio
-    participant U as End User
-
-    C-&gt;&gt;AG: POST /notifications/send (critical, sms)
-    AG-&gt;&gt;NS: validated request
-    NS-&gt;&gt;K: publish directly (no outbox write)
-    NS--&gt;&gt;C: 202 Accepted
-    K-&gt;&gt;OP: consume immediately (more replicas = lower lag)
-    OP-&gt;&gt;TW: send SMS via Twilio
-    TW-&gt;&gt;U: OTP delivered in &lt;5s
-    Note over NS,K: If Kafka crashes here - OTP lost
-    Note over U: User requests resend - new event enters pipeline
-</div>
-<hr />
-<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> The reliable path's outbox only adds a couple of seconds of latency — why does OTP bypass it entirely instead of just accepting that small delay?</summary>
+<p>Because "a couple of seconds" is measured against a five-second budget, not against zero. The outbox's DB write plus CDC detection adds 2–5 seconds on its own — on a bad day, that alone can eat the entire OTP window before the message has even reached Kafka, let alone the user's phone. An OTP that arrives after it expires has failed exactly as completely as one that never arrived, so the fast path skips the outbox rather than gambling the whole budget on it. See §8.2 in Deep Dives for the full trade-off.</p>
+</details>
 <h3 id="simple-design">Simple Design</h3>
 <div class="mermaid">
 graph TD
@@ -553,317 +314,193 @@ graph TD
     NDB--&gt;RS
     RS--&gt;C
 </div>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>The diagrams above show the components; here's the actual message sequence for each of the two paths.</p>
+<p>For a standard or promotional notification: the client's request goes through the API Gateway, which validates the API key and applies inbound rate limiting — a token bucket capping a client around 100K notifications/min, so one client's flood can't starve another (§8.6 has the full mechanism) — before handing off to the Notification Service. From there, a single database transaction inserts a <code>PENDING</code> notification row and an <code>UNPUBLISHED</code> outbox row together — only once that transaction commits does the client get its <code>202 Accepted</code>, because ACKing any earlier would be a promise the system hasn't actually kept yet (§8.1 covers exactly why). The CDC pipeline then notices the new outbox row and publishes it onto the right <code>{priority}-{channel}</code> topic; whichever provider owns that topic checks the recipient's cached preference before doing anything else, forwards to the actual external service (SendGrid, Twilio, or FCM/APNs), and once that service fires a delivery webhook back, the Delivery Consumer updates both the Notification DB and BigQuery's event log — which is exactly what the Reporting Service reads from to serve the client dashboard: final status from the Notification DB, the granular per-notification event timeline from BigQuery.</p>
+<p>The OTP path skips almost all of that: the Notification Service detects <code>priority: critical</code> and writes directly to Kafka's <code>critical-{channel}</code> topic with no outbox step at all. A dedicated OTP consumer group — deliberately over-provisioned with more replicas than the standard consumers — picks it up essentially immediately and hands it to Twilio or FCM. There's no retry built into this path if that delivery fails; the product's answer is simply that the user requests a fresh OTP, which enters the pipeline as a brand-new event. The OTP notification still eventually shows up on the client's dashboard despite skipping the outbox — a separate, lightweight async consumer writes it into the Notification DB after the fact, purely for the dashboard's benefit, deliberately off the critical delivery path so it can never slow OTP delivery down.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant C as Client (Amazon)
+    participant AG as API Gateway
+    participant NS as Notification Service
+    participant NDB as Notification DB + Outbox
+    participant CDC as CDC Pipeline
+    participant K as Kafka
+    participant EP as Email Provider
+    participant RC as Redis Pref Cache
+    participant EXT as SendGrid
+    participant WH as Webhook
+    participant DC as Delivery Consumer
+    participant BQ as BigQuery
+
+    C-&gt;&gt;AG: POST /notifications/send (standard, email)
+    AG-&gt;&gt;NS: validated + rate-limited request
+    NS-&gt;&gt;NDB: BEGIN TX - insert notification(PENDING) + outbox(UNPUBLISHED) - COMMIT
+    NS--&gt;&gt;C: 202 Accepted (message durably stored)
+    NDB-&gt;&gt;CDC: detect outbox INSERT
+    CDC-&gt;&gt;K: publish to standard-email topic
+    K-&gt;&gt;EP: consume event
+    EP-&gt;&gt;RC: GET user:pref:{userId} (emailEnabled?)
+    RC--&gt;&gt;EP: true
+    EP-&gt;&gt;EXT: send email via SendGrid API
+    EXT--&gt;&gt;EP: 200 OK (queued)
+    EXT-&gt;&gt;WH: webhook delivery receipt (DELIVERED)
+    WH-&gt;&gt;K: publish to delivery-status topic
+    K-&gt;&gt;DC: consume status event
+    DC-&gt;&gt;NDB: UPDATE notification SET status=DELIVERED
+    DC-&gt;&gt;BQ: INSERT event(notif_id, DELIVERED, ts)
+</div>
+<div class="mermaid">
+sequenceDiagram
+    participant C as Client (Bank)
+    participant AG as API Gateway
+    participant NS as Notification Service
+    participant K as Kafka critical-sms topic
+    participant OP as OTP Provider (scaled)
+    participant TW as Twilio
+    participant U as End User
+
+    C-&gt;&gt;AG: POST /notifications/send (critical, sms)
+    AG-&gt;&gt;NS: validated request
+    NS-&gt;&gt;K: publish directly (no outbox write)
+    NS--&gt;&gt;C: 202 Accepted
+    K-&gt;&gt;OP: consume immediately (more replicas = lower lag)
+    OP-&gt;&gt;TW: send SMS via Twilio
+    TW-&gt;&gt;U: OTP delivered in &lt;5s
+    Note over NS,K: If Kafka crashes here - OTP lost
+    Note over U: User requests resend - new event enters pipeline
+</div>
 <hr />
-<h2 id="8-data-model">8. Data Model</h2>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Storage Separation</strong></p>
+<h2 id="6-api-design">6. API Design</h2>
+<p>The API is small because there's really only one shape of actor calling it: a client's backend, never an end user's phone directly — templates, sends, and preference updates are all requests one system makes on behalf of another, which is why every endpoint below is scoped by a client identity even when a preference technically belongs to the end user, not the client.</p>
 <table>
 <thead>
 <tr>
-<th>What</th>
-<th>Where</th>
-<th>Why</th>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Actor</th>
+<th>Key Params</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Templates</td>
-<td>PostgreSQL (Template DB)</td>
-<td>Structured, relational, version-controlled; low write volume</td>
+<td><code>/templates</code></td>
+<td>POST</td>
+<td>Client</td>
+<td><code>name, type, channel, content, variables[]</code></td>
 </tr>
 <tr>
-<td>User preferences</td>
-<td>PostgreSQL (User Pref DB)</td>
-<td>Structured per user; updated infrequently</td>
+<td><code>/templates/{id}</code></td>
+<td>GET</td>
+<td>Client</td>
+<td><code>version</code> (optional, defaults to latest active)</td>
 </tr>
 <tr>
-<td>Hot preference reads</td>
-<td>Redis (TTL=60s)</td>
-<td>Sub-ms lookup; never source of truth</td>
+<td><code>/notifications/send</code></td>
+<td>POST</td>
+<td>Client</td>
+<td><code>templateId, recipientId, variables, channel, priority, scheduledAt</code></td>
 </tr>
 <tr>
-<td>Notification records (operational)</td>
-<td>PostgreSQL (Notification DB)</td>
-<td>Final delivery status; client queries by notification_id</td>
+<td><code>/notifications/{id}/status</code></td>
+<td>GET</td>
+<td>Client</td>
+<td>—</td>
 </tr>
 <tr>
-<td>Outbox (transient)</td>
-<td>Same PostgreSQL, Outbox table</td>
-<td>Part of same transaction as notification; CDC reads from it</td>
+<td><code>/users/{externalUserId}/preferences</code></td>
+<td>PUT</td>
+<td>User (via Client)</td>
+<td><code>clientId, emailEnabled, smsEnabled, pushEnabled</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>POST /notifications/send</code> payload:</strong></p>
+<pre><code class="language-json">{
+  &quot;templateId&quot;: &quot;tmpl_abc123&quot;,
+  &quot;recipientId&quot;: &quot;user_789&quot;,        // client's external user ID
+  &quot;variables&quot;: { &quot;product&quot;: &quot;iPhone 15&quot;, &quot;discount&quot;: &quot;20%&quot; },
+  &quot;channel&quot;: [&quot;email&quot;, &quot;sms&quot;],
+  &quot;priority&quot;: &quot;standard&quot;,           // critical | standard | promotional
+  &quot;scheduledAt&quot;: null               // null = send now
+}
+</code></pre>
+<p>Every client registers for an API key up front, and the API Gateway validates it on every single call before a request ever reaches the Notification Service — that's what makes the multi-tenant isolation from §3 actually enforceable at the network edge, not just a convention downstream services are trusted to honor.</p>
+<p>Two design choices here aren't obvious from the table alone. First, <code>priority: critical</code> isn't just a field the Notification Service reads and routes on later — setting it changes which code path the request takes at write time, skipping the outbox table entirely (§8.2). Second, <code>channel</code> is an array, not a single value, because one notification can legitimately fan out across multiple channels at once — an OTP might go by SMS while a promo goes by email and push together — which is exactly why idempotency has to key off the whole request, not per channel.</p>
+<p><strong>Idempotency:</strong> <code>notification_id</code> is a UUID generated by the client and sent in the request. If the same <code>notification_id</code> arrives twice — a client retry after a timeout, say — the Notification Service detects the duplicate via <code>UNIQUE(notification_id)</code> and returns the existing record instead of creating a second one. No duplicate delivery, no client-side guesswork about whether their retry caused a double-send.</p>
+<hr />
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Seven different kinds of data live in this system, and separating them by how they're actually used — rather than by which table happens to hold them — makes the storage choices close to self-explanatory.</p>
+<p><strong>Templates are structured, relational, and rarely written.</strong> A client defines somewhere between 50 and 200 active templates, each tagged <code>type: promotional</code> or <code>type: transactional</code> and versioned so an in-flight campaign never gets rewritten out from under it mid-send — <code>is_active</code> marks which version actually gets used at send time, and <code>version</code> just increments on every edit. None of that needs anything more exotic than PostgreSQL: low write volume, and every read benefits from being able to join against <code>client_id</code> for isolation.</p>
+<p><strong>User preferences split into a source of truth and a hot cache, because correctness and raw read speed pull in different directions at this volume.</strong> The actual preference — opted in or out per channel, a do-not-disturb window (e.g. <code>22:00</code> to <code>08:00</code>, no notifications in between), and a fallback priority ordering (1 = first choice, 2 = fallback, 3 = last resort) — is structured, updated infrequently, and needs to be authoritative, so it lives in PostgreSQL. But reading that table on every single one of a million sends a minute would fall over immediately, so a Redis cache sits in front of it for the actual per-send check — fast, sub-millisecond, and explicitly never treated as the source of truth (§8.4 has the full mechanism and the 60-second consistency trade-off that comes with it).</p>
+<p><strong>The notification record and its outbox counterpart are durable but transient in different ways.</strong> The notification row is the client-facing operational record — the one thing <code>GET /notifications/{id}/status</code> actually reads, tracking a message through <code>PENDING → SENT → DELIVERED → FAILED</code> — and it needs to be correct and queryable by <code>notification_id</code>, which again means PostgreSQL. The outbox row lives in the very same database, in the very same transaction as the notification insert, purely so the CDC pipeline has something to tail; once it's published to Kafka it's marked and has essentially done its job. Neither one would make sense in a store that couldn't guarantee both inserts land atomically together — the exact reasoning behind choosing PostgreSQL over a faster but non-transactional store, covered fully in the Trade-offs below.</p>
+<p><strong>Everything append-only and read-rarely-except-in-bulk goes to BigQuery.</strong> The event log — every <code>queued</code>, <code>sent</code>, <code>delivered</code>, and <code>failed</code> transition for every notification — is written once and essentially never updated, and at roughly 4 billion events a day, querying it for a client's weekly delivery-rate dashboard is a job for a columnar analytics store, not the same database serving live single-row lookups.</p>
+<p><strong>Kafka threads through all of it as the connective tissue, not a data store of its own.</strong> Nine topics (three priority tiers times three channels) plus delivery-status, retry, and DLQ topics carry every event between every other piece of this system, with 7-day retention giving CDC and consumers room to catch up after any outage without losing anything already published.</p>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Template</td>
+<td>PostgreSQL</td>
+<td>template_id, client_id, name, type, channel, content, variables, version, is_active, created_at, updated_at</td>
 </tr>
 <tr>
-<td>Event-level analytics</td>
+<td>Notification record</td>
+<td>PostgreSQL</td>
+<td>notification_id, client_id, external_user_id, template_id, channel, payload, status, priority, scheduled_at, last_updated_at</td>
+</tr>
+<tr>
+<td>Outbox row</td>
+<td>PostgreSQL (same DB, same transaction)</td>
+<td>outbox_id, notification_id, event_type, payload, published, created_at</td>
+</tr>
+<tr>
+<td>User preference</td>
+<td>PostgreSQL</td>
+<td>id, client_id, external_user_id, channel, enabled, priority, do_not_disturb_start, do_not_disturb_end, updated_at</td>
+</tr>
+<tr>
+<td>Preference cache entry</td>
+<td>Redis, TTL=60s</td>
+<td dnd_end="dnd_end" dnd_start_="dnd_start," enabled_="enabled," priority_="priority,">pref:{clientId}:{userId}:{channel} →</td>
+</tr>
+<tr>
+<td>Event log</td>
 <td>BigQuery</td>
-<td>Append-only, immutable; 4B events/day; never query for single-row ops</td>
+<td>notification_id, event_type, timestamp</td>
 </tr>
 <tr>
 <td>Message bus</td>
-<td>Kafka (7-day retention)</td>
-<td>Ordered delivery, replay, fan-out by topic</td>
+<td>Kafka, 7-day retention</td>
+<td>9 topics (priority × channel) + delivery-status + retry + DLQ</td>
 </tr>
 </tbody>
 </table>
-</blockquote>
-<h3 id="template-table-postgresql">Template Table (PostgreSQL)</h3>
-<table>
-<thead>
-<tr>
-<th>Column</th>
-<th>Type</th>
-<th>Note</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>template_id</td>
-<td>UUID (PK)</td>
-<td></td>
-</tr>
-<tr>
-<td>client_id</td>
-<td>UUID (FK)</td>
-<td>multi-tenant isolation</td>
-</tr>
-<tr>
-<td>name</td>
-<td>text</td>
-<td></td>
-</tr>
-<tr>
-<td>type</td>
-<td>enum</td>
-<td>promotional, transactional</td>
-</tr>
-<tr>
-<td>channel</td>
-<td>enum</td>
-<td>email, sms, push</td>
-</tr>
-<tr>
-<td>content</td>
-<td>text</td>
-<td>body with <code>{{variable}}</code> placeholders</td>
-</tr>
-<tr>
-<td>variables</td>
-<td>jsonb</td>
-<td>declared variable names for validation</td>
-</tr>
-<tr>
-<td>version</td>
-<td>int</td>
-<td>incremented on update</td>
-</tr>
-<tr>
-<td>is_active</td>
-<td>boolean</td>
-<td>only active version used at send time</td>
-</tr>
-<tr>
-<td>created_at</td>
-<td>timestamp</td>
-<td></td>
-</tr>
-<tr>
-<td>updated_at</td>
-<td>timestamp</td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<h3 id="notification-table-postgresql">Notification Table (PostgreSQL)</h3>
-<table>
-<thead>
-<tr>
-<th>Column</th>
-<th>Type</th>
-<th>Note</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>notification_id</td>
-<td>UUID (PK)</td>
-<td>idempotency key for delivery consumer updates</td>
-</tr>
-<tr>
-<td>client_id</td>
-<td>UUID</td>
-<td></td>
-</tr>
-<tr>
-<td>external_user_id</td>
-<td>text</td>
-<td>client's user ID</td>
-</tr>
-<tr>
-<td>template_id</td>
-<td>UUID</td>
-<td></td>
-</tr>
-<tr>
-<td>channel</td>
-<td>enum</td>
-<td>email, sms, push</td>
-</tr>
-<tr>
-<td>payload</td>
-<td>jsonb</td>
-<td>rendered content after variable substitution</td>
-</tr>
-<tr>
-<td>status</td>
-<td>enum</td>
-<td>PENDING → SENT → DELIVERED → FAILED</td>
-</tr>
-<tr>
-<td>priority</td>
-<td>enum</td>
-<td>critical, standard, promotional</td>
-</tr>
-<tr>
-<td>scheduled_at</td>
-<td>timestamp</td>
-<td>null = immediate</td>
-</tr>
-<tr>
-<td>last_updated_at</td>
-<td>timestamp</td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<h3 id="outbox-table-same-postgresql-same-transaction">Outbox Table (same PostgreSQL, same transaction)</h3>
-<table>
-<thead>
-<tr>
-<th>Column</th>
-<th>Type</th>
-<th>Note</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>outbox_id</td>
-<td>UUID (PK)</td>
-<td></td>
-</tr>
-<tr>
-<td>notification_id</td>
-<td>UUID (FK)</td>
-<td>links to notification row</td>
-</tr>
-<tr>
-<td>event_type</td>
-<td>text</td>
-<td>NOTIFICATION_CREATED</td>
-</tr>
-<tr>
-<td>payload</td>
-<td>jsonb</td>
-<td>full notification payload for CDC</td>
-</tr>
-<tr>
-<td>published</td>
-<td>boolean</td>
-<td>CDC marks true after Kafka publish</td>
-</tr>
-<tr>
-<td>created_at</td>
-<td>timestamp</td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<h3 id="user-preference-table-postgresql">User Preference Table (PostgreSQL)</h3>
-<p>Real systems must support: opt-in/out per channel, do-not-disturb windows, and channel priority ordering.</p>
-<table>
-<thead>
-<tr>
-<th>Column</th>
-<th>Type</th>
-<th>Note</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>id</td>
-<td>UUID (PK)</td>
-<td></td>
-</tr>
-<tr>
-<td>client_id</td>
-<td>UUID</td>
-<td>multi-tenant isolation</td>
-</tr>
-<tr>
-<td>external_user_id</td>
-<td>text</td>
-<td></td>
-</tr>
-<tr>
-<td>channel</td>
-<td>enum</td>
-<td>email / sms / push (one row per channel)</td>
-</tr>
-<tr>
-<td>enabled</td>
-<td>boolean</td>
-<td>default true — user opt-in/out</td>
-</tr>
-<tr>
-<td>priority</td>
-<td>int</td>
-<td>1=first choice, 2=fallback, 3=last resort</td>
-</tr>
-<tr>
-<td>do_not_disturb_start</td>
-<td>time</td>
-<td>e.g., 22:00 — no notifications after this</td>
-</tr>
-<tr>
-<td>do_not_disturb_end</td>
-<td>time</td>
-<td>e.g., 08:00 — resume notifications after this</td>
-</tr>
-<tr>
-<td>updated_at</td>
-<td>timestamp</td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<p><strong>Why one row per channel (not one row per user)?</strong>
-A user may enable email but disable SMS, and set push as priority 1. Storing per-channel rows makes <code>WHERE external_user_id = ? AND channel = 'sms' AND enabled = true</code> a simple indexed lookup. A single JSON blob per user requires deserialisation on every check.</p>
-<p><strong>Redis cache key:</strong> <code>pref:{clientId}:{userId}:{channel}</code> → <code>{enabled, priority, dnd_start, dnd_end}</code> (TTL=60s)</p>
+<p><strong>Why one row per channel, not one row per user, in the preference table?</strong> A user may enable email but disable SMS, and set push as priority 1 — storing per-channel rows makes <code>WHERE external_user_id = ? AND channel = 'sms' AND enabled = true</code> a simple indexed lookup. A single JSON blob per user would need deserialising on every single preference check, which is exactly the kind of per-request cost this system can't afford at a million sends a minute.</p>
 <hr />
-<h2 id="9-deep-dives">9. Deep Dives</h2>
-<h3 id="91-transactional-outbox-guaranteed-delivery-without-losing-messages">9.1 Transactional Outbox — Guaranteed Delivery Without Losing Messages</h3>
-<p><strong>Problem:</strong> Notification Service receives a request. It must:
-1. Acknowledge the client ("we got it, it'll be sent")
-2. Publish to Kafka for async processing</p>
-<p>If it ACKs the client then crashes before Kafka publish → message is lost. If it publishes to Kafka then crashes before ACK → client retries, duplicate message. How do we guarantee exactly-one durable capture?</p>
-<p><strong>Naive solution:</strong> Write to DB → publish to Kafka → ACK client.
-Failure: crash between Kafka publish and DB write = Kafka has event, DB doesn't → status tracking broken.</p>
-<p><strong>Chosen solution — Transactional Outbox:</strong>
-1. In a single DB transaction: INSERT into <code>notification</code> (status=PENDING) AND INSERT into <code>outbox</code> (published=false).
-2. On commit success → ACK client. Message is now durable in DB.
-3. CDC pipeline (Debezium) tails the <code>outbox</code> table. New row detected → publishes to Kafka. Marks <code>outbox.published = true</code>.
-4. If CDC fails → Kafka is empty but DB has the row. CDC replays from last position on restart. Message is never lost.</p>
-<p>Why CDC over a polling job? Debezium reads the PostgreSQL WAL (write-ahead log) in near-real-time (&lt;500ms) — no polling interval overhead. Polling at 1M notifications/min would either be too slow (1s polling = 1M backlog) or too expensive (100ms polling = 600K DB reads/min).</p>
-<p>The trade-off I accept is <strong>operational complexity</strong> — running Debezium requires Kafka Connect infrastructure. This is acceptable because all other approaches compromise either latency or durability.</p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-transactional-outbox-guaranteed-delivery-without-losing-messages">8.1 Transactional Outbox — Guaranteed Delivery Without Losing Messages</h3>
+<p>This is the single mechanism the rest of this design leans on hardest, so it's worth walking through in full rather than as a quick bullet list.</p>
+<p><strong>What it has to do:</strong> every time the Notification Service takes a request, it has two jobs — tell the client "we've got it, it'll be sent," and actually get the message moving toward Kafka for async processing. Both have to happen, and they have to happen consistently with each other, or the client's ACK becomes a lie.</p>
+<p><strong>Why the obvious orderings all fail.</strong> Try ACKing the client first, then publishing to Kafka: if the service crashes in between, the client walks away believing the message will be delivered, and it never will be — silently lost. Flip the order — publish to Kafka first, then ACK: now a crash before the ACK means the client sees a timeout, retries, and a message that was already durably queued gets sent again as a duplicate. Even the intermediate idea of writing the notification to a database row before publishing to Kafka doesn't close the gap on its own — a crash landing between that database write and the Kafka publish leaves one system with a record the other doesn't have, and status tracking simply breaks: the database says one thing, Kafka says another, and nothing reconciles them.</p>
+<p><strong>What has to be true instead:</strong> the "got it, will be sent" promise and the "durably captured" fact have to be the same atomic event — not two separate steps that can be interrupted between them.</p>
+<p><strong>The mechanism:</strong> a single database transaction inserts two rows at once — a <code>notification</code> row (<code>status = PENDING</code>) and an <code>outbox</code> row (<code>published = false</code>) — and only once that transaction commits does the service ACK the client. At that point the message is durable, full stop, regardless of whether Kafka, the network, or anything downstream is currently healthy. Separately, a CDC pipeline (Debezium) tails the same database's write-ahead log, notices the new outbox row, publishes it to Kafka, and marks <code>outbox.published = true</code>. If the CDC process itself crashes before publishing, nothing is lost — the row is still sitting in the outbox table, and Debezium simply resumes from its last committed WAL position on restart and publishes it then.</p>
+<p>Reading the write-ahead log this way, instead of polling the outbox table on a timer, is a deliberate choice: Debezium picks up a new row in under 500ms with no polling interval at all, where a polling job has to pick one of two bad options at this volume — polling once a second lets up to a million-row backlog build up between polls, and polling every 100ms means 600,000 extra database reads a minute just to check whether anything changed.</p>
+<p>The cost accepted here is operational: running Debezium means running Kafka Connect infrastructure, one more moving part to operate. That's worth it because every faster alternative compromises either latency or the durability guarantee itself — there isn't a cheaper way to make "ACK means durable" actually true.</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: The outbox pattern is not an optimisation — it's the only way to guarantee "ACK to client = message will be delivered or dead-lettered." Without it, an ACK is a promise we can't keep.</p>
 </blockquote>
 <hr />
-<h3 id="92-priority-tiers-two-write-paths-for-one-system">9.2 Priority Tiers — Two Write Paths for One System</h3>
-<p><strong>Problem:</strong> OTP must arrive in &lt;5 seconds. Promotional email can wait 10 seconds. A single write path can't satisfy both.</p>
-<p><strong>The conflict:</strong>
-- <strong>Durable path (outbox → CDC → Kafka):</strong> adds ~2–5s latency (DB write + CDC detection). Fine for promo. Kills OTP.
-- <strong>Fast path (direct Kafka):</strong> &lt;100ms to Kafka. No durability guarantee before publish.</p>
-<p><strong>Chosen solution — split by priority at the Notification Service:</strong></p>
+<h3 id="82-priority-tiers-two-write-paths-for-one-system">8.2 Priority Tiers — Two Write Paths for One System</h3>
+<p>The outbox above solves durability, but it doesn't solve everything — durability and speed pull in opposite directions, and this system genuinely needs both at once for different messages. An OTP has to arrive inside five seconds or it's useless; a promotional email can take ten seconds and nobody notices. The outbox's own DB write plus CDC detection adds 2–5 seconds on its own — comfortably fine against a 10-second promo budget, and potentially the entire OTP budget gone before the message has even reached Kafka. A single write path literally cannot satisfy both SLAs; forcing OTP through the outbox risks expiring it before it's sent, and skipping the outbox for everything trades away the durability guarantee that promotional and transactional messages actually need.</p>
+<p>The fix is splitting by priority right where the request enters the Notification Service, not somewhere downstream:</p>
 <table>
 <thead>
 <tr>
@@ -894,19 +531,15 @@ Key Insight: The outbox pattern is not an optimisation — it's the only way to 
 </tr>
 </tbody>
 </table>
-<p>For OTP: "if it's lost, the user clicks resend" — the product is designed for this. A user experiencing a 5s OTP delay is worse than a user clicking resend once.</p>
-<p>The trade-off I accept for OTP is <strong>at-most-once delivery risk</strong> during a Kafka crash. This is justified because: (a) Kafka is highly available, (b) OTPs are designed to be resent.</p>
+<p>For OTP, the product answer to "what if it's lost" is simply that the user clicks resend — that's not a workaround, it's the actual design: a five-second delay is worse for the user than an occasional resend click. The trade-off accepted is at-most-once delivery risk if Kafka happens to crash in exactly the wrong instant, which is acceptable on two separate grounds — Kafka itself is highly available, so that window is rare, and OTPs are explicitly designed around being resendable in the first place.</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: Two write paths for two SLAs. Don't force OTP through the outbox — you'll kill its latency. Don't skip the outbox for promos — you'll lose bulk campaign messages silently.</p>
 </blockquote>
 <hr />
-<h3 id="93-kafka-topic-design-9-topics-priority-channel">9.3 Kafka Topic Design — 9 Topics (Priority × Channel)</h3>
-<p><strong>Problem:</strong> A single <code>notifications</code> Kafka topic with all events means:
-- Email consumers read SMS events (wasted deserialization)
-- Critical OTP events queue behind bulk promo events
-- No per-priority SLA enforcement</p>
-<p><strong>Chosen solution:</strong> 9 topics = 3 priority tiers × 3 channels</p>
+<h3 id="83-kafka-topic-design-nine-topics-not-one">8.3 Kafka Topic Design — Nine Topics, Not One</h3>
+<p>A single <code>notifications</code> topic carrying every event sounds simpler, but it creates three problems at once: email consumers waste cycles deserializing SMS events they're going to discard, a critical OTP event queues behind whatever bulk promo campaign happens to be running ahead of it, and there's no way to enforce a different SLA per priority tier when everything shares one queue.</p>
+<p>The fix is nine topics — three priority tiers times three channels:</p>
 <pre><code>critical-email    standard-email    promotional-email
 critical-sms      standard-sms      promotional-sms
 critical-push     standard-push     promotional-push
@@ -914,116 +547,46 @@ critical-push     standard-push     promotional-push
 + retry
 + DLQ
 </code></pre>
-<p><strong>Why this matters:</strong>
-- <strong>OTP Provider</strong> subscribes only to <code>critical-sms</code>, <code>critical-email</code> — it never gets blocked by a Flipkart bulk promo campaign
-- <strong>OTP consumer group</strong> runs with 3× more replicas than standard consumers — consumer lag = delivery lag
-- <strong>Bulk email campaign</strong> fills <code>promotional-email</code> — standard consumers process it at their own pace without affecting OTP SLA</p>
+<p>That isolation is what makes the OTP Provider's SLA actually enforceable: it subscribes only to <code>critical-sms</code> and <code>critical-email</code>, so it's structurally incapable of being blocked by a Flipkart bulk promo campaign, no matter how large that campaign is. Its consumer group also runs with three times the replicas of a standard consumer group, since consumer lag directly is delivery lag on this path. A bulk email campaign, meanwhile, just fills up <code>promotional-email</code> and lets standard consumers work through it at whatever pace they can sustain, with zero effect on OTP's SLA.</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: Topic isolation by priority is the only way to enforce SLA differentiation. Without it, one 50M-user campaign delays every OTP in the system for 10–30 minutes.</p>
 </blockquote>
 <hr />
-<h3 id="94-user-preference-cache-layer-to-avoid-per-notification-db-scans">9.4 User Preference — Cache Layer to Avoid Per-Notification DB Scans</h3>
-<p><strong>Problem:</strong> At 1M notifications/min, if every provider service queries the User Preference DB before sending, that's 1M read queries/min to PostgreSQL. PostgreSQL can handle ~100K reads/min comfortably — 10× overload.</p>
-<p><strong>Naive solution:</strong> Query DB on every notification. System degrades under load.</p>
-<p><strong>Chosen solution — Redis cache with TTL=60s:</strong>
-- Key: <code>pref:{clientId}:{externalUserId}</code> → <code>{ emailEnabled: true, smsEnabled: false, pushEnabled: true }</code>
-- TTL: 60 seconds. If user changes preference, old value is used for up to 60 seconds.
-- Cache miss: read from DB, populate cache.
-- Cache write: when user preference changes, <code>DEL pref:{clientId}:{externalUserId}</code> + let next read repopulate (cache-aside pattern).</p>
-<p>The trade-off I accept is <strong>60-second eventual consistency</strong> on preference changes. A user who opts out of SMS will still receive SMS for up to 60 more seconds. This is acceptable — the alternative is DB-level latency on every notification.</p>
+<h3 id="84-user-preference-a-cache-layer-to-avoid-a-database-scan-on-every-send">8.4 User Preference — A Cache Layer to Avoid a Database Scan on Every Send</h3>
+<p>At 1 million notifications a minute, checking the User Preference DB before every single send means 1 million read queries a minute hitting PostgreSQL. PostgreSQL handles roughly 100,000 reads a minute comfortably — this is a tenfold overload, and it would degrade the exact database that also needs to serve the outbox and notification-status lookups from §8.1.</p>
+<p>The naive fix — just query the database every time — degrades under load rather than failing cleanly, which is worse: a slow preference check backs up every provider behind it. The actual fix is a Redis cache in front of PostgreSQL, keyed <code>pref:{clientId}:{externalUserId}</code> → <code>{ emailEnabled, smsEnabled, pushEnabled }</code>, with a 60-second TTL. A cache miss reads from the database and repopulates the cache; a preference change deletes the cache key (<code>DEL pref:{clientId}:{externalUserId}</code>) and lets the next read repopulate it — the classic cache-aside pattern, chosen specifically because it needs no explicit write-through logic on the hot path.</p>
+<p>The trade-off accepted is up to 60 seconds of eventual consistency: a user who just opted out of SMS can still receive one for up to a minute afterward. That's acceptable because the alternative — a database round-trip on every single send — doesn't scale at this throughput at all, not because the staleness itself is harmless in isolation.</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: Preference is checked at the provider level, not at the Notification Service level. This is deliberate — by the time a message reaches a provider, we've already committed it to Kafka. Discarding at the provider (not at intake) avoids complexity in the routing layer.</p>
 </blockquote>
 <hr />
-<h3 id="95-delivery-status-tracking-webhook-kafka-two-store-pattern">9.5 Delivery Status Tracking — Webhook → Kafka → Two-Store Pattern</h3>
-<p><strong>Problem:</strong> After a provider sends to Twilio/SendGrid/FCM, we don't know if the message actually reached the user. External services have their own delivery pipeline. How do we track <code>SENT → DELIVERED</code>?</p>
-<p><strong>Chosen solution — webhook callback + Kafka:</strong>
-1. External service (Twilio, SendGrid, FCM) fires a webhook to our Provider service when delivery is confirmed.
-2. Provider publishes to <code>delivery-status</code> Kafka topic (not directly to DB — keeps providers stateless).
-3. <strong>Delivery Consumer</strong> reads from <code>delivery-status</code> and writes to two stores:
-   - <strong>Notification DB</strong> (PostgreSQL): <code>UPDATE notification SET status = DELIVERED WHERE notification_id = ?</code> — final operational state
-   - <strong>BigQuery</strong>: <code>INSERT INTO notification_events (notification_id, event_type='DELIVERED', ts)</code> — immutable audit log with full event timeline</p>
-<p><strong>Why two stores?</strong>
-- Notification DB = client needs "is this notification delivered?" → single row lookup, O(1), PostgreSQL is right tool
-- BigQuery = client needs "show me the timeline of all status changes for this notification" or "what's our delivery rate this week?" → analytical query over billions of rows, BigQuery is the right tool</p>
-<p>The trade-off I accept: <strong>two writes per delivery event</strong> = higher write amplification. Acceptable because delivery events are far fewer than notification send events (1 send event vs 1–2 status events per notification).</p>
+<h3 id="85-delivery-status-tracking-webhook-kafka-and-two-stores">8.5 Delivery Status Tracking — Webhook, Kafka, and Two Stores</h3>
+<p>Once a provider hands a message to Twilio, SendGrid, or FCM, this system has no direct visibility into whether it actually reached the user — that external service has its own delivery pipeline entirely outside this one. Tracking the <code>SENT → DELIVERED</code> transition means relying on that external service to tell us, after the fact.</p>
+<p>The mechanism is a webhook plus Kafka: the external service fires a webhook back to the Provider service the moment it confirms delivery, and the Provider publishes that event onto the <code>delivery-status</code> Kafka topic rather than writing to a database directly — keeping providers themselves stateless. The Delivery Consumer reads from that topic and writes to two separate stores: PostgreSQL, updating <code>notification.status = DELIVERED</code> for whoever queries "is this delivered?" — a single indexed row lookup — and BigQuery, appending an immutable <code>notification_events</code> row (<code>notification_id, event_type='DELIVERED', ts</code>) for whoever needs the full timeline of status changes or a delivery-rate dashboard across a week's worth of traffic.</p>
+<p>Splitting into two stores here isn't redundancy — it's matching each query pattern to the store built for it. PostgreSQL is right for the O(1) single-row question; BigQuery is right for the analytical scan over billions of rows that a client dashboard's "delivery rate this week" actually needs. The cost accepted is write amplification — every delivery event now costs two writes instead of one — which is tolerable because delivery-status events are already far less frequent than the original send events (one send, versus one or two status updates per notification).</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: Don't use your operational DB for analytics. Notification DB (PostgreSQL) for real-time status lookups. BigQuery for event timelines and delivery rate dashboards. Two tools, two purposes.</p>
 </blockquote>
 <hr />
-<h3 id="96-rate-limiting-two-tiers-for-two-threats">9.6 Rate Limiting — Two Tiers for Two Threats</h3>
-<p><strong>Two distinct rate limiting problems:</strong></p>
-<p><strong>Tier 1 — API Gateway (protect our system from clients):</strong>
-- Rate limit per <code>clientId</code> + <code>apiKey</code>: e.g., max 10K notification requests/minute per client
-- Protects against: accidental loops in client code, malicious abuse, DDoS on the public API
-- Implementation: Redis sliding window counter, key = <code>ratelimit:{clientId}:{minute}</code>, INCR + TTL=60s</p>
-<p><strong>Tier 2 — Provider level (protect external services from us):</strong>
-- Each external service has its own rate limit: SendGrid = 100 emails/sec per API key, Twilio = 1K SMS/sec
-- If we send more than their limit, they drop or throttle requests silently
-- Implementation: Token bucket per provider service, refill at external service's stated rate
-- On rate limit exceeded: exponential backoff + retry queue, not DLQ</p>
-<p>Why two tiers? API Gateway protects us inbound. Provider rate limiting protects the external services outbound. Without Tier 2, a Flipkart campaign at 50M emails would exceed SendGrid's limits and lose millions of messages with no error surfaced to the client.</p>
+<h3 id="86-rate-limiting-two-tiers-for-two-different-threats">8.6 Rate Limiting — Two Tiers for Two Different Threats</h3>
+<p>Rate limiting here isn't one problem, it's two, and they protect against opposite directions of traffic. Inbound, at the API Gateway, a token bucket per <code>clientId</code> and <code>apiKey</code> — for instance, capping a client around 10,000 notification requests a minute — exists to protect this platform itself from a single client flooding it, whether through a bug, a runaway loop in their own code, or outright abuse; without it, one client's mistake can starve every other client sharing the platform. Outbound, at the provider level, a separate token bucket per external service — SendGrid capped around 100 emails a second, Twilio around 1,000 SMS a second, refilling at whatever rate each provider actually states — protects those external services from this platform itself. Exceeding a provider's own limit doesn't just get throttled cleanly; it gets silently dropped or throttled by them with no error surfaced back to us, so a token bucket on our own outbound side, backed by exponential-backoff-and-retry rather than a DLQ, is what stands between a burst and quietly losing messages nobody even notices went missing.</p>
+<p>Without that second tier specifically, a single campaign the size of Flipkart's — 50 million emails — would blow straight through SendGrid's stated limit and lose millions of messages with absolutely no error surfaced to the client who sent it.</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: Rate limiting at two points for two different adversaries — bad actors hitting your API, and your own services overwhelming external partners. Both need to be solved independently.</p>
 </blockquote>
 <hr />
-<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
-<p>We're designing for <strong>1M notifications/minute</strong>, <strong>3 channels</strong>, <strong>multi-tenant</strong> with bulk campaign spikes (Flipkart Big Billion Day = 50M+ notifications in minutes). Primary bottleneck at scale: <strong>consumer lag on Kafka</strong> — if providers can't consume fast enough, OTP delivery delays.</p>
-<p><strong>What breaks first at 10× scale (10M notifications/min):</strong></p>
-<table>
-<thead>
-<tr>
-<th>Bottleneck</th>
-<th>Problem</th>
-<th>Solution</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Kafka consumer lag</td>
-<td>10× more events; OTP waits behind promo</td>
-<td>Increase partitions per topic; scale consumer replicas independently per priority</td>
-</tr>
-<tr>
-<td>Notification DB write throughput</td>
-<td>10M INSERTs/min to PostgreSQL (10× = overwhelmed)</td>
-<td>Horizontal sharding by <code>client_id</code>; connection pooling via PgBouncer</td>
-</tr>
-<tr>
-<td>Outbox CDC pipeline</td>
-<td>Single Debezium connector → lag at 10×</td>
-<td>Multiple connectors, partition outbox table by <code>client_id</code></td>
-</tr>
-<tr>
-<td>SendGrid / Twilio API limits</td>
-<td>External services throttle at burst</td>
-<td>Multiple API keys per external provider; distribute load across keys</td>
-</tr>
-<tr>
-<td>BigQuery ingest</td>
-<td>40B events/day at 10×</td>
-<td>Kafka → BigQuery streaming connector (native support, no custom consumer needed)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Spike scenario — Flipkart Big Billion Day:</strong>
-- 50M notifications in 30 minutes = ~27K/sec (vs normal 16K/sec)
-- Kafka absorbs: <code>promotional-email</code> topic fills up, consumers process at max rate
-- OTP is unaffected: <code>critical-sms</code> topic isolated, OTP consumers have dedicated capacity
-- External service: SendGrid rate limits hit → provider applies token bucket → messages queued in retry topic → delivered within minutes, not lost</p>
-<p><strong>Scheduled notifications:</strong>
-- Client sends <code>scheduledAt: 2024-12-10T09:00:00Z</code>
-- Notification DB stores with status <code>SCHEDULED</code>
-- Scheduler Service polls Notification DB for <code>status=SCHEDULED AND scheduled_at &lt;= NOW()</code> (runs every second)
-- On match: inserts into outbox → CDC → Kafka → normal flow</p>
+<h2 id="9-bottlenecks-scaling">9. Bottlenecks &amp; Scaling</h2>
+<p>At ten times today's scale — 10 million notifications a minute instead of one — five different components hit their ceiling, each for a different reason, and none of them get fixed by simply provisioning more of the same box.</p>
+<p>Kafka consumer lag is the first and most direct one: ten times the events arriving on the same set of partitions means OTP traffic starts waiting behind the promotional flood unless something changes — the fix is increasing partitions per topic and scaling consumer replicas independently per priority tier, so a promo surge scales its own consumers without touching OTP's dedicated pool. The Notification DB feels the same pressure from the write side: 10 million inserts a minute into PostgreSQL would overwhelm a single primary, so it gets horizontally sharded by <code>client_id</code>, with PgBouncer pooling connections in front of it. The outbox's CDC pipeline is a subtler version of the same problem — a single Debezium connector tailing one write-ahead log starts to lag at 10x volume, so the fix is running multiple connectors, each watching its own partition of the outbox table by <code>client_id</code>, rather than asking one connector to keep up with everyone. Outside the system's own walls, SendGrid and Twilio throttle at their own stated limits regardless of how well anything internal scales — the only lever available there is spreading load across multiple API keys per provider. And BigQuery ingest, sitting at 4 billion events a day today, becomes 40 billion at 10x — handled by leaning on Kafka's native BigQuery streaming connector rather than a custom consumer, since that connector is already built to absorb exactly this kind of volume.</p>
+<p>The clearest real test of all this is a single Flipkart Big Billion Day-style campaign: 50 million notifications fired in a 30-minute window works out to about 27,000 notifications a second, versus roughly 16,000/sec on a normal day. Kafka absorbs the burst by simply letting the <code>promotional-email</code> topic fill up while its consumers process at whatever rate they can sustain — nothing forces them to keep pace with the write rate. OTP is completely unaffected by any of this, because <code>critical-sms</code> sits on its own isolated topic with its own dedicated consumer capacity — that campaign never touches it. The one place the campaign does hit a wall is outbound, at SendGrid's own rate limit: once that's hit, the provider's token bucket kicks in, the excess spills into the retry topic, and those messages still get delivered within minutes — delayed, never lost.</p>
+<p>Scheduled sends work by piggybacking on the same reliable pipeline, just with a delay bolted onto the front: a client sends <code>scheduledAt</code> in the future, the Notification DB stores the row with <code>status=SCHEDULED</code>, and a Scheduler Service polls that table every second for rows where <code>status=SCHEDULED AND scheduled_at &lt;= NOW()</code>. The moment a row matches, it's inserted into the outbox table and flows through the exact same CDC → Kafka → provider pipeline as an ordinary standard or promotional notification — scheduling isn't a separate system, it's a delay in front of the reliable path.</p>
 <hr />
-<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
-<h3 id="universal-retry-pattern-retry-fallback-dead-letter-queue">Universal Retry Pattern: Retry → Fallback → Dead Letter Queue</h3>
-<p>Every provider failure follows the same three-stage recovery:</p>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Every provider-facing failure — Twilio going down, SendGrid running slow, FCM silently failing, or a delivery webhook simply never arriving — follows the same universal three-stage recovery, and it's worth walking through why that shape works before looking at each case individually. A failed call to an external service first retries with exponential backoff: 1 second, then 2, then 4, for three attempts total. If it's still failing after that, the system falls back to a different channel if one's configured — an SMS failure escalates to push, an email failure escalates to SMS — which is exactly why the user preference table carries a priority field at all (§7 Data Model): priority=1 is the first attempt, priority=2 is the automatic fallback. Only if there's no fallback configured, or the fallback also fails, does the message land in a dead letter queue and page the ops team for manual inspection or replay. In short:</p>
 <pre><code>Provider calls external service
   → FAIL (timeout / 5xx)
     → Stage 1: Retry with exponential backoff
@@ -1036,211 +599,36 @@ Key Insight: Rate limiting at two points for two different adversaries — bad a
         → Stage 3: Dead Letter Queue (DLQ Kafka topic)
             ops team alerted; manual inspection or replay
 </code></pre>
-<p>This pattern is why <code>priority</code> exists in the user preference table — channel 1 = first attempt, channel 2 = fallback. The system automatically escalates.</p>
-<h3 id="failure-table">Failure Table</h3>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>External service (Twilio) down</strong></td>
-<td>SMS not delivered</td>
-<td>Retry (1s, 2s, 4s backoff) → fallback to push notification → DLQ after 3 attempts → ops alert</td>
-</tr>
-<tr>
-<td><strong>External service (SendGrid) delayed</strong></td>
-<td>Email delayed, not lost</td>
-<td>At-least-once via Kafka — consumer retries on timeout; idempotency key prevents duplicate delivery on retry</td>
-</tr>
-<tr>
-<td><strong>Push (FCM) silently fails</strong></td>
-<td>Push not delivered, no error</td>
-<td>Webhook receipt never arrives → reconciliation job detects <code>status=SENT</code> with no delivery receipt after 24h → mark as FAILED</td>
-</tr>
-<tr>
-<td>Notification Service crashes after DB write, before ACK</td>
-<td>Client sees timeout</td>
-<td>Client retries with same <code>notification_id</code>; UNIQUE constraint detects duplicate → return existing record, no re-send</td>
-</tr>
-<tr>
-<td>Kafka crashes (brief) — OTP path</td>
-<td>OTP in-flight event lost</td>
-<td>User requests resend → new event enters pipeline</td>
-</tr>
-<tr>
-<td>Kafka crashes (brief) — standard path</td>
-<td>Event in outbox (published=false)</td>
-<td>Debezium replays from WAL on restart; no message loss</td>
-</tr>
-<tr>
-<td>CDC pipeline lag</td>
-<td>Promo notifications delayed</td>
-<td>Alert at P95 lag &gt;5s; scale Debezium connectors</td>
-</tr>
-<tr>
-<td>User Preference Redis down</td>
-<td>Preferences cold-read from DB</td>
-<td>Auto-failover to DB; performance degrades, correctness maintained</td>
-</tr>
-<tr>
-<td>Delivery webhook fails</td>
-<td>Status stays <code>SENT</code>, never <code>DELIVERED</code></td>
-<td>Reconciliation job polls external provider's delivery report API; updates status</td>
-</tr>
-<tr>
-<td>BigQuery ingest failure</td>
-<td>Event log incomplete</td>
-<td>Kafka 7-day retention; re-stream on recovery</td>
-</tr>
-</tbody>
-</table>
+<p>Individually, that pattern plays out a little differently depending on what actually broke. Twilio going down entirely means an SMS follows the full three stages above, end to end. SendGrid merely being slow is milder — the message is delayed, not lost, because Kafka's at-least-once delivery means the consumer just retries on timeout, and the idempotency key stops that retry from becoming a duplicate send. FCM is the trickiest of the three, because it can fail <em>silently</em> — no error, no webhook, nothing — so there's no retry trigger at all; the system instead relies on a reconciliation job that notices a notification stuck at <code>status=SENT</code> with no delivery receipt after 24 hours and marks it <code>FAILED</code>. A delivery webhook failing outright gets the same reconciliation treatment from the other direction: a status stuck at <code>SENT</code> gets actively polled from the external provider's own delivery-report API rather than waiting passively for a webhook that isn't coming.</p>
+<p>The infrastructure-layer failures recover differently depending on whether what failed was durable or in-flight. A brief Kafka outage on the OTP path actually does lose the in-flight event — there's no outbox backing it up — so recovery is just the user clicking resend and a fresh event entering the pipeline. The exact same Kafka outage on the standard/promo path loses nothing at all, because the event is still sitting in the outbox table with <code>published=false</code>; Debezium simply replays from where it left off in the write-ahead log once Kafka is back. CDC lag by itself — no outage, just falling behind — delays promotional notifications and triggers an alert once P95 lag passes 5 seconds, at which point the fix is scaling out more Debezium connectors. If the Redis preference cache goes down, providers fall back to reading preferences cold from PostgreSQL — slower, but correctness is untouched, since Redis was never the source of truth to begin with. And if BigQuery ingest itself fails, nothing is actually lost either: Kafka's 7-day retention means the event log simply re-streams once ingest recovers.</p>
+<p>The one client-facing failure mode — the Notification Service crashing after it's written to the database but before it ACKs the client — looks alarming from the client's side (a bare timeout, no confirmation) but resolves cleanly: the client retries with the same <code>notification_id</code> it already generated, the <code>UNIQUE</code> constraint on that column detects the duplicate, and the service returns the existing record instead of creating a second one — no re-send, no double notification.</p>
 <hr />
-<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="sync-vs-async-notification-delivery">Sync vs Async Notification Delivery</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Synchronous (inline delivery)</th>
-<th>Async via Kafka (chosen)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Latency to client ACK</td>
-<td>High (wait for external service)</td>
-<td>Low (&lt;100ms ACK, async delivery)</td>
-</tr>
-<tr>
-<td>Throughput at 1M/min</td>
-<td>Impossible — external services cap at 1K/sec</td>
-<td>Natural — Kafka absorbs burst</td>
-</tr>
-<tr>
-<td>Failure handling</td>
-<td>Client waits; timeout = lost</td>
-<td>Kafka retry + DLQ</td>
-</tr>
-<tr>
-<td>Complexity</td>
-<td>Simple</td>
-<td>Kafka + CDC infrastructure</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Async always. Synchronous delivery to SendGrid at 1M/min would saturate any API key.</p>
+<p>Sending directly and synchronously to the external provider is the simplest design to picture, but it inherits that provider's own throughput ceiling: waiting on SendGrid or Twilio inline caps the whole system at whatever those services can process per second — nowhere near 1 million notifications a minute — and any client waits on that external call, so a timeout there is a lost message with nothing else to catch it. The async alternative decouples the two: the client gets ACKed in under 100ms the moment the message is durably queued, Kafka absorbs whatever burst arrives regardless of how fast providers can drain it, and a failure downstream hits Kafka's retry-and-DLQ machinery instead of the client's open connection. The cost of that decoupling is real: standing up and running Kafka plus a CDC pipeline is meaningfully more infrastructure than a service that just calls an API directly.</p>
+<p><strong>Chosen:</strong> Async, always. Synchronous delivery to SendGrid at 1M notifications/min would saturate any single API key almost immediately.</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: The async pipeline is not a performance optimisation — it's the only architecture that can handle 1M/min without synchronously blocking every client call on an external HTTP request.</p>
 </blockquote>
 <hr />
 <h3 id="primary-db-postgresql-vs-cassandra-for-notification-table">Primary DB: PostgreSQL vs Cassandra for Notification Table</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>PostgreSQL (chosen)</th>
-<th>Cassandra</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Write throughput</td>
-<td>~100K writes/min per node (need sharding at 1M/min)</td>
-<td>Linear scale, multi-master</td>
-</tr>
-<tr>
-<td>Query patterns</td>
-<td>status updates by notification_id; range query by client_id</td>
-<td>Optimised for partition-key + time-range</td>
-</tr>
-<tr>
-<td>Operational complexity</td>
-<td>Familiar; sharding adds some complexity</td>
-<td>Complex multi-datacenter setup</td>
-</tr>
-<tr>
-<td>Transactions</td>
-<td>ACID (needed for outbox atomicity)</td>
-<td>No multi-table transactions</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> PostgreSQL — outbox pattern requires atomic multi-table write. Cassandra doesn't support this. Shard by <code>client_id</code> at 10× scale.</p>
+<p>The two databases pull in opposite directions on throughput and transactions. PostgreSQL tops out around 100,000 writes a minute per node — needing sharding well before 1M/min — but gives ACID transactions, which is exactly what the outbox pattern requires: inserting the notification row and the outbox row has to be one atomic multi-table write, or the durability guarantee in §8.1 falls apart. Its query patterns also fit this system's actual access pattern well — status updates keyed by <code>notification_id</code>, range queries by <code>client_id</code> — and its operational complexity is familiar, with sharding as the only real complication once volume demands it. Cassandra scales writes linearly across nodes with multi-master replication and would comfortably absorb the volume, and it's naturally suited to partition-key-plus-time-range queries, but it doesn't support multi-table transactions at all — there's no way to make the notification-plus-outbox insert atomic the way the outbox pattern needs it to be — and running it well means taking on a genuinely complex multi-datacenter setup.</p>
+<p><strong>Chosen:</strong> PostgreSQL — the outbox pattern's atomicity requirement rules out Cassandra outright, regardless of its throughput advantage. The plan for scale is sharding by <code>client_id</code> once volume actually demands it (§9 above).</p>
 <blockquote>
 <p>[!NOTE]
 Key Insight: The outbox pattern requires a transactional DB. That constraint rules out Cassandra for the Notification DB, despite Cassandra's superior write throughput.</p>
 </blockquote>
 <hr />
 <h3 id="otp-durability-at-most-once-vs-at-least-once">OTP Durability: At-Most-Once vs At-Least-Once</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>At-most-once (chosen for OTP)</th>
-<th>At-least-once (outbox path)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Message loss</td>
-<td>Possible (Kafka crash before consume)</td>
-<td>Never (CDC from DB)</td>
-</tr>
-<tr>
-<td>Latency</td>
-<td>&lt;500ms</td>
-<td>2–5s</td>
-</tr>
-<tr>
-<td>Duplicate handling</td>
-<td>N/A</td>
-<td>Idempotent status updates</td>
-</tr>
-<tr>
-<td>User impact</td>
-<td>User clicks resend</td>
-<td>OTP arrives but may be expired</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen for OTP:</strong> At-most-once with resend. An expired OTP is worse than a missing OTP (user can resend; expired OTP confuses the user).</p>
+<p>For OTP specifically, at-least-once — routing it through the same outbox path as everything else — would guarantee the message is never silently dropped, but that guarantee costs 2–5 seconds of latency for the DB write and CDC detection, and an OTP that arrives after it's already expired has failed just as completely as one that never arrived, only more confusingly. At-most-once — publishing straight to Kafka with no durability guarantee before that publish — gets the message out in under 500ms, at the cost that a Kafka crash at exactly the wrong instant loses it outright, with no duplicate-handling machinery needed because there's nothing to deduplicate.</p>
+<p><strong>Chosen for OTP:</strong> at-most-once with resend. An expired OTP is worse than a missing one — the user can request a resend, but a code that arrives too late just confuses them.</p>
 <hr />
 <h3 id="delivery-status-single-db-vs-two-store-postgresql-bigquery">Delivery Status: Single DB vs Two-Store (PostgreSQL + BigQuery)</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Single PostgreSQL</th>
-<th>Two-Store (chosen)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Single-row lookup ("is this delivered?")</td>
-<td>O(1), fast</td>
-<td>O(1) from PostgreSQL</td>
-</tr>
-<tr>
-<td>Analytics ("delivery rate last 7 days")</td>
-<td>Table scan over 720GB/day — dangerous</td>
-<td>BigQuery: columnar, optimised for aggregation</td>
-</tr>
-<tr>
-<td>Cost</td>
-<td>One infra</td>
-<td>Two infra</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Two-store. Never run analytics queries on your operational DB.</p>
+<p>A single PostgreSQL store answers "is this notification delivered?" in a fast, O(1) row lookup either way — that part doesn't change. Where it breaks down is analytics: "what's our delivery rate this week?" against a table taking in 720GB a day means a table scan over hundreds of gigabytes, a dangerous query to run against the same database serving live operational lookups. Splitting into two stores keeps the O(1) lookup in PostgreSQL exactly as before, and moves the aggregation queries to BigQuery, a columnar store built for exactly that kind of scan — at the cost of running and paying for two pieces of infrastructure instead of one.</p>
+<p><strong>Chosen:</strong> two-store. Analytics queries never touch the operational database.</p>
 <hr />
-<h2 id="13-frontend-notes">13. Frontend Notes</h2>
+<h2 id="10-frontend-notes">10. Frontend Notes</h2>
 <p><em>Notification system is 95% backend / 5% frontend. The frontend problem is the client dashboard and the template builder.</em></p>
 <h3 id="delivery-status-dashboard">Delivery Status Dashboard</h3>
 <ul>
@@ -1260,7 +648,53 @@ Key Insight: The outbox pattern requires a transactional DB. That constraint rul
 <li><code>PUT /users/{id}/preferences</code> on toggle change (debounced 500ms — avoid rapid-fire updates)</li>
 </ul>
 <hr />
-<h2 id="interview-summary">Interview Summary</h2>
+<h2 id="11-evaluation-did-we-meet-the-requirements">11. Evaluation: Did We Meet the Requirements?</h2>
+<p>Six non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.</p>
+<p><strong>Availability (99.99%, AP over CP):</strong> No single component failure takes delivery down entirely — §9.1's Failure Scenarios walk through Redis falling back to a cold PostgreSQL read, Kafka outages that the outbox absorbs without loss, and provider failures resolved by retry, fallback, and reconciliation. The system stays available by design, not by luck, because almost every piece of state here either self-heals or was never the only copy in the first place.</p>
+<p><strong>OTP latency (&lt;5 seconds):</strong> The fast path skips the outbox entirely — direct to Kafka in under 500ms, picked up by a dedicated OTP consumer group running with three times the replicas of a standard one (§8.2, §8.3) — because the outbox's own 2–5 second latency would eat most or all of a five-second budget before the message even reached Kafka.</p>
+<p><strong>Promotional latency (5–10 seconds, acceptable):</strong> The reliable path takes the slower, durable route deliberately — a database transaction, then Debezium tailing the write-ahead log in under 500ms, then a Kafka publish — because for this priority tier, never losing the message matters more than shaving off a couple of seconds (§8.1).</p>
+<p><strong>Throughput (1M notifications/min peak, ~50,000/sec burst):</strong> This isn't a target the design was tuned to hit after the fact — it's the number that ruled out a synchronous provider call and a single-writer database before any technology got chosen (§4 Scale, From First Principles). Kafka absorbs bursts independently of how fast providers can drain them, the Notification DB shards by <code>client_id</code> once volume demands it, and outbound token buckets keep the platform from ever overwhelming SendGrid or Twilio in the process (§9 Bottlenecks &amp; Scaling).</p>
+<p><strong>Consistency (eventual):</strong> Deliberately not strong everywhere — template changes propagate on next publish, and preference changes propagate within the bound of a 60-second Redis TTL (§8.4) — because a few seconds of staleness on either is harmless, and the alternative (a synchronous read on every send) doesn't survive this system's own throughput requirement.</p>
+<p><strong>Durability (no loss for standard/promo):</strong> The transactional outbox (§8.1) is what actually makes "ACK means it'll be delivered" true rather than aspirational — a CDC crash replays from the write-ahead log, a Kafka outage leaves the row waiting safely in the outbox, and the reconciliation jobs in §9.1 catch the remaining failure modes (a silent FCM failure, a webhook that never arrives) that no retry loop would ever detect on its own.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Availability 99.99%</td>
+<td>Dual write paths + self-healing state (Redis fallback to DB, Kafka retention, outbox replay)</td>
+</tr>
+<tr>
+<td>OTP latency &lt;5s</td>
+<td>Direct-to-Kafka fast path, no outbox, dedicated 3x-replica consumer group</td>
+</tr>
+<tr>
+<td>Promotional latency 5–10s</td>
+<td>Outbox → Debezium (&lt;500ms WAL tail) → Kafka, durability prioritised over speed</td>
+</tr>
+<tr>
+<td>Throughput 1M/min peak</td>
+<td>Kafka absorbs bursts independent of consumer pace; DB sharded by client_id; outbound token buckets</td>
+</tr>
+<tr>
+<td>Consistency — eventual</td>
+<td>60s Redis preference TTL; template changes propagate on next publish</td>
+</tr>
+<tr>
+<td>Durability — no loss (standard/promo)</td>
+<td>Transactional outbox + CDC replay + reconciliation jobs for silent failures</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-conclusion">12. Conclusion</h2>
+<p>This design treats a notification platform as two pipelines wearing one API: a reliable path built around a transactional outbox, guaranteeing that an ACK to a client is never a promise the system can't keep; and a fast path that deliberately breaks that same guarantee for exactly one kind of message — the one where arriving in under five seconds matters more than arriving at all. The hardest problem wasn't fanning a message out across three channels; it was drawing that line correctly, once, at the point where a request enters the system (priority), rather than trying to make one write path serve every SLA at once. Every other decision here — nine Kafka topics instead of one, a 60-second preference cache instead of a database read on every send, two storage backends for delivery status instead of one — falls out of protecting that same distinction: what can wait a few seconds for the sake of never being lost, and what can afford to be lost occasionally because waiting isn't an option at all.</p>
+<hr />
+<h2 id="13-interview-summary">13. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
