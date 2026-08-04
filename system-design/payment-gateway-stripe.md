@@ -398,7 +398,7 @@ Idempotency doesn't stop at the intent-creation endpoint, either — it has to b
 | Webhook delivery | payment_id as dedup key; merchant checks before fulfilling order |
 | Ledger write | payment_id uniqueness constraint per entry type — double write is a no-op |
 
-At the checkout page itself, the session ID is single-use, invalidated the moment it's first submitted, so a resubmitted form can't fire a second authorization. At the processor call, an `auth_request_id` travels with the request so the processor deduplicates on its own side too — idempotency isn't only the gateway's problem, it has to hold across the boundary to the bank. At webhook delivery, `payment_id` is the dedup key the merchant is expected to check before fulfilling an order, since delivery itself is at-least-once (§8.2). And at the very last hop, the ledger write, a uniqueness constraint on `payment_id` per entry type means a duplicate write is simply a no-op rather than a second set of debit/credit rows.
+None of these five mechanisms is redundant with the others, because a retry doesn't always re-enter at the top — a resubmitted form can arrive after the checkout session already advanced, a processor-side retry can replay an authorization the gateway itself never sees again, or a webhook redelivery can land after the local ledger write already happened. Each layer sits behind a different trust and network boundary, so each one needs a key scoped to what it can actually observe, rather than trusting a single dedup decision made upstream to still hold once the request has crossed into different infrastructure.
 
 **The trade-off accepted:** the merchant has to generate and include a UUID idempotency key on every call — a contract requirement on the API, not an optional nicety. The 24-hour TTL is chosen specifically to cover realistic retry windows without inflating Redis memory for no benefit; a longer TTL wouldn't buy meaningfully more retry-safety, just more storage.
 
@@ -437,12 +437,12 @@ A non-2xx response or a timeout triggers a retry on a backoff schedule of 1s, 5s
 
 **HMAC signing is mandatory, not optional, and here's why:** without it, an attacker can simply `POST` a fake `payment.succeeded` payload straight at a merchant's webhook URL and walk away with goods for free. HMAC-SHA256, signed with the merchant's own secret key, proves the payload actually came from the gateway — a correct merchant handler recomputes `HMAC(body, secret)` and rejects anything where it doesn't match the `X-Gateway-Signature` header.
 
+> [!NOTE]
+> **Key Insight:** Never process a webhook without verifying the HMAC signature. An unverified webhook endpoint is a free-order vulnerability. Signature verification is the authentication layer for server-to-server callbacks.
+
 **And because delivery is at-least-once, the merchant's own handler has to be idempotent too:** a webhook worker delivering the same event twice is expected behavior, not a bug, so a correct handler extracts `payment_id`, checks whether that payment was already fulfilled, and skips if it was — documented as a contract requirement in exactly the way Stripe documents the same expectation for its own merchants.
 
 **The trade-off accepted:** at-least-once delivery means merchants can and will receive duplicate webhooks. Exactly-once would require a distributed two-phase commit spanning the gateway and every merchant's own system — prohibitively complex for a guarantee that duplication already makes unnecessary, since merchants can (and must) implement idempotent handlers instead.
-
-> [!NOTE]
-> **Key Insight:** Never process a webhook without verifying the HMAC signature. An unverified webhook endpoint is a free-order vulnerability. Signature verification is the authentication layer for server-to-server callbacks.
 
 ---
 
@@ -477,7 +477,7 @@ Phase 1b hands whatever survives Phase 1a to an ML inference service, which look
 
 The combined score then sorts into one of three outcomes: 0–30 allows the transaction straight through to the processor, 31–70 routes it into a 3D Secure challenge rather than an automatic authorization, and 71–100 is treated as high enough risk to stop before it ever reaches the processor at all.
 
-**The trade-off accepted:** pre-auth fraud checking adds a full 50ms to every single payment's critical path. That's the correct trade to make here — a slightly slower payment is completely recoverable, while a fraudulent authorization that's allowed to complete carries processor fees, chargeback risk, and reversal complexity that a 50ms delay never costs anyone.
+**The trade-off accepted:** pre-auth fraud checking adds a full 50ms to every single payment's critical path.
 
 > [!NOTE]
 > **Key Insight:** Pre-auth fraud scoring is cheaper than post-auth reversal by every measure — no processor authorization fee, no reversal flow, no user confusion. The 50ms budget on the critical path is intentional. FRAUD_DECLINED is the cheapest terminal state in the system.
