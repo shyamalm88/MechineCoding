@@ -6,6 +6,27 @@
 <title>How the Browser Executes a Document: A Senior Engineer&#x27;s Guide — Theory Notes</title>
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
 </head>
 <body>
 <div class="layout">
@@ -561,24 +582,5 @@ if (document.readyState === 'loading') {
 <p>"When a browser receives an HTML document, it goes through several phases. First, it parses HTML to build the DOM while simultaneously parsing CSS to build the CSSOM. The preload scanner runs ahead to fetch resources in parallel. JavaScript blocks parsing unless marked async or defer. Once DOM and CSSOM are ready, they're combined into a Render Tree (excluding invisible elements). Layout calculates exact positions, Paint generates draw commands, and finally Composite layers are sent to the GPU. I optimize by avoiding layout thrashing, using transform for animations, deferring non-critical JavaScript, and breaking long tasks to stay within the 16ms frame budget for 60fps."</p>
 </blockquote></main>
 </div>
-<script src="../assets/sidebar.js"></script>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
 </body>
 </html>

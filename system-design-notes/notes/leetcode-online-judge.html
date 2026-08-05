@@ -6,6 +6,27 @@
 <title>System Design: LeetCode / Online Judge — System Design Notes</title>
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
 </head>
 <body>
 <div class="layout">
@@ -815,24 +836,5 @@ Leaderboard ordering is scoped to the competition_id partition key. Cross-compet
 <li><strong>Leaderboard virtualization</strong> — a 100K-row leaderboard must use a virtual list (react-window or similar) rendering only visible rows; full DOM render of 100K rows crashes the browser</li>
 </ul></main>
 </div>
-<script src="../assets/sidebar.js"></script>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
 </body>
 </html>

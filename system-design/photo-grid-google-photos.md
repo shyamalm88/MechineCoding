@@ -1788,7 +1788,7 @@ This leverages each database's strengths.
 **Q7: How do you optimize the initial page load time?**
 
 **A:**
-1. **Critical CSS inline**: Above-the-fold styles in HTML (<style>)
+1. **Critical CSS inline**: Above-the-fold styles in HTML (`<style>`)
 2. **Code splitting**: Lazy load non-critical routes and components
 3. **Preload key resources**: `<link rel="preload">` for fonts, critical images
 4. **Server-side rendering (SSR)**: First page of photos rendered on server

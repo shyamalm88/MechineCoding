@@ -6,6 +6,27 @@
 <title>Core Web Vitals: A Senior Engineer&#x27;s Guide — Theory Notes</title>
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
 </head>
 <body>
 <div class="layout">
@@ -642,24 +663,5 @@ console.log('P75 LCP:', data.record.metrics.largest_contentful_paint.percentiles
 <p>"I measure Core Web Vitals using the web-vitals library and send data to our analytics backend using sendBeacon for reliability. For LCP, I preload the hero image and inline critical CSS. For INP, I profile with DevTools to find long tasks and break them up using yield points or move heavy computation to Web Workers. For CLS, I ensure all images have explicit dimensions and reserve space for dynamic content like ads. I distinguish between lab and field data—Lighthouse is for debugging, but CrUX/RUM reflects real user experience and is what Google uses for rankings. We track P75 values and set alerts when they degrade."</p>
 </blockquote></main>
 </div>
-<script src="../assets/sidebar.js"></script>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
 </body>
 </html>

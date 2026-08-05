@@ -6,6 +6,27 @@
 <title>CORS Security: A Senior Engineer&#x27;s Guide — Theory Notes</title>
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
 </head>
 <body>
 <div class="layout">
@@ -533,24 +554,5 @@ app.use((req, res, next) =&gt; {
 <p>"CORS is a browser security mechanism that controls cross-origin requests. The browser sends an Origin header, and the server must respond with Access-Control-Allow-Origin to permit the request. For non-simple requests (POST with JSON, custom headers, or PUT/DELETE), the browser first sends a preflight OPTIONS request to check permissions. When using credentials like cookies, the server must specify the exact origin—wildcards aren't allowed. I optimize performance by caching preflight results with Access-Control-Max-Age. Importantly, CORS doesn't prevent CSRF attacks since it only blocks reading responses, not sending requests—for that, I use SameSite cookies and CSRF tokens."</p>
 </blockquote></main>
 </div>
-<script src="../assets/sidebar.js"></script>
-<script src="../assets/highlight.min.js"></script>
-<script src="../assets/mermaid.min.js"></script>
-<script>
-hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
-hljs.highlightAll();
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }
-});
-</script>
 </body>
 </html>

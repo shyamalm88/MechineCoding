@@ -156,31 +156,33 @@ PAGE_TEMPLATE = """<!doctype html>
 <title>{page_title} — {site_title}</title>
 <link rel="stylesheet" href="{asset_prefix}style.css">
 <link rel="stylesheet" href="{asset_prefix}highlight-theme.css">
+<script src="{asset_prefix}sidebar.js" defer></script>
+<script src="{asset_prefix}highlight.min.js" defer></script>
+<script src="{asset_prefix}mermaid.min.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {{
+  hljs.configure({{ cssSelector: 'pre code[class^="language-"]' }});
+  hljs.highlightAll();
+  mermaid.initialize({{
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {{
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }}
+  }});
+}});
+</script>
 </head>
 <body>
 <div class="layout">
 <nav class="sidebar" id="sidebar"></nav>
 <main>{content_html}</main>
 </div>
-<script src="{asset_prefix}sidebar.js"></script>
-<script src="{asset_prefix}highlight.min.js"></script>
-<script src="{asset_prefix}mermaid.min.js"></script>
-<script>
-hljs.configure({{ cssSelector: 'pre code[class^="language-"]' }});
-hljs.highlightAll();
-mermaid.initialize({{
-  startOnLoad: true,
-  theme: 'base',
-  themeVariables: {{
-    primaryColor: '#ece9fd',
-    primaryBorderColor: '#5b3df0',
-    primaryTextColor: '#232037',
-    lineColor: '#5b3df0',
-    fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
-    fontSize: '13px'
-  }}
-}});
-</script>
 </body>
 </html>
 """
