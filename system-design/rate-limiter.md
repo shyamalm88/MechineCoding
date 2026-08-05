@@ -512,7 +512,7 @@ If connection pools themselves get exhausted — say, from too many gateways eac
 **Chosen: fail close with a local fallback.** Neither pure extreme was really acceptable — full fail-open trades away the rate limiter's entire purpose, and full fail-close trades away the app's own availability requirement (§3) for every user, not just the ones the rate limiter should be stopping.
 
 > [!NOTE]
-> Protection is the rate limiter's entire reason for existing, so failing open is the rate limiter abandoning its one job — and the fallout from that (cascading failures across every microservice behind it) is categorically worse than a bounded, self-healing degradation. Fail close with a local fallback keeps that protection intact even without Redis. §8.5 covers exactly how that fallback works.
+> The asymmetry that actually settles this: fail-close's downside has a ceiling — at most 30 seconds of slightly-stale limits before Redis recovers. Fail-open's downside doesn't have one. A backend that starts cascading under unchecked load doesn't stop at some fixed cost; it can take every service behind it down with it. Choosing between a bounded cost and an unbounded one isn't actually close.
 
 ---
 
