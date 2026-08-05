@@ -12,112 +12,73 @@
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="distributed-rate-limiter-system-design">Distributed Rate Limiter — System Design</h1>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design a server-side distributed rate limiter that protects backend services by controlling how many requests any given client can make within a configurable time window.</p>
-<blockquote>
-<p><strong>Core problem:</strong> Control request rate without increasing latency, while maintaining accuracy across a distributed system of multiple gateway instances sharing no local state.</p>
-</blockquote>
-<p><strong>In scope:</strong> Client identification (user ID, IP, API key), configurable rules per client tier, token bucket algorithm, distributed shared state, dynamic rule updates, proper error responses.
-<strong>Out of scope:</strong> Client-side rate limiting (trivially spoofed, not valuable), billing/quota metering, content-based throttling.</p>
-<blockquote>
-<p><strong>This is a backend infrastructure component, not a user-facing product.</strong> Users interact with the social media app — the rate limiter is an invisible layer protecting the services behind it.</p>
-</blockquote>
+<h2 id="1-what-is-a-distributed-rate-limiter">1. What Is a Distributed Rate Limiter?</h2>
+<p>A rate limiter is the part of a backend system that decides how many requests any one client is allowed to make in a given stretch of time, and politely refuses the rest. It sits in front of a social media app's backend services, watching every request that comes through, and answering one question over and over: has this particular user, device, or API client already used up their share for right now?</p>
+<p>Nobody using the app ever sees the rate limiter directly — there's no button for it, no screen, no setting. It's an invisible layer standing between the app's users and the servers doing the real work, there purely to keep those servers healthy when traffic gets heavy, unpredictable, or outright abusive.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<table>
-<thead>
-<tr>
-<th>Signal</th>
-<th>Number</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Daily Active Users</td>
-<td>100M</td>
-</tr>
-<tr>
-<td>Requests/second (peak)</td>
-<td>1M RPS</td>
-</tr>
-<tr>
-<td>Redis ops per request check</td>
-<td>2 (HMGET + HMSET)</td>
-</tr>
-<tr>
-<td>Single Redis ops/sec ceiling</td>
-<td>~100K</td>
-</tr>
-<tr>
-<td>RPS per Redis instance</td>
-<td>50K (100K ops / 2 ops per check)</td>
-</tr>
-<tr>
-<td>Redis shards needed</td>
-<td>1M / 50K = <strong>20 minimum</strong></td>
-</tr>
-<tr>
-<td>Token bucket storage per user</td>
-<td>2 × int64 = 16 bytes</td>
-</tr>
-<tr>
-<td>Total in-memory storage (100M users)</td>
-<td>~3–4GB total → ~150–200MB per shard</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Hardest constraint:</strong> &lt;10ms added latency per request. The rate limiter is in the critical path of every single user request — any latency it adds is latency the user feels directly.</p>
-<p><strong>Primary bottleneck:</strong> Redis throughput at 1M RPS, not storage. At 2 ops per check, a single Redis instance is 20× undersized.</p>
-<p><em>These numbers drive: Redis Cluster with 20 shards, connection pooling at every gateway, geographic colocation of Redis with gateway.</em></p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Alice is a premium subscriber on a social media app. She's on her commute, and out of habit she taps into the app three or four times in the space of a few seconds — check the feed, check notifications, check her messages, back to the feed. None of that feels unusual to her; it's just how people actually use their phones, in little bursts rather than one request at a time.</p>
+<p>A few seconds later, on a completely different part of the internet, something else is happening. A scraping tool, not a person, is hammering the same app's public profile pages over and over, as fast as its connection allows, trying to harvest photos before anyone notices. To the servers on the other end, both Alice's burst of taps and the scraper's flood look, for a fraction of a second, like the exact same thing: a lot of requests arriving very close together.</p>
+<p>What happens next is where the two stories diverge. Alice's burst sails through without her ever noticing a delay — her few taps were well within what she's allowed, and the app just works. The scraper isn't so lucky: after a short burst of successes, every further request starts coming back with the same blunt message — <em>too many requests, try again in a little while</em> — and no matter how fast it keeps firing, that answer doesn't change until enough time has passed.</p>
+<p>Neither Alice nor the scraper ever sees the machinery behind that difference. Everything from here on is how the system tells the two of them apart, in well under the time it takes to notice a delay.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
-<ul>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>What's in scope, and what isn't.</strong> This design covers identifying clients (by user ID, IP address, or API key), enforcing configurable rules per client tier, the token bucket algorithm itself, keeping state in sync across every gateway instance with no shared local memory, updating rules on the fly, and returning proper error responses. It deliberately leaves out client-side rate limiting — a client can always just ignore its own code, so the moment rate limiting actually matters is the moment it's enforced somewhere the client doesn't control — along with billing/quota metering and content-based throttling, both of which are different problems wearing a similar shape.</p>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>The core problem, stated precisely:</strong> control request rate without adding meaningful latency, while staying accurate across a distributed system of multiple gateway instances that share no local state. Every design decision in this doc is really an answer to some piece of that sentence.</p>
+</blockquote>
+<p><strong>Functional requirements — what the system has to actually do:</strong></p>
+<ol>
 <li>Identify clients by User ID (authenticated), IP address (anonymous), or API key (developer APIs)</li>
-<li>Enforce configurable rate limit rules per client tier (e.g., regular user = 100 req/min, premium = 1000 req/min, API key = 50K req/min)</li>
-<li>Apply token bucket algorithm: burst capacity + steady refill rate</li>
-<li>Return <code>429 Too Many Requests</code> immediately on limit exceeded (fail fast — no queuing)</li>
+<li>Enforce configurable rate limit rules per client tier — a regular user gets 100 requests/min, a premium user gets 1000/min, an API key gets 50,000/min</li>
+<li>Apply the token bucket algorithm: a burst capacity plus a steady refill rate</li>
+<li>Return <code>429 Too Many Requests</code> immediately on limit exceeded — fail fast, never queue</li>
 <li>Include informative response headers: remaining requests, reset time, retry-after</li>
-<li>Support dynamic rule changes without gateway redeployment</li>
-</ul>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<li>Support dynamic rule changes without redeploying the gateway</li>
+</ol>
+<details>
+<summary><strong>Point to Ponder:</strong> Why fail fast with an immediate 429 instead of queuing an over-limit request until there's room?</summary>
+<p>Because a queued request just makes the user wait, and a user who's waiting assumes something's broken — they click again, which adds a second request on top of the first, and now the backlog is growing instead of draining. For interactive APIs, an immediate, clear 429 is always the right answer; queuing only makes sense for batch jobs that can genuinely afford to sit and wait. See §6 System Interface for the full reasoning.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters, not just as a number to hit:</strong></p>
 <table>
 <thead>
 <tr>
-<th>Property</th>
 <th>Requirement</th>
-<th>Why</th>
+<th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Availability</td>
 <td>AP — availability over consistency</td>
-<td>Rate limiter must stay up even during partial failures; stale rules for seconds are acceptable over going offline</td>
+<td>The rate limiter has to stay up through partial failures; a few seconds of stale rules is a far smaller problem than the rate limiter itself going offline and taking protection with it.</td>
 </tr>
 <tr>
 <td>Rate check latency</td>
 <td>&lt;10ms added overhead</td>
-<td>Rate limiter is in the critical path of every user request</td>
+<td>It sits in the critical path of every single request — any latency it adds, every user feels directly, on every request, forever.</td>
 </tr>
 <tr>
 <td>Throughput</td>
 <td>1M RPS</td>
-<td>100M DAU at peak</td>
+<td>This is simply what 100M daily active users produces at peak — not a target chosen in isolation.</td>
 </tr>
 <tr>
 <td>Fault tolerance</td>
-<td>Fail close (with local fallback)</td>
-<td>Failing open lets bad actors through and can cascade-kill backend services</td>
+<td>Fail close, with a local fallback</td>
+<td>Failing open lets bad actors straight through, and an unprotected backend can cascade-fail under exactly the kind of load the rate limiter exists to stop.</td>
 </tr>
 <tr>
 <td>Rule propagation</td>
-<td>&lt;1 second for rule changes</td>
-<td>Achieved via push-based config (ZooKeeper/etcd), not polling</td>
+<td>&lt;1 second</td>
+<td>Achieved by pushing config changes (via etcd/ZooKeeper), not polling for them — a slow-to-update rule is a rule an abusive client can exploit for longer.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="consistency-model">Consistency Model</h3>
+<p><strong>Consistency model, by domain — because "consistency" isn't one setting for the whole system:</strong></p>
 <table>
 <thead>
 <tr>
@@ -130,46 +91,49 @@
 <tr>
 <td>Token bucket state</td>
 <td>Eventual (async replication)</td>
-<td>A user getting 1 extra request through on replica failover is acceptable</td>
+<td>A user getting one extra request through during a replica failover is a rounding error, not a correctness bug.</td>
 </tr>
 <tr>
 <td>Rate limit rules</td>
 <td>Near-real-time push</td>
-<td>Rules pushed via etcd/ZooKeeper subscription — no polling delay</td>
+<td>Rules are pushed via an etcd/ZooKeeper subscription, so there's no polling delay baked into how fast a change takes effect.</td>
 </tr>
 <tr>
 <td>Client identification</td>
 <td>Read-your-writes not required</td>
-<td>Rule: per-window, not per-session</td>
+<td>The limit is enforced per time window, not per session — there's no "your own write" to read back.</td>
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> If the rate limiter has to choose between availability and consistency, why pick availability for a system whose whole job is enforcing a hard limit?</summary>
+<p>Because the two things it's protecting aren't equally important: the token bucket count itself can afford to be slightly stale (worst case, a handful of extra requests slip through for a few seconds), but the rate limiter going fully offline removes protection from every backend service behind it, for everyone, all at once. A slightly generous limit for a few seconds is a much smaller failure than no limit at all. See §8.5 for exactly how that trade-off is implemented — fail close with a local fallback, not a hard stop.</p>
+</details>
 <hr />
-<h2 id="mental-model">🧠 Mental Model</h2>
-<p><strong>A rate limiter is a distributed counter system that decides whether a request should pass based on time and usage.</strong></p>
-<pre><code>Rate Limiter = time window + counter + decision engine
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth working out what scale actually means here — how many users, how many requests, and what that implies for the technology underneath.</p>
+<p><strong>Starting assumptions:</strong></p>
+<pre><code>Daily Active Users:      100M
+Requests/second (peak):  1M RPS
 </code></pre>
-<ul>
-<li><strong>Time window</strong> — defines the measurement period (e.g., 1 minute)</li>
-<li><strong>Counter</strong> — tracks how many requests a client has made in that window (stored in Redis, shared across all gateway instances)</li>
-<li><strong>Decision engine</strong> — the algorithm (token bucket) that converts counter state into allow/reject</li>
-</ul>
-<p><strong>E2E flow in one line:</strong></p>
-<pre><code>Client → Gateway → Rate Limiter (Lua script) → Redis → Decision → Service (or 429)
+<p><strong>How many Redis operations does checking one request actually cost?</strong> Each check reads the current bucket state and writes the updated one back — an <code>HMGET</code> followed by an <code>HMSET</code> — so that's 2 Redis operations per check, not 1. A single Redis instance tops out around 100K operations per second, which means it can only sustain:</p>
+<pre><code>100K ops/sec / 2 ops per check = 50K RPS per Redis instance
 </code></pre>
-<p>Every user request passes through one gate: the API Gateway. Before routing, the gateway asks one question: <em>"Is this client allowed?"</em> That answer lives in shared Redis state, not in the gateway itself.</p>
-<pre><code>Incoming Request
-     |
-[API Gateway] ← rules cached in-memory (pushed by etcd)
-     |
-  isAllowed(clientId, rule)?   ← Lua script (atomic)
-     |
-[Redis Cluster] ← {token_count, last_refill_ts} per clientId
-     |
-  YES → route to Microservice
-  NO  → 429 immediately (fail fast, never touches microservice)
+<p><strong>What does that imply for the number of shards?</strong> At 1M RPS system-wide, one Redis instance is 20 times undersized:</p>
+<pre><code>1M RPS / 50K RPS per instance = 20 Redis shards, minimum
 </code></pre>
-<p><strong>⚡ Core Design Principles</strong></p>
+<p>That's not a comfortable number to round up from — it's the floor. Redis throughput, not storage, is the actual bottleneck this design has to solve for.</p>
+<p><strong>Is storage even a concern at this scale?</strong> A token bucket only needs two values per user — token count and last refill timestamp, each an int64 — so 16 bytes per user. Across 100M users:</p>
+<pre><code>100M users x 16 bytes -&gt; ~3-4GB total (with overhead) -&gt; ~150-200MB per shard
+</code></pre>
+<p>That comfortably fits in memory on any standard Redis node. Storage was never going to be the constraint here, which is exactly why the 20-shard number above is driven entirely by throughput, not capacity.</p>
+<p><strong>What's the hardest latency constraint?</strong> Fewer than 10ms of added latency per request. The rate limiter sits directly in the critical path of every single request that reaches the backend — any latency it adds is latency every user feels, on every request, all the time.</p>
+<p>These numbers are what drive the rest of this design: Redis Cluster with 20 shards (not a single Redis instance), connection pooling at every gateway instance, and geographic colocation of Redis with the gateway — because at a 10ms latency budget, even a single extra network hop across a region boundary would eat a meaningful chunk of it.</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Go back to Alice's burst of taps and the scraper's flood from the story above — here's what's actually deciding, in milliseconds, which is which.</p>
+<p>A rate limiter is fundamentally a distributed counter system: something that decides whether a request should pass, based on time and how much of a client's allowance has already been used. Three pieces make that decision: a <strong>time window</strong> that defines the measurement period (say, one minute); a <strong>counter</strong> that tracks how many requests a client has made inside that window, held in Redis so every gateway instance sees the same number instead of its own local guess; and a <strong>decision engine</strong> — the token bucket algorithm — that turns whatever the counter currently says into a plain allow-or-reject.</p>
+<p>Every request from any client passes through exactly one gate: the API Gateway. Before it routes anything anywhere, the gateway asks one question — <em>is this client allowed?</em> — and the answer to that question lives in Redis, shared state every gateway instance can see, never in the gateway's own local memory. That's the architectural decision everything else here is downstream of: a client's request could land on any of dozens of gateway instances, in any order, and each one has to see the exact same picture of how much that client has already used.</p>
 <table>
 <thead>
 <tr>
@@ -179,109 +143,23 @@
 </thead>
 <tbody>
 <tr>
-<td>Gateway HMGET from Redis (&lt;1ms)</td>
-<td>Atomic Lua script: read + update in one Redis op</td>
+<td>Gateway <code>HMGET</code>s Redis directly (&lt;1ms)</td>
+<td>An atomic Lua script reads and updates in one Redis operation</td>
 </tr>
 <tr>
-<td>Rules cached in-memory on gateway</td>
-<td>429 + headers returned immediately, no queue</td>
+<td>Rules are cached in-memory on the gateway, pushed there by etcd</td>
+<td>429 and headers return immediately, no queue</td>
 </tr>
 <tr>
-<td>Connection pool reuses TCP (no handshake)</td>
-<td>Fail close if Redis unavailable</td>
+<td>The connection pool reuses TCP connections — no handshake per check</td>
+<td>Fails close if Redis is unavailable</td>
 </tr>
 </tbody>
 </table>
-<hr />
-<h2 id="5-system-interface">5. System Interface</h2>
-<p>This is a backend component — clients don't call it directly. It exposes an internal RPC:</p>
-<pre><code>isRequestAllowed(clientId: string, rule: Rule) → Response
-
-Response {
-  allowed:       bool
-  remaining:     int       // tokens left after this check
-  reset_at:      int64     // unix ts when bucket fully refills
-  retry_after_s: int       // seconds until next token available (on reject)
-}
-</code></pre>
-<p><strong>On reject → HTTP 429 to end user with headers:</strong></p>
-<pre><code>HTTP/1.1 429 Too Many Requests
-X-RateLimit-Limit:     100          ← the rule ceiling
-X-RateLimit-Remaining: 0            ← tokens left
-X-RateLimit-Reset:     1704067260   ← unix ts of next full refill
-Retry-After:           47           ← seconds until retry makes sense
-</code></pre>
-<p><strong>Why fail fast, not queue?</strong> A queued request means the user waits and waits — they assume something is broken and click again. Now we have a growing backlog + double the requests. For interactive APIs, fail fast with a clear 429 is always the right answer. Queuing only makes sense for batch jobs that can afford to wait.</p>
-<hr />
-<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>No async queue in this system — rate limiting is synchronous by design.</strong></p>
-<p>The check must complete before the request is forwarded. Async rate limiting would mean: route the request, check the limit later — by then we've already done the work we were trying to protect. Rate limiting is a gate, not a filter.</p>
-</blockquote>
-<h3 id="61-happy-path-request-allowed">6.1 Happy Path — Request Allowed</h3>
-<ol>
-<li>Alice makes a GET request to the social media app. Request hits the <strong>API Gateway</strong>.</li>
-<li>Gateway extracts client identity from the request:</li>
-<li>Authenticated request: <code>userId</code> from JWT in <code>Authorization</code> header</li>
-<li>Anonymous request: source IP from <code>X-Forwarded-For</code></li>
-<li>Developer: <code>API-Key</code> from request header</li>
-<li>Gateway determines which <strong>rule</strong> applies to this client: premium users get 1000 req/min, regular users 100 req/min — rule looked up from in-memory cache (populated by etcd push on startup and rule changes).</li>
-<li>Gateway calls Redis Cluster with a <strong>Lua script</strong> (atomic read-modify-write):
-   <code>lua
-   -- atomic: no race condition possible
-   local bucket = redis.call('HMGET', clientKey, 'tokens', 'last_refill')
-   local tokens = tonumber(bucket[1]) or MAX_TOKENS
-   local last_refill = tonumber(bucket[2]) or now
-   local elapsed = now - last_refill
-   local refill = math.floor(elapsed * REFILL_RATE)
-   tokens = math.min(MAX_TOKENS, tokens + refill)
-   if tokens &gt; 0 then
-     tokens = tokens - 1
-     redis.call('HMSET', clientKey, 'tokens', tokens, 'last_refill', now)
-     return {1, tokens}   -- allowed
-   end
-   return {0, 0}          -- rejected</code></li>
-<li>Lua script returns <code>{allowed=true, remaining=43}</code>.</li>
-<li>Gateway routes request to the appropriate microservice. Total overhead: &lt;2ms.</li>
-</ol>
-<h3 id="62-rejection-path-429">6.2 Rejection Path — 429</h3>
-<p>1–4. Same as above, but Lua script returns <code>{allowed=false, remaining=0}</code>.
-5. Gateway immediately returns <code>429 Too Many Requests</code> with headers — <strong>does not forward to microservice</strong>. Total overhead: &lt;2ms, microservice is fully protected.</p>
-<h3 id="63-redis-node-failure-path">6.3 Redis Node Failure Path</h3>
-<ol>
-<li>Gateway sends HMGET to Redis shard-3. Connection times out.</li>
-<li>Gateway detects failure. <strong>Does not fail open</strong> — does not route the request.</li>
-<li>Gateway falls back to <strong>local in-memory fixed window counter</strong> (simple Map in gateway process). Less accurate (no cross-gateway coordination), but still rate limiting.</li>
-<li>Meanwhile, Redis Cluster promotes shard-3's replica (automatic, &lt;30s via Sentinel).</li>
-<li>Gateway reconnects to new primary. Local fallback discarded.</li>
-<li>Alice may have gotten a few extra requests through during the 30s window — acceptable.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant U as User (Alice)
-    participant GW as API Gateway
-    participant RC as Redis Cluster
-    participant MS as Microservice
-
-    U-&gt;&gt;GW: GET /feed (JWT: userId=alice, tier=premium)
-    GW-&gt;&gt;GW: extract clientId=alice, rule=1000req/min
-    GW-&gt;&gt;GW: determine shard = hash(alice) % 20 = shard-7
-    GW-&gt;&gt;RC: Lua script HMGET+HMSET shard-7 (atomic)
-    RC--&gt;&gt;GW: {allowed: true, remaining: 847}
-    GW-&gt;&gt;MS: forward request
-    MS--&gt;&gt;GW: 200 OK + response
-    GW--&gt;&gt;U: 200 OK (X-RateLimit-Remaining: 847)
-
-    Note over U,GW: Alice hits limit
-    U-&gt;&gt;GW: GET /feed (1001st request this minute)
-    GW-&gt;&gt;RC: Lua script
-    RC--&gt;&gt;GW: {allowed: false, remaining: 0}
-    GW--&gt;&gt;U: 429 Too Many Requests (Retry-After: 47s)
-    Note over GW,MS: Microservice never touched
-</div>
-<hr />
-<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> Why does the gateway keep rate limit rules cached in its own memory instead of just asking Redis for them on every request, the way it asks about token counts?</summary>
+<p>Because rules change rarely — nowhere near as often as token counts, which change on every single request — so paying a network round-trip for something that's almost always the same answer would be pure waste on the hottest path in the system. §8.6 covers the push mechanism (etcd) that keeps that in-memory cache correct without ever polling for it.</p>
+</details>
 <h3 id="simple-design">Simple Design</h3>
 <div class="mermaid">
 graph TD
@@ -321,44 +199,68 @@ graph TD
     GW1--&gt;MS
     GW2--&gt;MS
 </div>
-<hr />
-<h2 id="8-data-model">8. Data Model</h2>
+<p>The simple version is a single gateway talking to a single Redis instance — fine for understanding the shape of the system, but it doesn't survive contact with the scale numbers from §4. The evolved version is the same idea repeated across many gateway instances and 20 Redis shards, with etcd pushing rule changes out to every gateway instead of any of them polling for updates.</p>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>Trace Alice's request all the way through, and then the scraper's rejected one right behind it. Alice's <code>GET /feed</code> hits an API Gateway carrying her identity — a <code>userId</code> pulled from the JWT in her <code>Authorization</code> header since she's logged in, a source IP from <code>X-Forwarded-For</code> if a request is anonymous instead, or an <code>API-Key</code> header if the caller is a developer integration. The gateway already knows which rule applies to her before it touches Redis at all: premium users get 1000 requests/minute, regular users get 100/minute, and that mapping came from etcd on gateway startup, not a lookup on this request. With identity and rule both in hand, the gateway calls Redis with a single Lua script — an atomic read-modify-write that reads the bucket, calculates the refill, and writes the result back, all in one indivisible round trip. For Alice, that script comes back <code>{allowed: true, remaining: 43}</code>, and the gateway forwards her request to the right microservice — total added overhead under 2ms.</p>
+<p>The scraper's request runs through the exact same steps — identify, look up rule, call the Lua script — and only diverges at the very last one: the script comes back <code>{allowed: false, remaining: 0}</code>, and the gateway returns <code>429 Too Many Requests</code> with the rate-limit headers immediately, without ever forwarding the request to a microservice. The microservice never even knows the scraper's request happened — again, under 2ms of added overhead, this time to reject rather than forward.</p>
 <blockquote>
 <p>[!IMPORTANT]
-<strong>Storage Separation</strong></p>
-<table>
-<thead>
-<tr>
-<th>What</th>
-<th>Where</th>
-<th>Why</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Token bucket state (count + last_refill)</td>
-<td>Redis Cluster (sharded, in-memory)</td>
-<td>Sub-ms lookup; shared across all gateway instances</td>
-</tr>
-<tr>
-<td>Rate limit rules</td>
-<td>etcd / ZooKeeper + gateway in-memory cache</td>
-<td>Rules change rarely; push to in-memory eliminates per-check network round-trip</td>
-</tr>
-<tr>
-<td>Audit log (rejected requests)</td>
-<td>Optional: Kafka → S3</td>
-<td>For abuse analysis and debugging; never on the critical path</td>
-</tr>
-</tbody>
-</table>
+<strong>No async queue in this system — rate limiting is synchronous by design.</strong> The check has to complete before the request is forwarded. Async rate limiting would mean routing the request first and checking the limit later — by then the backend has already done the work the rate limiter was supposed to prevent it from doing. A rate limiter is a gate, not a filter.</p>
 </blockquote>
-<h3 id="core-data-model-the-simplest-mental-picture">Core Data Model (the simplest mental picture)</h3>
+<div class="mermaid">
+sequenceDiagram
+    participant U as User (Alice)
+    participant GW as API Gateway
+    participant RC as Redis Cluster
+    participant MS as Microservice
+
+    U-&gt;&gt;GW: GET /feed (JWT: userId=alice, tier=premium)
+    GW-&gt;&gt;GW: extract clientId=alice, rule=1000req/min
+    GW-&gt;&gt;GW: determine shard = hash(alice) % 20 = shard-7
+    GW-&gt;&gt;RC: Lua script HMGET+HMSET shard-7 (atomic)
+    RC--&gt;&gt;GW: {allowed: true, remaining: 847}
+    GW-&gt;&gt;MS: forward request
+    MS--&gt;&gt;GW: 200 OK + response
+    GW--&gt;&gt;U: 200 OK (X-RateLimit-Remaining: 847)
+
+    Note over U,GW: Alice hits limit
+    U-&gt;&gt;GW: GET /feed (1001st request this minute)
+    GW-&gt;&gt;RC: Lua script
+    RC--&gt;&gt;GW: {allowed: false, remaining: 0}
+    GW--&gt;&gt;U: 429 Too Many Requests (Retry-After: 47s)
+    Note over GW,MS: Microservice never touched
+</div>
+<p>What happens if the gateway can't even reach Redis to ask the question — a shard timing out mid-check — gets its own full mechanism in §8.5; the short version is that the gateway never fails open, it falls back to a coarser local check instead.</p>
+<hr />
+<h2 id="6-system-interface">6. System Interface</h2>
+<p>This isn't a REST API in the usual sense — there's no client anywhere in the system that calls it directly. Every caller is another piece of infrastructure: the API Gateway is the only thing that ever invokes it, on every single request that passes through, which is why the interface is shaped as an internal RPC rather than a set of public endpoints.</p>
+<pre><code>isRequestAllowed(clientId: string, rule: Rule) → Response
+
+Response {
+  allowed:       bool
+  remaining:     int       // tokens left after this check
+  reset_at:      int64     // unix ts when bucket fully refills
+  retry_after_s: int       // seconds until next token available (on reject)
+}
+</code></pre>
+<p>The one field worth calling out specifically is <code>retry_after_s</code> — it only gets populated on a rejection, and it exists so the caller never has to guess how long to back off for; the rate limiter already knows exactly when the next token becomes available, so it just says so.</p>
+<p><strong>On reject, the caller turns that response into an HTTP 429 for the end user, with headers carrying the same information back out:</strong></p>
+<pre><code>HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit:     100          ← the rule ceiling
+X-RateLimit-Remaining: 0            ← tokens left
+X-RateLimit-Reset:     1704067260   ← unix ts of next full refill
+Retry-After:           47           ← seconds until retry makes sense
+</code></pre>
+<p><strong>Why fail fast instead of queuing an over-limit request?</strong> A queued request just makes the user wait — and a user who's waiting assumes something is broken, so they click again, and now there's a growing backlog plus double the original requests. For interactive APIs, an immediate, clear 429 is always the right call. Queuing only makes sense for batch jobs that can genuinely afford to sit and wait — which is exactly the class of caller this system doesn't have.</p>
+<hr />
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Three different kinds of data live behind this system, and they end up in three different places for three different reasons.</p>
+<p><strong>Token bucket state is the hottest, most ephemeral piece, and it lives in Redis Cluster.</strong> Every single request touches it, it needs a sub-millisecond lookup, and it has to be visible to every gateway instance at once — no single gateway can keep it locally, because the next request from the same client could land on a completely different instance. At the simplest level, the entire model is just a key and a value:</p>
 <pre><code>key:   user_id  (or ip_address, or api_key)
 value: { count, timestamp }
 </code></pre>
-<p>That's it. Everything else is an optimisation on top of these two fields — the algorithm that decides what <code>count</code> means, the sharding that scales it, the atomicity that keeps it correct.</p>
-<h3 id="redis-token-bucket-per-client">Redis Token Bucket (per client)</h3>
+<p>Everything else here — the algorithm that decides what <code>count</code> means, the sharding that scales it to 20 Redis shards, the atomicity that keeps concurrent updates correct — is an optimization layered on top of those two fields, not a different data model.</p>
+<p>In Redis specifically, that key/value pair becomes a hash with two fields:</p>
 <pre><code>Key:   rl:{clientId}         (e.g., rl:user_alice, rl:ip_1.2.3.4)
 Type:  Hash
 Field  tokens        → current token count (int)
@@ -367,9 +269,8 @@ Field  last_refill   → unix timestamp ms (int64)
 HMGET rl:user_alice tokens last_refill
 HMSET rl:user_alice tokens 847 last_refill 1704067213000
 </code></pre>
-<p><strong>Memory per user:</strong> 2 fields × ~8 bytes + Redis hash overhead ≈ ~100 bytes per user.
-<strong>Total for 100M users:</strong> ~10GB, distributed across 20 shards = ~500MB per shard. Fits easily in a standard Redis node.</p>
-<h3 id="rule-configuration-etcd-in-memory-on-gateway">Rule Configuration (etcd, in-memory on gateway)</h3>
+<p>Two fields at roughly 8 bytes each, plus Redis's own hash overhead, comes out to about 100 bytes per user — so 100M users is roughly 10GB total, or about 500MB per shard across the 20-shard cluster from §4. That's comfortably within what a standard Redis node holds in memory.</p>
+<p><strong>Rate limit rules are the opposite of hot — they change rarely, but they're read on every request — so they live in etcd/ZooKeeper as the source of truth, and get pushed into each gateway's own in-memory cache rather than queried from Redis alongside the token bucket.</strong> Paying a network round-trip for data that's almost always unchanged from the last time it was read would be waste on the single hottest path in the system, which is exactly why §8.6 covers the mechanism (etcd's push subscription) that keeps that cache correct without ever polling it:</p>
 <pre><code class="language-json">{
   &quot;rules&quot;: [
     { &quot;tier&quot;: &quot;premium&quot;,   &quot;max_tokens&quot;: 1000, &quot;refill_rate&quot;: 1000 },
@@ -379,35 +280,53 @@ HMSET rl:user_alice tokens 847 last_refill 1704067213000
   ]
 }
 </code></pre>
+<p><strong>And the coldest data of all — an optional audit log of rejected requests — belongs nowhere near the hot path at all.</strong> It exists purely for abuse analysis and after-the-fact debugging, so it's a fire-and-forget stream: Kafka feeding into S3, never something the rate-limiting decision itself waits on.</p>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Storage</th>
+<th>Key Columns / Format</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Token bucket state</td>
+<td>Redis Cluster (sharded, Hash)</td>
+<td><code>rl:{clientId}</code> → tokens (int), last_refill (int64 ms)</td>
+</tr>
+<tr>
+<td>Rate limit rules</td>
+<td>etcd/ZooKeeper (source of truth) + gateway in-memory cache</td>
+<td>tier or endpoint → max_tokens, refill_rate</td>
+</tr>
+<tr>
+<td>Audit log (rejected requests)</td>
+<td>Kafka → S3 (optional, cold)</td>
+<td>Rejected-request metadata, for abuse analysis only</td>
+</tr>
+</tbody>
+</table>
 <hr />
-<h2 id="9-deep-dives">9. Deep Dives</h2>
-<h3 id="91-rate-limiting-algorithms-four-options-one-winner">9.1 Rate Limiting Algorithms — Four Options, One Winner</h3>
-<p><strong>The problem:</strong> How do we decide whether to allow or reject a request, given a configurable limit?</p>
-<p><strong>Option 1 — Fixed Window Counter</strong>
-A counter per client that resets at the start of each fixed window (e.g., every minute at :00).</p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-rate-limiting-algorithms-four-options-one-winner">8.1 Rate Limiting Algorithms — Four Options, One Winner</h3>
+<p>This is the single decision the rest of the system is built around — every other deep dive in this doc assumes an algorithm has already been picked, so it's worth walking through the whole reasoning, not just naming the winner.</p>
+<p><strong>What this piece of the system actually has to do:</strong> given a client and a configured limit (say, 100 requests per minute), decide — on every single request, in well under a millisecond — whether to let it through or reject it. It has to guard against three specific failure modes at once: letting a client sneak past its limit by exploiting how the limit is measured (a boundary effect), costing so much memory per client that it can't scale to 100M users, and being too rigid to tolerate the bursty way real clients actually behave — Alice checking the feed, notifications, and messages within a couple of seconds isn't abuse, and an algorithm that treats it as such is punishing normal usage.</p>
+<p><strong>Option 1 — Fixed Window Counter.</strong> A counter per client that resets at the start of each fixed window, say every minute on the dot:</p>
 <pre><code>Alice: { count: 87, window_start: 12:01:00 }
 </code></pre>
-<p>Simple to implement — just a hash table. But <strong>boundary effect</strong>: Alice can send 100 requests at 12:01:59 and 100 more at 12:02:00 — 200 requests in 2 seconds. We claimed to limit her to 100/min. We lied.</p>
-<p><strong>Option 2 — Sliding Window Log</strong>
-Track exact timestamp of every request in a sorted set. Count how many fall within the last 60 seconds. Reject if ≥ limit.</p>
-<p>Perfect accuracy. But memory: need a sorted set per user, unbounded size. At 1M users × 100 requests = 100M timestamps in memory. Expensive.</p>
-<p><strong>Option 3 — Sliding Window Counter</strong>
-Two counters: <code>prev_count</code> (last full window) + <code>curr_count</code> (current window). Estimate true sliding count:</p>
+<p>It's trivial to implement — just a hash table — but it fails on exactly the boundary case above: Alice can send 100 requests at 12:01:59 and another 100 at 12:02:00, and the counter resets between them, so she gets 200 requests through in two seconds flat against a limit that was supposed to cap her at 100 per minute. The window boundary is a seam the algorithm itself creates, and a client only has to time its burst around that seam to double its effective limit.</p>
+<p><strong>Option 2 — Sliding Window Log.</strong> Track the exact timestamp of every request in a sorted set, and count how many fall within the last 60 seconds on each new request, rejecting once that count hits the limit. This is perfectly accurate — there's no seam to exploit, because the window is always exactly the last 60 seconds, recalculated fresh every time. The cost is memory: it needs an unbounded, ever-growing sorted set per user, and at 1M users each making 100 requests, that's 100 million timestamps sitting in memory at once. Perfect accuracy here comes at a storage cost this system can't afford.</p>
+<p><strong>Option 3 — Sliding Window Counter.</strong> A compromise: keep two counters instead of a full log — <code>prev_count</code> for the previous full window and <code>curr_count</code> for the current one — and estimate the true sliding count as a weighted blend of the two:</p>
 <pre><code>estimated = curr_count + prev_count × (1 - elapsed/window_size)
 </code></pre>
-<p>Example: prev=8, curr=6, 70% through window.
-Estimate = 6 + 8 × 0.3 = 8.4. Under limit of 10 → allow.</p>
-<p>Only 2 integers per user. Good approximation. But assumes requests are evenly distributed — bursts within a window are underestimated.</p>
-<p><strong>Option 4 — Token Bucket (chosen)</strong></p>
-<p>Each client has a bucket with:
-- <strong>Max tokens</strong> (burst capacity) — e.g., 100. Alice can fire 100 requests instantly.
-- <strong>Refill rate</strong> — e.g., 60 tokens/min (1/sec). Steady-state rate.</p>
-<p>On each request: add tokens based on elapsed time since last check, consume 1 token, reject if 0 tokens.</p>
+<p>With <code>prev=8</code>, <code>curr=6</code>, and the window 70% elapsed, that's <code>6 + 8 × 0.3 = 8.4</code> — under a limit of 10, so the request is allowed. This is only two integers per user, which solves Option 2's memory problem outright, and it's a good approximation in practice. But it's still an approximation — it assumes requests are spread evenly across the window, so a genuine burst within a single window gets underestimated rather than counted exactly.</p>
+<p><strong>Option 4 — Token Bucket (chosen).</strong> Give each client a bucket with two properties: a <strong>max tokens</strong> value (burst capacity — say 100, meaning Alice can fire 100 requests instantly if her bucket is full) and a <strong>refill rate</strong> (say 60 tokens/minute, or one per second, which is the steady-state limit once the burst is spent). On every request, the bucket refills based on however much time has elapsed since the last check, one token is consumed if any are available, and the request is rejected if the bucket is empty:</p>
 <pre><code>tokens = min(max_tokens, stored_tokens + elapsed_seconds × refill_rate)
 allowed = tokens &gt; 0
 new_tokens = tokens - 1 (if allowed)
 </code></pre>
-<p>Store only 2 values: <code>tokens</code> (float/int) + <code>last_refill_ts</code>. Same memory as sliding window counter, but handles bursts explicitly and naturally.</p>
+<p>It stores exactly the same two values as Option 3 — no memory cost beyond the sliding window counter — but it handles bursts explicitly and by design rather than as an approximation error. Alice's habit of checking the feed, notifications, and messages within a couple of seconds isn't something Token Bucket tolerates by accident; it's the exact behavior the burst-capacity parameter exists to allow.</p>
 <table>
 <thead>
 <tr>
@@ -444,43 +363,36 @@ new_tokens = tokens - 1 (if allowed)
 </tr>
 </tbody>
 </table>
-<p><strong>Chosen:</strong> Token Bucket. Best combination of memory efficiency, burst handling, and simplicity. The burst capacity is a feature, not a bug — it allows short bursts while enforcing a steady-state limit.</p>
+<p>That combination — the same O(1) footprint as the cheapest approximation, plus a mechanism built specifically for burstiness — is what makes Token Bucket the actual choice here, not just the fourth option in a list.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: Token Bucket models how real APIs are actually used — users send a burst of requests when they open the app, then slow down. Fixed window punishes this burst unfairly. Token Bucket accommodates it by design.</p>
+Token Bucket models how real APIs actually get used — a burst of activity when someone opens the app, then a quieter, steady trickle. Fixed Window punishes exactly that burst as if it were abuse. Token Bucket accommodates it because the algorithm was built around that pattern from the start, not despite it.</p>
 </blockquote>
 <hr />
-<h3 id="92-where-to-place-the-rate-limiter-three-options">9.2 Where to Place the Rate Limiter — Three Options</h3>
-<p><strong>Problem:</strong> Where in the architecture does the rate limit check live?</p>
-<p><strong>Option 1 — Inside each microservice (application code)</strong>
-Rate limiter logic embedded in each service, state in local memory.</p>
-<p>Fast — no network hops. But no global picture: request to Service A and Service B both see only their own count. Alice makes 2 requests split across 2 instances → each sees count=1 → both allow → global count=2 is invisible. Fails at distributed scale.</p>
-<p><strong>Option 2 — Centralized rate limiter service</strong>
-Microservices call out to a dedicated rate limiter service before processing.</p>
-<p>Solves global coordination. But adds a network hop per request: client → gateway → microservice → rate limiter service → microservice. Two network hops before any business logic runs. Violates our &lt;10ms requirement.</p>
-<p><strong>Option 3 — At the API Gateway / edge (chosen)</strong>
-Rate limiter logic runs inside the gateway itself, reading from shared Redis. Checks happen before routing — requests that fail never reach microservices.</p>
+<h3 id="82-where-to-place-the-rate-limiter-three-options">8.2 Where to Place the Rate Limiter — Three Options</h3>
+<p>Deciding on Token Bucket answers <em>how</em> to count; a separate question is <em>where in the architecture</em> that count actually gets checked.</p>
+<p><strong>Option 1 — inside each microservice.</strong> Rate limiting logic lives in each service's own application code, counting in local memory. It's fast — no network hop at all — but it has no view of the whole picture: if Alice's two requests get load-balanced to two different instances of the same service, each instance sees its own count of 1, each independently decides she's under her limit, and both allow the request — even though her real, global count is 2. Local-only counting simply can't see traffic that landed somewhere else, which is fatal the moment there's more than one instance of anything.</p>
+<p><strong>Option 2 — a centralized rate limiter service.</strong> Every microservice calls out to a dedicated service before doing any work, which does solve the global-visibility problem Option 1 has. But it does so by adding an entire extra network hop to every request: client → gateway → microservice → rate limiter service → microservice again, before any actual business logic runs. Two network hops purely for a yes/no answer blows straight through the &lt;10ms latency budget from §3.</p>
+<p><strong>Option 3 — at the API Gateway itself (chosen).</strong> The rate-limiting logic runs inside the gateway, reading from the same shared Redis every other gateway instance reads from, and the check happens before any routing decision — a request that fails the check never reaches a microservice at all:</p>
 <pre><code>Client → Gateway (rate check → Redis) → Microservice (only if allowed)
 </code></pre>
-<p>Like a bouncer at the door. Troublemakers never get inside.</p>
-<p>The trade-off I accept: the gateway only has access to HTTP request data (headers, URL, IP, JWT payload). It can't see deeper application state without an additional lookup. For premium user detection: solved by encoding tier in the JWT — the token carries the claim, no extra DB call needed.</p>
+<p>It's a bouncer standing at the door, not a checkpoint somewhere inside the building — troublemakers never get past the entrance in the first place.</p>
+<p>The one thing this placement costs: the gateway only has access to what's actually in the HTTP request — headers, URL, source IP, whatever's encoded in the JWT payload — it can't see deeper application state without paying for an extra lookup. Detecting a premium user is the concrete case this shows up in, and it's solved cheaply: the tier is encoded as a claim directly in the JWT, so the gateway reads it off the token it already has to parse anyway, with no extra database call required.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: Placing the rate limiter at the gateway is the only option that satisfies both the global-state requirement (all gateways share Redis) and the latency requirement (one Redis round-trip, not two network hops through a separate service).</p>
+Placing the rate limiter at the gateway is the only one of the three options that satisfies both constraints at once — global state (every gateway instance shares the same Redis) and latency (one Redis round-trip, not two network hops through a separate service). Optimizing for either constraint alone would have picked a different answer.</p>
 </blockquote>
 <hr />
-<h3 id="93-race-condition-lua-script-for-atomic-read-modify-write">9.3 Race Condition — Lua Script for Atomic Read-Modify-Write</h3>
-<p><strong>Problem:</strong> Two gateway instances (GW-A and GW-B) both serve Alice simultaneously. Both HMGET Alice's bucket — both read <code>tokens=1</code>. Both compute: 1 &gt; 0 → allowed. Both decrement to 0 and HMSET. Alice gets 2 requests through, but her actual count is 1 token left.</p>
+<h3 id="83-the-race-condition-atomic-read-modify-write-via-lua">8.3 The Race Condition — Atomic Read-Modify-Write via Lua</h3>
+<p>Here's a failure mode that has nothing to do with which algorithm was chosen and everything to do with there being more than one gateway instance: two instances, GW-A and GW-B, both happen to serve a request from Alice at almost the same moment. Both read her bucket and see <code>tokens=1</code>. Both compute the same thing independently — <code>1 &gt; 0</code>, so allow — and both write <code>tokens=0</code> back. Alice gets two requests through, but her real remaining balance was only ever one token:</p>
 <pre><code>GW-A:  HMGET → tokens=1
 GW-B:  HMGET → tokens=1   (stale read, GW-A hasn't written yet)
 GW-A:  HMSET tokens=0     ← correct
 GW-B:  HMSET tokens=0     ← overwrites GW-A's write, as if GW-A never ran
 </code></pre>
-<p>Both accepted. One request got through for free.</p>
-<p><strong>Naive solution — Redis WATCH/MULTI/EXEC (optimistic locking):</strong>
-WATCH the key, start transaction, check + update. If key changed between WATCH and EXEC → transaction aborted → retry. Works but retries under contention add latency.</p>
-<p><strong>Chosen solution — Lua scripting:</strong>
-Redis executes Lua scripts atomically and single-threaded. The entire HMGET + calculate + HMSET sequence runs as one indivisible operation on the Redis server. GW-B's script waits until GW-A's script finishes — no interleaving possible.</p>
+<p>Both requests were accepted, and one of them got through for free — not because either gateway did anything wrong on its own, but because reading and writing were two separate operations, with a gap between them wide enough for a second gateway to slip through.</p>
+<p>The naive fix is Redis's own <code>WATCH</code>/<code>MULTI</code>/<code>EXEC</code> — optimistic locking: watch the key, start a transaction, do the check-and-update, and if the watched key changed between the <code>WATCH</code> and the <code>EXEC</code>, the whole transaction aborts and has to be retried. It works, but under contention — exactly the condition that caused the race in the first place — those retries pile up and add latency right when the system can least afford it.</p>
+<p>The mechanism actually chosen is Lua scripting. Redis executes Lua scripts atomically and single-threaded: the entire <code>HMGET</code> → calculate → <code>HMSET</code> sequence runs as one indivisible operation on the Redis server itself, so GW-B's script simply can't start until GW-A's has fully finished — there's no interleaving for a race to exploit in the first place:</p>
 <pre><code class="language-lua">local bucket = redis.call('HMGET', KEYS[1], 'tokens', 'last_refill')
 -- ... calculate new tokens ...
 if tokens &gt; 0 then
@@ -490,29 +402,25 @@ end
 return 0
 -- all of this runs atomically in Redis, single-threaded
 </code></pre>
-<p>One network round-trip, atomic. No race condition possible.</p>
+<p>One network round trip is all it costs, and there's no point in the sequence where a second script could interleave with the first — the fix removes the race by construction, not by detecting and retrying it after the fact.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: Redis is single-threaded for command execution. A Lua script runs atomically — no other command can interleave. This is why Lua scripting solves the race condition without distributed locks or optimistic retry loops.</p>
+Redis is single-threaded for command execution, and a Lua script runs as one atomic unit within that — no other command, from any client, can interleave partway through it. That single fact is the whole reason Lua scripting solves this race condition without needing a distributed lock or an optimistic retry loop at all.</p>
 </blockquote>
 <hr />
-<h3 id="94-scalability-sharding-redis-to-1m-rps">9.4 Scalability — Sharding Redis to 1M RPS</h3>
-<p><strong>Problem:</strong> Single Redis handles ~100K ops/sec. Each rate limit check = 2 ops (HMGET + HMSET via Lua). So single Redis supports ~50K RPS. We need 1M RPS.</p>
-<p><strong>Math:</strong> 1M RPS / 50K per instance = <strong>20 Redis shards minimum</strong>. Add 25% headroom → 25 shards.</p>
-<p><strong>Sharding strategy:</strong> Shard by <code>clientId</code> (user ID, IP, or API key). Gateway hashes the clientId → determines which shard to query. Alice always goes to shard-7. No cross-shard coordination needed — one rate limit check = one Redis call to one shard.</p>
-<p><strong>Implementation:</strong> Use <strong>Redis Cluster</strong> — not DIY consistent hashing.
-- Redis Cluster divides 16,384 hash slots across N nodes
-- <code>CLUSTER KEYSLOT rl:alice</code> → slot 7832 → mapped to shard-7
-- Redis Cluster handles rebalancing on node add/remove automatically
-- Client-side cluster-aware libraries (redis-py, ioredis) route transparently</p>
-<p>The trade-off I accept: Redis Cluster uses hash slots (not consistent hashing). Node addition requires slot migration — brief latency spike during resharding. For a rate limiter, this is acceptable — it happens rarely.</p>
+<h3 id="84-scalability-sharding-redis-to-1m-rps">8.4 Scalability — Sharding Redis to 1M RPS</h3>
+<p>§4 already established the ceiling: a single Redis instance handles about 100K operations per second, each rate limit check costs 2 operations (<code>HMGET</code> + <code>HMSET</code> via the Lua script from §8.3), so one instance tops out around 50K RPS. The system needs 1M.</p>
+<p>The math is direct: <code>1M RPS ÷ 50K RPS per instance = 20 Redis shards, minimum</code> — with 25% headroom added on top for safety margin, that's 25 shards in practice.</p>
+<p>The sharding key is the client ID itself — the gateway hashes <code>clientId</code> to determine which shard to query, so Alice always lands on the same shard (shard-7, say) on every request. That's what keeps this scaling linear rather than getting complicated: one rate limit check is one Redis call to one shard, with no cross-shard coordination needed at all, because nothing about a single client's bucket ever needs to be visible to more than one shard.</p>
+<p>The actual implementation is Redis Cluster, not a hand-rolled consistent-hashing scheme. Redis Cluster divides the keyspace into 16,384 fixed hash slots spread across N nodes — <code>CLUSTER KEYSLOT rl:alice</code> resolves to some slot, say 7832, which maps to shard-7 — and Redis Cluster itself handles rebalancing automatically whenever a node is added or removed, with client-side cluster-aware libraries (<code>redis-py</code>, <code>ioredis</code>) routing requests transparently without the application needing to know which shard owns which key.</p>
+<p>The trade-off worth naming: hash slots aren't the same as consistent hashing, so adding a node means migrating slots between machines, and that migration causes a brief latency spike while it's happening. For a rate limiter, that's a cost worth accepting — node additions are rare, planned events, not something happening under live traffic pressure every day.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: Hash the clientId to a shard. One rate limit check = one Redis node, one Lua script, one round-trip. No scatter-gather, no cross-shard coordination. This is what makes horizontal scaling linear.</p>
+Hash the client ID to a shard, and one rate limit check becomes exactly one Redis node, one Lua script, one round trip — no scatter-gather across shards, no cross-shard coordination to get wrong. That's the property that makes horizontal scaling linear instead of getting harder as more shards get added.</p>
 </blockquote>
 <hr />
-<h3 id="95-fault-tolerance-fail-close-with-local-fallback">9.5 Fault Tolerance — Fail Close with Local Fallback</h3>
-<p><strong>Problem:</strong> What happens when a Redis shard goes down? Two options with no good answer:</p>
+<h3 id="85-fault-tolerance-fail-close-with-a-local-fallback">8.5 Fault Tolerance — Fail Close, With a Local Fallback</h3>
+<p>What should happen when a Redis shard simply goes down? There are exactly two blunt options, and neither is comfortable on its own:</p>
 <table>
 <thead>
 <tr>
@@ -529,303 +437,80 @@ Key Insight: Hash the clientId to a shard. One rate limit check = one Redis node
 </tr>
 <tr>
 <td>Risk</td>
-<td>Bad actors flood the system; backend services cascade-fail</td>
-<td>Site appears down to users</td>
+<td>Bad actors flood the system unchecked; backend services can cascade-fail</td>
+<td>The site appears down to every legitimate user</td>
 </tr>
 <tr>
 <td>When acceptable</td>
-<td>Never for a social media app</td>
-<td>Standard choice</td>
+<td>Never, for a social media app</td>
+<td>The standard starting choice</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Chosen:</strong> Fail close — but with a local fallback to avoid total blackout.</p>
-<p><strong>Local fallback strategy:</strong>
-When a Redis shard is unreachable, the gateway falls back to a <strong>local in-memory fixed window counter</strong> for that shard's clients:</p>
+<p>Neither extreme is actually good enough on its own, which is why the real answer isn't either row of that table by itself — it's fail close, with a local fallback layered on top to avoid a full blackout.</p>
+<p>When a gateway can't reach a Redis shard — the exact scenario from §5's forward reference, an <code>HMGET</code> to the shard simply timing out — it does not fail open and does not route the request through unchecked. Instead it falls back to a local, in-memory fixed-window counter, scoped to that shard's clients, running as a simple map inside the gateway process itself:</p>
 <pre><code>if (redis.ping() fails) {
   // fallback: local Map&lt;clientId, {count, windowStart}&gt;
   return localWindowCounter.isAllowed(clientId, rule);
 }
 </code></pre>
-<ul>
-<li>Less accurate: gateways don't coordinate, so a user could get N × allowance (N = number of gateway instances)</li>
-<li>But: still rate limiting, still protecting services, not a complete blackout</li>
-<li>Duration: only until Redis Cluster promotes the replica (~30 seconds)</li>
-</ul>
-<p><strong>Replica configuration:</strong> Each Redis shard has 1 replica (async replication). Trade-off: async means the replica may be 1–2 writes behind on failover. Alice may get 1–2 extra requests through during the failover window. Acceptable — this is not a financial system.</p>
+<p>That fallback is deliberately less accurate — gateway instances don't coordinate with each other while it's active, so in principle a client could get up to N times their real allowance, where N is the number of gateway instances independently running their own local count. But it's still rate limiting, still standing between the client and the backend, rather than a complete blackout of protection.</p>
+<p>Meanwhile, on the Redis side, the story resolves itself on its own timeline: Redis Cluster automatically promotes the failed shard's replica via Sentinel, typically within 30 seconds. Once that promotion completes, the gateway reconnects to the new primary and simply discards its local fallback state — no manual intervention, no cleanup step, the coordinated Redis-backed counting just resumes where it left off. Each shard runs with one replica under async replication, which means the replica can be one or two writes behind the primary at the exact moment of failover — so during that specific handoff, a client might get one or two extra requests through beyond what they were strictly owed.</p>
+<p>Both of those imprecisions land on the same side of one judgment call: this is a social feed's rate limiter, not a financial ledger, so a few extra requests slipping through during a rare, self-healing failure window isn't a correctness problem worth engineering around further.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: Fail close protects your backend. Fail open is the rate limiter admitting it can't do its job — and the consequences (cascading microservice failures) are worse than a 30-second service degradation during Redis failover.</p>
+Fail close protects the backend, which is the rate limiter's entire job. Failing open is the rate limiter admitting it can't do that job — and the fallout from that, cascading failures across every microservice behind it, is categorically worse than a 30-second window of slightly loosened enforcement during a Redis failover.</p>
 </blockquote>
 <hr />
-<h3 id="96-dynamic-rule-configuration-push-not-poll">9.6 Dynamic Rule Configuration — Push, Not Poll</h3>
-<p><strong>Problem:</strong> Rules need to change at runtime (e.g., temporarily restrict a specific user who is abusing, or raise limits for a sale event). How do gateways get updated rules without redeployment?</p>
-<p><strong>Option 1 — Polling the DB every N seconds:</strong>
-Gateway polls PostgreSQL every 5 seconds. Problem: 5-second delay + wastes CPU on constant polling for data that rarely changes.</p>
-<p><strong>Option 2 — Check Redis on every request:</strong>
-Store rules in Redis, gateway reads the rule key alongside the token bucket. Problem: adds a second HMGET per request, increases latency and Redis ops.</p>
-<p><strong>Option 3 — Push-based config via etcd / ZooKeeper (chosen):</strong>
-1. Rules stored in <strong>etcd</strong> (distributed key-value store designed for config management)
-2. On startup, each gateway <strong>pulls all rules</strong> and caches them in-memory
-3. Gateway <strong>subscribes</strong> to rule change events (persistent TCP connection to etcd)
-4. When a rule changes in etcd → etcd <strong>pushes</strong> the diff over the open connection → gateway updates its in-memory cache</p>
-<p>Zero additional latency on the hot path (rules already in memory). Rule changes propagate in &lt;1 second. No polling overhead.</p>
-<p>The trade-off I accept: gateways may have slightly different rule versions for &lt;1s during propagation. Acceptable — a user getting one extra request through during a 1s propagation window is not a correctness problem.</p>
+<h3 id="86-dynamic-rule-configuration-push-not-poll">8.6 Dynamic Rule Configuration — Push, Not Poll</h3>
+<p>Rules aren't static — someone needs to be able to temporarily throttle a specific abusive user, or raise limits ahead of a planned traffic spike like a sale event — and that has to happen without redeploying every gateway instance.</p>
+<p><strong>Polling PostgreSQL every few seconds</strong> is the obvious first idea, and it fails on two fronts at once: a 5-second poll interval means up to a 5-second delay before a rule change actually takes effect, and every gateway constantly re-querying data that almost never changes wastes CPU and database load for essentially no benefit.</p>
+<p><strong>Checking Redis on every request</strong> is the second obvious idea — store rules in Redis right alongside the token bucket, and read both together. But that adds a second <code>HMGET</code> to the single hottest path in the entire system, on every single request, purely to read something that's almost always identical to what was read a moment ago.</p>
+<p><strong>The chosen mechanism is push-based configuration via etcd</strong>, a distributed key-value store built specifically for this kind of config management. Rules live in etcd as the source of truth; on startup, each gateway pulls the full rule set once and caches it in memory; each gateway then keeps a persistent subscription open to etcd over that same connection; and when a rule changes, etcd pushes just the diff down that open connection, and the gateway updates its in-memory cache on the spot. The hot path — the one thing every request actually touches — never has to ask about rules at all, because the answer is already sitting in memory, kept current by a background push rather than a per-request lookup. Rule changes propagate to every gateway in under a second, with zero polling overhead the rest of the time.</p>
+<p>The trade-off worth naming: during that sub-second propagation window, different gateway instances can briefly be running slightly different rule versions. That's fine — a client getting one extra request through because one gateway hadn't yet received a rule update is not a correctness problem, just a brief, bounded inconsistency during a rare event.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: Rules live in gateway memory. etcd pushes changes — no polling, no per-request rule lookup. The hot path stays at exactly one Redis round-trip regardless of rule complexity.</p>
+Rules live in gateway memory, and etcd pushes changes into that memory rather than the gateway ever polling or looking anything up per-request. The hot path stays at exactly one Redis round trip, no matter how complex the rule configuration gets.</p>
 </blockquote>
 <hr />
-<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
-<p>We're designing for <strong>100M DAU</strong>, <strong>1M RPS peak</strong>. The primary bottleneck is <strong>Redis throughput</strong> — everything else scales horizontally without coordination.</p>
-<p><strong>What breaks first at 10× scale (10M RPS):</strong></p>
-<table>
-<thead>
-<tr>
-<th>Bottleneck</th>
-<th>Problem</th>
-<th>Solution</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Redis throughput</td>
-<td>10M RPS × 2 ops = 20M ops/sec → 200 shards</td>
-<td>Redis Cluster scales linearly — add more nodes</td>
-</tr>
-<tr>
-<td>Gateway CPU</td>
-<td>Lua script execution, connection management</td>
-<td>Auto-scale gateway instances behind load balancer</td>
-</tr>
-<tr>
-<td>etcd rule propagation</td>
-<td>200 gateway instances all subscribing</td>
-<td>etcd is designed for this; cluster of 3–5 etcd nodes handles thousands of watchers</td>
-</tr>
-<tr>
-<td>Connection pool exhaustion</td>
-<td>200 gateways × connections per gateway &gt; Redis max connections</td>
-<td>Tune pool size; Redis 6+ supports 65K connections per node</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Spike handling:</strong>
-- Flash sale event: rules changed in etcd → all gateways updated in &lt;1s → new lower limits enforced before spike lands
-- DDoS attempt: IP-based rate limiting kicks in at gateway; attacker IP hits limit within first second
-- Viral post: legitimate traffic spike → token buckets drain → users see 429 with Retry-After → clients back off → system stabilizes</p>
-<p><strong>Multi-region:</strong>
-- Deploy gateway + Redis Cluster per region (e.g., US-East, EU-West, AP-Tokyo)
-- Each region's Redis is independent — no cross-region coordination for rate limit checks
-- User identified by JWT (global) or IP (regional) — consistent within a session
-- Trade-off: a user in transit between regions resets their token bucket. Acceptable for most use cases.</p>
+<h2 id="9-bottlenecks-failure-scenarios-trade-offs">9. Bottlenecks, Failure Scenarios &amp; Trade-offs</h2>
+<p>This design targets 100M DAU and 1M RPS at peak, and Redis throughput is the one bottleneck everything else in the system is arranged around — every other component scales out horizontally without needing to coordinate with anything else.</p>
+<p>At 10x today's peak — 10M RPS — Redis throughput is the first thing to give: 10M RPS at 2 operations per check is 20M operations per second, which needs roughly 200 shards instead of 20, and Redis Cluster absorbs that the same way it absorbed the original 20 — by adding more nodes, since sharding by client ID scales linearly with no coordination between shards. Gateway CPU is next, spent on Lua script execution and connection management, and the fix there is exactly what it sounds like: auto-scale the gateway instance pool behind the load balancer. etcd's rule propagation has its own version of this problem once 200 gateway instances are all subscribing at once, but etcd is purpose-built for exactly this — a cluster of 3-5 etcd nodes comfortably handles thousands of concurrent watchers. And Redis connection pools can simply run out if 200 gateways each hold their own pool of connections and the total exceeds what a Redis node accepts; the fix is tuning pool size per gateway, backed by the fact that Redis 6 and later supports up to 65K connections per node, which is a lot of headroom to tune within.</p>
+<p>Traffic spikes stress the system in different shapes, and each has its own answer already built in. A flash sale event means rules get changed in etcd ahead of time, and every gateway picks up the new, lower limits in under a second — the new limits are enforced before the spike actually lands, not scrambled into place after the fact. A DDoS attempt gets caught by the same IP-based rate limiting that handles any anonymous client — an attacking IP hits its limit within the first second of the attack, the same as any other client would. A viral post driving a legitimate traffic surge drains token buckets the same way any burst does — affected users start seeing 429s with a <code>Retry-After</code> header, well-behaved clients back off in response, and the system stabilizes on its own without anyone needing to intervene.</p>
+<p>Multi-region deployment follows the same shape as the rest of this design: gateway and Redis Cluster get deployed per region — US-East, EU-West, AP-Tokyo, for instance — with each region's Redis fully independent, so no rate-limit check ever needs cross-region coordination. A client is identified consistently within a session, whether that's globally via JWT or regionally via IP. The one real trade-off is that a user physically moving between regions mid-session effectively gets a fresh token bucket in the new region — acceptable, since it's a rare edge case rather than a routine cost.</p>
 <hr />
-<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Redis shard goes down</td>
-<td>~5% of clients can't be rate limited (the shard's portion of key space)</td>
-<td>Gateway falls back to local in-memory fixed window counter; Redis Cluster promotes replica in &lt;30s</td>
-</tr>
-<tr>
-<td>Redis replica lag during failover</td>
-<td>Replica is 1–2 writes behind primary</td>
-<td>~1–2 clients get 1 extra request through; acceptable (not a financial system)</td>
-</tr>
-<tr>
-<td>etcd goes down</td>
-<td>Gateways can't receive rule updates; use last-known rules from memory</td>
-<td>Gateways continue rate limiting with stale rules (rules rarely change); etcd cluster of 3 nodes; Raft quorum survives 1 node failure</td>
-</tr>
-<tr>
-<td>Gateway crash</td>
-<td>In-flight requests lost; local fallback state lost</td>
-<td>Load balancer routes to other gateways; stateless so instant restart; no state to recover</td>
-</tr>
-<tr>
-<td>Lua script exceeds 5ms</td>
-<td>Redis blocks other commands during script</td>
-<td>Set SCRIPT_TIMEOUT; script is &lt;1ms in practice (just arithmetic + 2 HMSET operations)</td>
-</tr>
-<tr>
-<td>Redis connection pool exhausted</td>
-<td>Gateways queue Redis requests; latency spikes</td>
-<td>Monitor pool utilization; scale gateway instances to distribute connection load; tune pool size</td>
-</tr>
-<tr>
-<td>Clock skew between gateway and Redis</td>
-<td><code>elapsed</code> calculation uses gateway's clock; Redis uses server clock</td>
-<td>Use Redis server time via <code>TIME</code> command in Lua script — eliminates clock drift entirely</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Every component here can fail on its own, and how the system recovers depends entirely on whether what failed was holding fast, ephemeral state or something closer to a control plane.</p>
+<p>The Redis layer fails in two related but distinct ways. If a shard goes down outright, roughly 5% of clients — whatever slice of the key space that shard owned — briefly lose their Redis-backed rate limiting, and the gateway's local in-memory fixed-window fallback from §8.5 picks up the slack until Redis Cluster promotes that shard's replica, which typically completes in under 30 seconds. Even after that promotion, the newly-promoted replica can be one or two writes behind the old primary — because replication is async — so a small number of clients get one extra request through during the handoff itself; acceptable for a system that isn't a financial ledger.</p>
+<p>etcd going down is a slower-moving failure by comparison: gateways simply can't receive new rule updates, and fall back to whatever rules they last had cached in memory. Since rules rarely change to begin with, continuing to enforce stale rules is a reasonable default rather than a real degradation — and etcd itself runs as a 3-node cluster using Raft consensus, which survives the loss of any single node without losing quorum in the first place.</p>
+<p>A gateway instance crashing outright is the least eventful failure of all: whatever requests were in flight are lost, along with any local fallback state that instance was holding, but gateways are stateless by design, so the load balancer simply routes around the dead instance and a fresh one restarts instantly with nothing to recover.</p>
+<p>Two narrower failure modes round this out. A Lua script that somehow runs past 5ms would block other Redis commands behind it — mitigated with a hard <code>SCRIPT_TIMEOUT</code>, though in practice the script never gets close, since it's just arithmetic plus two <code>HMSET</code> calls and typically finishes in under a millisecond. And clock skew between a gateway's own clock and Redis's server clock would throw off the elapsed-time calculation the whole refill math depends on — the fix is having the Lua script pull time from Redis's own <code>TIME</code> command rather than trusting whatever the gateway's local clock says, which removes clock drift as a source of error entirely.</p>
+<p>If connection pools themselves get exhausted — say, from too many gateways each holding too many connections against a Redis node's limit — Redis requests start queuing on the gateway side and latency spikes as a result; the response there is the same as any capacity problem: monitor pool utilization, scale out gateway instances to spread the connection load, and tune pool sizes to match.</p>
 <hr />
-<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="rate-limiting-algorithm">Rate Limiting Algorithm</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Fixed Window</th>
-<th>Sliding Window Log</th>
-<th>Sliding Window Counter</th>
-<th>Token Bucket (chosen)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Memory</td>
-<td>O(1)</td>
-<td>O(requests)</td>
-<td>O(1)</td>
-<td>O(1)</td>
-</tr>
-<tr>
-<td>Accuracy</td>
-<td>Poor (boundary)</td>
-<td>Perfect</td>
-<td>Good (approx.)</td>
-<td>Good</td>
-</tr>
-<tr>
-<td>Burst handling</td>
-<td>No</td>
-<td>No</td>
-<td>No</td>
-<td>Yes (explicit)</td>
-</tr>
-<tr>
-<td>Implementation</td>
-<td>Trivial</td>
-<td>Complex (heap)</td>
-<td>Moderate</td>
-<td>Simple (2 values)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Token Bucket. Only algorithm with explicit burst handling — reflects real usage patterns.</p>
+<p>§8.1 already walked through why each of the four options behaves the way it does; the short version, side by side: Fixed Window is O(1) memory but has a real boundary-exploit weakness; Sliding Window Log is perfectly accurate but grows with request volume rather than staying flat; Sliding Window Counter is O(1) and a good approximation, but underestimates genuine bursts; Token Bucket matches the O(1) footprint of the counter approach while adding explicit, intentional burst support none of the other three offer.</p>
+<p><strong>Chosen: Token Bucket</strong> — the only one of the four with burst handling built in on purpose, which matches how real clients actually behave rather than treating every burst as something to be punished.</p>
 <hr />
 <h3 id="rate-limiter-placement">Rate Limiter Placement</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>In each microservice</th>
-<th>Centralized service</th>
-<th>API Gateway (chosen)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Global state</td>
-<td>No (each sees only its own traffic)</td>
-<td>Yes</td>
-<td>Yes (via shared Redis)</td>
-</tr>
-<tr>
-<td>Latency overhead</td>
-<td>0ms (in-process)</td>
-<td>2× network hops</td>
-<td>1 Redis round-trip (~1–2ms)</td>
-</tr>
-<tr>
-<td>Microservice isolation</td>
-<td>No — must implement in every service</td>
-<td>Yes</td>
-<td>Yes — microservices unaware</td>
-</tr>
-<tr>
-<td>Context available</td>
-<td>Full application context</td>
-<td>HTTP headers only</td>
-<td>HTTP headers + JWT claims</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> API Gateway. Bouncer at the door — bad requests never reach services.</p>
+<p>§8.2 covers why each of the three placement options plays out the way it does; compared side by side, running rate-limiting logic inside each microservice costs zero extra latency but has no global view of a client's traffic across instances, a centralized rate-limiter service fixes that visibility gap but adds a full extra network hop (two hops total) before any real work starts, and the API Gateway option lands in between — one Redis round-trip, roughly 1-2ms — while still seeing the client's full HTTP context including whatever's encoded in their JWT.</p>
+<p><strong>Chosen: the API Gateway.</strong> It's the bouncer at the door — a request that fails the check never reaches a microservice at all, and every microservice behind the gateway stays completely unaware that rate limiting is even happening.</p>
 <hr />
 <h3 id="failure-mode-fail-open-vs-fail-close">Failure Mode: Fail Open vs Fail Close</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Fail Open</th>
-<th>Fail Close + Local Fallback (chosen)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Redis down behavior</td>
-<td>All requests pass (no protection)</td>
-<td>Rate limiting continues via local counter</td>
-</tr>
-<tr>
-<td>User experience</td>
-<td>Normal (but backend may die)</td>
-<td>Slightly less accurate limits for &lt;30s</td>
-</tr>
-<tr>
-<td>Backend risk</td>
-<td>High — cascading failures</td>
-<td>Protected</td>
-</tr>
-<tr>
-<td>Correctness</td>
-<td>None</td>
-<td>Best-effort during failover</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Fail close with local fallback — protection is the primary job of the rate limiter.</p>
+<p>§8.5 already walks through the mechanism; framed purely as a trade-off, fail-open means normal user experience right up until the backend itself starts cascading under unchecked load, while fail-close-with-local-fallback accepts slightly less accurate limits for up to 30 seconds in exchange for the backend staying protected the entire time.</p>
+<p><strong>Chosen: fail close with a local fallback.</strong> Neither pure extreme was really acceptable — full fail-open trades away the rate limiter's entire purpose, and full fail-close trades away the app's own availability requirement (§3) for every user, not just the ones the rate limiter should be stopping.</p>
 <blockquote>
 <p>[!NOTE]
-Key Insight: The rate limiter exists to protect backend services. Failing open is the rate limiter abandoning its only responsibility. Failing close with a local fallback is the best of both worlds — protection maintained even without Redis.</p>
+Protection is the rate limiter's entire reason for existing, so failing open is the rate limiter abandoning its one job — and the fallout from that (cascading failures across every microservice behind it) is categorically worse than a bounded, self-healing degradation. Fail close with a local fallback keeps that protection intact even without Redis. §8.5 covers exactly how that fallback works.</p>
 </blockquote>
 <hr />
 <h3 id="rule-updates-polling-vs-push">Rule Updates: Polling vs Push</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>DB Polling</th>
-<th>Redis per-request lookup</th>
-<th>etcd Push (chosen)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Hot path latency</td>
-<td>0 (rules cached)</td>
-<td>+1 Redis op per request</td>
-<td>0 (rules in gateway memory)</td>
-</tr>
-<tr>
-<td>Rule propagation</td>
-<td>N-second delay (poll interval)</td>
-<td>Immediate</td>
-<td>&lt;1 second (push)</td>
-</tr>
-<tr>
-<td>CPU overhead</td>
-<td>Constant polling</td>
-<td>Per-request overhead</td>
-<td>Near-zero (persistent connection)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> etcd push. Zero hot path overhead, sub-second propagation, no polling waste.</p>
+<p>§8.6 covers the mechanism; as a straight comparison, database polling costs nothing on the hot path but adds a delay equal to the poll interval before any rule change takes effect, checking Redis per-request keeps propagation immediate but adds a second Redis operation to every single request, and etcd's push model gets both wins at once — zero hot-path cost, because rules already sit in gateway memory, and sub-second propagation, because etcd pushes changes rather than waiting to be asked.</p>
+<p><strong>Chosen: etcd push.</strong> Zero added hot-path latency and sub-second propagation, without the constant polling overhead either of the other two approaches carries.</p>
 <hr />
-<h2 id="13-frontend-notes">13. Frontend Notes</h2>
-<p><em>Rate limiter is 100% backend infrastructure. There is no frontend.</em></p>
-<p><strong>The only user-visible surface is the error response on rejection.</strong> Make it clear and actionable:</p>
+<h2 id="10-frontend-notes">10. Frontend Notes</h2>
+<p>There genuinely isn't a frontend here — this system is 100% backend infrastructure, invisible to anyone using the app in the way described back in §2. But that doesn't mean client-side code has no relationship to it at all: the one place a client ever sees this system directly is the error response it gets back on rejection, and how a client's own code handles that response matters as much as anything on the backend side.</p>
+<p>That response needs to be clear and immediately actionable, not just a bare status code:</p>
 <pre><code class="language-json">HTTP 429 Too Many Requests
 {
   &quot;error&quot;: &quot;rate_limit_exceeded&quot;,
@@ -835,13 +520,50 @@ Key Insight: The rate limiter exists to protect backend services. Failing open i
   &quot;window&quot;: &quot;60s&quot;
 }
 </code></pre>
-<p><strong>Client-side best practices (what SDK/client code should do on 429):</strong>
-- Respect <code>Retry-After</code> header — don't retry immediately
-- Use exponential backoff if <code>Retry-After</code> is not present
-- Surface a user-friendly message ("Slow down — try again in a moment"), not a raw 429 error
-- Do NOT automatically retry transparent to the user — this defeats the rate limiter</p>
+<p>What a well-behaved client does with that response matters just as much as the response itself. It should respect the <code>Retry-After</code> header rather than retrying immediately — that header exists precisely so the client doesn't have to guess. If <code>Retry-After</code> isn't present for some reason, exponential backoff is the fallback, not an immediate retry. And whatever a raw 429 looks like under the hood, it shouldn't be shown to the user as-is — a friendly message like "Slow down — try again in a moment" belongs on the surface instead. The one thing client code should never do is automatically retry in a way that's invisible to the user — silently hammering the endpoint again the instant it's told to back off defeats the entire point of the rate limiter it just got a response from.</p>
 <hr />
-<h2 id="interview-summary">Interview Summary</h2>
+<h2 id="11-evaluation-did-we-meet-the-requirements">11. Evaluation: Did We Meet the Requirements?</h2>
+<p>Five non-functional requirements were set out in §3. Here's how the design actually satisfies each one — the specific mechanism doing the work, not just the promise restated.</p>
+<p><strong>Availability (AP over consistency):</strong> The design never lets a Redis outage take rate limiting fully offline — §8.5's local in-memory fallback keeps the gateway enforcing <em>something</em> even when it can't reach Redis at all, and Redis Cluster's own replica promotion (Sentinel, under 30 seconds) resolves the underlying failure on its own. The system stays up through partial failure by design, not by luck.</p>
+<p><strong>Rate check latency (&lt;10ms):</strong> The fast path never touches disk — a single Lua script does one atomic Redis round trip per check, with rules already sitting in gateway memory rather than requiring a lookup (§8.6). Both the happy path and the rejection path in §5's full sequence come in under 2ms of added overhead, well inside budget.</p>
+<p><strong>Throughput (1M RPS):</strong> This isn't something the design was tuned to hit afterward — it's the number that ruled out a single Redis instance before any component was chosen. §4 shows the math directly: 1M RPS at 50K RPS per shard is 20 Redis shards, minimum, and §8.4 covers exactly how sharding by client ID makes that scale linearly with no cross-shard coordination.</p>
+<p><strong>Fault tolerance (fail close with local fallback):</strong> §8.5 is the mechanism end to end — Redis being unreachable never means requests pass through unchecked, it means the gateway drops to a coarser local counter until the real, coordinated state comes back online, discarding that fallback the moment it does.</p>
+<p><strong>Rule propagation (&lt;1 second):</strong> etcd's push subscription model (§8.6) is what makes this true — a rule change reaches every gateway's in-memory cache within a second of being written, with zero polling delay baked into the mechanism at any point.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Availability (AP)</td>
+<td>Local in-memory fallback + Redis Cluster replica promotion (§8.5)</td>
+</tr>
+<tr>
+<td>Rate check latency (&lt;10ms)</td>
+<td>Atomic Lua script, one Redis round trip, rules cached in gateway memory</td>
+</tr>
+<tr>
+<td>Throughput (1M RPS)</td>
+<td>Redis Cluster, 20 shards, sharded by client ID (§4, §8.4)</td>
+</tr>
+<tr>
+<td>Fault tolerance</td>
+<td>Fail close with local in-memory fallback (§8.5)</td>
+</tr>
+<tr>
+<td>Rule propagation (&lt;1s)</td>
+<td>etcd push subscription, no polling (§8.6)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12-conclusion">12. Conclusion</h2>
+<p>At its core, this design answers one question, over and over, in under a millisecond: has this client already used up its share right now? Everything else — the algorithm, the sharding, the atomic Lua script, the fallback path — exists to make that one answer fast, correct across many gateway instances that share no memory, and resilient when the piece holding the shared state goes down. The hardest problem wasn't the counting itself, which is genuinely simple; it was making that simple count agree across every gateway instance handling traffic at once, without turning a sub-millisecond check into a distributed transaction. Token Bucket, sharded Redis, an atomic Lua script, and a fail-close fallback are four separate answers to that same underlying constraint, not four unrelated decisions.</p>
+<hr />
+<h2 id="13-interview-summary">13. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
