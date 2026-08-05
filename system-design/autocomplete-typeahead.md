@@ -120,7 +120,7 @@ You never compute suggestions at query time. Ever.
 This isn't a design preference — it's the only option that survives §4's numbers. At 700K QPS, computing suggestions per request means a full trie traversal of possibly millions of nodes, repeated 700,000 times a second; even just re-ranking the top-1M terms fresh for every keystroke would be 700K ranking passes a second. Neither is remotely achievable. So the trie is inverted: every node in it stores its own already-ranked top-K list, computed once by an offline job.
 
 > [!NOTE]
-> Key Insight: Autocomplete systems trade storage for latency by precomputing top suggestions for each prefix. The trie is not a search structure at read time — it's a lookup table.
+> Key Insight: The trie is not a search structure at read time — it's a lookup table. A read never traverses or ranks anything; it walks straight to a node and returns a list someone else already computed.
 
 This is one of the most latency-sensitive systems you'll design. The 100ms budget from §3 isn't a nice-to-have — people type faster than 100ms between keystrokes, so a suggestion that arrives late doesn't just feel slow, it feels *wrong*, appearing after the user has already moved on to the next letter. Every architectural decision below exists to protect that budget.
 
@@ -500,6 +500,8 @@ Short prefixes (1–3 characters) have no personalization to protect — the res
 ### Sync vs Async Aggregation
 
 Updating frequency counts synchronously, in the same request path as the search itself, would mean every one of 5 billion daily searches needs to touch a shared piece of state before it can be considered "done" — and at 700K QPS, a shared trie write lock on that path is an instant serialization bottleneck, since only one writer can hold the lock at a time regardless of how many requests are waiting.
+
+**Chosen: async aggregation via Kafka, decoupled entirely from the search request path.**
 
 > [!IMPORTANT]
 > Kafka plus batch aggregation is what makes 5 billion daily search-completion events survive without ever forcing a synchronous write to shared frequency state. Decoupling write throughput from read performance this way is what keeps the trie internally consistent under concurrent load, rather than something that has to be locked to stay correct.
