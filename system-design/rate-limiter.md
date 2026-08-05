@@ -173,7 +173,23 @@ The simple version is a single gateway talking to a single Redis instance — fi
 
 ### The Full Sequence
 
-Trace Alice's request all the way through, and then the scraper's rejected one right behind it. Alice's `GET /feed` hits an API Gateway carrying her identity — a `userId` pulled from the JWT in her `Authorization` header since she's logged in, a source IP from `X-Forwarded-For` if a request is anonymous instead, or an `API-Key` header if the caller is a developer integration. The gateway already knows which rule applies to her before it touches Redis at all: premium users get 1000 requests/minute, regular users get 100/minute, and that mapping came from etcd on gateway startup, not a lookup on this request. With identity and rule both in hand, the gateway calls Redis with a single Lua script — an atomic read-modify-write that reads the bucket, calculates the refill, and writes the result back, all in one indivisible round trip. For Alice, that script comes back `{allowed: true, remaining: 43}`, and the gateway forwards her request to the right microservice — total added overhead under 2ms.
+Trace Alice's request all the way through, and then the scraper's rejected one right behind it. Alice's `GET /feed` hits an API Gateway carrying her identity — a `userId` pulled from the JWT in her `Authorization` header since she's logged in, a source IP from `X-Forwarded-For` if a request is anonymous instead, or an `API-Key` header if the caller is a developer integration. The gateway already knows which rule applies to her before it touches Redis at all: premium users get 1000 requests/minute, regular users get 100/minute, and that mapping came from etcd on gateway startup, not a lookup on this request. With identity and rule both in hand, the gateway calls Redis with a single Lua script — an atomic read-modify-write that reads the bucket, calculates the refill, and writes the result back, all in one indivisible round trip:
+```lua
+-- atomic: no race condition possible
+local bucket = redis.call('HMGET', clientKey, 'tokens', 'last_refill')
+local tokens = tonumber(bucket[1]) or MAX_TOKENS
+local last_refill = tonumber(bucket[2]) or now
+local elapsed = now - last_refill
+local refill = math.floor(elapsed * REFILL_RATE)
+tokens = math.min(MAX_TOKENS, tokens + refill)
+if tokens > 0 then
+  tokens = tokens - 1
+  redis.call('HMSET', clientKey, 'tokens', tokens, 'last_refill', now)
+  return {1, tokens}   -- allowed
+end
+return {0, 0}          -- rejected
+```
+For Alice, that script comes back `{allowed: true, remaining: 43}`, and the gateway forwards her request to the right microservice — total added overhead under 2ms.
 
 The scraper's request runs through the exact same steps — identify, look up rule, call the Lua script — and only diverges at the very last one: the script comes back `{allowed: false, remaining: 0}`, and the gateway returns `429 Too Many Requests` with the rate-limit headers immediately, without ever forwarding the request to a microservice. The microservice never even knows the scraper's request happened — again, under 2ms of added overhead, this time to reject rather than forward.
 
