@@ -201,7 +201,22 @@ graph TD
 </div>
 <p>The simple version is a single gateway talking to a single Redis instance — fine for understanding the shape of the system, but it doesn't survive contact with the scale numbers from §4. The evolved version is the same idea repeated across many gateway instances and 20 Redis shards, with etcd pushing rule changes out to every gateway instead of any of them polling for updates.</p>
 <h3 id="the-full-sequence">The Full Sequence</h3>
-<p>Trace Alice's request all the way through, and then the scraper's rejected one right behind it. Alice's <code>GET /feed</code> hits an API Gateway carrying her identity — a <code>userId</code> pulled from the JWT in her <code>Authorization</code> header since she's logged in, a source IP from <code>X-Forwarded-For</code> if a request is anonymous instead, or an <code>API-Key</code> header if the caller is a developer integration. The gateway already knows which rule applies to her before it touches Redis at all: premium users get 1000 requests/minute, regular users get 100/minute, and that mapping came from etcd on gateway startup, not a lookup on this request. With identity and rule both in hand, the gateway calls Redis with a single Lua script — an atomic read-modify-write that reads the bucket, calculates the refill, and writes the result back, all in one indivisible round trip. For Alice, that script comes back <code>{allowed: true, remaining: 43}</code>, and the gateway forwards her request to the right microservice — total added overhead under 2ms.</p>
+<p>Trace Alice's request all the way through, and then the scraper's rejected one right behind it. Alice's <code>GET /feed</code> hits an API Gateway carrying her identity — a <code>userId</code> pulled from the JWT in her <code>Authorization</code> header since she's logged in, a source IP from <code>X-Forwarded-For</code> if a request is anonymous instead, or an <code>API-Key</code> header if the caller is a developer integration. The gateway already knows which rule applies to her before it touches Redis at all: premium users get 1000 requests/minute, regular users get 100/minute, and that mapping came from etcd on gateway startup, not a lookup on this request. With identity and rule both in hand, the gateway calls Redis with a single Lua script — an atomic read-modify-write that reads the bucket, calculates the refill, and writes the result back, all in one indivisible round trip:</p>
+<pre><code class="language-lua">-- atomic: no race condition possible
+local bucket = redis.call('HMGET', clientKey, 'tokens', 'last_refill')
+local tokens = tonumber(bucket[1]) or MAX_TOKENS
+local last_refill = tonumber(bucket[2]) or now
+local elapsed = now - last_refill
+local refill = math.floor(elapsed * REFILL_RATE)
+tokens = math.min(MAX_TOKENS, tokens + refill)
+if tokens &gt; 0 then
+  tokens = tokens - 1
+  redis.call('HMSET', clientKey, 'tokens', tokens, 'last_refill', now)
+  return {1, tokens}   -- allowed
+end
+return {0, 0}          -- rejected
+</code></pre>
+<p>For Alice, that script comes back <code>{allowed: true, remaining: 43}</code>, and the gateway forwards her request to the right microservice — total added overhead under 2ms.</p>
 <p>The scraper's request runs through the exact same steps — identify, look up rule, call the Lua script — and only diverges at the very last one: the script comes back <code>{allowed: false, remaining: 0}</code>, and the gateway returns <code>429 Too Many Requests</code> with the rate-limit headers immediately, without ever forwarding the request to a microservice. The microservice never even knows the scraper's request happened — again, under 2ms of added overhead, this time to reject rather than forward.</p>
 <blockquote>
 <p>[!IMPORTANT]
