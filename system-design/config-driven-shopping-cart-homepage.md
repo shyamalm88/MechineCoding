@@ -380,6 +380,9 @@ Each section inside that template JSON carries seven fields, and the ones most l
 
 None of that matters unless it's actually checked before anything ships. Five validation rules run at publish time, and four of them block the publish outright rather than just warning: every section must declare a `layoutMeta.height` (a missing height causes CLS), every `type` must already exist in the component registry (an unknown type renders a blank section), every `dataSource.field` must resolve to a real GraphQL field (a bad field means no data reaches the section), and no two sections may share a `position` (an unresolvable ordering conflict). The fifth rule — that a declared `targetCohort` must exist in the Personalization Service — is deliberately only a warning, not a block, because a section quietly failing to reach one cohort isn't the same severity of failure as breaking the page for everyone.
 
+> [!IMPORTANT]
+> **Config Service is a production system, not a feature.** A template with type "FlashSaleTimer" that the Rendering Engine does not know about will render a blank section for every user in that cohort. Schema validation at publish time is far cheaper than a rollback drill at 11,500 req/sec.
+
 Even a template that passes every rule doesn't go straight to all 23,000 requests per second. It publishes first to a 10% canary, giving the business team a window to watch error rate and CLS on a bounded slice of traffic before committing to the rest:
 
 ```mermaid
@@ -418,9 +421,6 @@ User "u_abc123" always hashes to bucket 37 -- always variant_A
 ```
 
 User `u_abc123` always lands on bucket 37, which always sits inside the 0-49 range, so that user is permanently `variant_A` — the hash function itself is the persistent record, with nothing to write, expire, or lose.
-
-> [!IMPORTANT]
-> **Config Service is a production system, not a feature.** A template with type "FlashSaleTimer" that the Rendering Engine does not know about will render a blank section for every user in that cohort. Schema validation at publish time is far cheaper than a rollback drill at 11,500 req/sec.
 
 ---
 
