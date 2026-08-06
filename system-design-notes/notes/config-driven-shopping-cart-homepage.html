@@ -472,6 +472,10 @@ sequenceDiagram
 </code></pre>
 <p>Each section inside that template JSON carries seven fields, and the ones most likely to get skipped in a rushed edit are exactly the ones that matter most. Every section needs an <code>id</code>, which is what deduplication and telemetry key off of — without it, the same section rendered twice in an A/B split looks like two different sections in the analytics, and a <code>type</code>, which is how the Rendering Engine on the client knows which React component to mount, and a <code>position</code>, because two sections claiming the same position is an ordering conflict that blocks the whole publish outright. The field most likely to be forgotten is <code>layoutMeta.height</code> — a fixed pixel height — because a section missing it is precisely what causes layout shift in production, the exact CLS problem this whole design exists to avoid. A <code>layoutMeta.aboveTheFold</code> flag decides whether a section must be ready in the initial SSR response or can stream in later, and <code>dataSource.field</code> names which GraphQL field feeds it data — get that field wrong and the section renders with no data at all. The only genuinely optional field is <code>targetCohort</code>: leave it off and the section shows to everyone.</p>
 <p>None of that matters unless it's actually checked before anything ships. Five validation rules run at publish time, and four of them block the publish outright rather than just warning: every section must declare a <code>layoutMeta.height</code> (a missing height causes CLS), every <code>type</code> must already exist in the component registry (an unknown type renders a blank section), every <code>dataSource.field</code> must resolve to a real GraphQL field (a bad field means no data reaches the section), and no two sections may share a <code>position</code> (an unresolvable ordering conflict). The fifth rule — that a declared <code>targetCohort</code> must exist in the Personalization Service — is deliberately only a warning, not a block, because a section quietly failing to reach one cohort isn't the same severity of failure as breaking the page for everyone.</p>
+<blockquote>
+<p>[!IMPORTANT]
+<strong>Config Service is a production system, not a feature.</strong> A template with type "FlashSaleTimer" that the Rendering Engine does not know about will render a blank section for every user in that cohort. Schema validation at publish time is far cheaper than a rollback drill at 11,500 req/sec.</p>
+</blockquote>
 <p>Even a template that passes every rule doesn't go straight to all 23,000 requests per second. It publishes first to a 10% canary, giving the business team a window to watch error rate and CLS on a bounded slice of traffic before committing to the rest:</p>
 <div class="mermaid">
 sequenceDiagram
@@ -505,10 +509,6 @@ Experiment: variant_A = buckets 0-49, variant_B = buckets 50-99
 User &quot;u_abc123&quot; always hashes to bucket 37 -- always variant_A
 </code></pre>
 <p>User <code>u_abc123</code> always lands on bucket 37, which always sits inside the 0-49 range, so that user is permanently <code>variant_A</code> — the hash function itself is the persistent record, with nothing to write, expire, or lose.</p>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>Config Service is a production system, not a feature.</strong> A template with type "FlashSaleTimer" that the Rendering Engine does not know about will render a blank section for every user in that cohort. Schema validation at publish time is far cheaper than a rollback drill at 11,500 req/sec.</p>
-</blockquote>
 <hr />
 <h3 id="82-server-driven-ui-rendering-pipeline">8.2 Server-Driven UI Rendering Pipeline</h3>
 <p>Here's the problem: the backend sends <code>"type": "HeroBanner"</code> in the config JSON, and the client has to render it without knowing the full list of possible types at build time — because new types get added to config on the business team's schedule, not the frontend's release schedule. A client hardcoded to a fixed set of known types would crash, or render nothing useful, the moment it receives a type it's never seen.</p>
