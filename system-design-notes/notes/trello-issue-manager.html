@@ -902,7 +902,7 @@ Due date reminders are a scheduling problem, not a real-time one. A 5-minute pol
 <p><strong>Chosen:</strong> WebSocket. Board clients must send subscribe/unsubscribe messages as they navigate between boards — SSE is read-only and simply has no channel to carry that half of the conversation, which rules it out regardless of its latency being otherwise competitive.</p>
 <blockquote>
 <p>[!NOTE]
-Latency alone doesn't decide this one — SSE and WebSocket are close enough that it's practically a tie. What actually forces WebSocket is that collaborative boards need the client to talk back, not just listen; that's a protocol capability question, not a speed question, and it's worth framing it that way rather than reaching for a latency number that doesn't actually distinguish the two.</p>
+This same forced choice shows up in any collaborative app with live cursors, typing indicators, or drag state — the moment a client needs to tell the server something happened <em>right now</em>, not just receive updates, SSE and long polling are eliminated before latency ever enters the discussion.</p>
 </blockquote>
 <hr />
 <h3 id="conflict-resolution-last-write-wins-vs-ot-vs-crdt">Conflict Resolution: Last-Write-Wins vs. OT vs. CRDT</h3>
@@ -910,7 +910,7 @@ Latency alone doesn't decide this one — SSE and WebSocket are close enough tha
 <p><strong>Chosen:</strong> last-write-wins. Card-move conflicts are discrete events that happen for well under 0.1% of moves — nothing like the "every keystroke is a potential conflict" world OT and CRDT were built for.</p>
 <blockquote>
 <p>[!NOTE]
-A kanban board isn't a text editor. A card move is one atomic event, not a stream of individual character insertions — and optimizing for character-level merge machinery here would be solving a much harder problem than the one this system actually has.</p>
+This isn't a permanent verdict on the whole system, only on structural fields like position. If this board ever grew simultaneous free-text editing of a card's description, that field alone would need OT or CRDT-style merging — nothing stops the same system from using different conflict strategies for different fields depending on what kind of collision each one can actually have.</p>
 </blockquote>
 <hr />
 <h3 id="card-position-integer-index-vs-fractional-index">Card Position: Integer Index vs. Fractional Index</h3>
