@@ -641,7 +641,7 @@ The three options split mainly on direction and statefulness. Long polling is a 
 **Chosen:** WebSocket. Board clients must send subscribe/unsubscribe messages as they navigate between boards — SSE is read-only and simply has no channel to carry that half of the conversation, which rules it out regardless of its latency being otherwise competitive.
 
 > [!NOTE]
-> Latency alone doesn't decide this one — SSE and WebSocket are close enough that it's practically a tie. What actually forces WebSocket is that collaborative boards need the client to talk back, not just listen; that's a protocol capability question, not a speed question, and it's worth framing it that way rather than reaching for a latency number that doesn't actually distinguish the two.
+> This same forced choice shows up in any collaborative app with live cursors, typing indicators, or drag state — the moment a client needs to tell the server something happened *right now*, not just receive updates, SSE and long polling are eliminated before latency ever enters the discussion.
 
 ---
 
@@ -652,7 +652,7 @@ All three exist to answer "what happens when two edits collide," but they're bui
 **Chosen:** last-write-wins. Card-move conflicts are discrete events that happen for well under 0.1% of moves — nothing like the "every keystroke is a potential conflict" world OT and CRDT were built for.
 
 > [!NOTE]
-> A kanban board isn't a text editor. A card move is one atomic event, not a stream of individual character insertions — and optimizing for character-level merge machinery here would be solving a much harder problem than the one this system actually has.
+> This isn't a permanent verdict on the whole system, only on structural fields like position. If this board ever grew simultaneous free-text editing of a card's description, that field alone would need OT or CRDT-style merging — nothing stops the same system from using different conflict strategies for different fields depending on what kind of collision each one can actually have.
 
 ---
 
