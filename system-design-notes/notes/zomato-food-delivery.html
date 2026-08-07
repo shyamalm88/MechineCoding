@@ -32,93 +32,89 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="layout">
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="system-design-zomato-food-delivery-app">System Design: Zomato / Food Delivery App</h1>
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design a food delivery platform that connects customers with restaurants and delivery partners, supporting restaurant discovery, order placement, payment, real-time GPS tracking, and delivery. The system must handle 300 orders/sec peak, 100K GPS writes/sec from drivers, and guarantee that no order is lost after payment succeeds.</p>
-<p><strong>In scope:</strong> Restaurant browse and search, cart management, order placement + payment, delivery partner assignment, real-time GPS tracking, order state notifications.</p>
-<p><strong>Out of scope:</strong> Restaurant menu management portal, financial settlement/payouts, surge pricing, fraud detection, machine learning recommendations.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<p><strong>Scale baseline:</strong>
-- 50M registered users, 10M daily active users
-- 500K restaurants, 1M active delivery partners
-- 5M orders/day → ~60 orders/sec average, <strong>300 orders/sec peak</strong>
-- 50K concurrent order tracking sessions at lunch/dinner peak</p>
-<p><strong>GPS write load — the single hardest write path:</strong></p>
-<pre><code>1,000,000 active drivers × 1 ping every 10s = 100,000 writes/sec peak
-PostgreSQL ceiling ~50–100K writes/sec with contention → cannot absorb this directly
-Kafka write buffer required → consumers fan out to Redis (live) and Cassandra (audit)
-</code></pre>
-<p><strong>Storage estimates:</strong>
-- Orders: ~1KB × 5M/day = 5GB/day → ~1.8TB/year (PostgreSQL, 3-year retention)
-- GPS history: 100K writes/sec × ~10 bytes × 86400s = ~86GB/day → ~2.5TB/month (Cassandra, 30-day retention)
-- Menu images: ~500KB × 500K restaurants = 250GB (S3 + CDN, rarely changes)
-- Total active hot storage: ~10–15TB/year</p>
-<p><strong>Redis memory budget:</strong></p>
-<pre><code>Sessions:              10M × 1KB   = 10GB
-Carts (active):       500K × 2KB   = 1GB
-Restaurant list cache: 50K × 5KB   = 250MB
-Driver locations:     100K × 500B  = 50MB
-Geo index:            100K drivers  = ~100MB
-Idempotency keys:      5M × 100B   = 500MB
-Total: ~12GB → use 32GB instance with LRU eviction on cache keys
-</code></pre>
-<p><strong>Kafka throughput:</strong> Peak ~100K events/sec across GPS and order topics. 5 brokers, replication factor 3, 10 partitions per topic.</p>
-<blockquote>
-<p>These numbers drive every storage and infrastructure decision below. The GPS write load is why we need Kafka + Cassandra. The 300 orders/sec peak is why PostgreSQL is perfectly fine for orders.</p>
-</blockquote>
+<h2 id="1-what-is-a-food-delivery-app">1. What Is a Food Delivery App?</h2>
+<p>A food delivery platform connects three groups of people who don't work for the same company and don't share a location: customers who want food delivered, restaurants that cook it, and delivery partners who carry it from one to the other. A customer opens the app, browses nearby restaurants, builds a cart, and pays; the restaurant confirms the order and starts cooking; a nearby delivery partner picks the food up and rides it to the customer's door while the customer watches its progress on a live map.</p>
+<p>At the scale these platforms run at, the hard part isn't any single step in that chain — it's keeping three independently moving parties in sync, guaranteeing the money and the food both arrive exactly once, and doing it while tens of thousands of delivery partners are simultaneously broadcasting their location every few seconds.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
-<ul>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Meera is hungry and opens the app around 1pm. The homepage already knows roughly where she is and shows restaurants near her, sorted by rating and estimated delivery time. She picks a place she's ordered from before, taps a couple of dishes into her cart, and checks out — address already saved, card already on file. She taps "Place Order."</p>
+<p>Two seconds later her screen changes: "Order Confirmed." She didn't have to wait for anything else — just a spinner, then a confirmation, then a running order status.</p>
+<p>At the restaurant, a notification pops up on the kitchen's tablet: a new order, with the items already itemized. Someone taps "Accept" and starts preparing it.</p>
+<p>Across the city, Rakesh is on his bike between deliveries. His phone buzzes with a new pickup offer — restaurant name, distance, estimated payout. He taps to accept before it goes to someone else. A few minutes later he pulls up outside the restaurant, grabs the bag, and starts riding toward Meera's address.</p>
+<p>Meera checks the app every so often and watches a little icon — Rakesh's bike — creeping across the map toward her building, updating smoothly enough that it doesn't feel like a slideshow. When he arrives, he marks the order delivered; she gets a notification, opens the door, and there's her food. She rates the order five stars on her way back inside.</p>
+<p>The whole thing — from Meera's tap to her food arriving — usually takes 30 to 45 minutes, and neither she nor Rakesh ever thought about a database, a message queue, or a WebSocket connection. Everything from here on is how that experience actually gets built.</p>
+<hr />
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> In scope: restaurant browse and search, cart management, order placement and payment, delivery partner assignment, real-time GPS tracking, and order state notifications. Out of scope: the restaurant menu management portal, financial settlement and payouts, surge pricing, fraud detection, and machine-learning recommendations.</p>
+<p><strong>Functional requirements:</strong></p>
+<ol>
 <li><strong>Restaurant Discovery:</strong> Browse restaurants filtered by location, cuisine, rating, delivery time, and dietary preference</li>
-<li><strong>Search:</strong> Full-text + geo search across restaurant names and dish names; autocomplete suggestions</li>
-<li><strong>Cart Management:</strong> Add/remove items, apply promo codes, re-validate prices at checkout</li>
+<li><strong>Search:</strong> Full-text and geo search across restaurant names and dish names, with autocomplete suggestions</li>
+<li><strong>Cart Management:</strong> Add or remove items, apply promo codes, re-validate prices at checkout</li>
 <li><strong>Order Placement:</strong> Checkout with address selection and payment processing; order confirmation under 2 seconds</li>
 <li><strong>Delivery Assignment:</strong> Find and assign the nearest idle delivery partner; handle rejection and timeout fallbacks</li>
-<li><strong>Real-time Tracking:</strong> Live GPS updates from delivery partner visible to customer in under 1 second</li>
+<li><strong>Real-time Tracking:</strong> Live GPS updates from the delivery partner, visible to the customer in under 1 second</li>
 <li><strong>Order State Notifications:</strong> Push/SMS for every state transition (confirmed, preparing, picked up, delivered)</li>
 <li><strong>Order History:</strong> Customer can view all past orders and re-order</li>
-</ul>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+</ol>
+<details>
+<summary><strong>Point to Ponder:</strong> What stops two delivery partners from both being assigned the same order?</summary>
+<p>Delivery assignment is one of the few places this system insists on strong consistency (see the Consistency Model below) — it's enforced with a Redis <code>SETNX</code> lock (<code>partner:{id}:active_order</code>, TTL 30 minutes) the instant a partner accepts. Whichever partner's accept reaches the lock first wins it; every other partner's accept for that order is simply dismissed. See §8.1 Deep Dives for the full broadcast-and-lock mechanism.</p>
+</details>
+<details>
+<summary><strong>Point to Ponder:</strong> What happens if a customer's payment succeeds but Kafka is down right when the restaurant should be notified?</summary>
+<p>Nothing is lost — the order is already durably committed to PostgreSQL before Kafka ever enters the picture, and a background job scans for CONFIRMED orders with no Kafka acknowledgment and replays their events once Kafka recovers (the outbox pattern). The restaurant just finds out a little late. See §9.2 Failure Scenarios.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real person, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Restaurant listing latency</td>
 <td>Under 500ms</td>
+<td>A slow-loading homepage is the first thing a hungry customer sees — hesitation here loses them to a competitor app before they've even browsed a menu.</td>
 </tr>
 <tr>
 <td>Search results latency</td>
 <td>Under 300ms</td>
+<td>Search is how a customer with a specific craving finds it; a laggy search feels broken in a way a slow homepage doesn't.</td>
 </tr>
 <tr>
 <td>Order placement end-to-end</td>
 <td>Under 2s</td>
+<td>The moment between tapping "Place Order" and seeing a confirmation is the highest-anxiety two seconds in the whole flow — did my card get charged? Did the order go through?</td>
 </tr>
 <tr>
 <td>GPS tracking update latency</td>
 <td>Under 1s customer-visible</td>
+<td>A driver icon that visibly lags behind reality breaks the customer's trust in the ETA and makes them wonder if the app has frozen.</td>
 </tr>
 <tr>
 <td>Availability</td>
 <td>99.9% (8.7 hours downtime/year)</td>
+<td>A down app during lunch or dinner rush isn't a minor outage — it's every customer, restaurant, and delivery partner simultaneously unable to work.</td>
 </tr>
 <tr>
 <td>Order durability</td>
 <td>Zero loss after payment success</td>
+<td>A vanished order after money has already left someone's account is the single worst thing this system could do to a customer's trust.</td>
 </tr>
 <tr>
 <td>GPS write throughput</td>
 <td>100K writes/sec sustained</td>
+<td>Not a promise to any one user — it's the floor the system must sustain just to keep the 1-second tracking promise true for everyone tracking an order at once.</td>
 </tr>
 <tr>
 <td>Peak order throughput</td>
 <td>300 orders/sec</td>
+<td>Same idea: this is what "everyone ordering lunch at the same time" actually costs in raw write volume.</td>
 </tr>
 </tbody>
 </table>
@@ -180,8 +176,30 @@ Total: ~12GB → use 32GB instance with LRU eviction on cache keys
 The system is eventually consistent everywhere except money and orders. PostgreSQL ACID transactions for order + payment, Redis distributed locks for delivery assignment, Kafka async propagation everywhere else.</p>
 </blockquote>
 <hr />
-<h2 id="5-mental-model">5. 🧠 Mental Model</h2>
-<p>Every food delivery interview is really three sub-systems layered on top of each other. The entire platform exists to coordinate three actors — each with a distinct flow and a distinct bottleneck. The key insight is that these three flows are <strong>decoupled by Kafka</strong>: Customer flow writes to <code>order.placed</code> → Restaurant flow consumes and confirms → <code>order.confirmed</code> fires → Delivery flow picks it up. No service ever calls another service directly. That is the architecture in one sentence.</p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking what the raw numbers actually are — and what each one rules in or out before a single component gets chosen.</p>
+<p><strong>Starting assumptions:</strong></p>
+<pre><code>Registered users:        50 million (10 million daily active)
+Restaurants:              500,000
+Active delivery partners: 1,000,000
+Daily orders:              5 million
+Concurrent tracking sessions at lunch/dinner peak: 50,000
+</code></pre>
+<p><strong>How many orders per second does that create?</strong> 5 million orders a day, spread across 86,400 seconds, averages out to roughly 60 orders/sec. But meals don't spread evenly across the day — lunch and dinner windows concentrate demand, which is why the design target is <strong>300 orders/sec peak</strong>, five times the average. That number alone is nowhere near painful for a relational database — it's what rules PostgreSQL <em>in</em> for orders, not out.</p>
+<p><strong>What does the GPS write load look like?</strong> Every one of the 1 million active delivery partners pings their location roughly once every 10 seconds while working:</p>
+<pre><code>1,000,000 active delivery partners x 1 ping / 10s = 100,000 writes/sec peak
+</code></pre>
+<p>That single number is the hardest write path in the entire system. PostgreSQL's ceiling under contention sits around 50,000–100,000 writes/sec — meaning 100K writes/sec doesn't just strain it, it sits right at or past the edge of what a single relational primary can absorb directly. That's why a Kafka write buffer sits in front of the write, with consumers fanning out to Redis for the live read path and Cassandra for the audit trail — a decision that shows up again in §8's deep dive on exactly this problem.</p>
+<p><strong>What does that imply for storage?</strong> Orders are cheap: about 1KB per order times 5 million orders/day is 5GB/day, or roughly 1.8TB/year at PostgreSQL's 3-year retention window — trivial by modern storage standards. GPS history is a different story: 100,000 writes/sec at roughly 10 bytes per point, over 86,400 seconds in a day, works out to about 86GB/day, or roughly 2.5TB/month at Cassandra's 30-day retention. Menu images add about 250GB total (500KB average times 500,000 restaurants), living in S3 behind a CDN since they rarely change. Altogether, active hot storage across the system lands around 10–15TB/year.</p>
+<p><strong>What does Redis need to hold in memory?</strong> Sessions for 10 million daily active users at roughly 1KB each is 10GB. Active carts — 500,000 of them at about 2KB — add 1GB. A restaurant list cache covering 50,000 entries at 5KB each adds 250MB. Live driver locations for 100,000 concurrently active partners at 500 bytes each is 50MB, and the geo index covering those same 100,000 drivers adds roughly another 100MB. Idempotency keys for 5 million recent operations at 100 bytes each add 500MB. That totals to roughly 12GB — comfortably inside a single 32GB Redis instance with LRU eviction on the cache keys (not the correctness-critical ones).</p>
+<p><strong>And the event bus itself?</strong> Kafka needs to absorb roughly 100K events/sec at peak across the GPS and order topics combined — handled by 5 brokers, replication factor 3, and 10 partitions per topic.</p>
+<blockquote>
+<p>These numbers drive every storage and infrastructure decision below. The GPS write load is why we need Kafka + Cassandra. The 300 orders/sec peak is why PostgreSQL is perfectly fine for orders.</p>
+</blockquote>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Meera's order and Rakesh's pickup from the story above — here's what actually happens underneath.</p>
+<p>Every food delivery interview is really three sub-systems layered on top of each other, because the platform exists to coordinate three actors, each with a distinct flow and a distinct bottleneck:</p>
 <pre><code>┌───────────────────────────────────────────────────────────────────┐
 │  ACTOR            FLOW                         KEY CHALLENGE       │
 ├───────────────────────────────────────────────────────────────────┤
@@ -208,11 +226,16 @@ The system is eventually consistent everywhere except money and orders. PostgreS
                                                    ▼
                                          [WebSocket Server] → Customer App
 </code></pre>
+<p>The key insight is that these three flows are <strong>decoupled by Kafka</strong>: the customer flow writes to <code>order.placed</code>, the restaurant flow consumes it and confirms, <code>order.confirmed</code> fires, and the delivery flow picks it up from there. No service ever calls another service directly — that's the architecture in one sentence, and it's worth pausing on why before looking at the diagrams.</p>
+<details>
+<summary><strong>Point to Ponder:</strong> Why doesn't the Order Service just call the Restaurant Service directly to notify it, instead of publishing to Kafka?</summary>
+<p>Because a direct call couples the two services' availability together — a slow or down Restaurant Service would turn into order-placement latency, blocking the 2-second confirmation SLA for a problem that has nothing to do with the customer's payment. Kafka lets each service fail in isolation: a Notification Service outage can't block order placement, and a Tracking Service slowdown can't delay delivery assignment. See §9.3 Trade-offs (Kafka vs Direct Service Calls) for the full comparison.</p>
+</details>
 <blockquote>
 <p>[!TIP]
 <strong>Interview tip:</strong> Name all three actors upfront and ask the interviewer which flow they want to go deep on. Interviewers who want breadth will say "all three"; interviewers who want depth will pick one. Either way, naming the actors first shows structured thinking before you touch a diagram.</p>
 </blockquote>
-<h3 id="core-design-principles">⚡ Core Design Principles</h3>
+<h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
 <tr>
@@ -244,8 +267,183 @@ The system is eventually consistent everywhere except money and orders. PostgreS
 </tr>
 </tbody>
 </table>
+<h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
+<p>The architecture starts simple and grows into the full event-driven design as the system matures — here's both versions.</p>
+<p><strong>Simple Design</strong></p>
+<div class="mermaid">
+graph TD
+    CustomerApp[&quot;Customer App&quot;]
+    DriverApp[&quot;Delivery Partner App&quot;]
+    RestPortal[&quot;Restaurant Portal&quot;]
+    CDN[&quot;CDN - Static Assets and Images&quot;]
+    GW[&quot;API Gateway + Load Balancer&quot;]
+    WS[&quot;WebSocket Server&quot;]
+    Services[&quot;Microservices Layer&quot;]
+    DB[(&quot;PostgreSQL - Orders and Payments&quot;)]
+    Mongo[(&quot;MongoDB - Menus and Catalogs&quot;)]
+    Cache[(&quot;Redis - Cache and Sessions&quot;)]
+
+    CustomerApp --&gt;|HTTPS| CDN
+    CDN --&gt; GW
+    DriverApp --&gt; GW
+    RestPortal --&gt; GW
+    GW --&gt; WS
+    GW --&gt; Services
+    Services --&gt; DB
+    Services --&gt; Mongo
+    Services --&gt; Cache
+</div>
+<p><strong>Evolved Design with Kafka, Cassandra, and Elasticsearch</strong></p>
+<div class="mermaid">
+graph TD
+    GW[&quot;API Gateway&quot;]
+    WS[&quot;WebSocket Server&quot;]
+
+    OrderSvc[&quot;Order Service&quot;]
+    PaySvc[&quot;Payment Service&quot;]
+    RestSvc[&quot;Restaurant Service&quot;]
+    SearchSvc[&quot;Search Service&quot;]
+    TrackSvc[&quot;Tracking Service&quot;]
+    DeliverySvc[&quot;Delivery Matching Service&quot;]
+    NotifSvc[&quot;Notification Service&quot;]
+    LocationSvc[&quot;Location Update Service&quot;]
+
+    Kafka[[&quot;Kafka - Event Bus&quot;]]
+
+    PG[(&quot;PostgreSQL - Orders and Payments&quot;)]
+    Mongo[(&quot;MongoDB - Menus and Reviews&quot;)]
+    ES[(&quot;Elasticsearch - Search and Geo&quot;)]
+    RedisCache[(&quot;Redis - Cache, Sessions, Geo Index&quot;)]
+    Cassandra[(&quot;Cassandra - GPS History&quot;)]
+    S3[&quot;S3 + CDN - Images&quot;]
+
+    GW --&gt; OrderSvc
+    GW --&gt; PaySvc
+    GW --&gt; RestSvc
+    GW --&gt; SearchSvc
+    GW --&gt; DeliverySvc
+    GW --&gt; WS
+    GW --&gt; LocationSvc
+
+    OrderSvc --&gt; Kafka
+    PaySvc --&gt; Kafka
+    RestSvc --&gt; Kafka
+    DeliverySvc --&gt; Kafka
+    LocationSvc --&gt; Kafka
+
+    Kafka --&gt; TrackSvc
+    Kafka --&gt; NotifSvc
+    Kafka --&gt; DeliverySvc
+    Kafka --&gt; RestSvc
+    Kafka --&gt; WS
+
+    OrderSvc --&gt; PG
+    PaySvc --&gt; PG
+    RestSvc --&gt; Mongo
+    SearchSvc --&gt; ES
+    TrackSvc --&gt; Cassandra
+    TrackSvc --&gt; RedisCache
+    DeliverySvc --&gt; RedisCache
+    RestSvc --&gt; S3
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> No service calls another service directly. All cross-service communication flows through Kafka. A Notification Service outage cannot block order placement. A Tracking Service slowdown cannot delay the delivery assignment. Each service fails in isolation.</p>
+</blockquote>
+<h3 id="the-full-sequence-order-placement-and-driver-assignment">The Full Sequence: Order Placement and Driver Assignment</h3>
+<p>The diagrams above show the components; this shows the actual message sequence for the core interview flow — from Meera's tap to Rakesh's acceptance. Cart validation happens before anything touches money; the order commits to PostgreSQL and payment clears synchronously, so the customer's 2-second confirmation is a guarantee, not a best-effort; everything downstream of that commit — restaurant notification, delivery matching — runs asynchronously off the back of Kafka events, invisible to the customer waiting on their screen.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant C as Customer App
+    participant GW as API Gateway
+    participant Cart as Cart Service
+    participant Order as Order Service
+    participant Pay as Payment Service
+    participant PG as PostgreSQL
+    participant Kafka as Kafka
+    participant Rest as Restaurant Service
+    participant Match as Delivery Matching
+    participant Redis as Redis Geo
+    participant Driver as Driver App
+    participant WS as WebSocket Server
+
+    C-&gt;&gt;GW: POST /orders (cart_id, address_id, payment_method)
+    GW-&gt;&gt;Cart: Validate cart and re-check prices
+    Cart--&gt;&gt;GW: Cart valid, total confirmed
+    GW-&gt;&gt;Order: Create order (status=PENDING)
+    Order-&gt;&gt;PG: INSERT order row, BEGIN transaction
+    Order-&gt;&gt;Pay: Initiate payment (order_id, amount)
+    Pay--&gt;&gt;Order: Payment SUCCESS, transaction_id
+    Order-&gt;&gt;PG: UPDATE status=CONFIRMED, COMMIT
+    Order-&gt;&gt;Kafka: Publish order.placed event (async, non-blocking)
+    Order--&gt;&gt;C: Return order_id, status=CONFIRMED, eta
+    Note over C,Order: Customer sees confirmation under 2s
+
+    Kafka-&gt;&gt;Rest: Consume order.placed
+    Rest-&gt;&gt;Rest: Push notification to restaurant dashboard
+    Rest--&gt;&gt;Kafka: Publish order.confirmed
+
+    Kafka-&gt;&gt;Match: Consume order.confirmed
+    Match-&gt;&gt;Redis: GEORADIUS idle_drivers 5km ASC COUNT 10
+    Redis--&gt;&gt;Match: Nearest idle drivers list
+    Match-&gt;&gt;Driver: Broadcast assignment request to all candidates
+    Driver--&gt;&gt;Match: First driver taps Accept
+    Match-&gt;&gt;Redis: SETNX partner:id:active_order (TTL=30min)
+    Match-&gt;&gt;PG: UPDATE order SET driver_id, status=PARTNER_ASSIGNED
+    Match-&gt;&gt;Kafka: Publish driver.assigned event
+    Kafka-&gt;&gt;WS: Consume driver.assigned
+    WS--&gt;&gt;C: Push partner_assigned event via WebSocket
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The Kafka publish after the PostgreSQL commit is fire-and-forget. The order is durably saved before we even attempt to notify the restaurant. If Kafka is temporarily unavailable, the order is safe — events replay via outbox on recovery.</p>
+</blockquote>
+<h3 id="the-full-sequence-real-time-gps-tracking">The Full Sequence: Real-Time GPS Tracking</h3>
+<p>Once Rakesh is riding, the same event bus that decoupled order placement from restaurant confirmation does the same job for location: every ping goes to Kafka first, never straight to a database, because 1 million drivers pinging every 10 seconds is a write rate no database survives directly (§4). A consumer fans that single ping out to two destinations that serve two different purposes — Redis for the live map, Cassandra for the permanent record — and the WebSocket server pushes to the customer only when Redis actually has something new to say.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant Driver as Driver App
+    participant GW as API Gateway
+    participant LocSvc as Location Update Service
+    participant Kafka as Kafka
+    participant Redis as Redis
+    participant WS as WebSocket Server
+    participant C as Customer App
+    participant Order as Order Service
+    participant PG as PostgreSQL
+
+    Note over Driver,C: GPS tracking loop - every 10 seconds
+
+    Driver-&gt;&gt;GW: POST /delivery/location lat, lng, order_id
+    GW-&gt;&gt;LocSvc: Forward GPS ping
+    LocSvc-&gt;&gt;Kafka: Publish to location_updates topic
+    Note over LocSvc,Kafka: Not written to DB directly - 100K writes/sec would collapse a DB
+
+    Kafka-&gt;&gt;LocSvc: Consume location_updates event
+    LocSvc-&gt;&gt;Redis: SET driver:loc:id lat,lng (TTL=10s)
+    LocSvc-&gt;&gt;Redis: XADD tracking:order_id lat,lng,timestamp
+    Note over LocSvc,Redis: Redis Streams fan-out - multiple WS servers can subscribe
+
+    Redis--&gt;&gt;WS: New stream entry available on tracking:order_id
+    WS--&gt;&gt;C: Push location_update lat,lng over persistent WS connection
+    Note over WS,C: Customer sees driver moving on map in real-time under 1s
+
+    Note over Driver,C: Driver status update - driver taps Picked Up
+
+    Driver-&gt;&gt;GW: PUT /delivery/orders/id/status - status PICKED_UP
+    GW-&gt;&gt;Order: Update order status
+    Order-&gt;&gt;PG: UPDATE order SET status=PICKED_UP
+    Order-&gt;&gt;Kafka: Publish order.status.changed event
+    Kafka-&gt;&gt;WS: Consume order.status.changed
+    WS--&gt;&gt;C: Push status_update PICKED_UP over WebSocket
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Kafka absorbs 100K GPS writes/sec as a buffer — no database can handle this write rate directly. Redis is the hot read path (sub-millisecond for proximity search). Cassandra stores the append-only GPS history for audit. Three stores, three different jobs.</p>
+</blockquote>
 <hr />
 <h2 id="6-api-design">6. API Design</h2>
+<p>The API surface splits cleanly by actor — customers browsing and tracking orders, and delivery partners reporting their status and location — because the two mobile clients on either side of a delivery have almost nothing in common except the <code>order_id</code> connecting them.</p>
 <h3 id="customer-apis">Customer APIs</h3>
 <table>
 <thead>
@@ -320,223 +518,21 @@ The system is eventually consistent everywhere except money and orders. PostgreS
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>[!NOTE]
-<strong><code>POST /api/v1/orders</code> is the most architecturally interesting endpoint.</strong> It is synchronous for the customer — cart validation, order creation, and payment processing all complete within the 2-second SLA before a response is returned. However, it immediately triggers async Kafka events after the PostgreSQL commit: an <code>order.placed</code> event notifies the restaurant, and an <code>order.confirmed</code> event (published by the Restaurant Service after acknowledgement) kicks off the driver assignment flow. The customer sees a confirmed order instantly; restaurant notification and driver matching happen entirely out of band.</p>
-</blockquote>
+<p>The one design choice worth calling out explicitly: <code>POST /api/v1/orders</code> is synchronous for the customer — cart validation, order creation, and payment processing all complete within the 2-second SLA before a response is returned — but it immediately triggers async Kafka events after the PostgreSQL commit. An <code>order.placed</code> event notifies the restaurant, and an <code>order.confirmed</code> event (published by the Restaurant Service after acknowledgement) kicks off the driver assignment flow. The customer sees a confirmed order instantly; restaurant notification and driver matching happen entirely out of band.</p>
 <hr />
-<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
-<h3 id="71-order-placement-driver-assignment">7.1 Order Placement &amp; Driver Assignment</h3>
-<p>The happy path for order placement and delivery assignment — the core interview flow.</p>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>Customer taps "Place Order" — the app sends <code>POST /orders</code> with cart_id, address, and payment method.</li>
-<li>Cart Service re-validates every item's price and availability before we touch money.</li>
-<li>Order Service creates an order row in PostgreSQL (status = PENDING) inside a transaction.</li>
-<li>Payment Service calls the payment gateway synchronously — we don't move forward until money is confirmed.</li>
-<li>On payment success, the transaction commits — order status becomes CONFIRMED. This is the point of no return.</li>
-<li>Order Service fires a <code>order.placed</code> event to Kafka — asynchronously, without blocking the customer response.</li>
-<li>Customer sees confirmation in under 2 seconds. Everything after this is async.</li>
-<li>Restaurant Service consumes the Kafka event and sends a push notification to the restaurant dashboard.</li>
-<li>Restaurant accepts → publishes <code>order.confirmed</code> back to Kafka.</li>
-<li>Delivery Matching Service picks it up, queries Redis Geo for all idle drivers within 5km, and broadcasts the order to all of them simultaneously.</li>
-<li>First driver to accept gets the order — locked via <code>SETNX</code> in Redis to prevent double assignment.</li>
-<li>Customer receives a WebSocket push: driver name, ETA, live location.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant C as Customer App
-    participant GW as API Gateway
-    participant Cart as Cart Service
-    participant Order as Order Service
-    participant Pay as Payment Service
-    participant PG as PostgreSQL
-    participant Kafka as Kafka
-    participant Rest as Restaurant Service
-    participant Match as Delivery Matching
-    participant Redis as Redis Geo
-    participant Driver as Driver App
-    participant WS as WebSocket Server
-
-    C-&gt;&gt;GW: POST /orders (cart_id, address_id, payment_method)
-    GW-&gt;&gt;Cart: Validate cart and re-check prices
-    Cart--&gt;&gt;GW: Cart valid, total confirmed
-    GW-&gt;&gt;Order: Create order (status=PENDING)
-    Order-&gt;&gt;PG: INSERT order row, BEGIN transaction
-    Order-&gt;&gt;Pay: Initiate payment (order_id, amount)
-    Pay--&gt;&gt;Order: Payment SUCCESS, transaction_id
-    Order-&gt;&gt;PG: UPDATE status=CONFIRMED, COMMIT
-    Order-&gt;&gt;Kafka: Publish order.placed event (async, non-blocking)
-    Order--&gt;&gt;C: Return order_id, status=CONFIRMED, eta
-    Note over C,Order: Customer sees confirmation under 2s
-
-    Kafka-&gt;&gt;Rest: Consume order.placed
-    Rest-&gt;&gt;Rest: Push notification to restaurant dashboard
-    Rest--&gt;&gt;Kafka: Publish order.confirmed
-
-    Kafka-&gt;&gt;Match: Consume order.confirmed
-    Match-&gt;&gt;Redis: GEORADIUS idle_drivers 5km ASC COUNT 10
-    Redis--&gt;&gt;Match: Nearest idle drivers list
-    Match-&gt;&gt;Driver: Broadcast assignment request to all candidates
-    Driver--&gt;&gt;Match: First driver taps Accept
-    Match-&gt;&gt;Redis: SETNX partner:id:active_order (TTL=30min)
-    Match-&gt;&gt;PG: UPDATE order SET driver_id, status=PARTNER_ASSIGNED
-    Match-&gt;&gt;Kafka: Publish driver.assigned event
-    Kafka-&gt;&gt;WS: Consume driver.assigned
-    WS--&gt;&gt;C: Push partner_assigned event via WebSocket
-</div>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> The Kafka publish after the PostgreSQL commit is fire-and-forget. The order is durably saved before we even attempt to notify the restaurant. If Kafka is temporarily unavailable, the order is safe — events replay via outbox on recovery.</p>
-</blockquote>
-<hr />
-<h3 id="72-real-time-gps-tracking">7.2 Real-Time GPS Tracking</h3>
-<p>GPS ping ingestion, live location fan-out to the customer, and driver status updates.</p>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>Every 10 seconds, the driver app sends a GPS ping: <code>POST /delivery/location {lat, lng, order_id}</code>.</li>
-<li>Location Update Service publishes this to Kafka's <code>location_updates</code> topic immediately — no DB write yet.
-   Why Kafka first? 1M drivers × 1 ping/10s = 100K writes/sec. No database survives that directly.</li>
-<li>A Kafka consumer reads the event and does two writes:</li>
-<li>Updates <code>driver:loc:{id}</code> in Redis with TTL = 10s (so a silent driver auto-expires as unavailable).</li>
-<li>Appends to Redis Stream <code>tracking:{order_id}</code> for the WebSocket server to read.</li>
-<li>WebSocket Server is subscribed to the tracking stream — it pushes the new location to the customer's open connection.</li>
-<li>Customer sees the driver icon move on the map in near real-time (&lt; 1s latency).</li>
-<li>When the driver taps "Picked Up", a separate status update goes to Order Service → PostgreSQL → Kafka → WebSocket → customer sees "Your order is on the way".</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant Driver as Driver App
-    participant GW as API Gateway
-    participant LocSvc as Location Update Service
-    participant Kafka as Kafka
-    participant Redis as Redis
-    participant WS as WebSocket Server
-    participant C as Customer App
-    participant Order as Order Service
-    participant PG as PostgreSQL
-
-    Note over Driver,C: GPS tracking loop - every 10 seconds
-
-    Driver-&gt;&gt;GW: POST /delivery/location lat, lng, order_id
-    GW-&gt;&gt;LocSvc: Forward GPS ping
-    LocSvc-&gt;&gt;Kafka: Publish to location_updates topic
-    Note over LocSvc,Kafka: Not written to DB directly - 100K writes/sec would collapse a DB
-
-    Kafka-&gt;&gt;LocSvc: Consume location_updates event
-    LocSvc-&gt;&gt;Redis: SET driver:loc:id lat,lng (TTL=10s)
-    LocSvc-&gt;&gt;Redis: XADD tracking:order_id lat,lng,timestamp
-    Note over LocSvc,Redis: Redis Streams fan-out - multiple WS servers can subscribe
-
-    Redis--&gt;&gt;WS: New stream entry available on tracking:order_id
-    WS--&gt;&gt;C: Push location_update lat,lng over persistent WS connection
-    Note over WS,C: Customer sees driver moving on map in real-time under 1s
-
-    Note over Driver,C: Driver status update - driver taps Picked Up
-
-    Driver-&gt;&gt;GW: PUT /delivery/orders/id/status - status PICKED_UP
-    GW-&gt;&gt;Order: Update order status
-    Order-&gt;&gt;PG: UPDATE order SET status=PICKED_UP
-    Order-&gt;&gt;Kafka: Publish order.status.changed event
-    Kafka-&gt;&gt;WS: Consume order.status.changed
-    WS--&gt;&gt;C: Push status_update PICKED_UP over WebSocket
-</div>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> Kafka absorbs 100K GPS writes/sec as a buffer — no database can handle this write rate directly. Redis is the hot read path (sub-millisecond for proximity search). Cassandra stores the append-only GPS history for audit. Three stores, three different jobs.</p>
-</blockquote>
-<hr />
-<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
-<h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    CustomerApp[&quot;Customer App&quot;]
-    DriverApp[&quot;Delivery Partner App&quot;]
-    RestPortal[&quot;Restaurant Portal&quot;]
-    CDN[&quot;CDN - Static Assets and Images&quot;]
-    GW[&quot;API Gateway + Load Balancer&quot;]
-    WS[&quot;WebSocket Server&quot;]
-    Services[&quot;Microservices Layer&quot;]
-    DB[(&quot;PostgreSQL - Orders and Payments&quot;)]
-    Mongo[(&quot;MongoDB - Menus and Catalogs&quot;)]
-    Cache[(&quot;Redis - Cache and Sessions&quot;)]
-
-    CustomerApp --&gt;|HTTPS| CDN
-    CDN --&gt; GW
-    DriverApp --&gt; GW
-    RestPortal --&gt; GW
-    GW --&gt; WS
-    GW --&gt; Services
-    Services --&gt; DB
-    Services --&gt; Mongo
-    Services --&gt; Cache
-</div>
-<h3 id="evolved-design-with-kafka-cassandra-and-elasticsearch">Evolved Design with Kafka, Cassandra, and Elasticsearch</h3>
-<div class="mermaid">
-graph TD
-    GW[&quot;API Gateway&quot;]
-    WS[&quot;WebSocket Server&quot;]
-
-    OrderSvc[&quot;Order Service&quot;]
-    PaySvc[&quot;Payment Service&quot;]
-    RestSvc[&quot;Restaurant Service&quot;]
-    SearchSvc[&quot;Search Service&quot;]
-    TrackSvc[&quot;Tracking Service&quot;]
-    DeliverySvc[&quot;Delivery Matching Service&quot;]
-    NotifSvc[&quot;Notification Service&quot;]
-    LocationSvc[&quot;Location Update Service&quot;]
-
-    Kafka[[&quot;Kafka - Event Bus&quot;]]
-
-    PG[(&quot;PostgreSQL - Orders and Payments&quot;)]
-    Mongo[(&quot;MongoDB - Menus and Reviews&quot;)]
-    ES[(&quot;Elasticsearch - Search and Geo&quot;)]
-    RedisCache[(&quot;Redis - Cache, Sessions, Geo Index&quot;)]
-    Cassandra[(&quot;Cassandra - GPS History&quot;)]
-    S3[&quot;S3 + CDN - Images&quot;]
-
-    GW --&gt; OrderSvc
-    GW --&gt; PaySvc
-    GW --&gt; RestSvc
-    GW --&gt; SearchSvc
-    GW --&gt; DeliverySvc
-    GW --&gt; WS
-    GW --&gt; LocationSvc
-
-    OrderSvc --&gt; Kafka
-    PaySvc --&gt; Kafka
-    RestSvc --&gt; Kafka
-    DeliverySvc --&gt; Kafka
-    LocationSvc --&gt; Kafka
-
-    Kafka --&gt; TrackSvc
-    Kafka --&gt; NotifSvc
-    Kafka --&gt; DeliverySvc
-    Kafka --&gt; RestSvc
-    Kafka --&gt; WS
-
-    OrderSvc --&gt; PG
-    PaySvc --&gt; PG
-    RestSvc --&gt; Mongo
-    SearchSvc --&gt; ES
-    TrackSvc --&gt; Cassandra
-    TrackSvc --&gt; RedisCache
-    DeliverySvc --&gt; RedisCache
-    RestSvc --&gt; S3
-</div>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> No service calls another service directly. All cross-service communication flows through Kafka. A Notification Service outage cannot block order placement. A Tracking Service slowdown cannot delay the delivery assignment. Each service fails in isolation.</p>
-</blockquote>
-<hr />
-<h2 id="9-data-model">9. Data Model</h2>
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Thirteen entities live in this system, and grouping them by how they're actually used — rather than treating them as one undifferentiated list — makes the storage choices almost obvious.</p>
+<p><strong>The durable, financial data lives in PostgreSQL, because it's money.</strong> Orders, order items, and payments all need ACID guarantees — an order and its payment must commit atomically, and neither can be allowed to silently drift out of sync with the other. Order items snapshot their price at checkout specifically so a retroactive menu price change can never corrupt a total that's already been charged. Payments store the full gateway response as JSONB, not just a status flag, because a dispute months later needs the actual record of what the payment gateway said at the time.</p>
+<p><strong>The catalog data lives in MongoDB, because restaurants and menus are read constantly and shaped like documents, not rows.</strong> A restaurant document embeds its geolocation, cuisines, operating hours, and rating; a menu document embeds its categories, items, and customizations directly inside it. That embedding is deliberate — the hottest read in the whole browse flow is "show me this restaurant's full menu," and a document store answers that with one read instead of the joins a normalized relational schema would require.</p>
+<p><strong>The GPS and tracking data lives in Cassandra, because it's a 100,000-writes-per-second time-series problem that no relational database can absorb.</strong> Both GPS history and order tracking events are append-only, queried almost exclusively by a single partition key (<code>driver_id</code> for GPS history, <code>order_id</code> for tracking events) ordered by time — exactly the access pattern Cassandra is built for, and exactly the write volume that would saturate PostgreSQL's WAL.</p>
+<p><strong>The ephemeral, fast-path data lives in Redis, because it's either sub-millisecond-latency-critical or naturally expires on its own.</strong> Driver live location needs sub-millisecond reads for proximity matching, and a TTL equal to the update interval doubles as liveness detection for free. The delivery geo index is a native Redis Geo structure so <code>GEORADIUS</code> queries for nearby idle drivers don't need any custom indexing code. The restaurant list cache collapses nearby users onto the same cache key (rounding lat/lng) to cut Elasticsearch load, with a 5-minute TTL bounding how stale a listing can get. Cart data is inherently session-scoped and expires naturally after 24 hours whether or not the customer finishes checking out. Idempotency keys exist purely to catch a retried payment webhook before it double-processes — a 24-hour TTL is more than enough for that window to matter.</p>
+<p><strong>The search data lives in Elasticsearch, because full-text and geo-filtered queries under 300ms need an index built for exactly that, not a database repurposed for it.</strong> Restaurant documents in the search index nest their dishes directly, so a search for a specific dish name can match at the dish level, not just the restaurant level.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why This Store</th>
 </tr>
 </thead>
 <tbody>
@@ -544,79 +540,66 @@ graph TD
 <td>Orders</td>
 <td>PostgreSQL</td>
 <td>order_id, user_id, restaurant_id, driver_id, status, total_amount, created_at</td>
-<td>ACID transactions — order + payment must commit atomically</td>
 </tr>
 <tr>
 <td>Order Items</td>
 <td>PostgreSQL</td>
 <td>order_item_id, order_id, item_id, price_snapshot, quantity</td>
-<td>Price snapshotted at checkout — retroactive menu changes cannot corrupt totals</td>
 </tr>
 <tr>
 <td>Payments</td>
 <td>PostgreSQL</td>
 <td>payment_id, order_id, gateway_txn_id, status, gateway_response (JSONB)</td>
-<td>ACID, full gateway response stored for dispute resolution</td>
 </tr>
 <tr>
 <td>Restaurants</td>
 <td>MongoDB</td>
 <td>restaurant_id, name, location (GeoJSON), cuisines, operating_hours, rating</td>
-<td>Deeply nested menu documents, high read/write ratio, geospatial index</td>
 </tr>
 <tr>
 <td>Menus</td>
 <td>MongoDB</td>
 <td>restaurant_id, categories (nested), items, customizations</td>
-<td>Embedded document avoids joins on the hottest read query</td>
 </tr>
 <tr>
 <td>GPS History</td>
 <td>Cassandra</td>
 <td>partition: driver_id, cluster: timestamp DESC, lat, lng</td>
-<td>100K writes/sec time-series — relational DBs cannot absorb this write volume</td>
 </tr>
 <tr>
 <td>Order Tracking Events</td>
 <td>Cassandra</td>
 <td>partition: order_id, cluster: event_time DESC, status, lat, lng</td>
-<td>Append-only audit trail, query by order_id only</td>
 </tr>
 <tr>
 <td>Driver Live Location</td>
 <td>Redis</td>
 <td>driver:loc:{id} → lat,lng (TTL=10s)</td>
-<td>Sub-millisecond reads for proximity matching; TTL provides implicit liveness</td>
 </tr>
 <tr>
 <td>Delivery Geo Index</td>
 <td>Redis</td>
 <td>GEOADD delivery:partners {lng} {lat} {partner_id}</td>
-<td>GEORADIUS query for nearest idle drivers — native Redis Geo command</td>
 </tr>
 <tr>
 <td>Restaurant List Cache</td>
 <td>Redis</td>
 <td>restaurant:list:{lat_round}:{lng_round}:{filter_hash} (TTL=5min)</td>
-<td>Collapse nearby users onto same cache key; reduces Elasticsearch load</td>
 </tr>
 <tr>
 <td>Cart</td>
 <td>Redis</td>
 <td>cart:{user_id} (TTL=24h)</td>
-<td>Ephemeral session data, fast key-value access, natural expiry</td>
 </tr>
 <tr>
 <td>Idempotency Keys</td>
 <td>Redis</td>
 <td>webhook:{webhook_id} (TTL=24h)</td>
-<td>Payment webhook dedup — prevents double-processing on retry</td>
 </tr>
 <tr>
 <td>Search Index</td>
 <td>Elasticsearch</td>
 <td>restaurant doc with nested dishes, geo_point location, cuisines keyword</td>
-<td>Full-text + geo-filtered search under 300ms; nested dishes match dish-level queries</td>
 </tr>
 </tbody>
 </table>
@@ -625,40 +608,12 @@ graph TD
 <strong>Key Insight:</strong> Each store is matched to its workload. PostgreSQL for 300 orders/sec with strict ACID. Cassandra for 100K GPS writes/sec as append-only time-series. Redis for sub-millisecond ephemeral reads. Elasticsearch for sub-300ms full-text + geo queries. There is no single best database.</p>
 </blockquote>
 <hr />
-<h2 id="10-deep-dives">10. Deep Dives</h2>
-<h3 id="71-driver-location-write-architecture">7.1 Driver Location Write Architecture</h3>
-<p><strong>Here's the problem we're solving:</strong> With 1M active delivery partners each pinging GPS every 10 seconds, the system receives <strong>100,000 writes/sec</strong> at peak. This is the single hardest scaling challenge in the entire system. If you route these writes directly to any relational or document database, you will hit the write ceiling and cascade into latency spikes across the entire platform.</p>
-<p><strong>Naive solution and why it fails:</strong> Write GPS pings directly to PostgreSQL or MongoDB. PostgreSQL handles ~50K writes/sec under contention; at 100K writes/sec it saturates the WAL and response time blows out. MongoDB fares slightly better but still cannot absorb bursts reliably without horizontal sharding complexity.</p>
-<p><strong>Chosen solution:</strong></p>
-<div class="mermaid">
-graph LR
-    Driver[&quot;Driver App - every 10s&quot;]
-    Kafka[[&quot;Kafka - location.update topic&quot;]]
-    Consumer[&quot;Location Update Service - Kafka consumer&quot;]
-    Redis[(&quot;Redis - driver:loc:id - TTL=10s&quot;)]
-    Cassandra[(&quot;Cassandra - GPS History - append-only&quot;)]
-    Matching[&quot;Delivery Matching Service&quot;]
-    WS[&quot;WebSocket Server&quot;]
-
-    Driver --&gt;|GPS ping| Kafka
-    Kafka --&gt; Consumer
-    Consumer --&gt;|sub-ms write| Redis
-    Consumer --&gt;|async audit| Cassandra
-    Redis --&gt;|GEORADIUS query| Matching
-    Redis --&gt;|location read| WS
-</div>
-<p>Kafka absorbs all 100K writes/sec as a durable write buffer. The Location Update Service is a Kafka consumer that writes to two destinations: Redis (live, sub-millisecond, with TTL) and Cassandra (audit trail, async, append-only). The Delivery Matching Service never touches Cassandra — it only queries Redis.</p>
-<p><strong>The TTL trick:</strong> <code>driver:loc:{id}</code> has a TTL equal to the update interval (10 seconds). If a driver stops sending pings (goes offline, crashes, loses signal), their Redis key expires automatically. The Delivery Matching Service can no longer see them — zero stale assignments, zero manual cleanup. Liveness detection is a free side-effect of TTL design.</p>
-<p><strong>Trade-off accepted:</strong> Redis is not durable. If Redis restarts, all live driver locations are lost. This is acceptable — drivers re-register their location on the next ping cycle (within 10 seconds), and Cassandra holds the full history for audit. Ephemeral data belongs in ephemeral storage.</p>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> Redis is the live read path. Cassandra is the audit path. These are separate concerns — never conflate them. The Cassandra write is async and non-blocking; it never slows the assignment decision.</p>
-</blockquote>
-<hr />
-<h3 id="72-delivery-assignment-broadcast">7.2 Delivery Assignment Broadcast</h3>
-<p><strong>Here's the problem we're solving:</strong> Once a restaurant confirms an order, we must find and assign a delivery partner. The naive approach — pick the single closest driver and send only them a notification — has a critical flaw: that driver might reject, be slow to respond, or go offline in the window between selection and acceptance. Every rejection adds seconds of delay.</p>
-<p><strong>Naive solution and why it fails:</strong> Serial unicast — try driver 1, wait for timeout, try driver 2. At a 5-second timeout per rejection, a 3-rejection chain adds 15 seconds before assignment. Customer ETA prediction breaks. Restaurant holding hot food gets frustrated.</p>
-<p><strong>Chosen solution — broadcast + first-accept wins:</strong></p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-delivery-partner-matching-and-assignment">8.1 Delivery Partner Matching and Assignment</h3>
+<p>Once a restaurant confirms an order, the system has to find exactly one delivery partner and lock them in — fast, without ever double-assigning the same partner to two orders, and without leaving an order stranded because the one partner it tried happened to be slow to respond.</p>
+<p>The naive design is to find the single closest idle partner and offer them the order alone, waiting for their response before trying anyone else. That flaw shows up the moment a partner is slow, distracted, or simply declines: a 5-second timeout per rejection means a chain of three rejections in a row adds 15 seconds before anyone is assigned. Fifteen seconds doesn't sound like much until you remember the restaurant is holding hot food and the customer's ETA prediction, quoted the moment the order was confirmed, starts silently drifting wrong the longer assignment takes.</p>
+<p>The fix is to stop treating this as a sequence of one-at-a-time offers and broadcast to everyone who could plausibly take the order at once, letting whoever responds fastest win it. A <code>GEORADIUS</code> query against the Redis Geo index pulls the ten nearest idle drivers within 5km; the Delivery Matching Service pushes the same assignment offer to all ten simultaneously, and the first partner to tap Accept gets the order. That collapses the worst case from "up to 15 seconds of sequential rejections" down to "however long it takes the fastest of ten people to glance at their phone."</p>
+<p>Broadcasting to ten partners instead of one obviously creates a new problem: what happens when two of them accept at nearly the same instant? This is where a plain write would be dangerous — a <code>SET</code> has no way to know whether someone already got there first. The fix is a Redis <code>SETNX</code> (set-if-not-exists) lock on <code>partner:{id}:active_order</code>, with a 30-minute TTL. Whichever partner's accept reaches the lock first gets <code>SETNX</code> to succeed; every other partner who taps Accept after that gets a conflict response and their offer is dismissed. The TTL isn't just cleanup housekeeping — it's what stops a partner's app crash mid-delivery from permanently locking them out of future assignments.</p>
 <div class="mermaid">
 sequenceDiagram
     participant Match as Delivery Matching Service
@@ -681,18 +636,45 @@ sequenceDiagram
     Match-&gt;&gt;D3: Dismiss notification
     Match-&gt;&gt;Kafka: Publish driver.assigned
 </div>
-<p>Broadcasting to all idle drivers in radius and taking the first acceptance minimizes assignment latency. The Redis <code>SETNX</code> lock (set-if-not-exists) prevents a driver from double-accepting two simultaneous orders. The lock TTL of 30 minutes ensures a driver crash does not permanently block them from future assignments.</p>
-<p><strong>Fallback:</strong> If no driver accepts within 30 seconds → order moves to <code>WAITING_FOR_PARTNER</code>. Retry every 30 seconds. Expand radius from 5km to 10km after 2 minutes. Page on-call operations team if no assignment after 10 minutes.</p>
-<p><strong>Trade-off accepted:</strong> Broadcasting to 10 drivers simultaneously sends 10 notifications instead of 1. At 300 orders/sec peak, that is 3,000 push notifications/sec — well within Firebase/APNs capacity. The extra notification cost is worth the reduction in assignment latency.</p>
+<p>And when nobody within radius accepts at all? The system doesn't give up after one broadcast — it retries and widens its net in stages, trading a longer wait for an actual match instead of failing fast: if no partner accepts within 30 seconds, the order moves to <code>WAITING_FOR_PARTNER</code> and the broadcast retries every 30 seconds; after 2 minutes with no luck, the search radius expands from 5km to 10km; and if 10 minutes pass with still no assignment, the on-call operations team gets paged, because at that point something is wrong beyond normal supply-and-demand noise.</p>
+<p>Broadcasting does have a real cost worth naming: ten push notifications go out for every order instead of one, which at 300 orders/sec peak works out to roughly 3,000 push notifications/sec. That's comfortably within what Firebase or APNs can handle, so the extra notification volume is a cheap price for the latency it buys back.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> The <code>SETNX</code> lock is a correctness requirement, not a performance optimization. Without it, two simultaneous order broadcasts could race and both assign the same driver. The lock makes assignment atomic.</p>
 </blockquote>
 <hr />
-<h3 id="73-real-time-tracking-via-websocket">7.3 Real-Time Tracking via WebSocket</h3>
-<p><strong>Here's the problem we're solving:</strong> A customer watching live GPS needs sub-second updates for 50K concurrent tracking sessions. The naive approach — customers poll <code>GET /orders/{id}/track</code> every 3 seconds — generates 50K / 3 = <strong>~17K HTTP requests/sec</strong> of mostly empty responses. At 1M tracking sessions during peak, that is 330K requests/sec of pure waste.</p>
-<p><strong>Naive solution and why it fails:</strong> HTTP long-polling at 3-second intervals. At 1M sessions × 1 poll/3s = 333K requests/sec. Most return no new data (GPS updates every 10s). Each request re-authenticates, re-routes through the LB, and re-queries the data store. This is pure CPU and network waste at no benefit.</p>
-<p><strong>Chosen solution — WebSocket + Redis Streams fan-out:</strong></p>
+<h3 id="82-driver-location-write-architecture">8.2 Driver Location Write Architecture</h3>
+<p>With 1 million active delivery partners each pinging their GPS position every 10 seconds, the system receives 100,000 writes per second at peak — the single hardest scaling challenge anywhere in this design (§4). Route those writes directly at any relational or document database and you hit its write ceiling and cascade into latency spikes across the entire platform, not just tracking.</p>
+<p>The obvious approach — write every GPS ping straight into PostgreSQL or MongoDB — doesn't survive contact with that number. PostgreSQL handles roughly 50,000 writes/sec under contention before its WAL saturates and response times blow out; 100,000 writes/sec is past that ceiling, not near it. MongoDB fares somewhat better, but still can't reliably absorb bursts of this size without the added complexity of horizontal sharding.</p>
+<p>The fix is to never let a database see the raw write rate at all. Kafka sits in front of everything and absorbs the full 100,000 writes/sec as a durable buffer; a Kafka consumer — the Location Update Service — reads off that buffer and fans each ping out to two destinations built for two different jobs. Redis gets a sub-millisecond write to <code>driver:loc:{id}</code> with a 10-second TTL, because that's the live position the Delivery Matching Service actually queries. Cassandra gets an async, append-only write to the GPS history table, purely for audit and dispute resolution — the Delivery Matching Service never touches Cassandra at all.</p>
+<div class="mermaid">
+graph LR
+    Driver[&quot;Driver App - every 10s&quot;]
+    Kafka[[&quot;Kafka - location.update topic&quot;]]
+    Consumer[&quot;Location Update Service - Kafka consumer&quot;]
+    Redis[(&quot;Redis - driver:loc:id - TTL=10s&quot;)]
+    Cassandra[(&quot;Cassandra - GPS History - append-only&quot;)]
+    Matching[&quot;Delivery Matching Service&quot;]
+    WS[&quot;WebSocket Server&quot;]
+
+    Driver --&gt;|GPS ping| Kafka
+    Kafka --&gt; Consumer
+    Consumer --&gt;|sub-ms write| Redis
+    Consumer --&gt;|async audit| Cassandra
+    Redis --&gt;|GEORADIUS query| Matching
+    Redis --&gt;|location read| WS
+</div>
+<p>The 10-second TTL on <code>driver:loc:{id}</code> does more than bound memory use — it's a liveness check that costs nothing extra to run. If a driver's app crashes, loses signal, or simply goes offline, their key just expires on its own ten seconds after the last ping, and the Delivery Matching Service can no longer see them in a <code>GEORADIUS</code> query. There's no stale-driver cleanup job anywhere in this design, because the TTL already is the cleanup job.</p>
+<p>The trade-off this makes deliberately is that Redis isn't durable — if it restarts, every live driver location it held is gone. That's acceptable specifically because the data is ephemeral by nature: a driver re-registers their position on their very next ping, within 10 seconds, and Cassandra still holds the full history for anything that needs to look backward. Ephemeral data belongs in ephemeral storage; losing it briefly costs nothing that a full history in Cassandra can't answer.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> Redis is the live read path. Cassandra is the audit path. These are separate concerns — never conflate them. The Cassandra write is async and non-blocking; it never slows the assignment decision.</p>
+</blockquote>
+<hr />
+<h3 id="83-real-time-tracking-via-websocket">8.3 Real-Time Tracking via WebSocket</h3>
+<p>A customer watching their delivery move on the map needs sub-second updates, and at 50,000 concurrent tracking sessions during peak, the obvious way to build that — have the customer's app poll for the latest position every few seconds — doesn't hold up. Polling every 3 seconds against 50,000 concurrent sessions alone works out to roughly 17,000 HTTP requests/sec of mostly empty responses, since GPS actually updates only once every 10 seconds; scaled to a full 1 million tracking sessions across the platform at peak, that's 330,000 requests/sec of pure waste, most of them returning "nothing changed."</p>
+<p>Every one of those wasted requests still costs real work: re-authenticating the client, re-routing through the load balancer, and re-querying whatever store holds the location — for a response that, most of the time, says nothing new happened. That's CPU and network spent for essentially no benefit to anyone.</p>
+<p>The fix is to stop asking and start pushing. A customer's app opens a single WebSocket connection scoped to their order, and the server sends a message only when there's an actual new GPS point to send — nothing when there isn't. Redis Streams sit in between as the fan-out mechanism: the Location Update Service (from §8.2) writes each new position into a <code>tracking:{order_id}</code> stream, and any WebSocket server instance can subscribe to that same stream and push to its connected client. That's what makes the design horizontally scalable — sticky sessions are needed to keep a customer's connection pinned to one WebSocket server instance, but nothing about <em>routing the data itself</em> requires that stickiness, since any instance can read the same stream.</p>
 <div class="mermaid">
 sequenceDiagram
     participant Client as Customer App
@@ -712,308 +694,105 @@ sequenceDiagram
     WS--&gt;&gt;Client: Push location_update lat,lng,eta
     Note over Client,Driver: Customer sees GPS update under 1s
 </div>
-<p>WebSocket eliminates polling. The server pushes only when there is a new GPS point — no empty responses. Redis Streams act as a fan-out buffer: multiple WebSocket server instances can subscribe to the same <code>tracking:order:{id}</code> stream, so sticky sessions at the LB are needed for connection management but not for data routing.</p>
-<p><strong>WebSocket scaling:</strong> WebSocket connections are stateful. The load balancer uses consistent hashing on <code>order_id</code> to route reconnects to the same WebSocket server instance. Redis Streams hold entries with a MAXLEN of ~100 entries per order, covering the last ~16 minutes of tracking even if a client disconnects and reconnects.</p>
-<p><strong>Fallback on disconnect:</strong> Client falls back to REST polling <code>GET /orders/{id}/track</code> every 10 seconds. No tracking data is lost — Redis Streams persist entries across reconnects.</p>
-<p><strong>Trade-off accepted:</strong> Stateful WebSocket connections require sticky sessions at the LB. This complicates rolling deployments (must drain connections gracefully). The operational complexity is accepted because eliminating polling at scale is a math argument — the bandwidth and CPU savings dominate.</p>
+<p>The load balancer routes reconnects using consistent hashing on <code>order_id</code>, so a customer who briefly drops connection and reconnects lands back on the same WebSocket server instance. Each stream is capped at roughly 100 entries per order (<code>MAXLEN</code>), which covers about 16 minutes of tracking history — plenty to replay whatever a client missed during a disconnect. If a client can't maintain a WebSocket connection at all, it falls back to REST polling every 10 seconds; because Redis Streams persist entries across reconnects, nothing about the tracking history is actually lost, just delivered on a coarser schedule for that one client.</p>
+<p>The trade-off accepted is that WebSocket connections are stateful, which means sticky sessions at the load balancer and, in turn, more careful rolling deployments — a server can't just be killed mid-deploy, its connections have to drain gracefully first. That operational complexity is worth it because eliminating polling at this scale is fundamentally a math argument, not a matter of taste: the bandwidth and CPU savings from only sending bytes when something actually changed dominate the cost of managing stateful connections.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> WebSocket vs HTTP polling for tracking is a math problem. 1M sessions × 1 poll/5s = 200K HTTP requests/sec of mostly empty responses. WebSocket reduces server-side event generation to the actual GPS update rate — ~100K events/sec across all active deliveries.</p>
+<strong>Key Insight:</strong> Redis Streams is what makes the fan-out cheap, not just the WebSocket transport itself. Any number of WebSocket server instances can subscribe to the same <code>tracking:order:{id}</code> stream, so adding tracking capacity is a matter of adding subscribers, not re-plumbing how GPS updates reach the client.</p>
 </blockquote>
 <hr />
-<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
-<p><strong>What breaks first as scale grows 10x:</strong></p>
-<table>
-<thead>
-<tr>
-<th>Bottleneck</th>
-<th>Breaks At</th>
-<th>Strategy</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>GPS write ingestion</td>
-<td>1M+ drivers</td>
-<td>Kafka partitions scaled horizontally; Location Service consumer group scaled by topic partition count</td>
-</tr>
-<tr>
-<td>Order write throughput</td>
-<td>3,000 orders/sec</td>
-<td>PostgreSQL read replicas for all reads; primary for writes only; partition orders table by created_at month</td>
-</tr>
-<tr>
-<td>Restaurant listing cache</td>
-<td>Cache miss storm at startup</td>
-<td>Warm cache proactively on deploy; use Redis Cluster (hash slots) for horizontal memory scaling</td>
-</tr>
-<tr>
-<td>WebSocket connection limit</td>
-<td>~100K connections per server</td>
-<td>Horizontal scale WebSocket servers; consistent hash LB on order_id for reconnect affinity</td>
-</tr>
-<tr>
-<td>Elasticsearch geo queries</td>
-<td>High QPS from search</td>
-<td>5 primary shards + 2 replicas; query cache on filter clause; Redis cache layer in front</td>
-</tr>
-<tr>
-<td>Delivery assignment broadcast</td>
-<td>Many simultaneous orders</td>
-<td>Kafka consumer group for Match Service scaled independently; Redis Cluster for geo index</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Horizontal scaling strategy:</strong>
-- Order Service: stateless, scale horizontally behind LB
-- Location Update Service: scale by Kafka partition count (add partitions, add consumers)
-- WebSocket Server: scale by adding nodes; consistent-hash LB routes reconnects correctly
-- Delivery Matching: stateless Kafka consumer group, scale by partition count
-- PostgreSQL: primary + 2 read replicas; use PgBouncer connection pooling; partition by <code>created_at</code>
-- Cassandra: linear scale — add nodes to cluster, data rebalances automatically</p>
-<p><strong>Cache strategy:</strong>
-- Restaurant listings: Redis cache, 5-minute TTL, coordinate rounding to 4 decimal places (~11m) collapses nearby users onto same key
-- Menus: Redis cache, 15-minute TTL, invalidated on restaurant menu update via Kafka <code>cache.invalidate</code> event
-- Static assets (images): CloudFront CDN, 7-day TTL, invalidated on S3 object update
-- Search results: Redis cache, 3-minute TTL, key includes search query hash</p>
-<p><strong>Data the system never caches:</strong>
-- Order status and order details (always PostgreSQL)
-- Payment status (always PostgreSQL)
-- Item availability at checkout (always MongoDB primary)
-- Delivery partner assignment (always Redis lock, never application cache)</p>
+<h2 id="9-bottlenecks-failure-scenarios-trade-offs">9. Bottlenecks, Failure Scenarios &amp; Trade-offs</h2>
+<h3 id="91-bottlenecks-scaling">9.1 Bottlenecks &amp; Scaling</h3>
+<p>The write-side of this system strains first as scale grows another 10x. GPS ingestion is the earliest to feel it — past roughly 1 million drivers, Kafka partitions need to scale out horizontally, with the Location Service's consumer group growing in lockstep with the partition count so no single consumer becomes a straggler. Order writes hit their own ceiling around 3,000 orders/sec; the fix there is read replicas absorbing every read query while the PostgreSQL primary handles writes only, with the orders table partitioned by <code>created_at</code> month so old partitions stop competing with hot ones for cache and index space. Delivery assignment broadcasts strain similarly once many orders are being matched simultaneously — the Match Service's Kafka consumer group scales independently of everything else, and the Redis Geo index moves to a Redis Cluster so the geo queries themselves aren't bottlenecked on a single node.</p>
+<p>The read and connection side has its own pressure points. Restaurant listing caches suffer a cache-miss storm specifically at startup or after a deploy, before any keys are warm — the fix is proactively warming the cache on deploy rather than letting the first wave of real traffic pay for it, combined with a Redis Cluster using hash slots so memory scales horizontally rather than requiring one ever-larger instance. WebSocket connections cap out around 100,000 per server, which is the reason reaching real scale means horizontally adding WebSocket server nodes behind a consistent-hash load balancer keyed on <code>order_id</code>, so reconnects land back on the right instance. And Elasticsearch's geo queries strain under high search QPS — handled with 5 primary shards plus 2 replicas, a query cache on the filter clause, and a Redis cache layer sitting in front of Elasticsearch entirely so repeat searches never reach it at all.</p>
+<p>Scaling each service horizontally follows the same shape throughout: the Order Service is stateless and scales behind the load balancer with no special coordination; the Location Update Service scales by adding Kafka partitions and consumers together; the WebSocket Server scales by adding nodes with the consistent-hash routing already described; Delivery Matching is a stateless Kafka consumer group that scales by partition count; PostgreSQL runs a primary plus two read replicas behind PgBouncer connection pooling, partitioned by <code>created_at</code>; and Cassandra scales linearly — new nodes join the cluster and data rebalances onto them automatically.</p>
+<p>Caching absorbs a lot of the read load quietly: restaurant listings cache for 5 minutes with coordinates rounded to 4 decimal places (about 11 meters), which collapses nearby users onto the same cache key instead of each generating a unique one; menus cache for 15 minutes and get explicitly invalidated via a Kafka <code>cache.invalidate</code> event the moment a restaurant updates its menu; static assets like images sit behind CloudFront with a 7-day TTL, invalidated on S3 object update; and search results cache for 3 minutes, keyed by a hash of the search query itself. Some data, by contrast, is never cached at all, because staleness there isn't a UX inconvenience but a correctness bug: order status and details always read from PostgreSQL directly, payment status always reads from PostgreSQL directly, item availability at checkout always reads from MongoDB's primary rather than a replica or cache, and delivery partner assignment is always a Redis lock, never anything sitting in an application-level cache.</p>
 <hr />
-<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Payment succeeds, Kafka temporarily down</td>
-<td>Order committed to PostgreSQL, downstream services not yet notified</td>
-<td>Outbox pattern — background job scans <code>orders</code> table for CONFIRMED orders with no Kafka ack; replays events on recovery. Money never lost.</td>
-</tr>
-<tr>
-<td>Restaurant rejects or times out (15 min)</td>
-<td>Customer order stranded in CONFIRMED state</td>
-<td>Order Service auto-cancels after timeout, initiates full refund via Payment Service, notifies customer via push/SMS</td>
-</tr>
-<tr>
-<td>Delivery driver rejects assignment</td>
-<td>Order returns to WAITING_FOR_PARTNER</td>
-<td>Redis lock released, new GEORADIUS broadcast triggered immediately; radius expanded after 2 minutes</td>
-</tr>
-<tr>
-<td>No drivers available in radius</td>
-<td>No assignment possible</td>
-<td>Retry every 30s, expand to 10km after 2 min, 15km after 5 min; customer shown updated ETA and transparent status message</td>
-</tr>
-<tr>
-<td>WebSocket server crashes</td>
-<td>Active tracking sessions disconnected</td>
-<td>Clients detect disconnect, fall back to REST polling every 10s. Redis Streams persist location history — no data lost on reconnect</td>
-</tr>
-<tr>
-<td>Redis failure</td>
-<td>Driver geo index unavailable, cache miss for listings</td>
-<td>Assignment falls back to PostgreSQL slow-path geo query (acceptable, low volume). Listings served stale from CDN. Order safety unaffected — PostgreSQL is source of truth</td>
-</tr>
-<tr>
-<td>Elasticsearch down</td>
-<td>Search returns empty results</td>
-<td>Degraded mode: MongoDB geo query fallback for location-based browse. Slower (500ms vs 300ms) but functional.</td>
-</tr>
-<tr>
-<td>PostgreSQL primary fails</td>
-<td>Order writes blocked</td>
-<td>Automated failover to replica (RDS Multi-AZ, ~30s). In-flight order writes may fail — client retries with idempotency key prevent duplicate orders</td>
-</tr>
-<tr>
-<td>Cassandra node failure</td>
-<td>GPS write throughput reduced</td>
-<td>Cassandra consistency level QUORUM with replication factor 3 tolerates one node failure. Remaining nodes absorb writes. Auto-repair on recovery.</td>
-</tr>
-<tr>
-<td>Payment gateway timeout</td>
-<td>Payment status unknown</td>
-<td>Order stays PENDING. Background reconciliation job polls gateway for status after 5 minutes. If confirmed → CONFIRMED. If failed → CANCELLED + customer notified.</td>
-</tr>
-</tbody>
-</table>
+<h3 id="92-failure-scenarios">9.2 Failure Scenarios</h3>
+<p>Money-adjacent failures get the most careful handling, because they're the ones where "eventually correct" isn't good enough. If a customer's payment succeeds but Kafka happens to be down right afterward, the order is already committed to PostgreSQL — Kafka being unreachable only means downstream services haven't been notified yet, not that anything is lost. A background job continuously scans for CONFIRMED orders with no Kafka acknowledgment and replays their events once Kafka recovers, the same outbox pattern referenced back in §5 and §9.3. If instead the restaurant rejects the order or simply doesn't respond within 15 minutes, the Order Service auto-cancels it, triggers a full refund through the Payment Service, and notifies the customer by push or SMS — the customer is never left wondering what happened to their money. And if the payment gateway itself times out mid-transaction, the order stays in <code>PENDING</code> rather than guessing, while a background reconciliation job polls the gateway for the real outcome after 5 minutes — confirming the order if the gateway says it succeeded, cancelling and notifying the customer if it didn't.</p>
+<p>Delivery assignment failures get their own recovery path, distinct from payment failures because nothing financial is at risk here — only time. If a delivery partner rejects an assignment, their Redis lock is released immediately and a fresh broadcast goes out to the next set of idle partners without delay. If no partner is available within radius at all, the system retries every 30 seconds, expands the search radius to 10km after 2 minutes and to 15km after 5 minutes, and keeps the customer informed with an updated ETA and a transparent status message rather than silence.</p>
+<p>The real-time infrastructure — WebSocket servers and Redis — fails more visibly but recovers cheaply, because none of it is the system of record. A WebSocket server crashing simply disconnects its active tracking sessions; clients detect the drop and fall back to REST polling every 10 seconds, and because Redis Streams persist location history across reconnects, nothing about the tracking data is actually lost, just delivered differently for a moment. A full Redis failure is a bigger dent but still not a safety issue: the geo index becomes unavailable, so delivery assignment temporarily falls back to a slower PostgreSQL geo query (acceptable given the low volume of simultaneous assignments), and restaurant listings serve stale data straight from the CDN — order safety itself is untouched, since PostgreSQL remains the source of truth throughout.</p>
+<p>The durable stores fail more slowly, and their recovery stories reflect that. A PostgreSQL primary failure blocks order writes until an automated failover promotes a replica, typically within about 30 seconds on RDS Multi-AZ; any order writes that were in flight during that window simply fail and the client retries, with the idempotency key on <code>POST /orders</code> guaranteeing that retry can never create a duplicate order. A Cassandra node failure reduces GPS write throughput but doesn't stop it — running at <code>QUORUM</code> consistency with a replication factor of 3 tolerates the loss of one node, the remaining nodes absorb the write load, and the cluster auto-repairs once the failed node returns.</p>
+<p>Elasticsearch going down is the one failure mode that's purely a search-quality problem rather than a safety one: search results come back empty, but the platform degrades to a MongoDB geo query for location-based browsing instead — slower, at roughly 500ms instead of 300ms, but fully functional.</p>
 <hr />
-<h2 id="13-trade-offs">13. Trade-offs</h2>
-<h3 id="websocket-vs-http-polling-for-tracking">WebSocket vs HTTP Polling for Tracking</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>WebSocket</th>
-<th>HTTP Polling</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Latency</td>
-<td>Under 1s — server pushes on GPS update</td>
-<td>3–10s — bounded by poll interval</td>
-</tr>
-<tr>
-<td>Server load at 1M sessions</td>
-<td>Low — push only when GPS changes</td>
-<td>~333K requests/sec of mostly empty responses</td>
-</tr>
-<tr>
-<td>Infrastructure complexity</td>
-<td>Stateful — requires sticky sessions at LB</td>
-<td>Stateless — trivial horizontal scale</td>
-</tr>
-<tr>
-<td>Fallback requirement</td>
-<td>Need polling fallback for disconnects</td>
-<td>Simple, no fallback needed</td>
-</tr>
-<tr>
-<td>Connection overhead</td>
-<td>Persistent TCP connection maintained</td>
-<td>Per-request handshake and auth overhead</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> WebSocket with polling fallback. At 1M concurrent tracking sessions polling at 3-second intervals, we serve 333K HTTP requests/sec of mostly no-new-data responses. WebSocket eliminates this entirely — the server only sends bytes when the GPS position changes.</p>
+<h3 id="93-trade-offs">9.3 Trade-offs</h3>
+<p><strong>WebSocket vs HTTP Polling for Tracking</strong></p>
+<p>The two approaches differ mainly in what they cost as tracking sessions scale into the millions. WebSocket pushes a location update in under a second the instant the position changes; HTTP polling is bounded by whatever interval it polls at, typically 3 to 10 seconds. Under load, WebSocket's server cost stays low because it only sends bytes when a GPS point actually changes, while polling at 1 million concurrent sessions generates roughly 333,000 requests/sec, most of them empty. WebSocket is stateful and needs sticky sessions at the load balancer; polling is stateless and trivially horizontally scalable, at the cost of needing no fallback at all, versus WebSocket which does need one for disconnects. The last dimension is connection overhead itself: WebSocket maintains one persistent TCP connection per client, where polling pays a fresh handshake and re-authentication on every single request.</p>
+<p><strong>Chosen:</strong> WebSocket with a polling fallback for disconnects. The decision comes down to arithmetic, not preference — the operational cost of sticky routing is a manageable, well-understood trade against generating hundreds of thousands of essentially empty responses a second.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> WebSocket vs HTTP for tracking is a math problem. 1M sessions at 1 poll/3s = 333K empty requests/sec. WebSocket reduces server event generation to the actual GPS update rate — a 10x reduction in pointless network traffic.</p>
 </blockquote>
 <hr />
-<h3 id="postgresql-vs-cassandra-for-orders">PostgreSQL vs Cassandra for Orders</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>PostgreSQL</th>
-<th>Cassandra</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>ACID transactions</td>
-<td>Yes — mandatory for order + payment atomicity</td>
-<td>No native multi-row transactions</td>
-</tr>
-<tr>
-<td>Financial correctness</td>
-<td>Guaranteed</td>
-<td>Requires application-level compensating transactions</td>
-</tr>
-<tr>
-<td>Write throughput</td>
-<td>~50–100K writes/sec</td>
-<td>Millions writes/sec, linear horizontal scale</td>
-</tr>
-<tr>
-<td>Query flexibility</td>
-<td>Full SQL, arbitrary JOINs, reporting</td>
-<td>Limited to partition key access patterns</td>
-</tr>
-<tr>
-<td>Operational maturity</td>
-<td>Decades of tooling, RDS managed service</td>
-<td>Higher operational complexity</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> PostgreSQL for orders and payments. The trade-off accepted is lower raw write throughput — which is fine because 300 orders/sec peak is nowhere near PostgreSQL's ceiling. Financial correctness is non-negotiable and cannot be retrofitted onto an eventually consistent store.</p>
+<p><strong>PostgreSQL vs Cassandra for Orders</strong></p>
+<p>PostgreSQL gives full ACID transactions, which are mandatory here since an order and its payment must commit together; Cassandra has no native multi-row transaction support, so the same guarantee would need to be rebuilt at the application level as compensating transactions — extra code whose entire job is covering for something the database doesn't do natively. Financial correctness is guaranteed outright in PostgreSQL, where in Cassandra it would depend on that application-level logic actually being correct in every edge case. The trade runs the other way on raw throughput: PostgreSQL tops out around 50,000–100,000 writes/sec, while Cassandra scales to millions of writes/sec linearly by adding nodes. PostgreSQL also offers full SQL with arbitrary joins for reporting, where Cassandra restricts queries to whatever its partition keys were designed for up front. And operationally, PostgreSQL has decades of tooling and a managed RDS option behind it, while Cassandra carries meaningfully more operational complexity to run well.</p>
+<p><strong>Chosen:</strong> PostgreSQL for orders and payments. The trade-off accepted is lower raw write throughput, which is a non-issue here — 300 orders/sec peak is nowhere near PostgreSQL's ceiling. Financial correctness is non-negotiable and cannot be retrofitted onto an eventually consistent store after the fact.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Cassandra is chosen for GPS history (100K writes/sec time-series, no transactions needed) and PostgreSQL for orders (300 writes/sec, strict ACID required). Each database is matched to its workload — the question is never "which is better?" but "which fits this workload?"</p>
 </blockquote>
 <hr />
-<h3 id="kafka-vs-direct-service-calls">Kafka vs Direct Service Calls</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Kafka Event Bus</th>
-<th>Direct REST/gRPC Calls</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Decoupling</td>
-<td>Full — producer never waits for consumer</td>
-<td>Tight — slow downstream service blocks upstream</td>
-</tr>
-<tr>
-<td>Fault tolerance</td>
-<td>Events persist on crash, replayed on consumer recovery</td>
-<td>Message lost if downstream crashes during call</td>
-</tr>
-<tr>
-<td>Throughput</td>
-<td>Handles 100K events/sec with buffering</td>
-<td>Each call adds round-trip latency per downstream service</td>
-</tr>
-<tr>
-<td>Cascading failure risk</td>
-<td>None — services fail in isolation</td>
-<td>One slow service can cascade across the call chain</td>
-</tr>
-<tr>
-<td>Operational complexity</td>
-<td>Kafka cluster to manage, consumer lag to monitor</td>
-<td>Simple — standard HTTP/gRPC</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Kafka for all cross-service communication. The trade-off is operational complexity (broker management, consumer lag alerting, schema registry). This is accepted because at 100K events/sec, direct calls would create cascading failure chains — one slow Notification Service would block every order placement.</p>
+<p><strong>Kafka vs Direct Service Calls</strong></p>
+<p>A Kafka event bus fully decouples producers from consumers — the Order Service publishing <code>order.placed</code> never waits on the Restaurant Service to actually process it, where a direct REST or gRPC call would tie the two together tightly enough that a slow downstream service blocks the caller. That decoupling extends to fault tolerance: Kafka persists events and replays them once a crashed consumer recovers, while a direct call simply loses the message if the receiving service crashes mid-call. Kafka also absorbs the full 100,000 events/sec this system generates through buffering alone, where direct calls would add a network round-trip's worth of latency per downstream service on every request. The sharpest difference is cascading failure risk: with Kafka, one slow consumer never touches any other service's health, where a chain of direct calls means one slow service can cascade failure across everything that calls it. What direct calls do have going for them is simplicity — standard HTTP or gRPC needs no broker to run or consumer lag to monitor, both real operational costs Kafka introduces.</p>
+<p><strong>Chosen:</strong> Kafka for all cross-service communication. The trade-off is real operational overhead — broker management, consumer lag alerting, a schema registry to maintain — accepted because at 100,000 events/sec, direct calls would create exactly the cascading failure chains described above: one slow Notification Service would otherwise be capable of blocking every single order placement in the system.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> The Kafka event bus is a correctness requirement, not just a performance optimization. If Order Service called Restaurant Service directly, a restaurant service timeout would appear as order placement latency. Kafka makes order placement constant-time regardless of how many downstream consumers exist.</p>
 </blockquote>
 <hr />
-<h3 id="at-least-once-vs-exactly-once-delivery">At-Least-Once vs Exactly-Once Delivery</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>At-Least-Once + Dedup</th>
-<th>Exactly-Once (Kafka 2PC)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Delivery guarantee</td>
-<td>Events replayed on consumer crash; dedup key prevents double-processing</td>
-<td>Events processed exactly once end-to-end</td>
-</tr>
-<tr>
-<td>Latency overhead</td>
-<td>None — standard Kafka consumer</td>
-<td>Adds 2-phase commit round trip, significant latency cost</td>
-</tr>
-<tr>
-<td>Implementation complexity</td>
-<td>Idempotency key per consumer</td>
-<td>Kafka transactional API, all consumers must participate</td>
-</tr>
-<tr>
-<td>Failure modes</td>
-<td>Duplicate delivery possible before dedup check</td>
-<td>No duplicates, but much harder to reason about partial failures</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> At-least-once delivery with idempotency keys. Payment webhooks use <code>webhook:{id}</code> in Redis (24h TTL) as a dedup key. Order creation uses <code>SETNX</code> distributed lock per user+cart. The result is effectively-once behavior at standard Kafka latency without 2PC overhead.</p>
+<p><strong>At-Least-Once vs Exactly-Once Delivery</strong></p>
+<p>At-least-once delivery replays events whenever a consumer crashes mid-processing, relying on a dedup key at the consumer to catch and discard anything reprocessed — which means duplicate delivery is possible in principle, just caught before it does anything. Exactly-once delivery guarantees no duplicate ever reaches the consumer in the first place, but only by paying for a two-phase-commit round trip on every event, adding real latency, and requiring every single consumer in the pipeline to participate in Kafka's transactional API for the guarantee to hold end to end. That's a meaningfully harder failure mode to reason about in practice — a partial failure inside a distributed transaction is harder to diagnose than "a duplicate showed up and got deduplicated."</p>
+<p><strong>Chosen:</strong> At-least-once delivery with idempotency keys. Payment webhooks use <code>webhook:{id}</code> in Redis (24h TTL) as their dedup key, and order creation uses a <code>SETNX</code> lock per user and cart. The result behaves like exactly-once from the outside, at standard Kafka latency, without ever paying for two-phase commit.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Exactly-once in distributed systems is expensive. At-least-once + idempotent consumers gives you the same correctness guarantee at a fraction of the cost. The dedup key is the correctness mechanism, not the delivery guarantee.</p>
 </blockquote>
 <hr />
-<h2 id="14-interview-summary">14. Interview Summary</h2>
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Eight non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.</p>
+<p><strong>Latency (restaurant listing &lt; 500ms, search &lt; 300ms, order placement &lt; 2s, GPS tracking &lt; 1s):</strong> Restaurant listings and search both sit behind Redis and Elasticsearch caches that never touch a primary database on a cache hit. Order placement stays under 2 seconds because the only synchronous work on that path is cart validation, a PostgreSQL commit, and a payment gateway call — everything else (restaurant notification, delivery matching) is fired asynchronously through Kafka after the response has already gone back to the customer. GPS tracking stays under a second because the update path never touches a database at all: driver ping → Kafka → Redis Streams → WebSocket push, each hop sub-millisecond to low-single-digit milliseconds.</p>
+<p><strong>Availability (99.9%):</strong> No single component failure takes down the whole platform, because Kafka decouples every service from every other (§5, §9.3). A Redis failure degrades matching and listings to slower fallbacks rather than stopping them; a PostgreSQL primary failure triggers an automated failover within about 30 seconds (§9.2) rather than an outage.</p>
+<p><strong>Order durability (zero loss after payment success):</strong> The order commits to PostgreSQL inside an ACID transaction before anything downstream is even notified. If Kafka is down at that moment, the order is already safe — a background job replays its events via the outbox pattern once Kafka recovers (§9.2). Money is never contingent on Kafka being up.</p>
+<p><strong>GPS write throughput (100K writes/sec) and peak order throughput (300 orders/sec):</strong> These aren't outcomes achieved after the fact — they're the numbers that selected Kafka, Redis, and Cassandra for the GPS path, and PostgreSQL for the order path, before any component was chosen (§4 Scale, From First Principles). The design doesn't scale up to meet these numbers later; they were the numbers that ruled out the alternatives up front.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Restaurant listing &lt; 500ms, search &lt; 300ms</td>
+<td>Redis + Elasticsearch caching in front of primary stores</td>
+</tr>
+<tr>
+<td>Order placement &lt; 2s</td>
+<td>Synchronous cart validation + PostgreSQL commit + payment call only; everything else async via Kafka</td>
+</tr>
+<tr>
+<td>GPS tracking &lt; 1s</td>
+<td>Driver ping → Kafka → Redis Streams → WebSocket push, no database on the hot path</td>
+</tr>
+<tr>
+<td>Availability 99.9%</td>
+<td>Kafka decoupling, Redis fallback to PostgreSQL geo query, automated PostgreSQL failover (~30s)</td>
+</tr>
+<tr>
+<td>Order durability — zero loss</td>
+<td>PostgreSQL ACID commit before notification; outbox pattern replays events after Kafka recovery</td>
+</tr>
+<tr>
+<td>100K GPS writes/sec, 300 orders/sec peak</td>
+<td>Architectural constraints that selected Kafka + Cassandra + Redis (GPS) and PostgreSQL (orders) up front</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats food delivery as three actors sharing one event bus rather than one monolithic flow: a customer placing an order, a restaurant confirming it, and a delivery partner carrying it — each decoupled from the others by Kafka so that no single actor's slowness or failure can stall the other two. The hardest problem wasn't any one of those three flows individually; it was the 100,000-writes-per-second GPS firehose, solved by never letting a database see that write rate directly, and the delivery-partner assignment race, solved by broadcasting instead of guessing and letting a <code>SETNX</code> lock — not a queue, not a distributed lock service — decide who actually gets the order. Every other decision in this design, from which database holds which entity to why WebSocket replaces polling, falls out of getting those two problems right.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions-table">Key Decisions Table</h3>
 <table>
 <thead>
