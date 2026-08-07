@@ -33,44 +33,20 @@ document.addEventListener('DOMContentLoaded', function () {
 <nav class="sidebar" id="sidebar"></nav>
 <main><h1 id="system-design-cloud-storage-google-drive-dropbox">System Design: Cloud Storage (Google Drive / Dropbox)</h1>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design a cloud storage platform (Google Drive / Dropbox) supporting file upload, download, sync across devices, folder management, and sharing with permissions — at 50 million DAU storing 10 billion files.</p>
-<p><strong>In Scope:</strong> File and folder upload/download, auto-sync across devices, directory structure (create/delete/rename/move), file sharing with read/write permissions, storage quota per user, chunk-level deduplication.</p>
-<p><strong>Out of Scope:</strong> Real-time collaborative editing (separate system — see google-docs.md), video transcoding, full-text search within documents, virus scanning internals, mobile offline-first CRDT sync.</p>
+<h2 id="1-what-is-google-drive-dropbox">1. What Is Google Drive / Dropbox?</h2>
+<p>Google Drive and Dropbox are cloud storage platforms: a user uploads files and folders from any device, and those files stay backed up, organized, and automatically kept in sync across every other device signed into the same account. Files can be shared with other people, either to just view or to edit, and everyone sees the same up-to-date folder structure no matter which device they last touched it from.</p>
+<p>At the scale these platforms run at — tens of millions of people opening the app every day, storing billions of files between them — the hard part isn't storing a file once. It's storing an enormous number of files cheaply, many of which are near-identical to something someone else already uploaded, moving very large files in and out quickly, and making sure every device a user owns agrees on the current state of their folders within a couple of seconds of any change.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<pre><code>Active users:           50 million DAU
-Files per user:         ~200 average
-Total files:            10 billion
-Daily uploads:          50 million files/day
-Average file size:      500 KB
-Large files (&gt;10 MB):   5% of uploads = 2.5 million/day
-
-Storage:
-  New data/day:   50M files x 500KB = 25 TB/day
-  After dedup:    ~60% unique (Dropbox reports ~70% dedup ratio)
-                  -&gt; ~15 TB/day net new storage
-  5-year total:   15 TB x 365 x 5 = ~27 PB
-
-Upload throughput:
-  50M uploads/day / 86,400s = ~580 uploads/sec average
-  Peak (10x):              ~5,800 uploads/sec
-
-Metadata reads (folder browsing):
-  50M DAU x 20 opens/day = 1B reads/day = ~11,500 reads/sec
-
-Chunk operations:
-  Large file (1 GB) = 1 GB / 5 MB chunk = 200 chunks
-  5,800 uploads/sec x ~5 chunks avg = ~29,000 chunk uploads/sec
-  -&gt; S3 must handle ~29K PUT requests/sec
-
-Sync notifications:
-  50M uploads/day -&gt; fan-out to avg 3 devices = 150M notifications/day
-  -&gt; ~1,700 WebSocket pushes/sec (manageable with pub/sub)
-</code></pre>
-<p>These numbers drive the following decisions: pre-signed URLs (cannot proxy 25 TB/day), chunk-level dedup (must reduce 27 PB over 5 years), PostgreSQL sharding (580 writes/sec, well within range but metadata is relational), and WebSocket + message queue for sync (1,700 pushes/sec is lightweight but must survive upload service restarts).</p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Maya is a photographer. She gets home from a wedding shoot, plugs in her camera, and drags a folder of 800 RAW photos into her Drive folder on her laptop. A progress bar creeps upward; halfway through, her laptop's Wi-Fi drops for a few seconds while she moves rooms. When it reconnects, the upload picks up from where it left off instead of starting the whole folder over.</p>
+<p>By the time she's back at her desk with coffee, she checks her phone — the same 800 photos are already showing up in the Drive app there too, no action needed. A minute earlier, before the reconnect, none of them had synced yet; now they're just there.</p>
+<p>She shares the folder with her editor, Sam, giving him edit access so he can rename and cull the bad shots. That evening, both of them happen to be offline at the same time — Maya on a flight, Sam on the subway — and both rename the same photo differently before reconnecting. Neither edit is silently thrown away: Maya sees her version, plus a second copy labeled with Sam's edit and a timestamp, so she can tell at a glance what happened and pick the one she wants.</p>
+<p>A week later, Maya accidentally uploads the same photo folder a second time from an old backup drive, expecting it to eat into her storage quota all over again. It doesn't — the system recognizes the content is identical to what's already stored and doesn't actually copy any of it twice.</p>
+<p>None of this — the resume, the sub-two-second sync, the conflict copy, the storage that didn't double — required Maya to think about a server, a database, or a queue. Everything from here on is how that experience actually gets built.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> In scope: file and folder upload/download, auto-sync across devices, directory structure (create/delete/rename/move), file sharing with read/write permissions, storage quota per user, chunk-level deduplication. Out of scope: real-time collaborative editing (a separate system), video transcoding, full-text search within documents, virus-scanning internals, mobile offline-first CRDT sync.</p>
+<p><strong>Functional requirements:</strong></p>
 <ol>
 <li>User creates an account and gets a storage quota (e.g., 15 GB free)</li>
 <li>Upload files and folders of any size, including multi-GB videos</li>
@@ -81,51 +57,68 @@ Sync notifications:
 <li>Resume interrupted uploads — a failed chunk does not restart the whole file</li>
 <li>Storage deduplication — identical content stored only once regardless of who uploaded it</li>
 </ol>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> Maya and Sam were both offline and both renamed the same photo — what actually happens when their devices reconnect?</summary>
+<p>The server doesn't just let the second upload silently overwrite the first — that would quietly destroy one of their edits. Instead, each file carries a version number; if the version a device is trying to commit doesn't match the version currently on the server, the server treats it as a conflict and creates a second file record — a "conflict copy" — instead of rejecting or overwriting anything. Both versions survive, and the person resolves it manually. See §8.3 Deep Dives for the full mechanism.</p>
+</details>
+<details>
+<summary><strong>Point to Ponder:</strong> Maya re-uploaded the same 800 photos from an old backup — does the system store them twice?</summary>
+<p>No — uploads are deduplicated at the chunk level, not the whole-file level. Every file is split into 5 MB chunks and each chunk is hashed with SHA-256 before upload; if a chunk's hash already exists in storage, the client never uploads it again, it just gets a metadata pointer to the existing copy. See §8.2 Deep Dives for why this beats whole-file dedup.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real user, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Availability</td>
 <td>99.99% — prefer AP over CP for upload and sync</td>
+<td>A user who can't upload a file right before a deadline, or can't reach synced files while traveling, experiences that as the product being broken.</td>
 </tr>
 <tr>
 <td>Durability</td>
 <td>99.999999999% (11 nines) — replicated across AZs in S3</td>
+<td>Losing a file a user trusted the platform to keep — years of photos, a finished thesis — isn't a bug, it's a small disaster for that person.</td>
 </tr>
 <tr>
 <td>Upload latency</td>
 <td>Bounded by client bandwidth — backend adds less than 100ms overhead</td>
+<td>If the backend itself is the slow part of an upload, users notice, because everything else about upload speed is already out of the product's control.</td>
 </tr>
 <tr>
 <td>Sync latency</td>
 <td>Less than 2 seconds after upload completes</td>
+<td>A file that shows up on the laptop but not yet on the phone makes a user distrust whether "sync" actually works at all.</td>
 </tr>
 <tr>
 <td>Metadata read latency</td>
 <td>Less than 50ms p99 for folder listing</td>
+<td>Opening a folder and waiting for the list to populate feels broken in a way that's disproportionate to how little data is actually being fetched.</td>
 </tr>
 <tr>
 <td>Consistency — metadata</td>
 <td>Strong (ACID) for quota enforcement and permission checks</td>
+<td>A user who's told they're under quota but actually isn't, or who can see a file they were never granted access to, is a correctness bug with real consequences.</td>
 </tr>
 <tr>
 <td>Consistency — sync</td>
 <td>Eventual — 1–2 second lag between devices is acceptable</td>
+<td>Waiting a couple of seconds for a change to appear on another device is invisible to a human; forcing every device to agree instantly would cost far more than the delay is worth.</td>
 </tr>
 <tr>
 <td>Large file support</td>
 <td>Files up to 15 GB via chunked multipart upload</td>
+<td>Video creators and anyone backing up large archives are locked out of the product entirely if big files simply can't go up.</td>
 </tr>
 <tr>
 <td>Storage efficiency</td>
 <td>Chunk-level dedup targeting 60–70% reduction</td>
+<td>Invisible to any single user, but it's what keeps a free 15 GB tier economically possible at 10 billion files platform-wide.</td>
 </tr>
 </tbody>
 </table>
@@ -166,12 +159,50 @@ Sync notifications:
 <strong>CAP framing:</strong> Upload and sync prefer availability — a 1–2 second sync lag is acceptable. Quota and permission operations prefer consistency — a user must never exceed quota or access a file they were not granted permission to.</p>
 </blockquote>
 <hr />
-<h2 id="mental-model">🧠 Mental Model</h2>
-<p>A cloud storage system is not just a file store — it continuously syncs file state across distributed clients, ensuring changes propagate reliably and efficiently. Three flows define everything: upload (client chunks file → pre-signed URL → S3 directly), metadata management (DB tracks what exists, not the bytes), and sync (S3 event → notification service → WebSocket push to other devices). The file bytes and the file record travel completely separate paths.</p>
-<blockquote>
-<p><strong>Google Drive is not a filesystem. It is a metadata store with a blob storage backend.</strong></p>
-</blockquote>
-<p>A "folder" is not a directory — it is a row in a database with <code>type = folder</code>. Moving a file is not moving bytes — it is changing a <code>parent_id</code> field. The actual bytes live in S3, addressed by a content hash.</p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking: how many users, files, and bytes are actually moving through this system — and what does that imply for the technology choices ahead?</p>
+<p><strong>Starting assumptions:</strong></p>
+<pre><code>Active users:           50 million DAU
+Files per user:         ~200 average
+Total files:            10 billion
+Daily uploads:          50 million files/day
+Average file size:      500 KB
+Large files (&gt;10 MB):   5% of uploads = 2.5 million/day
+</code></pre>
+<p><strong>How much new data actually needs to be stored?</strong> 50 million uploads a day at 500 KB average works out to:</p>
+<pre><code>50M files/day x 500KB = 25 TB/day of raw uploaded data
+</code></pre>
+<p>Not all of that is genuinely new content, though — much of it overlaps with something already stored (repeated backups, revised documents, edited videos that share most of their frames). Dropbox has reported dedup ratios around 70%; assuming a comparable ~60% of uploaded bytes are unique after chunk-level dedup:</p>
+<pre><code>25 TB/day x 60% unique -&gt; ~15 TB/day net new storage
+15 TB/day x 365 x 5 years -&gt; ~27 PB after five years
+</code></pre>
+<p>That 27 PB figure — and the fact that a meaningful share of it can be avoided entirely through dedup — is what makes chunk-level content-addressable storage worth the complexity, rather than a nice-to-have optimization.</p>
+<p><strong>How many uploads per second does the backend need to handle?</strong></p>
+<pre><code>50M uploads/day / 86,400s = ~580 uploads/sec average
+Peak (10x average):       ~5,800 uploads/sec
+</code></pre>
+<p>At 5,800 uploads/sec, if the backend itself were streaming those file bytes through application servers rather than handing the client a direct path to storage, that's gigabytes of raw bandwidth every second an app server fleet would have to absorb — a bandwidth problem, not a compute problem, and the kind that no amount of horizontal scaling fixes cheaply. That's the number that rules out proxied uploads before anything else about the design is decided.</p>
+<p><strong>What does that mean at the chunk level?</strong> Large files upload in 5 MB pieces:</p>
+<pre><code>1 GB file / 5 MB per chunk = 200 chunks
+5,800 uploads/sec x ~5 chunks avg = ~29,000 chunk uploads/sec
+-&gt; S3 must sustain ~29K PUT requests/sec, and dedup lookups must clear that same 29K/sec
+</code></pre>
+<p>That chunk-operations number is what turns dedup from "check a hash" into a scaling problem in its own right — checking 29,000 hashes a second against a relational table is its own bottleneck, addressed later in Bottlenecks &amp; Scaling.</p>
+<p><strong>How many metadata reads does folder browsing generate?</strong> Every DAU opens folders repeatedly through the day:</p>
+<pre><code>50M DAU x 20 opens/day = 1B reads/day = ~11,500 reads/sec
+</code></pre>
+<p>That read volume, sustained against a sub-50ms p99 target, is what rules out serving every folder listing straight from a single primary database.</p>
+<p><strong>How much sync traffic does one upload generate?</strong> A file changed on one device has to notify every other device signed into that account:</p>
+<pre><code>50M uploads/day -&gt; fan-out to avg 3 devices = 150M notifications/day
+150M / 86,400s -&gt; ~1,700 WebSocket pushes/sec
+</code></pre>
+<p>1,700 pushes/sec is light compared to the upload and metadata numbers above — the sync problem here isn't throughput, it's holding open enough persistent connections to reach every device at all (more on that in Bottlenecks &amp; Scaling).</p>
+<p>These numbers are what drive every major decision in this design: pre-signed URLs instead of proxying file bytes (25 TB/day cannot go through app servers), chunk-level dedup instead of whole-file dedup (a meaningful share of 27 PB over five years is avoidable), PostgreSQL with sharding for metadata (580 writes/sec is well within reach, and metadata is fundamentally relational), and a message queue plus WebSocket for sync (1,700 pushes/sec is lightweight, but the pipeline still has to survive a service restart without losing a notification).</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Maya's photo upload and the near-instant sync to her phone from the story above — here's what actually happens underneath.</p>
+<p>A cloud storage system isn't really a file store in the way a hard drive is — it's a metadata store with a blob-storage backend that continuously keeps distributed clients in agreement about what exists. Three flows define everything that happens: <strong>upload</strong> (the client splits a file into chunks and pushes them straight to blob storage using a temporary signed URL), <strong>metadata management</strong> (a database tracks what exists — names, folders, ownership, permissions — without ever touching the actual bytes), and <strong>sync</strong> (a storage-layer event triggers a notification, which pushes to every other device over an open connection). The file's bytes and the file's record travel down completely separate paths, and only meet again at the very end, when a client reconstructs a file from its metadata.</p>
+<p>Google Drive is not a filesystem — it's a metadata store with a blob storage backend. A "folder" is not a directory on disk, it's a row in a database with <code>type = folder</code>. Moving a file doesn't move any bytes, it just changes a <code>parent_id</code> field on that row. The actual bytes live in an object store, addressed not by a path but by a content hash.</p>
 <pre><code>                    +-----------------------------------------------------+
                     |                    FAST PATH                        |
   +--------+  chunk |  +----------------+   pre-signed URL               |
@@ -185,7 +216,7 @@ Sync notifications:
                     |  Notification Service --&gt; sync other devices        |
                     +-----------------------------------------------------+
 </code></pre>
-<h3 id="core-design-principles">⚡ Core Design Principles</h3>
+<h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
 <tr>
@@ -219,162 +250,16 @@ Sync notifications:
 </table>
 <blockquote>
 <p>[!IMPORTANT]
-<strong>File data never touches the application server.</strong> The backend only handles metadata and issues pre-signed tokens. File bytes go client → S3 directly. This is the architectural decision that makes Google Drive scale — the upload bottleneck is the client's bandwidth and S3 throughput, not application server capacity.</p>
+<strong>File data never touches the application server.</strong> The backend only handles metadata and issues pre-signed tokens. File bytes go client → S3 directly. This is the architectural decision that makes this design scale — the upload bottleneck is the client's bandwidth and S3's throughput, not application server capacity.</p>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Deduplication works at the chunk level, not the file level. If you upload the same 10 GB video twice, only one copy of each chunk is stored. The second upload is just a metadata pointer — no bytes transferred. This is why Dropbox could serve billions of files at a fraction of expected storage cost.</p>
+<strong>Key Insight:</strong> Deduplication works at the chunk level, not the file level. If you upload the same 10 GB video twice, only one copy of each chunk is stored. The second upload is just a metadata pointer — no bytes transferred. This is why Dropbox could serve billions of files at a fraction of the expected storage cost.</p>
 </blockquote>
-<hr />
-<h2 id="6-api-design">6. API Design</h2>
-<table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Path</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>POST</td>
-<td>/api/v1/files/upload/init</td>
-<td pre_signed_urls_="pre_signed_urls[]" upload_id_="upload_id,">Initiate chunked upload, returns</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/files/upload/complete</td>
-<td>Confirm all chunks uploaded, triggers processing</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/files/{id}/download</td>
-<td>Returns pre-signed S3 download URL (not the file bytes)</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/folders/{id}/children</td>
-<td>List folder contents with metadata</td>
-</tr>
-<tr>
-<td>POST</td>
-<td>/api/v1/files/{id}/share</td>
-<td email_="email," permission:="permission:" viewer_editor="viewer/editor">Share with</td>
-</tr>
-<tr>
-<td>GET</td>
-<td>/api/v1/files/{id}/versions</td>
-<td>List file version history</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>[!NOTE]
-The most architecturally interesting endpoints are upload/init and download — neither passes file bytes through the app server. Upload/init returns pre-signed S3 URLs so the client uploads directly to S3. Download returns a pre-signed URL the client fetches directly from CDN. The app server only handles metadata.</p>
-</blockquote>
-<hr />
-<h2 id="7-end-to-end-flow">7. End-to-End Flow</h2>
-<h3 id="71-upload-flow">7.1 Upload Flow</h3>
-<p>File upload with pre-signed URL and chunk deduplication — the happy path from client to sync.</p>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>Client initiates upload by calling <code>POST /files/upload/init</code> with the file name, size, and a SHA-256 hash of the entire file.</li>
-<li>Upload Service checks if this exact file (by hash) already exists in storage — chunk-level deduplication. If another user already uploaded the same file, we skip uploading those chunks entirely.</li>
-<li>For chunks that don't exist yet, the server generates pre-signed S3 PUT URLs — one per chunk — and returns them to the client.</li>
-<li>The client uploads each chunk directly to S3 in parallel. The app server never touches file bytes. This is how you scale uploads without server bottleneck.</li>
-<li>Once all chunks are uploaded, the client calls <code>POST /files/upload/complete</code> with the file_id and chunk ETags.</li>
-<li>Upload Service commits the file metadata record to PostgreSQL — pointing to the chunk hashes in S3, not the file bytes directly.</li>
-<li>A <code>file_ready</code> event is published to Kafka. Notification Service consumes it and pushes a sync event to the user's other devices via WebSocket.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant C as Client
-    participant US as Upload Service
-    participant DS as Dedup Check
-    participant S3 as S3 Blob Storage
-    participant MQ as Message Queue
-    participant NS as Notification Service
-    participant D2 as Other Devices
-
-    C-&gt;&gt;US: POST /files/initiate with name, size, chunk_count, total_hash
-    US-&gt;&gt;DS: Does total_hash exist in MetaDB?
-    DS--&gt;&gt;US: No new chunks needed / some chunks already stored
-    US-&gt;&gt;US: Check quota for user
-    US-&gt;&gt;S3: Generate N pre-signed PUT URLs for new chunks only
-    US--&gt;&gt;C: file_id, upload_id, pre_signed_urls for unique chunks
-
-    Note over C,S3: Client uploads only new chunks in parallel directly to S3
-    C-&gt;&gt;S3: PUT chunk_1 via pre-signed URL
-    C-&gt;&gt;S3: PUT chunk_2 via pre-signed URL
-    S3-&gt;&gt;MQ: upload_completed events with file_id and chunk_ids
-
-    MQ-&gt;&gt;US: Consume events - verify all chunks received
-    C-&gt;&gt;US: POST /files/complete with file_id and etags
-    US-&gt;&gt;US: Commit file_metadata record to DB - point to chunk hashes
-    US-&gt;&gt;US: Decrement user quota atomically
-    US--&gt;&gt;C: 200 OK with download_url
-
-    US-&gt;&gt;MQ: file_ready event with user_id and file_id
-    MQ-&gt;&gt;NS: Consume event
-    NS-&gt;&gt;D2: WebSocket push - sync file_id
-</div>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> The 3-step upload (initiate → upload to S3 → complete) is the correct pattern for large files. The backend never touches file bytes — it only creates pre-signed URLs and records metadata on completion. This is how you scale to 5,800 uploads/sec without application server bottleneck.</p>
-</blockquote>
-<hr />
-<h3 id="72-download-flow">7.2 Download Flow</h3>
-<p>File download with permission check and pre-signed CDN/S3 URL — the client fetches bytes directly, never through the app server.</p>
-<p><strong>The story in plain English:</strong></p>
-<ol>
-<li>User clicks a file — client calls <code>GET /files/{id}/download</code>.</li>
-<li>Metadata Service checks Redis cache for file metadata (name, size, S3 location). Cache hit returns in &lt; 1ms. Cache miss falls back to PostgreSQL.</li>
-<li>Permission Service checks that this user has at least read access to the file (via the permissions table).</li>
-<li>Metadata Service generates a pre-signed S3/CDN GET URL with a short TTL (15 minutes) and returns it to the client.</li>
-<li>Client fetches the file directly from the CDN edge node — the app server is completely out of the data path.</li>
-<li>CDN cache hit: file served from edge in milliseconds. Cache miss: CDN fetches from S3 origin, caches at edge for future requests.
-   The app server never touches file bytes in either direction — upload or download.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant Client as Client
-    participant MetadataSvc as MetadataSvc
-    participant PermissionSvc as PermissionSvc
-    participant Redis as Redis
-    participant PostgreSQL as PostgreSQL
-    participant CDN as CDN
-    participant S3 as S3
-
-    Client-&gt;&gt;MetadataSvc: GET /files/{id}/download
-    MetadataSvc-&gt;&gt;Redis: Fetch file metadata by file_id
-    Redis--&gt;&gt;MetadataSvc: Cache hit - return metadata (s3_path, owner_id)
-    Note over MetadataSvc,PostgreSQL: Cache miss - fall through to PostgreSQL
-    MetadataSvc-&gt;&gt;PostgreSQL: SELECT file_metadata WHERE file_id = {id}
-    PostgreSQL--&gt;&gt;MetadataSvc: file record (s3_path, content_hash, size)
-
-    MetadataSvc-&gt;&gt;PermissionSvc: Check read access for user_id on file_id
-    PermissionSvc-&gt;&gt;PostgreSQL: SELECT permission FROM permissions WHERE file_id AND user_id
-    PostgreSQL--&gt;&gt;PermissionSvc: permission = read or write or owner
-    PermissionSvc--&gt;&gt;MetadataSvc: Access granted
-
-    MetadataSvc-&gt;&gt;S3: Generate pre-signed GET URL for s3_path (TTL 15 min)
-    S3--&gt;&gt;MetadataSvc: Pre-signed GET URL
-    MetadataSvc--&gt;&gt;Client: 200 OK with pre_signed_url (URL only, no file bytes)
-
-    Client-&gt;&gt;CDN: GET file via pre-signed URL
-    alt CDN cache hit
-        CDN--&gt;&gt;Client: File bytes served from edge cache
-    else CDN cache miss
-        CDN-&gt;&gt;S3: Fetch object from S3 origin
-        S3--&gt;&gt;CDN: File bytes
-        CDN-&gt;&gt;CDN: Cache object at edge
-        CDN--&gt;&gt;Client: File bytes served from edge
-    end
-</div>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> The app server never touches file bytes in either direction — upload bytes go Client → S3 directly via pre-signed PUT, download bytes go S3/CDN → Client directly via pre-signed GET. The app server is purely a metadata and URL-signing service.</p>
-</blockquote>
-<hr />
-<h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
+<details>
+<summary><strong>Point to Ponder:</strong> If a folder holds thousands of files, does renaming or moving it mean touching every file inside?</summary>
+<p>No — because a folder is just a metadata row, not a real container. Files reference their parent folder by a <code>parent_id</code> field, not the other way around, so renaming or moving a folder is a single field update on that one row. Every file inside still resolves to the same parent, without any of their own records changing. See §7 Data Model for the full entity layout.</p>
+</details>
+<h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
+<p>The architecture starts as a small set of services and grows a dedup service, a quota service, and a message queue as the system matures — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
 <div class="mermaid">
 graph TD
@@ -431,15 +316,144 @@ graph TD
     Client --&gt;|download| CDN
     CDN --&gt; S3
 </div>
+<h3 id="the-upload-path-step-by-step">The Upload Path, Step by Step</h3>
+<p>The two diagrams above show the components; this is the actual sequence between them when Maya drags her photo folder in.</p>
+<p>The client kicks things off by calling <code>POST /files/upload/init</code> with the file's name, size, and a SHA-256 hash of its full content and of each chunk. The Upload Service's first move isn't to start accepting bytes — it's to check whether this content, or parts of it, already exist in storage, since there's no point issuing an upload slot for a chunk that's already sitting in S3 under someone else's file. For whatever chunks genuinely are new, it checks the user's quota, then asks S3 to mint a pre-signed PUT URL for each one — a short-lived, single-object upload token — and hands the whole batch back to the client in one response. The client uploads only those new chunks, in parallel, straight to S3; the app server is never in that data path at all, which is the whole point (§8.1 goes deeper on why). Once every chunk lands, the client calls <code>POST /files/upload/complete</code> with the file's ID and each chunk's ETag, and only then does the Upload Service commit the file's metadata record to PostgreSQL — pointing at the chunk hashes, never at the bytes directly — and atomically decrement the user's quota. The last step happens without the client waiting on it: a <code>file_ready</code> event goes onto the message queue, the Notification Service consumes it, and every other device signed into that account gets a WebSocket push telling it something changed.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant US as Upload Service
+    participant DS as Dedup Check
+    participant S3 as S3 Blob Storage
+    participant MQ as Message Queue
+    participant NS as Notification Service
+    participant D2 as Other Devices
+
+    C-&gt;&gt;US: POST /files/initiate with name, size, chunk_count, total_hash
+    US-&gt;&gt;DS: Does total_hash exist in MetaDB?
+    DS--&gt;&gt;US: No new chunks needed / some chunks already stored
+    US-&gt;&gt;US: Check quota for user
+    US-&gt;&gt;S3: Generate N pre-signed PUT URLs for new chunks only
+    US--&gt;&gt;C: file_id, upload_id, pre_signed_urls for unique chunks
+
+    Note over C,S3: Client uploads only new chunks in parallel directly to S3
+    C-&gt;&gt;S3: PUT chunk_1 via pre-signed URL
+    C-&gt;&gt;S3: PUT chunk_2 via pre-signed URL
+    S3-&gt;&gt;MQ: upload_completed events with file_id and chunk_ids
+
+    MQ-&gt;&gt;US: Consume events - verify all chunks received
+    C-&gt;&gt;US: POST /files/complete with file_id and etags
+    US-&gt;&gt;US: Commit file_metadata record to DB - point to chunk hashes
+    US-&gt;&gt;US: Decrement user quota atomically
+    US--&gt;&gt;C: 200 OK with download_url
+
+    US-&gt;&gt;MQ: file_ready event with user_id and file_id
+    MQ-&gt;&gt;NS: Consume event
+    NS-&gt;&gt;D2: WebSocket push - sync file_id
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The 3-step upload (initiate → upload to S3 → complete) is the correct pattern for large files. The backend never touches file bytes — it only creates pre-signed URLs and records metadata on completion. This is how the design reaches 5,800 uploads/sec without an application-server bottleneck.</p>
+</blockquote>
+<h3 id="the-download-path-step-by-step">The Download Path, Step by Step</h3>
+<p>Download is the mirror image, with one extra check upload doesn't need: permission.</p>
+<p>A click on a file calls <code>GET /files/{id}/download</code>. The Metadata Service looks for that file's record in Redis first — name, size, S3 location — and only falls through to PostgreSQL on a cache miss, since this is a read path that has to clear in under 50ms at p99. Before handing back anything, though, the Permission Service checks that the requesting user actually has at least read access to this specific file — a step upload skips entirely, because uploading only ever requires access to your own quota, not someone else's file. Once access is confirmed, the Metadata Service asks S3 (or the CDN in front of it) to mint a short-lived pre-signed GET URL — 15 minutes, same pattern as the upload side — and returns just that URL to the client. From there the app server is completely out of the picture: the client fetches the file directly from a CDN edge node, which either already has it cached and serves it in milliseconds, or fetches it once from S3 origin and caches it there for the next request.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant Client as Client
+    participant MetadataSvc as MetadataSvc
+    participant PermissionSvc as PermissionSvc
+    participant Redis as Redis
+    participant PostgreSQL as PostgreSQL
+    participant CDN as CDN
+    participant S3 as S3
+
+    Client-&gt;&gt;MetadataSvc: GET /files/{id}/download
+    MetadataSvc-&gt;&gt;Redis: Fetch file metadata by file_id
+    Redis--&gt;&gt;MetadataSvc: Cache hit - return metadata (s3_path, owner_id)
+    Note over MetadataSvc,PostgreSQL: Cache miss - fall through to PostgreSQL
+    MetadataSvc-&gt;&gt;PostgreSQL: SELECT file_metadata WHERE file_id = {id}
+    PostgreSQL--&gt;&gt;MetadataSvc: file record (s3_path, content_hash, size)
+
+    MetadataSvc-&gt;&gt;PermissionSvc: Check read access for user_id on file_id
+    PermissionSvc-&gt;&gt;PostgreSQL: SELECT permission FROM permissions WHERE file_id AND user_id
+    PostgreSQL--&gt;&gt;PermissionSvc: permission = read or write or owner
+    PermissionSvc--&gt;&gt;MetadataSvc: Access granted
+
+    MetadataSvc-&gt;&gt;S3: Generate pre-signed GET URL for s3_path (TTL 15 min)
+    S3--&gt;&gt;MetadataSvc: Pre-signed GET URL
+    MetadataSvc--&gt;&gt;Client: 200 OK with pre_signed_url (URL only, no file bytes)
+
+    Client-&gt;&gt;CDN: GET file via pre-signed URL
+    alt CDN cache hit
+        CDN--&gt;&gt;Client: File bytes served from edge cache
+    else CDN cache miss
+        CDN-&gt;&gt;S3: Fetch object from S3 origin
+        S3--&gt;&gt;CDN: File bytes
+        CDN-&gt;&gt;CDN: Cache object at edge
+        CDN--&gt;&gt;Client: File bytes served from edge
+    end
+</div>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The app server never touches file bytes in either direction — upload bytes go Client → S3 directly via pre-signed PUT, download bytes go S3/CDN → Client directly via pre-signed GET. The app server is purely a metadata and URL-signing service.</p>
+</blockquote>
 <hr />
-<h2 id="9-data-model">9. Data Model</h2>
+<h2 id="6-api-design">6. API Design</h2>
+<p>Unlike a system split by actor (rider vs. driver), this API is single-actor — every caller is just "a client acting on behalf of a signed-in user" — so the surface splits by <em>what's being done to a file</em> instead: initiating and completing an upload, fetching a download link, browsing a folder, changing sharing, and looking at version history.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td>/api/v1/files/upload/init</td>
+<td pre_signed_urls_="pre_signed_urls[]" upload_id_="upload_id,">Initiate chunked upload, returns</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/files/upload/complete</td>
+<td>Confirm all chunks uploaded, triggers processing</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/files/{id}/download</td>
+<td>Returns pre-signed S3 download URL (not the file bytes)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/folders/{id}/children</td>
+<td>List folder contents with metadata</td>
+</tr>
+<tr>
+<td>POST</td>
+<td>/api/v1/files/{id}/share</td>
+<td email_="email," permission:="permission:" viewer_editor="viewer/editor">Share with</td>
+</tr>
+<tr>
+<td>GET</td>
+<td>/api/v1/files/{id}/versions</td>
+<td>List file version history</td>
+</tr>
+</tbody>
+</table>
+<p>The two design choices that aren't self-evident from the table: upload is deliberately split into <code>init</code> and <code>complete</code> rather than a single call, because the actual byte transfer happens outside this API entirely, client to S3 (§5) — <code>init</code> and <code>complete</code> are just the bookends the backend needs to check quota and dedup beforehand and commit metadata afterward. And <code>download</code> returns a URL, not a stream — the endpoint's whole job is a permission check and a signed token, never the file itself, which is what keeps large-file downloads from ever touching an application server (§5's Download Path).</p>
+<hr />
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Seven different pieces of data live in this system, and grouping them by how they're actually used makes the storage choices close to self-evident.</p>
+<p><strong>The durable, structural data lives in PostgreSQL, because it's relational by nature.</strong> <code>file_metadata</code> is the backbone — every file or folder is a row, and the parent-child folder hierarchy is expressed with nothing more than a <code>parent_id</code> foreign key, which is exactly what makes rename and move O(1): one field update, not a bulk rewrite of everything "inside" a folder. <code>chunks</code> is the content-addressable table that makes deduplication possible in the first place — its primary key is literally the SHA-256 hash of the chunk's bytes, so "does this content already exist" is a single indexed lookup, and a <code>ref_count</code> column tracks how many files currently point at a given chunk, so orphaned chunks (every file referencing them deleted) can eventually be garbage-collected instead of sitting in S3 forever. <code>file_chunks</code> is the join table connecting the two — an ordered list of chunk hashes per file, which is what lets a file share <em>some</em> of its chunks with another file without either one being a full duplicate. <code>permissions</code> rounds out the group: it needs the same ACID guarantees as the others because a wrong answer here is a security bug, not just a stale read, and it joins naturally against <code>file_metadata</code> in plain SQL.</p>
+<p><strong>The ephemeral, fast-path data lives in Redis, because none of it needs to survive a restart to remain correct.</strong> <code>sync_state</code> maps a user to the set of WebSocket connection IDs currently open across their devices, with a 30-minute TTL — if a device disconnects and never reconnects, this entry simply expires instead of needing a cleanup job to notice. <code>quota_cache</code> holds each user's current bytes-used with a 60-second TTL, read on every upload so quota checks don't hit PostgreSQL on the hot path — PostgreSQL stays the source of truth underneath it, and 60 seconds of staleness on a quota check is invisible to a user who isn't uploading at the exact instant they cross their limit. <code>user_sessions</code> is the same shape for the same reason: a session lookup happens on nearly every request, so a sub-millisecond Redis read in place of a 10–50ms database round-trip is the difference that matters at this request volume.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why this store</th>
 </tr>
 </thead>
 <tbody>
@@ -447,43 +461,36 @@ graph TD
 <td>file_metadata</td>
 <td>PostgreSQL</td>
 <td>file_id UUID PK, name, type, parent_id FK, owner_id, size_bytes, content_hash, s3_path, created_at, modified_at, deleted_at</td>
-<td>Relational — parent-child folder hierarchy, soft deletes, O(1) rename and move via single field update</td>
 </tr>
 <tr>
 <td>chunks</td>
 <td>PostgreSQL</td>
 <td>chunk_hash SHA-256 PK, s3_path, size_bytes, ref_count, created_at</td>
-<td>Content-addressable: hash IS the key; ref_count enables garbage collection of orphaned chunks</td>
 </tr>
 <tr>
 <td>file_chunks</td>
 <td>PostgreSQL</td>
 <td>file_id FK, chunk_index, chunk_hash FK</td>
-<td>Join table mapping a file to its ordered list of chunk hashes; enables partial dedup per file</td>
 </tr>
 <tr>
 <td>permissions</td>
 <td>PostgreSQL</td>
 <td>file_id FK, user_id FK, permission enum read/write/owner, granted_at — PK is file_id + user_id</td>
-<td>ACID required — permission checks must be strongly consistent; JOIN with file_metadata is natural SQL</td>
 </tr>
 <tr>
 <td>sync_state</td>
 <td>Redis</td>
 <td>user_id → set of device_ws_ids, TTL 30min</td>
-<td>Ephemeral — tracks which WebSocket connections belong to a user; TTL handles disconnects automatically</td>
 </tr>
 <tr>
 <td>quota_cache</td>
 <td>Redis</td>
 <td>user_id → bytes_used, TTL 60s</td>
-<td>Write-through cache — quota checks hit Redis first; DB is source of truth but 60s stale acceptable</td>
 </tr>
 <tr>
 <td>user_sessions</td>
 <td>Redis</td>
 <td>session_token → user_id, TTL 24h</td>
-<td>Session data is ephemeral and high-read; Redis sub-millisecond lookup vs 10–50ms DB I/O</td>
 </tr>
 </tbody>
 </table>
@@ -492,17 +499,11 @@ graph TD
 <strong>Key Insight:</strong> The <code>chunks</code> table makes the hash the primary key — the content IS the address. Deduplication, integrity checking, and content-addressable retrieval are all solved by the same SHA-256 hash. No separate dedup service state is needed.</p>
 </blockquote>
 <hr />
-<h2 id="10-deep-dives">10. Deep Dives</h2>
-<h3 id="101-pre-signed-url-upload-flow">10.1 Pre-Signed URL Upload Flow</h3>
-<p>Here is the problem: at peak load, 5,800 uploads/sec at ~2.5 MB/chunk means 14.5 GB/sec of file data in flight. Routing this through application servers would require provisioning server capacity for a problem that is purely about moving bytes from one place to another.</p>
-<p><strong>Naive solution:</strong> Client POSTs file bytes to <code>/files/upload</code> → server streams to S3. This fails because: (1) server holds the TCP connection open for the entire upload duration — 200 MB file on a slow connection = 30+ seconds of connection held, (2) 25 TB/day through app servers = bandwidth cost and compute cost that scales linearly with file size, not with request count.</p>
-<p><strong>Chosen solution — 3-step pre-signed URL flow:</strong></p>
-<ol>
-<li>Client calls <code>POST /files/initiate</code> with file metadata and chunk hashes. Backend checks quota and dedup, then asks S3 to generate pre-signed PUT URLs — time-limited tokens (15 min) scoped to exactly one S3 object each.</li>
-<li>Client uploads each chunk byte-for-byte directly to S3 using the pre-signed URL. Backend is not involved. S3 validates the token and stores the chunk.</li>
-<li>Client calls <code>POST /files/complete</code> with file_id and chunk ETags. Backend writes the metadata record to PostgreSQL and decrements quota atomically.</li>
-</ol>
-<p><strong>Trade-off accepted:</strong> Client must implement a 3-step upload flow instead of a simple POST. This is acceptable because the client SDK abstracts the flow — users never see it — and the alternative (proxying 25 TB/day) is not an optimization problem but a physics problem.</p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-pre-signed-url-upload-flow">8.1 Pre-Signed URL Upload Flow</h3>
+<p>Here's the problem: at peak load, this system needs to absorb 5,800 uploads a second, each one made of roughly 2.5 MB chunks — which works out to 14.5 GB of file data in flight at any given moment. Whatever handles that has to move bytes from a client to permanent storage without becoming the thing that limits how fast uploads can happen.</p>
+<p>The obvious approach doesn't survive contact with that number. Have the client <code>POST</code> its file bytes straight to the application server, and let the server stream them on to S3. That fails for two separate reasons: the server has to hold a TCP connection open for the entire upload — a 200 MB file on a slow connection means 30-plus seconds of one connection doing nothing but babysitting a byte stream — and the aggregate bandwidth of 25 TB a day flowing through app servers scales the compute and network cost of the fleet linearly with how much data users upload, not with how many requests they make. Provisioning for that is provisioning for a physics problem, not a request-volume problem.</p>
+<p>The actual flow sidesteps the app server from the byte-transfer step entirely, in three calls. The client first calls <code>POST /files/initiate</code> with the file's metadata and its chunk hashes; the backend checks the user's quota and whether those hashes already exist (deduplication, covered next), then asks S3 to generate pre-signed PUT URLs — tokens that are time-limited to 15 minutes and scoped to exactly one S3 object each, so a leaked URL can't be used to write anywhere else or after it expires. The client then uploads each chunk directly to S3 using its own pre-signed URL, entirely outside the backend's involvement — S3 itself validates the token and stores the chunk. Only at the end does the client call <code>POST /files/complete</code> with the file ID and each chunk's ETag, at which point the backend writes the metadata record to PostgreSQL and decrements quota atomically. The trade this makes is real: the client has to implement a three-step flow instead of one simple <code>POST</code>. That's acceptable because the client SDK hides all three steps behind a single call for the app developer — nobody hand-rolls this per feature — and the alternative, proxying 25 TB a day, isn't something more hardware fixes.</p>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>Pre-signed URLs are not just an optimization — they are the only architecture that scales.</strong> Proxying 25 TB/day of file uploads through application servers cannot be fixed with more hardware; it requires re-routing the data path entirely.</p>
@@ -510,229 +511,130 @@ graph TD
 In the interview, say: "I chose pre-signed URLs over proxied upload because routing 14.5 GB/sec through application servers creates a bottleneck that cannot be horizontally scaled away — you would need servers sized for bandwidth, not compute. The trade-off I accept is a 3-step client flow, which is hidden inside the SDK."</p>
 </blockquote>
 <hr />
-<h3 id="102-chunk-level-deduplication-via-sha-256">10.2 Chunk-Level Deduplication via SHA-256</h3>
-<p>Here is the problem: 50 million uploads/day at 500 KB average = 25 TB/day of raw data. Many of those uploads share content — video edits share 90% of frames, document revisions share most paragraphs, backup tools re-upload unchanged files.</p>
-<p><strong>Naive solution — file-level dedup:</strong> Hash the whole file, check if hash exists. If yes, skip upload. This catches only exact duplicates — roughly 30% of uploads. Two versions of the same video (one with added intro) share no file hash even though they share 95% of bytes.</p>
-<p><strong>Chosen solution — chunk-level content-addressable storage:</strong></p>
-<p>Every file is split into 5 MB chunks before upload. Each chunk is hashed with SHA-256 (collision probability negligible). When the client calls <code>POST /files/initiate</code>, it sends the hash list for all chunks. The Upload Service queries the <code>chunks</code> table: which hashes already exist? For existing hashes, no pre-signed URL is issued — the file_chunks join table simply references the existing chunk. The client only uploads genuinely new chunks.</p>
-<p>The file_metadata record becomes a list of chunk_hashes in order: <code>[hash_A, hash_B, hash_C]</code>. To reconstruct the file on download, the client (or CDN) fetches chunks in order and concatenates.</p>
-<p><strong>Trade-off accepted:</strong> Higher metadata DB size — ~100 bytes/chunk record × 200 chunks/file × 10B files = roughly 200 TB of chunk metadata. This is a known, bounded cost. Chunk metadata is small and amenable to compression. The storage savings (60–70% reduction on 27 PB over 5 years) vastly outweigh the metadata overhead.</p>
+<h3 id="82-chunk-level-deduplication-via-content-addressable-storage">8.2 Chunk-Level Deduplication via Content-Addressable Storage</h3>
+<p>This is the single idea most responsible for making cloud storage at this scale affordable, so it's worth walking through in full — what it protects against, its own moving pieces, and exactly how a chunk goes from "bytes on a client" to "either stored once or not stored at all."</p>
+<p>Here's the problem it exists to solve: 50 million uploads a day at 500 KB average is 25 TB of raw data hitting the system daily, and a large share of that isn't actually new. Video edits share 90% of their frames with the original. Document revisions share most of their paragraphs. Backup tools re-upload files that haven't changed at all since last time. Storing every one of those uploads as a fresh, independent blob means paying full storage cost for content that, byte for byte, mostly already exists somewhere on the platform.</p>
+<p>The obvious fix — hash the whole file, and skip the upload if that hash already exists — catches only exact duplicates, which turns out to be about 30% of uploads. It's the wrong granularity: two versions of the same video, one with a new intro spliced on, share 95% of their bytes but produce two completely different whole-file hashes, so file-level dedup sees them as entirely unrelated and stores both in full.</p>
+<p>What actually needs to prevent this is dedup at a finer grain than "the whole file," able to recognize that two files share <em>some</em> content even when they don't share <em>all</em> of it, without needing to compare files to each other directly — comparing every new upload against every existing file would itself never scale. The mechanism that satisfies both constraints is content-addressable chunk storage. Every file is split into fixed 5 MB chunks before upload, and each chunk gets its own SHA-256 hash — a hash collision at that size is negligible enough to treat as never happening in practice. That hash <em>is</em> the chunk's address: it becomes the primary key of the <code>chunks</code> table (§7 Data Model), so "does this content already exist" is never a content comparison, it's an indexed key lookup. When a client calls <code>POST /files/initiate</code>, it sends the hash list for every chunk in the file up front. The Upload Service checks that list against the <code>chunks</code> table — and at the scale this runs at (§4's ~29,000 chunk operations/sec), that check goes through a Bloom filter in Redis first, so that "definitely new" chunks skip the database lookup entirely and only genuinely ambiguous ones pay for a real query (the scaling numbers for that are in §9 Bottlenecks &amp; Scaling). For every hash that's already known, no pre-signed URL gets issued at all — the file's <code>file_chunks</code> join-table entry just points at the existing chunk, and zero bytes cross the network for it. Only the chunks that are genuinely new get a pre-signed URL and actually travel from client to S3.</p>
+<p>The result is that a file's identity in the metadata layer becomes nothing more than an ordered list of chunk hashes — <code>[hash_A, hash_B, hash_C]</code> — and reconstructing the file for download is just fetching those chunks in order and concatenating them back together. The <code>ref_count</code> column on the <code>chunks</code> table is what makes this safe to garbage-collect later: every file that references a chunk increments it, every deletion decrements it, and only a chunk whose count drops to zero — meaning no file anywhere still needs it — becomes eligible for actual removal from S3. Nothing gets deleted just because one user deleted their copy of it.</p>
+<p>The cost of all this is metadata, not bytes: roughly 100 bytes per chunk record, times 200 chunks in an average large file, times 10 billion files, is on the order of 200 TB of chunk metadata — a known, bounded number, and one that compresses well, unlike the raw file bytes it's tracking. Weighed against a 60–70% reduction on a 27 PB five-year storage projection (§4), that metadata overhead isn't a close call.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Chunk hashes are content-addressable. The hash IS the storage address. Two users uploading the same popular movie share all 200 chunks — only one copy on disk. Storage cost is amortized across all users. This is the reason Dropbox could undercut competitors on price.</p>
+<strong>Key Insight:</strong> Chunk hashes are content-addressable — the hash IS the storage address. Two users uploading the same popular movie share all 200 chunks; only one copy exists on disk, and storage cost is amortized across every user who happens to upload the same content. This is the reason Dropbox could undercut competitors on price.</p>
 </blockquote>
 <hr />
-<h3 id="103-sync-conflict-resolution">10.3 Sync Conflict Resolution</h3>
-<p>Here is the problem: Device A and Device B both edit the same file while offline. Both upload when they reconnect. The server sees two uploads targeting the same file_id with the same base version but different content hashes. One of them must win — but silently discarding the other is data loss.</p>
-<p><strong>Naive solution — last-write-wins:</strong> The second upload overwrites the first. Simple to implement. Silently destroys data whenever two devices are offline simultaneously.</p>
-<p><strong>Chosen solution — conflict copy preservation:</strong></p>
-<p>Each file carries a <code>version</code> field incremented on every write. On <code>POST /files/complete</code>, the Upload Service checks: does the <code>base_version</code> in the request match the current version in DB? If yes, it is a clean update — increment version and commit. If no, there is a conflict.</p>
-<p>On conflict, the server does not reject the upload. Instead it creates a second file_metadata record named <code>file (Device B conflict copy YYYY-MM-DD).ext</code>, pointing to Device B's chunk hashes. Both versions survive. The user sees both in the folder and can manually resolve.</p>
-<p><strong>Trade-off accepted:</strong> Users must occasionally resolve conflicts manually. This is acceptable because: (1) conflicts only happen when two devices edit the same file offline simultaneously — rare in practice, (2) the alternative (silent data loss or distributed locks requiring both devices online) is worse. The conflict copy UI is a familiar pattern — users understand it.</p>
+<h3 id="83-sync-conflict-resolution">8.3 Sync Conflict Resolution</h3>
+<p>Here's the problem: Maya and Sam, from the story at the start of this doc, are both offline at the same time and both rename the same photo. Both devices upload their change the moment they reconnect. The server ends up with two uploads targeting the same file, both claiming the same starting point, but disagreeing about what it should become — and one of them has to give way, but silently discarding either one is data loss for a real person.</p>
+<p>The obvious answer, last-write-wins, is simple to implement — whichever upload's request lands second on the server just overwrites the first — but it's silently destructive exactly in the case that matters most: any time two devices happened to be offline and editing at once, which is rare but not exotic (a flight, a subway, a bad hotel Wi-Fi), someone's edit vanishes with no warning and no way to recover it.</p>
+<p>The mechanism that avoids that outcome relies on a version number carried on every file, incremented on every successful write. When a client calls <code>POST /files/complete</code>, it includes the <code>base_version</code> it started editing from, and the Upload Service compares that against the version currently on record. If they match, nothing conflicted — this is just a normal update, and the version increments and commits as usual. If they don't match, someone else committed a change to this file since this client last saw it, and that's the conflict case. Rather than reject the upload outright, the server creates a second <code>file_metadata</code> record — named something like <code>file (Sam's conflict copy YYYY-MM-DD).ext</code> — pointing at the second device's chunk hashes, and leaves both records in place. Both versions are visible in the folder afterward, and the person resolves it by hand, the same familiar pattern most sync tools already use.</p>
+<p>The trade-off this accepts is that users occasionally have to resolve something manually — a small burden, but a bounded and rare one, since it only triggers when two devices genuinely edit the same file offline at the same time. The alternative — either silently picking a winner or requiring both devices to be online and coordinate through a distributed lock before either can save — is worse on both counts: one loses data outright, the other makes offline editing not really work at all.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Sync is pull-on-notification, not push. The notification tells the device "something changed." The device decides what to download. This prevents wasting bandwidth pushing large files to mobile devices on limited storage or slow connections.</p>
+<strong>Key Insight:</strong> Sync is pull-on-notification, not push. The notification tells the device "something changed" — the device decides what to actually download. This is what stops the system from wasting bandwidth pushing large files to a mobile device that's on a slow connection or nearly out of storage.</p>
 </blockquote>
 <hr />
-<h2 id="11-bottlenecks-scaling">11. Bottlenecks &amp; Scaling</h2>
-<p><strong>Bottleneck 1: Metadata DB read throughput (11,500 reads/sec for folder listing)</strong></p>
-<p>What breaks first: a single PostgreSQL primary cannot serve 11,500 read requests/sec at p99 less than 50ms while also handling 580 writes/sec for uploads.</p>
-<p>Solution: Add read replicas for folder listing queries. Route all write operations (upload initiate, complete, quota update, permission change) to primary. Route all read operations (folder listing, file metadata fetch, permission check for download) to read replicas. Shard by <code>owner_id</code> — all files for one user land on the same shard, keeping parent-child queries local. Add Redis cache for hot folders (team shared drives with many readers).</p>
-<p><strong>Bottleneck 2: Notification service fan-out (1,700 WebSocket pushes/sec)</strong></p>
-<p>What breaks first: a single notification service node cannot maintain WebSocket connections for 50M DAU. At 50 million users × 3 devices each = 150M persistent connections.</p>
-<p>Solution: Horizontal scaling of notification service nodes. Redis stores the mapping of user_id → set of device WebSocket connection IDs (with TTL for cleanup). Each notification service node holds a subset of connections. When a sync event arrives for user_id X, the service looks up X's device connection IDs in Redis and routes to the correct node. Nodes communicate via internal pub/sub.</p>
-<p><strong>Bottleneck 3: Chunk metadata lookup for dedup (29,000 chunk operations/sec)</strong></p>
-<p>What breaks first: checking 29K chunk hashes/sec against PostgreSQL for dedup will saturate the DB before the upload pipeline.</p>
-<p>Solution: Bloom filter in Redis for chunk hashes. Before hitting PostgreSQL, check the Bloom filter — if the hash is definitely not present, skip the DB lookup entirely. Bloom filters have false positives (say "exists" when it does not) but never false negatives. A false positive causes an unnecessary DB lookup — not a correctness problem. A 1% false positive rate reduces DB load by ~70% for a working set that is mostly new content.</p>
+<h2 id="9-bottlenecks-scaling">9. Bottlenecks &amp; Scaling</h2>
+<p>Every component in this design has a point where it stops being the right shape for the traffic ahead of it. Here's what gives first as the system scales further, and what actually changes when it does.</p>
+<p>Metadata reads are the first thing to strain — folder browsing alone generates about 11,500 reads a second (§4), and a single PostgreSQL primary can't sustain that at a sub-50ms p99 while also absorbing the roughly 580 writes a second coming from uploads. The fix routes around the primary rather than scaling it up: all writes — upload initiate, upload complete, quota updates, permission changes — go to the primary, while every read — folder listings, metadata fetches, permission checks for downloads — goes to read replicas instead. Sharding by <code>owner_id</code> keeps a user's whole folder tree on one shard, so a parent-child query never has to reach across shards, and a Redis cache in front of the busiest folders (shared team drives with many simultaneous readers) absorbs the read pattern that would otherwise hit the replicas hardest.</p>
+<p>The Notification Service hits a different kind of ceiling: at 50 million users with an average of 3 devices each, that's up to 150 million persistent WebSocket connections if every device were online simultaneously — far more than any single node can hold open. The fix is horizontal: each notification node holds a subset of those connections, and Redis stores the mapping from a user's ID to the set of device connection IDs currently open, with a TTL that cleans up disconnects automatically. When a sync event for a given user arrives, the responsible node looks up that user's connection IDs in Redis and routes the push to whichever node actually holds them, coordinating between nodes over an internal pub/sub channel.</p>
+<p>The dedup lookup from §8.2 has its own bottleneck once chunk operations reach their projected ~29,000 a second — checking every one of those hashes against PostgreSQL directly would saturate the database well before the upload pipeline itself became the limit. A Bloom filter sitting in front of that lookup in Redis is what actually absorbs the volume: it can say "definitely not present" with certainty and skip the database entirely, or say "maybe present," in which case — and only in which case — the real lookup happens. A false positive here just costs one unnecessary database read, never a correctness problem, because Bloom filters never produce false negatives; at a 1% false-positive rate, that cuts database load by roughly 70% for a chunk stream that's mostly genuinely new content.</p>
 <blockquote>
 <p>[!TIP]
 Mention the Bloom filter dedup optimization in interviews — it is a senior-level detail that shows you have thought about the hot path. Say: "I would put a Bloom filter in Redis in front of the chunk hash DB lookup. False positives are acceptable — they just cause an extra DB read. False negatives would break dedup correctness, but Bloom filters never produce false negatives."</p>
 </blockquote>
+<p>Caching also does a lot of quiet work outside these three: <code>quota_cache</code> and <code>user_sessions</code> (§7 Data Model) both take reads off PostgreSQL's hot path the same way; and one thing that's deliberately <em>not</em> part of this scaling story is routing dynamic API calls through a CDN — a CDN accelerates static assets and file downloads (§5), but the metadata calls and upload/complete requests that actually run this system still have to reach origin every time.</p>
 <hr />
-<h2 id="12-failure-scenarios">12. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>DB primary fails</td>
-<td>Writes blocked — upload complete, quota update, permission change fail</td>
-<td>PostgreSQL replica auto-promoted (RDS Multi-AZ, ~30s failover); upload service retries commit with exponential backoff</td>
-</tr>
-<tr>
-<td>S3 availability event</td>
-<td>Upload chunks fail mid-flight</td>
-<td>Client retries failed chunks individually via new pre-signed URLs; already-uploaded chunks are not re-sent (idempotent by hash)</td>
-</tr>
-<tr>
-<td>Message queue outage</td>
-<td>S3 upload complete events lost — sync notifications not sent</td>
-<td>Polling fallback: upload service polls S3 for pending events on recovery; clients re-sync on reconnect by comparing local version vs server version</td>
-</tr>
-<tr>
-<td>Notification service crash</td>
-<td>Connected devices stop receiving WebSocket pushes</td>
-<td>Clients fall back to polling <code>/files/changes?since=timestamp</code> every 30s; WebSocket reconnects on next heartbeat</td>
-</tr>
-<tr>
-<td>Redis quota cache failure</td>
-<td>Quota checks fall through to PostgreSQL directly</td>
-<td>Latency increases for upload initiate; correctness unaffected — PostgreSQL is source of truth; Redis rebuilt on restart</td>
-</tr>
-<tr>
-<td>Network partition — client offline</td>
-<td>Local changes not uploaded</td>
-<td>Client queues pending changes locally; uploads in order on reconnect; conflict detection handles simultaneous edits</td>
-</tr>
-<tr>
-<td>Chunk dedup race — two users upload same new chunk simultaneously</td>
-<td>Both pass Bloom filter, both write to DB</td>
-<td>PostgreSQL unique constraint on <code>chunk_hash</code> PK causes one INSERT to fail; second writer treats it as success (chunk already stored) — idempotent</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Every piece of this system can fail independently, and which pieces are affected — and how badly — depends on whether what failed was durable metadata, in-flight bytes, or the sync signal connecting devices.</p>
+<p>On the durable-metadata side, a PostgreSQL primary failing blocks writes entirely — upload completion, quota updates, permission changes all stall — until RDS Multi-AZ auto-promotes a replica, roughly a 30-second failover, after which the upload service retries the stalled commits with exponential backoff. A Redis quota-cache failure is a much smaller version of the same story: quota checks simply fall through to PostgreSQL directly, correctness is untouched since PostgreSQL was always the source of truth, and the cache rebuilds itself once Redis is back — the only cost is higher latency during the gap, not incorrect answers.</p>
+<p>On the byte-transfer side, an S3 availability event fails chunks mid-upload, but nothing has to restart from zero: the client retries only the chunks that actually failed, using freshly issued pre-signed URLs, and any chunk that already made it to S3 is never re-sent, because the upload is idempotent by content hash. A subtler version of the same race can happen at the dedup layer itself — two users uploading the same brand-new chunk at almost the same instant can both pass the Bloom filter's "maybe new" check and both attempt to write it. PostgreSQL's unique constraint on <code>chunk_hash</code> as the primary key resolves this without any extra coordination: one <code>INSERT</code> succeeds, the second fails on the constraint, and the second writer just treats that failure as success — the chunk is stored either way, exactly once.</p>
+<p>On the sync side, a message-queue outage means S3's upload-complete events never make it to the notification pipeline, so devices stop hearing about changes — but nothing is silently lost, because the upload service polls S3 directly for pending events once the queue recovers, and clients independently re-sync on reconnect by comparing their local file versions against the server's. A Notification Service crash is narrower still: connected devices simply stop receiving pushes and fall back to polling <code>/files/changes?since=timestamp</code> every 30 seconds until their WebSocket reconnects on the next heartbeat.</p>
+<p>And the one failure that isn't really a backend failure at all: a client going offline. Its pending local changes just queue up locally, upload in order once the connection returns, and the version-based conflict detection from §8.3 handles whatever collided while it was gone.</p>
 <hr />
-<h2 id="13-trade-offs">13. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
+<p>Three decisions in this design carry a real trade-off rather than an obvious right answer — worth naming each explicitly, since a design that never admits a trade-off usually hasn't actually made one.</p>
 <h3 id="pre-signed-url-vs-proxy-upload">Pre-Signed URL vs Proxy Upload</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Pre-Signed URL — direct to S3</th>
-<th>Proxied Upload — via app server</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>App server load</td>
-<td>Zero — no bytes transit servers</td>
-<td>14.5 GB/sec through servers at peak</td>
-</tr>
-<tr>
-<td>Throughput ceiling</td>
-<td>S3 capacity — effectively unlimited</td>
-<td>Application server bandwidth</td>
-</tr>
-<tr>
-<td>Upload latency</td>
-<td>Client to S3 directly — 1 hop</td>
-<td>Client to server to S3 — 2 hops</td>
-</tr>
-<tr>
-<td>Security</td>
-<td>URL expires in 15 min, scoped to one object</td>
-<td>Server controls all access</td>
-</tr>
-<tr>
-<td>Client complexity</td>
-<td>3-step flow — initiate, upload, complete</td>
-<td>Simple POST</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Pre-signed URLs. We never proxy file bytes through application servers. The trade-off we accept is a 3-step client upload flow, which is acceptable because the client SDK abstracts this entirely.</p>
+<p>Routing file bytes through the application server would put the server in full control of every access decision on the way through, and it means a client only ever has to make one simple <code>POST</code> — no multi-step flow to implement. But that control costs throughput: the app server fleet would have to absorb the full 14.5 GB/sec of peak upload traffic (§8.1), which caps out at whatever bandwidth the server fleet itself can provision, and every upload takes two network hops (client to server, server to S3) instead of one. Pre-signed URLs give up direct server control over the transfer — access is enforced by a time-scoped (15-minute), single-object token instead of a server checking every byte — in exchange for zero app-server load and a throughput ceiling that's effectively S3's capacity rather than the app fleet's.</p>
+<p><strong>Chosen:</strong> Pre-signed URLs. File bytes never transit application servers. The trade-off accepted is a 3-step client upload flow, which is acceptable because the client SDK abstracts it entirely — no app developer hand-rolls the three calls themselves.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Pre-signed URLs are not just an optimization — they are the only architecture that scales. Proxying 25 TB/day of file uploads is not a latency problem; it is a physics problem.</p>
 </blockquote>
 <hr />
 <h3 id="chunk-level-dedup-vs-file-level-dedup">Chunk-Level Dedup vs File-Level Dedup</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Chunk-level — 5 MB blocks</th>
-<th>File-level — whole file hash</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Dedup ratio</td>
-<td>60–70% — partial content shared</td>
-<td>30% — exact duplicates only</td>
-</tr>
-<tr>
-<td>Metadata overhead</td>
-<td>N chunk records per file</td>
-<td>1 record per file</td>
-</tr>
-<tr>
-<td>Partial upload resume</td>
-<td>Resume from last successful chunk</td>
-<td>Must restart entire file</td>
-</tr>
-<tr>
-<td>Bandwidth savings</td>
-<td>Upload only unique chunks</td>
-<td>Upload whole file or nothing</td>
-</tr>
-<tr>
-<td>Implementation complexity</td>
-<td>Higher — chunk hash lookup per chunk</td>
-<td>Lower — single hash check</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Chunk-level deduplication. Most storage savings come from shared partial content — video edits, document revisions, backup files with unchanged blocks. File-level dedup only catches exact duplicates. The trade-off we accept is higher metadata DB size (~200 TB of chunk records at scale), which is a known, bounded cost.</p>
+<p>File-level dedup — hashing the whole file and checking for an exact match — is the simpler of the two to build: one hash check per upload, one metadata record per file, and lower implementation complexity overall. But it only catches exact duplicates, roughly 30% of uploads, because a single changed byte anywhere in the file produces a completely different whole-file hash — bandwidth savings only happen on an exact repeat, otherwise it's upload the whole file or nothing. Chunk-level dedup catches the much larger category of <em>partial</em> overlap — video edits, document revisions, unchanged backup files — pushing the dedup ratio to 60–70% and saving bandwidth on every upload that overlaps with existing content, not just exact repeats. As a side effect it makes resumable upload possible for free, since a failed upload only has to retry the specific chunks that didn't make it, instead of restarting the entire file. What it costs is one metadata record per chunk instead of one per file, and a hash lookup per chunk instead of a single check — genuinely higher implementation complexity.</p>
+<p><strong>Chosen:</strong> Chunk-level deduplication. Most of the storage savings in this system come from shared <em>partial</em> content, not exact duplicates, so file-level dedup would leave most of the achievable savings on the table. The trade-off accepted is a larger metadata footprint — roughly 200 TB of chunk records at full scale (§8.2) — which is a known, bounded cost.</p>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Chunk-level dedup is the reason Dropbox could undercut competitors on price. Two users uploading the same popular video share all 200 chunks — only one copy on disk. Storage cost is amortized across all users.</p>
 </blockquote>
 <hr />
 <h3 id="postgresql-vs-nosql-for-metadata">PostgreSQL vs NoSQL for Metadata</h3>
+<p>A wide-column store like Cassandra or DynamoDB wins decisively on raw write throughput — multi-million writes per second against PostgreSQL's roughly 100,000 per second per shard — and operationally, running a NoSQL cluster at scale is generally simpler than managing PostgreSQL sharding. But this system's actual write volume, ~580 uploads a second (§4), is nowhere near either ceiling, which makes that throughput advantage moot here. What NoSQL gives up in exchange matters more at this system's actual shape: directory hierarchy queries — "list everything under this folder" — are a natural recursive query against an adjacency list in PostgreSQL, but require denormalization or multiple round-trips in a wide-column store; permission checks need a real <code>JOIN</code> between files and permissions, which PostgreSQL does natively and NoSQL has to fake at the application layer; and quota aggregation is a <code>SUM</code> query PostgreSQL can run directly, where NoSQL needs a separate counter table or an external aggregation step. PostgreSQL is also strongly consistent by default, which is exactly what permission checks and quota enforcement require — NoSQL's eventual-consistency default would need to be fought against for the two places in this system where staleness is actually unacceptable.</p>
+<p><strong>Chosen:</strong> PostgreSQL, sharded by <code>owner_id</code>. Metadata here is fundamentally relational — files have parents, permissions have users, users have quotas — and the write volume this system actually sees never approaches the throughput NoSQL would be needed for. The trade-off accepted is sharding complexity, which is worth it because ACID guarantees are what permission and quota correctness actually require, not something NoSQL provides cheaply.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The metadata for a storage system is fundamentally relational. Parent-child folder relationships, permission joins, and quota aggregation are natural SQL. NoSQL requires denormalization to express the same relationships — trading write throughput this system doesn't need for query complexity it would then have to manage itself.</p>
+</blockquote>
+<hr />
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Nine non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just what was promised, but the specific mechanism doing the work.</p>
+<p><strong>Availability (99.99%) and durability (11 nines):</strong> These are handled by two different layers on purpose. Availability comes from choosing AP over CP wherever a user is actively interacting with the system — read replicas keep folder browsing up even during a primary failover, and a Redis outage degrades quota checks to a slower PostgreSQL fallback rather than blocking uploads outright (§9.1 Failure Scenarios). Durability is a property of S3 itself — multi-AZ replication — combined with the fact that a file's bytes are never held anywhere in this design except in permanent storage; there's no in-flight buffer that could lose a completed upload.</p>
+<p><strong>Upload latency (client-bandwidth-bound) and large file support (up to 15 GB):</strong> Both fall out of the same decision — pre-signed URLs mean the backend's only job is issuing a token and writing a metadata row, so the backend's own overhead never scales with file size, only the client's own upload speed does. Chunked multipart upload is what makes a 15 GB file tractable at all: it's never one request, it's up to thousands of independent 5 MB chunk uploads, each of which can retry on its own without touching the others.</p>
+<p><strong>Sync latency (&lt;2s) and sync consistency (eventual):</strong> The notification pipeline is deliberately push-then-pull rather than push-with-payload — a device gets told <em>that</em> something changed over WebSocket, then decides what to actually fetch, which keeps the notification itself small and fast regardless of the underlying file's size. The 1–2 second lag this allows is the same bound accepted in §3's non-functional requirements, not a shortfall against them.</p>
+<p><strong>Metadata read latency (&lt;50ms p99) and metadata consistency (strong/ACID):</strong> These look like they'd conflict — fast reads versus strict correctness — but they apply to different data. Folder listings are read-replica served, eventually consistent, and fast because they never touch the primary. Quota checks and permission checks are the two places this design refuses to be eventually consistent (§3's Consistency Model), and both stay fast anyway because they're backed by a Redis cache in front of PostgreSQL, not because consistency was traded away.</p>
+<p><strong>Storage efficiency (60–70% dedup):</strong> This is the one requirement that isn't really "achieved" after the fact — it's the number that selected chunk-level content-addressable storage over file-level dedup in the first place (§8.2), the same way §4's throughput numbers selected pre-signed URLs over proxying before any component was built.</p>
 <table>
 <thead>
 <tr>
-<th>Dimension</th>
-<th>PostgreSQL — chosen</th>
-<th>Cassandra or DynamoDB</th>
+<th>Requirement</th>
+<th>Mechanism</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Directory hierarchy queries</td>
-<td>Natural — adjacency list, recursive CTE</td>
-<td>Requires denormalization or multiple reads</td>
+<td>Availability 99.99%</td>
+<td>AP-favoring design; read replicas; graceful Redis-failure fallback</td>
 </tr>
 <tr>
-<td>Permission joins</td>
-<td>Native — JOIN file_metadata and permissions</td>
-<td>Requires denormalization or application-side join</td>
+<td>Durability 11 nines</td>
+<td>S3 multi-AZ replication; bytes only ever live in permanent storage</td>
 </tr>
 <tr>
-<td>Quota aggregation</td>
-<td>SUM query on owner_id — native SQL</td>
-<td>Requires counter table or external aggregation</td>
+<td>Upload latency</td>
+<td>Pre-signed URLs — backend overhead independent of file size</td>
 </tr>
 <tr>
-<td>Consistency</td>
-<td>Strong — ACID transactions</td>
-<td>Eventual by default</td>
+<td>Large file support (15 GB)</td>
+<td>Chunked multipart upload — independent, retryable 5 MB chunks</td>
 </tr>
 <tr>
-<td>Write throughput</td>
-<td>~100K writes/sec sharded by owner_id</td>
-<td>Multi-million writes/sec</td>
+<td>Sync latency &lt; 2s</td>
+<td>Push-notification-then-pull, not payload-carrying push</td>
 </tr>
 <tr>
-<td>Operational complexity</td>
-<td>Moderate</td>
-<td>Higher</td>
+<td>Sync consistency — eventual</td>
+<td>Notification-driven; devices reconcile on their own schedule</td>
+</tr>
+<tr>
+<td>Metadata read &lt; 50ms p99</td>
+<td>Redis cache + PostgreSQL read replicas</td>
+</tr>
+<tr>
+<td>Metadata consistency — strong</td>
+<td>ACID transactions on quota and permission writes</td>
+</tr>
+<tr>
+<td>Storage efficiency 60–70%</td>
+<td>Chunk-level content-addressable dedup (§8.2)</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Chosen:</strong> PostgreSQL with sharding by owner_id. Metadata is fundamentally relational — files have parents, permissions have users, users have quotas. Write volume (~580 uploads/sec) is well within sharded PostgreSQL capacity. The trade-off we accept is sharding complexity, which is acceptable because correctness of permission checks and quota enforcement requires ACID guarantees that NoSQL cannot provide cheaply.</p>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> The metadata for a storage system is fundamentally relational. Parent-child folder relationships, permission joins, and quota aggregation are natural SQL. NoSQL requires denormalization to express the same relationships — you trade write throughput you do not need for query complexity you must now manage yourself.</p>
-</blockquote>
 <hr />
-<h2 id="interview-summary">Interview Summary</h2>
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats cloud storage as two things pretending to be one product: a metadata system that has to be exactly right — who owns what, who can access it, how much space they've used — and a bytes system that has to stay nowhere near the application server at all. The hardest problem wasn't storing files; it was recognizing that most "new" uploads aren't actually new content, and building a content-addressable chunk layer that turns that overlap into a 60–70% storage saving without ever comparing files to each other directly. Every other decision in this design — pre-signed URLs instead of proxying, PostgreSQL for structure instead of NoSQL, pull-on-notification instead of push-with-payload — follows from keeping bytes, metadata, and the sync signal connecting devices as three separate concerns that only ever meet at the edges.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
@@ -799,7 +701,8 @@ These are the lines that make an interviewer lean forward. Know them cold.</p>
 <li><strong>"Deduplication works at the chunk level."</strong> Two uploads sharing the same video clip share storage. The second upload is a metadata pointer — no bytes transferred. This is why Dropbox could undercut storage costs.</li>
 <li><strong>"Chunking is not just for large files — it enables deduplication, parallel upload, and partial retry."</strong> A 1 GB file in 5 MB chunks uploads 200 chunks in parallel and resumes from any failed chunk.</li>
 <li><strong>"Sync is pull-on-notification, not push."</strong> The notification says 'something changed.' The device decides what to download. This avoids pushing large files to mobile devices on limited storage.</li>
-<li><strong>"Metadata is relational — use a relational DB."</strong> Parent-child folders, permission joins, quota aggregation are natural SQL. NoSQL requires denormalization to express the same relationships and you trade write throughput you do not need for query complexity you must now manage.</li>
+<li><strong>"Metadata is relational — use a relational DB."</strong> Parent-child folders, permission joins, quota aggregation are natural SQL. NoSQL requires denormalization to express the same relationships and you trade write throughput you do not need for query complexity you must now manage.
+</content></li>
 </ul></main>
 </div>
 </body>
