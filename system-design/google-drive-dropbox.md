@@ -471,7 +471,7 @@ Routing file bytes through the application server would put the server in full c
 **Chosen:** Pre-signed URLs. File bytes never transit application servers. The trade-off accepted is a 3-step client upload flow, which is acceptable because the client SDK abstracts it entirely — no app developer hand-rolls the three calls themselves.
 
 > [!NOTE]
-> **Key Insight:** Pre-signed URLs are not just an optimization — they are the only architecture that scales. Proxying 25 TB/day of file uploads is not a latency problem; it is a physics problem.
+> **Key Insight:** This isn't a Dropbox-specific trick — S3, GCS, and Azure Blob all converged on the exact same pre-signed-URL pattern independently. When every major cloud storage provider arrives at the same architecture without coordinating, that's a sign it's the shape forced by the constraints, not a clever optimization one of them happened to think of.
 
 ---
 
@@ -482,7 +482,7 @@ File-level dedup — hashing the whole file and checking for an exact match — 
 **Chosen:** Chunk-level deduplication. Most of the storage savings in this system come from shared *partial* content, not exact duplicates, so file-level dedup would leave most of the achievable savings on the table. The trade-off accepted is a larger metadata footprint — roughly 200 TB of chunk records at full scale (§8.2) — which is a known, bounded cost.
 
 > [!NOTE]
-> **Key Insight:** Chunk-level dedup is the reason Dropbox could undercut competitors on price. Two users uploading the same popular video share all 200 chunks — only one copy on disk. Storage cost is amortized across all users.
+> **Key Insight:** This dedup story has a real limit worth naming: a single-byte edit anywhere inside a chunk changes that chunk's hash entirely, so two near-identical versions of the same file — saved a minute apart during active editing — still store almost all of their chunks twice. Chunking only pays off for content that's genuinely shared across files or users, not for tracking the evolution of one file over time.
 
 ---
 
