@@ -35,110 +35,80 @@ document.addEventListener('DOMContentLoaded', function () {
 <blockquote>
 <p><strong>Backend / Frontend Split: 85% Backend · 15% Frontend</strong>
 The interesting engineering is in the backend: WebSocket-based real-time price streaming from the exchange, Kafka-buffered high-frequency order pipeline, order validation before hitting the expensive exchange API, two-phase order tracking (Order DB vs Trade DB), InfluxDB time-series for historical prices, and Redis pub/sub for fanout to millions of subscribers. Frontend is a standard WebSocket consumer — worth mentioning but not a deep focus.</p>
-<p><strong>Critical distinction:</strong> A <strong>stock broker</strong> (Zerodha, Groww) is NOT a stock exchange (NSE, BSE). The broker is the client-facing platform; the exchange is a black box with paid APIs. All actual stock allocation happens at the exchange. The broker's job is: show prices, validate orders, forward to exchange, track status, show P&amp;L.</p>
 </blockquote>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design a stock broker platform like Zerodha or Groww. Users register with KYC verification, view near-real-time stock prices and historical data, place buy/sell orders (market and limit), manage a watchlist, and view their portfolio P&amp;L.</p>
-<p><strong>In scope:</strong> User registration + KYC, real-time + historical stock price feed, order placement (market + limit), order validation, order tracking (pending → confirmed/rejected), portfolio P&amp;L, watchlist, wallet/fund management.</p>
-<p><strong>Out of scope:</strong> Stock exchange internals (NSE/BSE matching engine), high-frequency trading algorithms, margin lending, options/futures derivatives (can be mentioned as extensions), cross-border trading.</p>
+<h2 id="1-what-is-a-stock-broker-platform">1. What Is a Stock Broker Platform?</h2>
+<p>Zerodha and Groww are stock broker platforms: a user checks a stock's price, decides to buy or sell, places an order, and later checks their portfolio to see what it's worth. Before any of that, they prove who they are through KYC verification, since real money and financial regulation are involved from the very first tap.</p>
+<p>A stock broker is <strong>not</strong> a stock exchange. NSE and BSE are where a share of RELIANCE actually changes hands — the exchange runs the matching engine that decides who buys from whom. The broker never touches that matching; it's the client-facing layer that streams prices, takes the order, forwards it to the exchange, and reports back what happened. Everything in this design sits in front of that black box: show prices, validate orders before they cost anything, forward what's valid, track status, and keep an accurate ledger of holdings and profit/loss.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Total users</td>
-<td>50M registered, 5M DAU</td>
-</tr>
-<tr>
-<td>Total stocks tracked</td>
-<td>8,000–10,000 (NSE + BSE)</td>
-</tr>
-<tr>
-<td>Peak orders per second</td>
-<td>100K orders/sec during market open</td>
-</tr>
-<tr>
-<td>Stock price updates/sec</td>
-<td>10,000 stocks × 1 update/sec = 10,000 price events/sec</td>
-</tr>
-<tr>
-<td>Market hours</td>
-<td>9:15 AM – 3:30 PM IST (6.25 hours/day)</td>
-</tr>
-<tr>
-<td>WebSocket connections to exchange</td>
-<td>10,000 stocks ÷ 500 stocks/connection = 20 persistent connections</td>
-</tr>
-<tr>
-<td>Concurrent WebSocket connections (client-facing)</td>
-<td>5M users × 20% active = 1M concurrent WS connections</td>
-</tr>
-<tr>
-<td>Historical price storage</td>
-<td>10,000 stocks × 1 update/sec × 6.25 hrs × 250 days = ~56B rows/year</td>
-</tr>
-<tr>
-<td>Geography</td>
-<td>Single-region (India) — all infra in India datacenters</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Scale rationale:</strong></p>
-<p>Single-region constraint is a key advantage — latency targets (&lt; 50ms price updates, &lt; 100ms order placement) are achievable only because all clients and servers are in the same geographic region. A global exchange system would require different architectural choices.</p>
-<p><em>These numbers drive: WebSocket over SSE (bidirectional subscription changes), InfluxDB for time-series price storage, Kafka as buffer between 100K order/sec and exchange API calls, Redis pub/sub for 1M concurrent price subscribers.</em></p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Ravi opens the app a few minutes before the market opens at 9:15 AM. His watchlist is already on screen — RELIANCE, INFY, TATASTEEL — each price ticking gently as pre-market activity builds. He's been watching RELIANCE all week; this morning it's sitting at ₹2,845.50, right where he wanted to buy.</p>
+<p>At 9:15 sharp, he taps <strong>Buy — Market — 10 shares</strong>. The app doesn't make him wait: within a moment it shows his order as "Pending," and RELIANCE's price keeps updating live underneath it, same as always. Behind the scenes, the app is checking that Ravi actually is who his KYC documents say he is, that the market is genuinely open, and that he has enough money in his wallet to cover ten shares at the current price — before it commits to spending a single rupee or bothering the exchange with a request that might fail anyway.</p>
+<p>A couple of seconds later his phone buzzes: "Order executed — 10 shares of RELIANCE bought at ₹2,845.50." His wallet balance has dropped by exactly that amount — no more — even though he happened to place another order for INFY in almost the same instant. The app made sure only one of those two orders could touch his balance at a time, so he never risked spending money he didn't actually have.</p>
+<p>Through the rest of the trading day, Ravi checks his portfolio a few times. Each time, it shows his RELIANCE holding's current value against what he paid for it — the unrealised profit or loss updating as the live price moves, without him ever refreshing the page or waiting more than a second or two for the number to catch up. By 3:30 PM, when the market closes, his order history shows the full trail: what he bought, when, at what price, and what it's worth right now.</p>
+<p>That whole loop — watch a price, tap buy, get confirmed, see it reflected in a portfolio — is what the rest of this design has to make fast, correct, and impossible to get wrong with someone's money, at the scale of millions of Ravis doing exactly this in the same six-and-a-quarter hours every trading day.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
-<ul>
-<li>User registration with KYC verification (Aadhaar/PAN via third-party KYC service)</li>
-<li>View real-time stock prices (&lt; 50ms latency from exchange update to client screen)</li>
-<li>View historical stock price charts (intraday + multi-day)</li>
-<li>Place buy/sell orders — market orders (execute at current price) and limit orders (execute at target price)</li>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> In scope: user registration with KYC, real-time and historical stock price feeds, order placement (market and limit orders), order validation, order tracking (pending → confirmed/rejected), portfolio P&amp;L, watchlist, and wallet/fund management. Out of scope: the exchange's own matching engine (NSE/BSE internals), high-frequency trading algorithms, margin lending, and options/futures derivatives (worth mentioning as extensions, not designing here).</p>
+<p><strong>Functional requirements:</strong></p>
+<ol>
+<li>User registration with KYC verification (Aadhaar/PAN via a third-party KYC service)</li>
+<li>View real-time stock prices, with under 50ms latency from exchange update to client screen</li>
+<li>View historical stock price charts (intraday and multi-day)</li>
+<li>Place buy/sell orders — market orders (execute at current price) and limit orders (execute at a target price)</li>
 <li>Cancel pending orders</li>
 <li>View all orders and their current status (pending / executed / rejected / cancelled)</li>
-<li>Portfolio dashboard: holdings, positions, P&amp;L calculated against current price</li>
+<li>Portfolio dashboard: holdings, positions, and P&amp;L calculated against current price</li>
 <li>Watchlist: save and monitor a custom list of stocks</li>
 <li>Wallet: deposit funds, withdraw funds, view transaction history</li>
-</ul>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+</ol>
+<details>
+<summary><strong>Point to Ponder:</strong> Ravi places two orders — ₹7,000 for RELIANCE and ₹6,000 for INFY — within the same second, against a ₹10,000 wallet. What stops him overspending?</summary>
+<p>Nothing about reading his balance twice is unusual — the danger is that both orders could read "₹10,000 available" <em>before either one writes back a deduction</em>, and both would pass their individual funds check even though together they add up to more than he has. The fix is a row-level lock (<code>SELECT ... FOR UPDATE</code>) on his wallet during the funds check: the second order's check is forced to wait until the first order's transaction commits, so it sees the <em>already-reduced</em> balance, not the stale one. See §8.2 Deep Dives for the full walkthrough of why this matters and how the lock actually works.</p>
+</details>
+<details>
+<summary><strong>Point to Ponder:</strong> A limit order for 100 shares only fills 30 of them today — is the user just stuck waiting indefinitely?</summary>
+<p>No — the order doesn't sit in one binary pending/done state. The exchange can acknowledge a fill in batches, and the Order Tracker updates the Trade DB incrementally as each batch confirms, keeping the order in a <code>PARTIALLY_FILLED</code> status until the remaining shares fill or the order expires. See §8.3 Deep Dives for how the pipeline handles this.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real user, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Stock price update latency</td>
 <td>&lt; 50ms from exchange event to client display</td>
+<td>A price the user is looking at needs to still be <em>real</em> — a screen that's even a second stale can talk someone into buying or selling at a number that no longer exists.</td>
 </tr>
 <tr>
 <td>Order placement latency</td>
-<td>&lt; 100ms from user submit to exchange acknowledgement</td>
+<td>&lt; 100ms from user submit to durable acceptance</td>
+<td>Users judge responsiveness by how fast a tap turns into a visible "Pending" — a slow acknowledgement makes them wonder if the tap even registered, especially in a fast-moving market.</td>
 </tr>
 <tr>
 <td>Availability</td>
 <td>99.9% during market hours (9:15 AM – 3:30 PM IST)</td>
+<td>The app going down at 9:20 AM isn't a minor outage — every user who planned to buy or sell at that moment is locked out of their own money for as long as it lasts.</td>
 </tr>
 <tr>
 <td>Consistency</td>
-<td><strong>High consistency over availability</strong> — money and stocks must never be in inconsistent state</td>
+<td>High consistency over availability — money and stocks must never be in an inconsistent state</td>
+<td>If a trade partially fails, a user can end up with money missing from their wallet and no stock to show for it — that's not a UX bug, it's a provable financial loss.</td>
 </tr>
 <tr>
 <td>Order durability</td>
 <td>Zero order loss — Kafka ensures at-least-once delivery</td>
+<td>A dropped order isn't an inconvenience — it's a user who tapped Buy, believed it went through, and finds out later it never did (or worse, that it silently happened twice).</td>
 </tr>
 <tr>
 <td>Historical data retention</td>
 <td>5+ years</td>
+<td>Users pull up old trades for tax filing and dispute resolution long after the trading day is over — that history isn't recoverable after the fact if it's gone.</td>
 </tr>
 </tbody>
 </table>
@@ -184,45 +154,24 @@ The interesting engineering is in the backend: WebSocket-based real-time price s
 This system prioritizes <strong>consistency over availability</strong> — the opposite of most consumer apps. Reason: if our system shows a trade succeeded but the exchange rejected it, the user has lost money from their wallet with no stock to show for it. Financial systems always choose CP over AP.</p>
 </blockquote>
 <hr />
-<h2 id="mental-model">🧠 Mental Model</h2>
-<p>A stock broker has <strong>three independent but interconnected flows</strong>:</p>
-<ol>
-<li><strong>Price Feed Flow</strong> — Exchange pushes stock prices → WebSocket gateway → Kafka → Price Injector → InfluxDB (historical) + Redis pub/sub → Price Tracker Service → client WebSocket connections</li>
-<li><strong>Order Flow</strong> — User places order → Kafka raw order topic → Validator Service (KYC + funds check) → verified/rejected topics → Order Service → Exchange API → acknowledgement → Order Tracker → Order DB + Trade DB + Notification</li>
-<li><strong>Portfolio Flow</strong> — Portfolio Service reads Trade DB (confirmed trades only) + current price from Price Tracker → calculates P&amp;L per holding</li>
-</ol>
-<pre><code> EXCHANGE (NSE / BSE)
-       │  WebSocket (20 persistent connections, 500 stocks each)
-       ▼
- Exchange Gateway
-       │
-       ▼
-    Kafka  ──────────────────────────────────────
-   (stock-prices topic)                         │
-       │                                        │
-       ▼                                        ▼
- Price Injector                         Order Status topic
-  │          │                                  │
-  ▼          ▼                           Order Tracker
-InfluxDB  Redis Pub/Sub                  │           │
-(history) (realtime)               Order DB      Trade DB
-              │                                     │
-              ▼                              Portfolio Service
-      Price Tracker Service                         │
-              │                                     ▼
-       WebSocket Gateway                        P&amp;L Display
-              │
-         5M Clients
-
-USER → API Gateway → Order Service → Validator → Kafka (raw-orders)
-                                                      │
-                                              Validator Service
-                                              │               │
-                                       verified-orders   rejected-orders
-                                              │
-                                        Order Service → Exchange
-</code></pre>
-<p><strong>⚡ Core Design Principles</strong></p>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth establishing what these platforms actually deal with in volume — and letting the numbers, not intuition, pick the technology.</p>
+<p><strong>Starting point:</strong> roughly 50 million registered users, about 5 million of whom are active on a given trading day. Somewhere between 8,000 and 10,000 stocks are listed across NSE and BSE combined — that's the entire universe of things whose price this system has to track continuously.</p>
+<p><strong>How often does a price actually change?</strong> If every one of those ~10,000 stocks updates roughly once a second during market hours, that's <strong>10,000 price events a second</strong> the system has to move from exchange to screen — continuously, for the full 6.25-hour trading window (9:15 AM – 3:30 PM IST), every single trading day. That rate alone rules out anything that puts a general-purpose database in the hot path of a live tick — no disk-backed lookup belongs in a loop running that fast for that long.</p>
+<p><strong>How many people are watching prices live at once?</strong> If roughly 20% of the 5 million daily active users have the app open with a live connection at any given moment, that's <strong>1 million concurrent WebSocket connections</strong> the system has to hold open and fan updates out to, continuously.</p>
+<p><strong>What about connecting to the exchange itself?</strong> The exchange can't sensibly hold 10,000 separate connections open, one per stock — connections get grouped instead. At roughly 500 stocks per exchange WebSocket connection, <strong>20 persistent connections</strong> cover all 10,000 stocks. That's a small, fixed number the Exchange Gateway maintains all day — not one per user, and not one per stock.</p>
+<p><strong>What about orders?</strong> Market open is where volume spikes hardest: everyone who queued up an overnight order fires more or less simultaneously, pushing peak load to <strong>100,000 orders a second</strong> in that opening burst — dramatically higher than the steady trickle through the rest of the day.</p>
+<p><strong>And historical storage?</strong> Storing every price tick for every stock, for the full trading day, every trading day: 10,000 stocks × 1 update/sec × 6.25 hours × 250 trading days a year works out to roughly <strong>56 billion rows a year</strong>. That's an append-only, time-indexed write pattern with almost nothing in common with a typical transactional table.</p>
+<p><strong>One structural constraint simplifies everything else:</strong> this system runs single-region, with all infrastructure and all clients based in India. That's not a limitation so much as what makes the &lt; 50ms price-latency and &lt; 100ms order-latency targets achievable at all — a global, multi-region version of this platform would need a materially different architecture.</p>
+<p>These numbers are what drive every major decision ahead: WebSocket over SSE (subscription changes are bidirectional and constant), InfluxDB for the 56-billion-row time-series price history, Kafka as the buffer standing between a 100K-orders/sec spike and the exchange's paid, rate-limited API, and Redis pub/sub to fan price updates out to a million live subscribers without ever touching disk.</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Ravi's morning from the story above — a price he was watching, a tap that became a Pending order, a confirmation a couple of seconds later. Here's what actually makes that happen underneath.</p>
+<p>A stock broker platform is really <strong>three independent but interconnected flows</strong> running at once, each with a different shape.</p>
+<p><strong>The price feed flow</strong> is the one Ravi is watching passively the whole time. The exchange pushes a tick — <code>{symbol: "RELIANCE", ltp: 2845.50, timestamp: ...}</code> — over one of the Exchange Gateway's 20 persistent connections. The Gateway publishes it straight to Kafka's <code>stock-prices</code> topic, partitioned by symbol so that every update for RELIANCE lands on the same partition and stays strictly ordered. From there, the Price Injector Service writes the tick to InfluxDB (the permanent historical record) and publishes it to a Redis pub/sub channel (<code>price:RELIANCE</code>) at the same time — two destinations, in parallel, for two different jobs. The Price Tracker Service subscribes to whichever Redis channels its connected users care about and pushes each update straight over their open WebSocket. Nothing in this path ever waits on a database write; the historical record happens alongside the live push, not before it.</p>
+<p><strong>The order flow</strong> is what fires the moment Ravi taps Buy. <code>POST /orders</code> lands at the API Gateway, which checks his JWT and rate-limits him to a handful of orders per second — a basic guard against a runaway client. The Order Service immediately generates a UUID order ID (which doubles as a client-side deduplication key later on) and writes the order to Kafka's <code>raw-orders</code> topic before doing anything else — that write is what makes the order durable the instant it's accepted, and it's why Ravi sees "Pending" back almost immediately rather than waiting on validation to finish. From there, the Validator Service consumes the order and runs the checks that actually decide whether it's real: is Ravi KYC-verified, is the market open, does he have the funds. A pass publishes to <code>verified-orders</code>; a fail publishes to <code>rejected-orders</code> and nothing further happens to his wallet. Only verified orders reach the Order Service's call to the Exchange Gateway — the single, deliberately narrow doorway this design uses to talk to the exchange at all (more on why in §8.4). Whatever the exchange decides comes back as an <code>order-status</code> event, which the Order Tracker Service consumes to update the Order DB, write a confirmed record to the Trade DB, and fire a notification — "Order executed — 10 shares of RELIANCE bought at ₹2,845.50" is that notification landing on Ravi's phone.</p>
+<p><strong>The portfolio flow</strong> is the quieter one Ravi checks between trades. The Portfolio Service reads only from the Trade DB — confirmed trades, never pending or rejected ones — and combines each holding with its current price from the Price Tracker to compute <code>(current_price − avg_buy_price) × quantity</code>. That result is cached in Redis for five seconds and invalidated the moment a new trade confirms, which is why Ravi's portfolio number updates within a second or two of a price move without the app hammering a database on every screen refresh.</p>
+<h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
 <tr>
@@ -244,8 +193,163 @@ USER → API Gateway → Order Service → Validator → Kafka (raw-orders)
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> Funds get deducted from Ravi's wallet <em>before</em> the exchange even confirms the order. Why not wait for confirmation first?</summary>
+<p>Because the exchange doesn't guarantee an immediate rejection response — there's a real window where an order is live at the exchange but unconfirmed either way. If the broker didn't hold the funds during that window, Ravi could place a second order using the same money the first order is about to spend, and both could end up "succeeding" against funds that only exist once. Holding funds the moment an order is verified (not waiting for exchange confirmation) is what prevents that overselling — and if the exchange later rejects the order, the held amount is simply released back to the wallet, no harm done.</p>
+</details>
+<h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
+<p>The architecture starts simple and grows into the full pipeline as the pieces above come together — here's both versions.</p>
+<h3 id="simple-design">Simple Design</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Web / Mobile Client&quot;]
+    APIGW[&quot;API Gateway&quot;]
+    WSGW[&quot;WebSocket Gateway&quot;]
+    UserSvc[&quot;User Service&quot;]
+    PriceSvc[&quot;Price Tracker Service&quot;]
+    OrderSvc[&quot;Order Service&quot;]
+    PortfolioSvc[&quot;Portfolio Service&quot;]
+    Exchange[&quot;Exchange NSE / BSE&quot;]
+    UserDB[(&quot;User DB - PostgreSQL&quot;)]
+    OrderDB[(&quot;Order DB - PostgreSQL&quot;)]
+    InfluxDB[(&quot;InfluxDB - Price History&quot;)]
+
+    Client --&gt; APIGW
+    Client --&gt;|WS| WSGW
+    APIGW --&gt; UserSvc
+    APIGW --&gt; OrderSvc
+    APIGW --&gt; PortfolioSvc
+    WSGW --&gt; PriceSvc
+    UserSvc --&gt; UserDB
+    OrderSvc --&gt; OrderDB
+    PriceSvc --&gt; InfluxDB
+    PriceSvc --&gt;|WS| Exchange
+    OrderSvc --&gt; Exchange
+</div>
+<h3 id="evolved-design-full-pipeline">Evolved Design (Full Pipeline)</h3>
+<div class="mermaid">
+graph TD
+    Client[&quot;Web / Mobile Client&quot;]
+    APIGW[&quot;API Gateway&quot;]
+    WSGW[&quot;WebSocket Gateway - Dedicated&quot;]
+    UserSvc[&quot;User Service&quot;]
+    KYCSvc[&quot;Third-Party KYC Service&quot;]
+    PaySvc[&quot;Payment Service&quot;]
+    PayGW[&quot;Payment Gateway&quot;]
+    PayDB[(&quot;Payment DB - PostgreSQL&quot;)]
+    UserDB[(&quot;User DB - PostgreSQL&quot;)]
+    ExchangeGW[&quot;Exchange Gateway&quot;]
+    Exchange[&quot;Exchange NSE / BSE&quot;]
+    Kafka1[[&quot;Kafka - stock-prices topic&quot;]]
+    PriceInjector[&quot;Price Injector Service&quot;]
+    InfluxDB[(&quot;InfluxDB - Price History&quot;)]
+    Redis[(&quot;Redis Pub/Sub - Live Prices&quot;)]
+    PriceSvc[&quot;Price Tracker Service - WS Server&quot;]
+    WatchDB[(&quot;Watch DB - PostgreSQL&quot;)]
+    WatchSvc[&quot;Watchlist Service&quot;]
+    Kafka2[[&quot;Kafka - raw-orders / verified-orders / rejected-orders / order-status&quot;]]
+    ValidatorSvc[&quot;Validator Service&quot;]
+    OrderSvc[&quot;Order Service&quot;]
+    OrderTracker[&quot;Order Tracker Service&quot;]
+    OrderDB[(&quot;Order DB - PostgreSQL&quot;)]
+    TradeDB[(&quot;Trade DB - PostgreSQL&quot;)]
+    PortfolioSvc[&quot;Portfolio Service&quot;]
+    NotifSvc[&quot;Notification Service&quot;]
+
+    Client --&gt; APIGW
+    Client --&gt;|WS| WSGW
+    APIGW --&gt; UserSvc
+    APIGW --&gt; PaySvc
+    APIGW --&gt; OrderSvc
+    APIGW --&gt; PortfolioSvc
+    APIGW --&gt; WatchSvc
+    WSGW --&gt; PriceSvc
+    UserSvc --&gt; UserDB
+    UserSvc --&gt; KYCSvc
+    PaySvc --&gt; PayGW
+    PaySvc --&gt; PayDB
+    ExchangeGW --&gt;|WS 20 connections| Exchange
+    ExchangeGW --&gt; Kafka1
+    Kafka1 --&gt; PriceInjector
+    PriceInjector --&gt; InfluxDB
+    PriceInjector --&gt; Redis
+    Redis --&gt; PriceSvc
+    PriceSvc --&gt; InfluxDB
+    WatchSvc --&gt; WatchDB
+    WatchSvc --&gt; PriceSvc
+    OrderSvc --&gt; Kafka2
+    Kafka2 --&gt; ValidatorSvc
+    ValidatorSvc --&gt; UserDB
+    ValidatorSvc --&gt; PayDB
+    ValidatorSvc --&gt; Kafka2
+    Kafka2 --&gt; OrderSvc
+    OrderSvc --&gt; Exchange
+    OrderSvc --&gt; OrderDB
+    Exchange --&gt; Kafka2
+    Kafka2 --&gt; OrderTracker
+    OrderTracker --&gt; OrderDB
+    OrderTracker --&gt; TradeDB
+    OrderTracker --&gt; NotifSvc
+    PortfolioSvc --&gt; TradeDB
+    PortfolioSvc --&gt; PriceSvc
+    NotifSvc --&gt; Client
+</div>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>The diagrams above show the components; these two show the actual message sequence between them, end to end — one for the price feed Ravi watches passively, one for the order he places actively.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant Exchange
+    participant ExchangeGW as Exchange Gateway
+    participant Kafka
+    participant PriceInjector as Price Injector
+    participant InfluxDB
+    participant Redis as Redis Pub/Sub
+    participant PriceTracker as Price Tracker
+    participant Client
+
+    Exchange-&gt;&gt;ExchangeGW: WS push - RELIANCE ltp=2845.50
+    ExchangeGW-&gt;&gt;Kafka: Publish to stock-prices topic
+    Kafka-&gt;&gt;PriceInjector: Consume price event
+    PriceInjector-&gt;&gt;InfluxDB: Write time-series record
+    PriceInjector-&gt;&gt;Redis: Publish to price:RELIANCE channel
+    Redis-&gt;&gt;PriceTracker: Push to all subscribers
+    PriceTracker-&gt;&gt;Client: WS push - RELIANCE updated price
+    Note over Client,PriceTracker: End-to-end &lt; 50ms
+</div>
+<div class="mermaid">
+sequenceDiagram
+    participant User
+    participant OrderSvc as Order Service
+    participant Kafka
+    participant Validator as Validator Service
+    participant PaymentDB
+    participant UserDB
+    participant Exchange
+    participant OrderTracker as Order Tracker
+    participant OrderDB
+    participant TradeDB
+    participant NotifSvc as Notification Service
+
+    User-&gt;&gt;OrderSvc: POST /orders - BUY RELIANCE 10 shares
+    OrderSvc-&gt;&gt;Kafka: Publish to raw-orders
+    OrderSvc--&gt;&gt;User: orderId - status=PENDING
+    Kafka-&gt;&gt;Validator: Consume order
+    Validator-&gt;&gt;UserDB: Check KYC status
+    Validator-&gt;&gt;PaymentDB: Check wallet balance
+    Validator-&gt;&gt;Kafka: Publish to verified-orders
+    Kafka-&gt;&gt;OrderSvc: Consume verified order
+    OrderSvc-&gt;&gt;Exchange: Place order via Exchange API
+    OrderSvc-&gt;&gt;OrderDB: Write order - status=PENDING
+    Exchange--&gt;&gt;Kafka: Push order-status - EXECUTED
+    Kafka-&gt;&gt;OrderTracker: Consume order status
+    OrderTracker-&gt;&gt;OrderDB: Update status=EXECUTED - trade_id set
+    OrderTracker-&gt;&gt;TradeDB: Insert confirmed trade record
+    OrderTracker-&gt;&gt;NotifSvc: Trigger push notification
+    NotifSvc--&gt;&gt;User: Order executed notification
+</div>
 <hr />
-<h2 id="5-api-design">5. API Design</h2>
+<h2 id="6-api-design">6. API Design</h2>
+<p>The API splits into four groups that mirror the four things a user actually does with this app — prove who they are, watch the market, trade, and manage money — because each of those has a genuinely different consistency and latency profile baked into how its endpoints behave.</p>
 <p><strong>User &amp; KYC</strong></p>
 <table>
 <thead>
@@ -364,338 +468,24 @@ USER → API Gateway → Order Service → Validator → Kafka (raw-orders)
 </tr>
 </tbody>
 </table>
+<p>Two choices in this table aren't self-evident from the columns alone. First, <code>userId</code> is read from the JWT header on every order and portfolio call, never taken as a URL or body parameter — a user simply cannot construct a request that reads or cancels someone else's order, because the identity comes from something they can't forge. Second, <code>POST /orders</code> returns <code>PENDING</code> the instant the order is durably queued in Kafka — it does not wait for the exchange to respond. That's a deliberate asynchronous design (walked through fully in §8.3): the API contract is "your order is safely accepted," not "your order has executed," and the client discovers the real outcome later via <code>GET /orders/:orderId</code> or a push notification.</p>
 <blockquote>
 <p>[!TIP]
-<strong>Interview tip on WebSocket vs SSE for price feed:</strong> "SSE is server-to-client only. With SSE, every time a user wants to add a new stock to their view, the client must close and reopen a new SSE connection with the updated symbol list. With WebSocket, the user sends a subscribe/unsubscribe message over the existing connection — no reconnection needed. At 1M concurrent connections, avoiding reconnect storms is critical."</p>
+<strong>Interview tip on WebSocket vs SSE for price feed:</strong> say it out loud as a subscription-management problem. "With SSE, every time a user wants to add a new stock to their view, the client has to close and reopen the connection with an updated symbol list. With WebSocket, they just send a subscribe/unsubscribe message over the connection that's already open." That one sentence is usually enough to justify the choice in an interview.</p>
 </blockquote>
 <hr />
-<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
-<blockquote>
-<p>[!IMPORTANT]
-<strong>This is a queue-first, strongly-consistent system — two requirements that pull in opposite directions.</strong></p>
-<table>
-<thead>
-<tr>
-<th>Pipeline</th>
-<th>Kafka Topic</th>
-<th>Why async</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Price feed</td>
-<td><code>stock-prices</code></td>
-<td>10K price events/sec — no DB in the hot path, Redis pub/sub fanout</td>
-</tr>
-<tr>
-<td>Order pipeline</td>
-<td><code>raw-orders</code> → <code>verified-orders</code> → <code>order-status</code></td>
-<td>Durability before exchange call; validator decoupled from ingestion rate</td>
-</tr>
-<tr>
-<td>Notifications + audit</td>
-<td><code>notifications</code>, <code>audit-log</code></td>
-<td>Never block the order path for non-critical side effects</td>
-</tr>
-</tbody>
-</table>
-<p><strong>But strong consistency is non-negotiable for money:</strong>
-- Wallet debit and stock allocation must be atomic — two-phase with idempotency key
-- Duplicate order prevention via <code>order_id</code> idempotency check at exchange
-- Reconciliation job runs nightly to catch any drift between Order DB and exchange settlement</p>
-</blockquote>
-<hr />
-<h3 id="61-complete-order-lifecycle-say-this-out-loud-in-the-interview">6.1 — Complete Order Lifecycle (say this out loud in the interview)</h3>
-<p><strong>This is the most important flow. Every step must be explicit.</strong></p>
-<pre><code>1. User taps &quot;Buy RELIANCE — Market — 10 shares&quot;
-   → POST /orders {symbol, side: BUY, qty: 10, type: MARKET}
-   → API Gateway validates JWT, rate-limits (5 orders/sec per user)
-
-2. Order Service generates order_id (UUID, client-deduplication key)
-   → Writes order to Kafka raw-orders topic (durable before any processing)
-   → Returns {orderId, status: PENDING} immediately
-   → I chose async here because at 100K orders/sec at market open,
-     synchronous validation + DB writes would bottleneck immediately
-
-3. Validator Service consumes raw-orders
-   → KYC check: is user verified? (User DB)
-   → Market hours check: is it between 9:15 AM – 3:30 PM IST?
-   → Funds check: wallet_balance &gt;= order_value + brokerage fee?
-   → CRITICAL: funds check uses SELECT FOR UPDATE (pessimistic lock)
-     to prevent double-spend when two orders hit simultaneously
-   → Pass → publish to verified-orders
-   → Fail → publish to rejected-orders → notify user, no funds touched
-
-4. Order Service consumes verified-orders
-   → Writes order to Order DB: status=PENDING, trade_id=NULL
-   → Deducts funds from Payment DB atomically (same DB transaction)
-   → I deduct funds here — before exchange call — because the
-     exchange does not guarantee an immediate rejection response.
-     Holding the funds prevents overselling while order is live.
-
-5. Order Service calls Exchange API via Exchange Gateway
-   → Exchange Gateway is the single proxy — all exchange calls go here
-   → Exchange allocates stock from its matching engine
-   → Returns acknowledgement on exchange WebSocket: order-status event
-
-6. Order Tracker consumes order-status from Kafka
-   → Exchange EXECUTED → update Order DB status=EXECUTED, set trade_id
-                       → insert into Trade DB (confirmed trade only)
-                       → release any remaining held funds (for partial fills)
-                       → push notification: &quot;10 shares of RELIANCE bought at ₹2845&quot;
-   → Exchange REJECTED → update Order DB status=REJECTED
-                       → refund full held amount back to wallet
-                       → push notification with rejection reason
-
-7. Portfolio Service reflects the new holding
-   → reads Trade DB (never Order DB)
-   → recalculates P&amp;L: (current_price - avg_buy_price) × quantity
-   → P&amp;L cached in Redis TTL=5s; invalidated on each new trade
-
-On exchange timeout: retry with same order_id (idempotency key prevents duplicate)
-On partial fill: Trade DB updated incrementally; Order stays PARTIALLY_FILLED
-On validator crash: Kafka offset replay; idempotent order_id check prevents re-processing
-</code></pre>
-<hr />
-<h3 id="62-real-time-price-feed-spoken-flow">6.2 Real-Time Price Feed (spoken flow)</h3>
-<pre><code>1. Market opens 9:15 AM IST
-   → Exchange Gateway opens 20 persistent WebSocket connections to NSE/BSE
-   → Each connection subscribed to ~500 stocks — all 10K stocks covered
-   → I chose WebSocket over SSE because subscription changes are bidirectional:
-     broker needs to add/remove stock subscriptions without reconnecting
-
-2. Exchange pushes: {symbol: &quot;RELIANCE&quot;, ltp: 2845.50, timestamp: ...}
-   → Exchange Gateway publishes to Kafka stock-prices topic
-   → Partitioned by symbol — all RELIANCE events go to same partition, ordering guaranteed
-
-3. Price Injector consumes from Kafka, writes to two stores in parallel:
-   → InfluxDB: time-series record (symbol, ts, open, high, low, close, volume)
-   → Redis pub/sub: publish to channel price:RELIANCE
-   → I separate historical (InfluxDB) and real-time (Redis) because
-     querying InfluxDB for live prices adds 5–10ms disk I/O per tick.
-     Redis = sub-millisecond in-memory fanout.
-
-4. Price Tracker subscribes to Redis channels for all stocks users are watching
-   → When Redis publishes price:RELIANCE → Price Tracker pushes to all
-     WebSocket connections subscribed to RELIANCE
-   → 1M concurrent WebSocket connections handled by dedicated WS Gateway cluster
-
-5. User opens a new stock chart
-   → Price Tracker fetches last 60 minutes of OHLCV from InfluxDB (one-time)
-   → Then streams real-time ticks via open WebSocket for live candlestick updates
-</code></pre>
-<hr />
-<h3 id="63-place-order-sequence-diagram">6.3 Place Order — Sequence Diagram</h3>
-<div class="mermaid">
-sequenceDiagram
-
-1. On market open (9:15 AM), Exchange Gateway opens **20 persistent WebSocket connections** to NSE/BSE exchange — each connection subscribed to ~500 stocks. All 10,000 stocks covered.
-2. Exchange pushes price update: `{ symbol: &quot;RELIANCE&quot;, ltp: 2845.50, timestamp: ... }` in real time.
-3. Exchange Gateway receives update → publishes to **Kafka** `stock-prices` topic. Kafka partitioned by symbol — all RELIANCE updates go to same partition, ordering guaranteed.
-4. **Price Injector Service** consumes from Kafka. Writes to two stores simultaneously:
-   - **InfluxDB**: append time-series record `(symbol, timestamp, open, high, low, close, volume)` — historical data
-   - **Redis pub/sub**: publish to channel `price:RELIANCE` — real-time fanout
-5. **Price Tracker Service** subscribes to Redis pub/sub channels for all symbols. When a client subscribes to RELIANCE via WebSocket, Price Tracker subscribes to `price:RELIANCE` in Redis.
-6. When Redis publishes `price:RELIANCE`, Price Tracker receives it and pushes to all WebSocket connections subscribed to RELIANCE.
-7. On new user connection: Price Tracker fetches last N minutes of history from InfluxDB to populate the price chart, then streams real-time via the open WebSocket.
-
-```mermaid
-sequenceDiagram
-    participant Exchange
-    participant ExchangeGW as Exchange Gateway
-    participant Kafka
-    participant PriceInjector as Price Injector
-    participant InfluxDB
-    participant Redis as Redis Pub/Sub
-    participant PriceTracker as Price Tracker
-    participant Client
-
-    Exchange-&gt;&gt;ExchangeGW: WS push - RELIANCE ltp=2845.50
-    ExchangeGW-&gt;&gt;Kafka: Publish to stock-prices topic
-    Kafka-&gt;&gt;PriceInjector: Consume price event
-    PriceInjector-&gt;&gt;InfluxDB: Write time-series record
-    PriceInjector-&gt;&gt;Redis: Publish to price:RELIANCE channel
-    Redis-&gt;&gt;PriceTracker: Push to all subscribers
-    PriceTracker-&gt;&gt;Client: WS push - RELIANCE updated price
-    Note over Client,PriceTracker: End-to-end &lt; 50ms
-</div>
-<h3 id="64-price-feed-sequence-diagram">6.4 Price Feed — Sequence Diagram</h3>
-<div class="mermaid">
-sequenceDiagram
-    participant Exchange
-    participant ExchangeGW as Exchange Gateway
-    participant Kafka
-    participant PriceInjector as Price Injector
-    participant InfluxDB
-    participant Redis as Redis Pub/Sub
-    participant PriceTracker as Price Tracker
-    participant Client
-
-    Exchange-&gt;&gt;ExchangeGW: WS push - RELIANCE ltp=2845.50
-    ExchangeGW-&gt;&gt;Kafka: Publish to stock-prices topic
-    Kafka-&gt;&gt;PriceInjector: Consume price event
-    PriceInjector-&gt;&gt;InfluxDB: Write time-series record
-    PriceInjector-&gt;&gt;Redis: Publish to price:RELIANCE channel
-    Redis-&gt;&gt;PriceTracker: Push to all subscribers
-    PriceTracker-&gt;&gt;Client: WS push - RELIANCE updated price
-    Note over Client,PriceTracker: End-to-end less than 50ms
-</div>
-<hr />
-<h3 id="65-place-order-full-sequence-diagram">6.5 Place Order — Full Sequence Diagram</h3>
-<ol>
-<li>User taps <strong>Buy RELIANCE — Market — 10 shares</strong>. Client calls <code>POST /api/v1/orders</code>.</li>
-<li>Order Service writes order to <strong>Kafka</strong> <code>raw-orders</code> topic. Returns <code>orderId</code> with <code>status=PENDING</code> immediately to client — order is durably queued.</li>
-<li><strong>Validator Service</strong> consumes from <code>raw-orders</code>. Runs checks:</li>
-<li>Is user KYC verified? (User DB lookup)</li>
-<li>Is market open? (Time check)</li>
-<li>Does user have sufficient wallet balance? (Payment DB lookup)</li>
-<li>Does order type/quantity pass exchange rules?</li>
-<li>If all checks pass → publishes to <code>verified-orders</code> topic. If any fail → publishes to <code>rejected-orders</code> topic.</li>
-<li><strong>Order Service</strong> consumes from <code>verified-orders</code>. Calls Exchange API to place the order. Writes order to <strong>Order DB</strong> with <code>status=PENDING</code>, <code>trade_id=null</code>.</li>
-<li>Exchange allocates stock → sends acknowledgement on the exchange WebSocket connection (<code>order-status</code> event).</li>
-<li><strong>Order Tracker Service</strong> consumes <code>order-status</code> from Kafka. For a successful allocation:</li>
-<li>Updates <strong>Order DB</strong>: <code>status=EXECUTED</code>, <code>trade_id=EXCHANGE_TXN_ID</code></li>
-<li>Inserts into <strong>Trade DB</strong>: confirmed trade record</li>
-<li>Sends push notification to user: "Order executed — 10 shares of RELIANCE bought at ₹2845.50"</li>
-<li>For rejected orders (from Validator): Order DB updated <code>status=REJECTED</code>, funds not deducted, notification sent.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant User
-    participant OrderSvc as Order Service
-    participant Kafka
-    participant Validator as Validator Service
-    participant PaymentDB
-    participant UserDB
-    participant Exchange
-    participant OrderTracker as Order Tracker
-    participant OrderDB
-    participant TradeDB
-    participant NotifSvc as Notification Service
-
-    User-&gt;&gt;OrderSvc: POST /orders - BUY RELIANCE 10 shares
-    OrderSvc-&gt;&gt;Kafka: Publish to raw-orders
-    OrderSvc--&gt;&gt;User: orderId - status=PENDING
-    Kafka-&gt;&gt;Validator: Consume order
-    Validator-&gt;&gt;UserDB: Check KYC status
-    Validator-&gt;&gt;PaymentDB: Check wallet balance
-    Validator-&gt;&gt;Kafka: Publish to verified-orders
-    Kafka-&gt;&gt;OrderSvc: Consume verified order
-    OrderSvc-&gt;&gt;Exchange: Place order via Exchange API
-    OrderSvc-&gt;&gt;OrderDB: Write order - status=PENDING
-    Exchange--&gt;&gt;Kafka: Push order-status - EXECUTED
-    Kafka-&gt;&gt;OrderTracker: Consume order status
-    OrderTracker-&gt;&gt;OrderDB: Update status=EXECUTED - trade_id set
-    OrderTracker-&gt;&gt;TradeDB: Insert confirmed trade record
-    OrderTracker-&gt;&gt;NotifSvc: Trigger push notification
-    NotifSvc--&gt;&gt;User: Order executed notification
-</div>
-<hr />
-<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
-<h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / Mobile Client&quot;]
-    APIGW[&quot;API Gateway&quot;]
-    WSGW[&quot;WebSocket Gateway&quot;]
-    UserSvc[&quot;User Service&quot;]
-    PriceSvc[&quot;Price Tracker Service&quot;]
-    OrderSvc[&quot;Order Service&quot;]
-    PortfolioSvc[&quot;Portfolio Service&quot;]
-    Exchange[&quot;Exchange NSE / BSE&quot;]
-    UserDB[(&quot;User DB - PostgreSQL&quot;)]
-    OrderDB[(&quot;Order DB - PostgreSQL&quot;)]
-    InfluxDB[(&quot;InfluxDB - Price History&quot;)]
-
-    Client --&gt; APIGW
-    Client --&gt;|WS| WSGW
-    APIGW --&gt; UserSvc
-    APIGW --&gt; OrderSvc
-    APIGW --&gt; PortfolioSvc
-    WSGW --&gt; PriceSvc
-    UserSvc --&gt; UserDB
-    OrderSvc --&gt; OrderDB
-    PriceSvc --&gt; InfluxDB
-    PriceSvc --&gt;|WS| Exchange
-    OrderSvc --&gt; Exchange
-</div>
-<h3 id="evolved-design-full-pipeline">Evolved Design (Full Pipeline)</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / Mobile Client&quot;]
-    APIGW[&quot;API Gateway&quot;]
-    WSGW[&quot;WebSocket Gateway - Dedicated&quot;]
-    UserSvc[&quot;User Service&quot;]
-    KYCSvc[&quot;Third-Party KYC Service&quot;]
-    PaySvc[&quot;Payment Service&quot;]
-    PayGW[&quot;Payment Gateway&quot;]
-    PayDB[(&quot;Payment DB - PostgreSQL&quot;)]
-    UserDB[(&quot;User DB - PostgreSQL&quot;)]
-    ExchangeGW[&quot;Exchange Gateway&quot;]
-    Exchange[&quot;Exchange NSE / BSE&quot;]
-    Kafka1[[&quot;Kafka - stock-prices topic&quot;]]
-    PriceInjector[&quot;Price Injector Service&quot;]
-    InfluxDB[(&quot;InfluxDB - Price History&quot;)]
-    Redis[(&quot;Redis Pub/Sub - Live Prices&quot;)]
-    PriceSvc[&quot;Price Tracker Service - WS Server&quot;]
-    WatchDB[(&quot;Watch DB - PostgreSQL&quot;)]
-    WatchSvc[&quot;Watchlist Service&quot;]
-    Kafka2[[&quot;Kafka - raw-orders / verified-orders / rejected-orders / order-status&quot;]]
-    ValidatorSvc[&quot;Validator Service&quot;]
-    OrderSvc[&quot;Order Service&quot;]
-    OrderTracker[&quot;Order Tracker Service&quot;]
-    OrderDB[(&quot;Order DB - PostgreSQL&quot;)]
-    TradeDB[(&quot;Trade DB - PostgreSQL&quot;)]
-    PortfolioSvc[&quot;Portfolio Service&quot;]
-    NotifSvc[&quot;Notification Service&quot;]
-
-    Client --&gt; APIGW
-    Client --&gt;|WS| WSGW
-    APIGW --&gt; UserSvc
-    APIGW --&gt; PaySvc
-    APIGW --&gt; OrderSvc
-    APIGW --&gt; PortfolioSvc
-    APIGW --&gt; WatchSvc
-    WSGW --&gt; PriceSvc
-    UserSvc --&gt; UserDB
-    UserSvc --&gt; KYCSvc
-    PaySvc --&gt; PayGW
-    PaySvc --&gt; PayDB
-    ExchangeGW --&gt;|WS 20 connections| Exchange
-    ExchangeGW --&gt; Kafka1
-    Kafka1 --&gt; PriceInjector
-    PriceInjector --&gt; InfluxDB
-    PriceInjector --&gt; Redis
-    Redis --&gt; PriceSvc
-    PriceSvc --&gt; InfluxDB
-    WatchSvc --&gt; WatchDB
-    WatchSvc --&gt; PriceSvc
-    OrderSvc --&gt; Kafka2
-    Kafka2 --&gt; ValidatorSvc
-    ValidatorSvc --&gt; UserDB
-    ValidatorSvc --&gt; PayDB
-    ValidatorSvc --&gt; Kafka2
-    Kafka2 --&gt; OrderSvc
-    OrderSvc --&gt; Exchange
-    OrderSvc --&gt; OrderDB
-    Exchange --&gt; Kafka2
-    Kafka2 --&gt; OrderTracker
-    OrderTracker --&gt; OrderDB
-    OrderTracker --&gt; TradeDB
-    OrderTracker --&gt; NotifSvc
-    PortfolioSvc --&gt; TradeDB
-    PortfolioSvc --&gt; PriceSvc
-    NotifSvc --&gt; Client
-</div>
-<hr />
-<h2 id="8-data-model">8. Data Model</h2>
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Seven distinct pieces of data live in this system, and grouping them by how they're actually used — rather than as one flat list — makes each storage choice close to inevitable.</p>
+<p><strong>The ephemeral, in-memory data is live price only.</strong> A single tick's value has zero lasting importance the moment the next one arrives — nobody ever needs to query "what was RELIANCE's price four ticks ago" from this store, because that's what the historical record is for. Redis pub/sub (<code>price:{symbol}</code> → <code>{ltp, timestamp}</code>) fits because it has no persistence to pay for and delivers sub-millisecond fanout to every subscriber — exactly what a value with no future is worth building.</p>
+<p><strong>The durable, financial data lives in PostgreSQL, because it's money and regulation.</strong> User records need ACID guarantees around <code>is_kyc_verified</code>, since that flag gates every trade a user is allowed to place — the sensitive KYC documents themselves (PAN/Aadhaar) stay with the third-party KYC provider, encrypted, not in this table. Wallet transactions need the same guarantee for the obvious reason. Orders need it too: every state change from pending to executed has to be durable, and <code>trade_id</code> deliberately stays <code>null</code> until the exchange actually confirms — an order row existing is not the same claim as a trade having happened. That distinction is exactly why trades get their own table: Trade DB holds only exchange-confirmed executions, separately from the full order audit trail, and Portfolio P&amp;L and end-of-day reconciliation both read Trade DB exclusively so a rejected or cancelled order can never quietly corrupt an average buy price (the full reasoning for keeping these two tables separate is in §8.5).</p>
+<p><strong>The append-only, high-volume data needs a store built for exactly that shape.</strong> At roughly 56 billion rows a year, stock price history would collapse a general-purpose relational database — InfluxDB is purpose-built for time-indexed, append-only writes and the range-based aggregation queries (OHLCV candles) this data actually gets queried with, including automatic downsampling as data ages.</p>
+<p><strong>Watchlist is the one genuinely low-stakes entity</strong>, and it's ordinary relational data: a user has many watchlists, each with many symbols, write volume is low, and the joins involved are simple — nothing here needs anything more specialized than PostgreSQL.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why this store</th>
 </tr>
 </thead>
 <tbody>
@@ -703,89 +493,57 @@ graph TD
 <td>User</td>
 <td>PostgreSQL</td>
 <td><code>user_id</code>, <code>email</code>, <code>phone</code>, <code>name</code>, <code>is_kyc_verified</code>, <code>created_at</code></td>
-<td>ACID — KYC status must be consistent. Sensitive data (PAN/Aadhaar) stored encrypted by third-party KYC provider, not here.</td>
 </tr>
 <tr>
 <td>Payment/Wallet</td>
 <td>PostgreSQL</td>
 <td><code>transaction_id</code>, <code>user_id</code>, <code>amount</code>, <code>type</code> (DEPOSIT/WITHDRAW), <code>status</code>, <code>timestamp</code></td>
-<td>ACID — financial transactions require strong consistency.</td>
 </tr>
 <tr>
 <td>Order</td>
 <td>PostgreSQL</td>
-<td><code>order_id</code>, <code>user_id</code>, <code>symbol</code>, <code>order_type</code> (MARKET/LIMIT), <code>side</code> (BUY/SELL), <code>price</code>, <code>quantity</code>, <code>status</code> (PENDING/EXECUTED/REJECTED/CANCELLED), <code>trade_id</code>, <code>created_at</code></td>
-<td>ACID — every state change (pending → executed) must be durable. <code>trade_id</code> null until exchange confirms.</td>
+<td><code>order_id</code>, <code>user_id</code>, <code>symbol</code>, <code>order_type</code> (MARKET/LIMIT), <code>side</code> (BUY/SELL), <code>price</code>, <code>quantity</code>, <code>status</code>, <code>trade_id</code>, <code>created_at</code></td>
 </tr>
 <tr>
 <td>Trade</td>
 <td>PostgreSQL</td>
 <td><code>trade_id</code>, <code>order_id</code>, <code>user_id</code>, <code>symbol</code>, <code>quantity</code>, <code>executed_price</code>, <code>exchange_trade_id</code>, <code>status</code>, <code>timestamp</code></td>
-<td>Separate from Order DB — only confirmed exchange trades. Used for P&amp;L calculation and end-of-day reconciliation with exchange.</td>
 </tr>
 <tr>
 <td>Stock Price (time-series)</td>
 <td>InfluxDB</td>
 <td><code>symbol</code> (tag), <code>timestamp</code>, <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code>, <code>ltp</code>, <code>volume</code></td>
-<td>56B rows/year — time-series DB handles append-only time-indexed data with automatic downsampling. PostgreSQL would collapse under this write rate.</td>
 </tr>
 <tr>
 <td>Live Price</td>
 <td>Redis pub/sub</td>
 <td>Channel: <code>price:{symbol}</code> → <code>{ ltp, timestamp }</code></td>
-<td>Ephemeral — no persistence needed. Sub-millisecond fanout to all subscribers. TTL implicit (channel has no history).</td>
 </tr>
 <tr>
 <td>Watchlist</td>
 <td>PostgreSQL</td>
 <td><code>watchlist_id</code>, <code>user_id</code>, <code>name</code> + <code>watchlist_items: watchlist_id, symbol</code></td>
-<td>Relational — user → many watchlists → many symbols. Low write volume, simple joins.</td>
 </tr>
 </tbody>
 </table>
+<hr />
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-real-time-price-feed-websocket-vs-sse">8.1 Real-Time Price Feed — WebSocket vs SSE</h3>
+<p>Here's the problem: 10,000 stocks update roughly every second during market hours, and that needs to reach 1 million concurrent user connections in under 50ms — while users are constantly changing which stocks they're actually watching.</p>
+<p>Polling doesn't survive contact with those numbers at all: a client calling <code>GET /stocks/RELIANCE/price</code> once a second, multiplied across 1 million users watching even one stock each, is 1 million HTTP requests a second for a single symbol — ten stocks each and it's 10 million requests a second, most of them returning a price that hasn't even changed. That's ruled out before any real design work starts.</p>
+<p>Server-Sent Events looks more promising until the "constantly changing" part of the problem shows up. SSE is server-to-client only — the server can push, but the client has no channel to say "also send me TATA Steel now." The only way to change a subscription is to close the existing connection and open a new one with the updated symbol list. At 1 million concurrent connections, a reconnection storm on every single subscription change isn't a minor inefficiency, it's a stampede.</p>
+<p>WebSocket solves this because it's a conversation, not a broadcast: one persistent connection stays open for a user's entire session, and adding or dropping a symbol is just a message — <code>{ action: "subscribe", symbols: ["RELIANCE", "INFY"] }</code> — sent over the connection that's already there. The same logic applies on the exchange side of the system, at a smaller scale: one WebSocket connection already covers 500 stock subscriptions, so subscribing to stock 501 is another message on that same connection, not a new TCP handshake. That's how 20 connections stay open all day covering all 10,000 stocks without ever reconnecting.</p>
+<p>The price this pays is that WebSocket connections are stateful — the WebSocket Gateway has to actually remember which server holds which user's connection, which means sticky routing or a shared session map in Redis, more operational surface than SSE's "any server can handle any request" simplicity.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Order DB and Trade DB are separate by design. Order DB contains ALL orders — including rejected ones. Trade DB contains only exchange-confirmed trades. Portfolio P&amp;L reads Trade DB, never Order DB. End-of-day reconciliation with exchange compares Trade DB — a clean audit trail.</p>
+<strong>Key Insight:</strong> WebSocket vs SSE is fundamentally a subscription-management problem, not a bandwidth problem. SSE only lets the server push; the moment the client needs to say "change what I'm subscribed to" — which happens constantly in a trading app — a persistent, bidirectional connection stops being a nice-to-have and becomes a correctness requirement at this connection count.</p>
 </blockquote>
 <hr />
-<h2 id="9-deep-dives">9. Deep Dives</h2>
-<h3 id="91-real-time-price-feed-websocket-vs-sse-and-why">9.1 Real-Time Price Feed — WebSocket vs SSE and Why</h3>
-<p><strong>Here's the problem we're solving:</strong> 10,000 stocks update every second during market hours. We need to stream these updates to 1M concurrent user connections with &lt; 50ms end-to-end latency. Users dynamically change which stocks they're watching. Which connection protocol — WebSocket or Server-Sent Events (SSE)?</p>
-<p><strong>Naive solution — Polling:</strong> Client calls <code>GET /stocks/RELIANCE/price</code> every second. At 1M users × 1 stock each = 1M HTTP requests/sec for just one stock. For 10 stocks each = 10M req/sec of empty or stale responses. Immediately ruled out.</p>
-<p><strong>SSE analysis:</strong> SSE is server-to-client only (unidirectional). When a user wants to add a stock to their view, the client must close the existing SSE connection and open a new one with the updated symbol list. At 1M concurrent connections, reconnection storms on every subscription change = catastrophic.</p>
-<p><strong>Chosen solution — WebSocket (bidirectional):</strong>
-- One persistent WS connection per user, open for the entire trading session
-- Client sends subscription messages: <code>{ action: "subscribe", symbols: ["RELIANCE", "INFY"] }</code> — no reconnect needed
-- Server pushes price updates only for subscribed symbols
-- Same connection handles subscribe/unsubscribe dynamically</p>
-<p><strong>Why WebSocket over Exchange too:</strong>
-- Exchange-to-broker: one WS connection handles 500 stock subscriptions. If broker wants to add stock 501, it sends a subscribe message on the existing connection — no new TCP handshake. With SSE, a new connection would be needed each time the subscription set changes.
-- At market open, broker subscribes to all 10,000 stocks across 20 WS connections (500/connection). Stays connected all day.</p>
-<p><strong>Trade-off accepted:</strong> WebSocket connections are stateful — WebSocket Gateway must maintain session state. Requires sticky sessions or a session map (Redis) so reconnects land on the correct server. More operational complexity than SSE.</p>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> WebSocket vs SSE is a subscription management problem. SSE only allows the server to push — changing what you're subscribed to requires a new connection. WebSocket lets the client say "also give me TATA Steel" over the same connection. At 1M live connections, avoiding reconnects is not a nicety — it's a correctness requirement.</p>
-</blockquote>
-<hr />
-<h3 id="92-strong-consistency-concurrency-preventing-double-spend">9.2 Strong Consistency + Concurrency — Preventing Double Spend</h3>
-<p><strong>Here's the problem we're solving:</strong> A user has ₹10,000 in their wallet and places two buy orders simultaneously — ₹7,000 for RELIANCE and ₹6,000 for INFY. Total = ₹13,000. Both orders pass the funds check independently because each reads ₹10,000 balance before either deducts. The user overspends by ₹3,000. In a trading platform this is not a UX bug — it's a financial loss.</p>
-<p><strong>Why this is harder than most systems:</strong>
-Unlike Facebook (eventual consistency is fine) or email (slight delay is acceptable), a stock broker has zero tolerance for financial inconsistency:
-- Wallet balance + stock allocation must always be correct
-- A trade must never be duplicated (duplicate exchange call = double buy)
-- If exchange confirms a trade, the Trade DB must reflect it — no exceptions</p>
-<p><strong>Concurrency problem illustrated:</strong></p>
-<pre><code>Time │ Order 1 (₹7,000)          │ Order 2 (₹6,000)
-─────│────────────────────────────│──────────────────────
-t1   │ READ balance = ₹10,000     │
-t2   │                            │ READ balance = ₹10,000
-t3   │ CHECK: 10,000 &gt;= 7,000 ✓  │
-t4   │                            │ CHECK: 10,000 &gt;= 6,000 ✓
-t5   │ DEDUCT ₹7,000 → balance=3K │
-t6   │                            │ DEDUCT ₹6,000 → balance=4K ← WRONG
-t7   │ Net balance = -3,000 💸    │ (last write wins, real balance is negative)
-</code></pre>
-<p><strong>Chosen solution — pessimistic locking with SELECT FOR UPDATE:</strong></p>
+<h3 id="82-strong-consistency-and-concurrency-preventing-double-spend">8.2 Strong Consistency and Concurrency — Preventing Double Spend</h3>
+<p>This is the hardest domain-specific problem in this system, because unlike almost every other kind of app, there is zero tolerance for getting it wrong.</p>
+<p>Here's the scenario that breaks a naive implementation. Ravi has ₹10,000 in his wallet and places two orders within the same second — ₹7,000 for RELIANCE, ₹6,000 for INFY. Each order, checked in isolation, looks fine: ₹10,000 covers ₹7,000, and ₹10,000 also covers ₹6,000. The problem is that both checks can run against the <em>same</em> ₹10,000 balance if neither order's write has committed yet by the time the other order reads. The first order reads ₹10,000, passes its check, and deducts ₹7,000, leaving the true balance at ₹3,000. But the second order also read ₹10,000 — before the first order's deduction was visible — passed its own check against that stale number, and now deducts ₹6,000 from what it still believes is a ₹10,000 balance, landing on ₹4,000. The stored balance ends up at ₹4,000, positive, while the actual math says Ravi has spent ₹13,000 he never had — a ₹3,000 hole the system's own records don't even show as a problem. In a system where a "bug" like this is a straightforward, provable loss of someone's money, this is not a UX defect to fix later — it has to be impossible by construction.</p>
+<p>Most systems get to relax about this kind of thing. Facebook's feed can be a few seconds stale; email can take a moment to arrive. A stock broker doesn't get that luxury anywhere near money: the wallet balance and the stock allocation both have to be correct at all times, a trade must never be silently duplicated, and once the exchange confirms a trade, the Trade DB has to reflect it — no exceptions, no eventual catching-up.</p>
+<p>The fix is a pessimistic lock, taken inside a single database transaction, on the exact row that's contested: the user's wallet balance. <code>SELECT ... FOR UPDATE</code> acquires a row-level exclusive lock the instant the Validator Service starts checking Ravi's funds. If a second order for the same user arrives while that lock is held, its own <code>SELECT ... FOR UPDATE</code> simply blocks — it cannot even read the balance until the first transaction commits. Once the first order commits (balance now ₹3,000), the second order's read unblocks, sees the accurate ₹3,000, fails its <code>&gt;= ₹6,000</code> check, and gets rejected cleanly instead of silently overspending. The lock is only held for the few milliseconds a single-row update takes, so at the order rates a typical retail user generates, the serialization is invisible.</p>
 <pre><code class="language-sql">-- Validator Service, inside a single DB transaction:
 BEGIN;
   SELECT balance FROM wallets WHERE user_id = ? FOR UPDATE;  -- acquires row lock
@@ -796,36 +554,22 @@ BEGIN;
   END IF;
 COMMIT;  -- lock released here
 </code></pre>
-<ul>
-<li><code>FOR UPDATE</code> acquires a row-level exclusive lock on the wallet row</li>
-<li>Second concurrent order blocks at the <code>SELECT FOR UPDATE</code> — it cannot read until the first transaction commits</li>
-<li>After first order commits (balance = ₹3,000), second order reads ₹3,000 → fails the <code>&gt;= ₹6,000</code> check → rejected</li>
-<li>Lock held for &lt; 5ms (single row update) — negligible contention at normal order rates</li>
-</ul>
-<p><strong>Funds hold pattern (not immediate deduct):</strong>
-Rather than immediately deducting from the wallet, the validator:
-1. Moves <code>order_value</code> from <code>wallet_balance</code> to <code>held_funds</code> (same transaction)
-2. Held funds are inaccessible for new orders but not yet gone
-3. On exchange EXECUTED → move held funds to "spent" (final deduction)
-4. On exchange REJECTED → release held funds back to wallet_balance
-5. This prevents the user from losing money if the exchange rejects the order</p>
-<p><strong>Duplicate exchange call prevention (idempotency key):</strong></p>
+<p>The Validator doesn't immediately treat that deducted amount as spent, either. It moves <code>order_value</code> out of the spendable balance and into a <code>held_funds</code> record in the same transaction — money that's unavailable for new orders but not yet gone for good. Only once the exchange confirms <code>EXECUTED</code> does the held amount become a genuine, final deduction; if the exchange instead comes back <code>REJECTED</code>, the held amount moves straight back to the spendable balance. That two-step hold-then-settle is what keeps a user from actually losing money on an order the exchange never let through.</p>
+<p>There's a second, related failure mode this same design guards against: sending the same order to the exchange twice, which would mean an actual double purchase. Every call to the exchange carries the order's UUID as an idempotency key:</p>
 <pre><code>Order Service → Exchange API call with header: Idempotency-Key: {order_id}
 Exchange sees same order_id twice → ignores the second call, returns same result
 </code></pre>
-<p>If Order Service crashes after sending to exchange but before receiving the ack:
-- On restart, it retries with same <code>order_id</code>
-- Exchange deduplicates — no double buy</p>
-<p><strong>Trade-off accepted:</strong> <code>SELECT FOR UPDATE</code> serialises concurrent orders for the same user — two simultaneous orders cannot both proceed through funds validation in parallel. For typical users placing 1–2 orders per second, this is imperceptible. For algo traders placing hundreds per second, this is a known limitation handled by pre-allocated margin accounts.</p>
+<p>If the Order Service crashes after sending the request but before receiving the acknowledgement, it simply retries with the same <code>order_id</code> on restart — the exchange recognizes the duplicate and returns the original result instead of executing it a second time.</p>
+<p>The trade-off this design accepts is real: <code>SELECT ... FOR UPDATE</code> serializes every concurrent order from the same user, so two of Ravi's own orders literally cannot pass funds validation in parallel. For someone placing one or two orders a second, that's imperceptible. For an algorithmic trader firing hundreds of orders a second against their own account, this row lock would become a genuine throughput ceiling — which is why high-frequency traders in real systems are typically handled through a separate pre-allocated margin mechanism rather than this per-order lock path.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Strong consistency in a trading platform is not a preference — it's a regulatory and financial requirement. The <code>SELECT FOR UPDATE</code> row lock is a correctness guarantee, not a performance pessimisation. The cost is &lt; 5ms serialisation per user. The alternative is users losing money.</p>
+<strong>Key Insight:</strong> The <code>SELECT FOR UPDATE</code> row lock costs under 5ms of serialization per user — that's not a performance tax being paid reluctantly, it's the actual mechanism that makes "the balance is always correct" true. Removing it wouldn't just be a small optimization; it would remove the guarantee entirely.</p>
 </blockquote>
 <hr />
-<h3 id="93-order-pipeline-high-frequency-with-validation">9.3 Order Pipeline — High Frequency with Validation</h3>
-<p><strong>Here's the problem we're solving:</strong> 100K orders/sec at market open. Each order must be validated (KYC, funds, market hours) before hitting the exchange — because every exchange API call costs money. Validation requires DB lookups (User DB, Payment DB) which take time. How do we handle 100K orders/sec without blocking?</p>
-<p><strong>Naive solution:</strong> Synchronous pipeline — receive order → validate (DB lookups) → call exchange → return response. At 100K orders/sec, each DB lookup adds 5–10ms → pipeline latency = 20–50ms. Under load, DB becomes the bottleneck. Service goes down = orders lost.</p>
-<p><strong>Chosen solution — Kafka-buffered async pipeline:</strong></p>
+<h3 id="83-order-pipeline-high-frequency-with-validation">8.3 Order Pipeline — High Frequency With Validation</h3>
+<p>Here's the problem: 100,000 orders a second arrive at market open, and every one of them has to be validated — KYC status, market hours, funds — before it's allowed anywhere near the exchange, because every exchange API call has a real cost attached to it. Each of those validation checks is a database lookup, and database lookups take time.</p>
+<p>A synchronous pipeline — receive the order, run the checks against the User DB and Payment DB, call the exchange, then respond — falls apart under that load specifically because of where the time goes. Each DB lookup adds 5–10ms, so a synchronous round trip lands somewhere around 20–50ms per order even before contention; at 100,000 orders a second, the database itself becomes the bottleneck, and if the validating service goes down mid-request, whatever order it was holding is simply gone.</p>
+<p>The fix is to stop making the user's request wait on any of that. The Order Service's only job on the way in is to write the order to Kafka's <code>raw-orders</code> topic and return <code>PENDING</code> — a durable, cheap operation that happens before a single validation check runs, which is why the response the user sees is fast regardless of how backed up validation is behind it. The Validator Service then consumes from that topic at whatever pace it can actually sustain, completely decoupled from how fast orders are arriving, and only orders that pass its checks ever generate an exchange API call — rejected orders never touch that expensive, rate-limited external dependency at all. Once the exchange responds, the Order Tracker Service consumes the resulting <code>order-status</code> events and reconciles them back into the Order DB and Trade DB.</p>
 <pre><code>User → Order Service → Kafka (raw-orders) → Validator Service
                                                     ↓
                                         Kafka (verified-orders OR rejected-orders)
@@ -836,337 +580,78 @@ Exchange sees same order_id twice → ignores the second call, returns same resu
                                                     ↓
                                             Order Tracker → Order DB + Trade DB
 </code></pre>
-<ol>
-<li>Order Service immediately persists order to Kafka — durable queue. Returns <code>orderId</code> + <code>PENDING</code> status to user. UI is responsive.</li>
-<li>Validator Service consumes asynchronously. DB lookups happen at the consumer's pace — decoupled from user-facing latency.</li>
-<li>Exchange calls happen only for verified orders. Rejected orders never touch the expensive exchange API.</li>
-<li>Order Tracker reconciles exchange acknowledgements (including partial fills for limit orders) back to Order DB and Trade DB.</li>
-</ol>
-<p><strong>Handling Limit Orders (partial fills):</strong></p>
-<p>A limit order for 100 shares might execute in batches: 30 shares now, 70 shares 15 minutes later. Order Tracker handles each partial fill acknowledgement from the exchange, updating Trade DB incrementally. Order status stays <code>PARTIALLY_FILLED</code> until all 100 shares are confirmed or order expires.</p>
-<p><strong>Trade-off accepted:</strong> Async pipeline = eventual consistency between order placement and confirmation. User sees <code>PENDING</code> for up to seconds. This is acceptable and standard in real-world brokers. Strong consistency between funds deducted and stock allocated is maintained by the exchange — broker just tracks the outcome.</p>
+<p>Limit orders complicate the "confirmed" step, because a single order doesn't always resolve in one shot. A limit order for 100 shares might fill 30 now and the remaining 70 over the following fifteen minutes, in whatever batches the exchange's matching engine actually produces. The Order Tracker handles each partial fill acknowledgement as its own event, updating the Trade DB incrementally rather than waiting for a single final number, and the order's status stays <code>PARTIALLY_FILLED</code> the entire time — it only moves to fully executed once every share is accounted for, or expires if it never fills completely.</p>
+<p>The trade-off this pipeline accepts is that order placement and order confirmation are no longer the same moment: a user can legitimately see <code>PENDING</code> for a few seconds while validation and the exchange round trip complete behind the scenes. That's an accepted, standard behavior in real-world brokers, not a bug to hide — the strong consistency guarantee that actually matters (funds deducted matches stock allocated) is maintained by the locking mechanism in §8.2, independent of how long the exchange itself takes to respond.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> The Kafka queue before validation means every order is durably stored before any processing. If the Validator Service crashes, it resumes from its Kafka offset — zero order loss. Without Kafka, a validator crash loses all in-flight orders.</p>
+<strong>Key Insight:</strong> Writing every order to Kafka before any processing happens is what makes a Validator Service crash a non-event. On restart, it simply resumes from its last committed Kafka offset — nothing in flight was ever only in memory, so nothing in flight is ever lost.</p>
 </blockquote>
 <hr />
-<h3 id="94-exchange-gateway-why-a-dedicated-proxy">9.4 Exchange Gateway — Why a Dedicated Proxy</h3>
-<p><strong>Here's the problem we're solving:</strong> Multiple internal services need to interact with the exchange — Price Tracker subscribes to price feeds, Order Service places orders, Order Tracker receives confirmations. If each service opens its own connection to the exchange, we have uncontrolled connection sprawl and the exchange charges per connection/request.</p>
-<p><strong>Chosen solution — Exchange Gateway as single proxy:</strong>
-- One service owns all exchange communication
-- Manages the 20 WebSocket connections for price feeds
-- Routes order placement requests from Order Service
-- Receives order status callbacks from exchange WebSocket
-- Other services never talk to the exchange directly — they talk to Exchange Gateway or consume from Kafka topics that Gateway publishes to</p>
-<p><strong>Why this matters for cost:</strong>
-- Exchange API access in India (NSE/BSE) is charged per connection and per request — costs crores per month for large brokers
-- Exchange Gateway applies rate limiting internally, deduplicates unnecessary calls, and batches where possible
-- Centralised monitoring: all exchange connectivity visible in one place</p>
+<h3 id="84-exchange-gateway-why-a-dedicated-proxy">8.4 Exchange Gateway — Why a Dedicated Proxy</h3>
+<p>Here's the problem: several different internal services legitimately need to talk to the exchange — the Price Tracker needs live feeds, the Order Service needs to place orders, the Order Tracker needs to receive confirmations. If each of them opened its own connection to the exchange independently, the result is uncontrolled connection sprawl against an API that charges per connection and per request.</p>
+<p>The fix is to let exactly one service own all exchange communication. The Exchange Gateway manages the 20 WebSocket connections that carry the price feed, routes every order placement request from the Order Service, and receives every order status callback — no other internal service talks to the exchange directly; they either go through the Gateway or consume from the Kafka topics it publishes into.</p>
+<p>That centralization matters for reasons beyond tidiness. Exchange API access in India is billed per connection and per request, running into crores a month for a broker at this scale, so a single choke point is also the natural place to apply rate limiting, deduplicate unnecessary calls, batch where the exchange allows it, and get one unified view of exchange connectivity health instead of piecing it together from several services independently.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> The Exchange Gateway is the same pattern as an API Gateway — it abstracts an expensive external dependency behind a single controlled interface. Exchange API calls cost real money; the gateway ensures no internal service can accidentally spam the exchange.</p>
+<strong>Key Insight:</strong> The Exchange Gateway is the same pattern as an API Gateway, applied to an expensive external dependency instead of internal traffic — it exists so that no internal service can accidentally spam a paid API and turn a bug into a bill.</p>
 </blockquote>
 <hr />
-<h3 id="95-trade-db-vs-order-db-why-two-tables">9.5 Trade DB vs Order DB — Why Two Tables</h3>
-<p><strong>Here's the problem we're solving:</strong> Orders can be rejected (by Validator before even reaching exchange), cancelled, partially filled, or fully executed. Portfolio P&amp;L needs only confirmed executed trades. End-of-day reconciliation with the exchange needs a clean list of what actually transacted.</p>
-<p><strong>Order DB</strong> — full audit trail:
-- Every order ever placed: pending, rejected, cancelled, executed
-- Rejected-by-validator orders live here (never reached exchange)
-- Status: PENDING → EXECUTED / REJECTED / CANCELLED
-- <code>trade_id</code> = null until exchange confirms</p>
-<p><strong>Trade DB</strong> — exchange-confirmed only:
-- Only orders that the exchange acknowledged as executed
-- Contains <code>exchange_trade_id</code> for reconciliation
-- Portfolio Service reads ONLY from Trade DB — never sees rejected/cancelled orders
-- End-of-day reconciliation: compare Trade DB with exchange's settlement report</p>
-<p><strong>Why not one table?</strong></p>
-<p>Portfolio P&amp;L calculation = <code>(current_price - avg_buy_price) × quantity</code>. Avg buy price is computed from Trade DB. Including rejected/cancelled orders would corrupt the avg price calculation. Two tables keep concerns cleanly separated.</p>
+<h3 id="85-trade-db-vs-order-db-why-two-tables">8.5 Trade DB vs Order DB — Why Two Tables</h3>
+<p>Here's the problem: an order can end up rejected by the Validator before it ever reaches the exchange, cancelled by the user, partially filled, or fully executed — but Portfolio P&amp;L only ever wants to know about shares that actually, confirmedly changed hands, and end-of-day reconciliation with the exchange needs exactly that same clean list.</p>
+<p>Order DB is the full audit trail: every order ever placed lands here, including ones the Validator rejected before the exchange ever saw them, with <code>trade_id</code> staying <code>null</code> until the exchange actually confirms a fill. Trade DB is narrower and stricter — only orders the exchange itself acknowledged as executed get a row here, each carrying an <code>exchange_trade_id</code> that ties it back to the exchange's own settlement record. Portfolio Service reads exclusively from Trade DB, so a rejected or cancelled order is structurally invisible to it, and end-of-day reconciliation compares Trade DB directly against the exchange's settlement report.</p>
+<p>Collapsing these into one table would corrupt the one calculation this whole separation exists to protect: P&amp;L is <code>(current_price − avg_buy_price) × quantity</code>, and <code>avg_buy_price</code> is computed purely from Trade DB. Let a rejected or cancelled order leak into that average, and every P&amp;L number built on top of it is wrong.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Order DB is for the broker's internal audit. Trade DB is for financial truth — what actually happened at the exchange. Portfolio P&amp;L, reconciliation, and regulatory reporting all use Trade DB exclusively.</p>
+<strong>Key Insight:</strong> Order DB is the broker's internal audit trail. Trade DB is financial truth — what actually happened at the exchange. Portfolio P&amp;L, reconciliation, and regulatory reporting all read Trade DB exclusively, and never Order DB, on purpose.</p>
 </blockquote>
 <hr />
-<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
-<p><strong>Scale we're designing for (anchor every decision to these numbers):</strong>
-- <strong>50M registered users, 5M DAU</strong>
-- <strong>100K orders/sec at 9:15 AM market open</strong> — this is the spike that breaks naive systems. Market opens once a day; everyone submits pre-placed orders simultaneously. Traffic is 50× higher at 9:15 than at 2:00 PM.
-- <strong>10,000 stocks × 1 price update/sec = 10K price events/sec</strong> during market hours (zero outside market hours)
-- <strong>1M concurrent WebSocket connections</strong> — every active user has one open connection for price streaming
-- <strong>56 billion InfluxDB rows/year</strong> — price history append-only, never updated
-- <strong>0 downtime tolerance</strong> during market hours — a 30-second outage at 9:15 AM costs brokers crores in lost commissions and user trust</p>
-<p>"The hardest engineering problem is the 9:15 AM spike. All pre-placed orders flush into the system simultaneously. Kafka is the only reason this doesn't crash the Validator Service — it absorbs the burst and lets validation happen at the consumer's pace."</p>
-<p><strong>What breaks first at 10× scale:</strong></p>
-<ol>
-<li><strong>Price Injector at 100K stocks/sec:</strong></li>
-<li>Kafka partitioned by symbol — scale consumers horizontally</li>
-<li>Redis pub/sub scales vertically (single Redis node handles ~1M pub/sub messages/sec). At extreme scale: Redis Cluster with consistent hashing on channel name</li>
-<li>
-<p>InfluxDB: add nodes, shard by symbol prefix</p>
-</li>
-<li>
-<p><strong>Order Service at 1M orders/sec:</strong></p>
-</li>
-<li>Kafka handles ingestion — add partitions to <code>raw-orders</code> topic</li>
-<li>Validator Service scales horizontally as Kafka consumer group</li>
-<li>Order DB (PostgreSQL): shard by <code>user_id</code>. Order queries are always per-user</li>
-<li>
-<p>Exchange remains the real bottleneck — exchange API has its own rate limits. Broker must implement order throttling to avoid breaching exchange limits</p>
-</li>
-<li>
-<p><strong>WebSocket Gateway at 10M concurrent connections:</strong></p>
-</li>
-<li>Dedicated WS Gateway cluster. Each node handles ~100K connections</li>
-<li>Redis pub/sub for cross-node fanout: when price updates arrive on node A, subscribers on node B receive via Redis</li>
-<li>
-<p>Sticky session routing: user reconnects must land on same node (or use shared session map in Redis)</p>
-</li>
-<li>
-<p><strong>Portfolio P&amp;L at high read load:</strong></p>
-</li>
-<li>Cache P&amp;L snapshots in Redis: <code>portfolio:{userId} → P&amp;L JSON</code>, TTL = 5 seconds</li>
-<li>Invalidate on new trade confirmed (Order Tracker triggers cache bust)</li>
-<li>InfluxDB downsampling for old historical data (minute-level candles beyond 1 month, daily candles beyond 1 year)</li>
-</ol>
+<h2 id="9-bottlenecks-scaling">9. Bottlenecks &amp; Scaling</h2>
+<p>The numbers worth anchoring every decision below to: 50 million registered users, 5 million daily active; a peak of 100,000 orders a second at 9:15 AM market open — roughly 50 times the order rate at 2:00 PM the same day; 10,000 price events a second during market hours and zero outside them; 1 million concurrent WebSocket connections; 56 billion InfluxDB rows accumulating every year; and effectively zero downtime tolerance during market hours, since a 30-second outage at 9:15 AM costs a broker real commissions and real user trust in a single stroke.</p>
+<p>The 9:15 AM spike is the hardest engineering problem in this entire design, precisely because it isn't gradual — every pre-placed overnight order flushes into the system in the same few seconds. Kafka is the only reason that burst doesn't take the Validator Service down with it: the queue absorbs the spike instantly, and validation proceeds at whatever pace the consumers can actually sustain, not at whatever pace orders happen to be arriving.</p>
+<p>At ten times today's scale, the Price Injector is the first thing under real pressure, moving from 10,000 to 100,000 stock updates a second. Kafka handles that by adding more partitioned consumers, since the topic is already partitioned by symbol; Redis pub/sub, which comfortably handles roughly a million pub/sub messages a second on a single node today, would need to move to a Redis Cluster with consistent hashing on channel name at the extreme end; and InfluxDB scales by adding nodes and sharding by symbol prefix.</p>
+<p>The Order Service faces a parallel jump, from 100,000 to 1 million orders a second. Kafka absorbs the ingestion side by adding partitions to <code>raw-orders</code>, and the Validator Service scales out horizontally as just another Kafka consumer group. Order DB shards by <code>user_id</code>, which works cleanly because every order query is already scoped to a single user. The one piece that doesn't scale by adding infrastructure is the exchange itself — it has its own rate limits regardless of how much broker-side capacity exists, so at this scale the broker has to actively throttle its own order flow to stay under those limits rather than simply scaling out and hoping.</p>
+<p>WebSocket connections are the third pressure point, growing toward 10 million concurrent. A dedicated WebSocket Gateway cluster, with each node handling roughly 100,000 connections, is the base scaling move; Redis pub/sub handles cross-node fanout so a price update landing on one node still reaches a subscriber connected to a different node; and sticky session routing (or a shared Redis session map) keeps a reconnecting user landing back on a server that actually knows about them.</p>
+<p>Portfolio P&amp;L, finally, scales on the read side rather than the write side. P&amp;L snapshots are cached in Redis as <code>portfolio:{userId}</code>, five-second TTL, invalidated the moment a new trade confirms — and InfluxDB's own downsampling keeps old historical queries cheap regardless of scale, collapsing to minute-level candles beyond a month old and daily candles beyond a year old.</p>
 <hr />
-<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Exchange WebSocket drops</td>
-<td>Price feed pauses; orders still accepted but unconfirmed</td>
-<td>Exchange Gateway reconnects immediately. Last known prices served from InfluxDB. Client shows "Delayed data" indicator.</td>
-</tr>
-<tr>
-<td>Kafka broker fails</td>
-<td>Order processing pauses; no data loss</td>
-<td>Kafka cluster (3+ brokers, replication factor 3). No message loss. Orders resume when broker recovers.</td>
-</tr>
-<tr>
-<td>Validator Service crashes</td>
-<td>Orders queue in raw-orders topic</td>
-<td>Consumer group resumes from last committed offset. At-least-once: duplicate validation handled by idempotent order_id check.</td>
-</tr>
-<tr>
-<td>Order Service crashes before Exchange call</td>
-<td>Order in Kafka but not yet sent to exchange</td>
-<td>Validator has already published to verified-orders. Order Service re-consumes on restart, re-sends to exchange. Idempotency key (order_id) prevents duplicate at exchange.</td>
-</tr>
-<tr>
-<td>Order DB primary fails</td>
-<td>Cannot write new order status</td>
-<td>PostgreSQL read replicas available. Auto-failover (RDS Multi-AZ). Brief write pause during promotion.</td>
-</tr>
-<tr>
-<td>InfluxDB outage</td>
-<td>Historical price charts unavailable</td>
-<td>Real-time prices (Redis pub/sub) unaffected. Charts show "Historical data unavailable" until restored.</td>
-</tr>
-<tr>
-<td>Exchange rejects order</td>
-<td>User placed order but exchange says invalid</td>
-<td>Order Tracker marks order REJECTED in Order DB. Funds not deducted. Notification sent to user with rejection reason.</td>
-</tr>
-<tr>
-<td><strong>Exchange timeout</strong> (no ack received)</td>
-<td>Order in limbo — sent to exchange but no confirmation</td>
-<td>Order Service retries with same <code>order_id</code> (idempotency key). Exchange deduplicates. After 3 retries → mark order STUCK, alert ops team. Reconciliation job compares Order DB vs exchange settlement report at end of day.</td>
-</tr>
-<tr>
-<td><strong>Partial execution</strong> (limit order 100 shares, only 30 filled)</td>
-<td>Order partially complete; user expects full fill</td>
-<td>Order Tracker handles each partial fill ack from exchange. Trade DB updated incrementally. Order status = <code>PARTIALLY_FILLED</code>. Remaining 70 shares stay in <code>raw-orders</code> state. Full fill or order expiry closes the order.</td>
-</tr>
-<tr>
-<td><strong>Order stuck in PENDING</strong> (validator crash, Kafka lag)</td>
-<td>User sees PENDING indefinitely</td>
-<td>Consumer group resumes from Kafka offset on restart. Idempotent order_id check prevents re-processing. Reconciliation job flags any order PENDING &gt; 30 seconds for manual review.</td>
-</tr>
-<tr>
-<td><strong>Funds deducted but exchange call failed</strong></td>
-<td>User's money held but no stock received</td>
-<td>Held funds remain in <code>held_funds</code> table. Order status = <code>EXCHANGE_ERROR</code>. Reconciliation job detects mismatch and auto-releases held funds back to wallet. Audit log records every state transition for dispute resolution.</td>
-</tr>
-<tr>
-<td><strong>9:15 AM order spike</strong> (100K orders/sec)</td>
-<td>Validator Service overwhelmed</td>
-<td>Kafka absorbs burst — Order Service accepts all orders and returns PENDING. Validator Consumer Group auto-scales (Kubernetes HPA on Kafka consumer lag metric). Backpressure handled by Kafka; users see delayed confirmation, not errors.</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>The recovery story splits cleanly by what actually failed: the exchange-facing edge of the system, the Kafka-buffered processing path, the durable data stores, financial edge cases, and the load spike itself each fail — and recover — differently.</p>
+<p>On the exchange-facing edge, an exchange WebSocket dropping pauses the price feed but doesn't touch order acceptance — the Exchange Gateway reconnects immediately, InfluxDB keeps serving the last known prices in the meantime, and the client shows a "Delayed data" indicator rather than a stale number with no explanation. A straightforward exchange rejection is handled the same way every rejection is: the Order Tracker marks the order <code>REJECTED</code>, funds were never actually deducted, and the user gets a notification with the reason. A true exchange timeout — no acknowledgement at all — triggers a retry with the same <code>order_id</code>, relying on the idempotency key from §8.2 so the exchange deduplicates rather than double-executing; after three retries with no response, the order is marked <code>STUCK</code> and ops is alerted, with a nightly reconciliation job comparing the Order DB against the exchange's own settlement report to catch anything that still slipped through.</p>
+<p>On the Kafka-buffered processing path, nothing is ever actually lost, only delayed. A Kafka broker going down (out of a cluster of three or more, replication factor three) pauses processing but loses no messages — orders resume the moment the broker recovers. A Validator Service crash just means orders queue up in <code>raw-orders</code>; the consumer group resumes from its last committed offset, and the same idempotent <code>order_id</code> check that prevents duplicate exchange calls also makes at-least-once redelivery safe here. An Order Service crash after the Validator has already published to <code>verified-orders</code> but before the exchange call went out resolves the same way — the service re-consumes on restart and re-sends, with the idempotency key preventing a duplicate at the exchange. And an order stuck in <code>PENDING</code> because of exactly this kind of crash or Kafka lag isn't left to sit forever: any order still <code>PENDING</code> past 30 seconds gets flagged by the reconciliation job for manual review.</p>
+<p>On the durable stores themselves, an Order DB primary failing pauses new order-status writes only briefly — PostgreSQL read replicas stay available for reads, and Multi-AZ auto-failover promotes a replica with only a short write pause during the transition. An InfluxDB outage takes down historical price charts specifically — real-time prices keep flowing over Redis pub/sub completely unaffected — and the UI simply shows "Historical data unavailable" until it's restored.</p>
+<p>Two financial edge cases get their own explicit handling because silent money is the one thing this system cannot tolerate. A partial execution — 30 of 100 limit-order shares filled — is handled incrementally by the Order Tracker exactly as described in §8.3, staying <code>PARTIALLY_FILLED</code> until the remainder fills or the order expires. Funds deducted with a failed exchange call is the scarier case on paper but not in practice: the money never left the system, it just sits in the <code>held_funds</code> table with the order marked <code>EXCHANGE_ERROR</code>, the reconciliation job detects the mismatch and auto-releases the hold back to the wallet, and every state transition along the way is written to an audit log for dispute resolution.</p>
+<p>Finally, the 9:15 AM spike itself: when the Validator Service is genuinely overwhelmed by the full 100,000-orders-a-second burst, Kafka is what keeps the front door open — the Order Service keeps accepting orders and returning <code>PENDING</code> regardless of how backed up validation is, the Validator's consumer group auto-scales via Kubernetes HPA against Kafka consumer lag, and the backpressure this creates shows up to users as a delayed confirmation, never as an error.</p>
 <hr />
-<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="websocket-vs-sse-for-price-feed">WebSocket vs SSE for Price Feed</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>WebSocket</th>
-<th>SSE</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Direction</td>
-<td>Bidirectional</td>
-<td>Server → Client only</td>
-</tr>
-<tr>
-<td>Subscription changes</td>
-<td>Send message on same connection</td>
-<td>Must close + reopen connection</td>
-</tr>
-<tr>
-<td>Connection overhead</td>
-<td>Higher (persistent TCP)</td>
-<td>Lower (standard HTTP)</td>
-</tr>
-<tr>
-<td>Browser support</td>
-<td>Universal</td>
-<td>Universal</td>
-</tr>
-<tr>
-<td>Reconnect cost</td>
-<td>Low (client sends subscribe list)</td>
-<td>High (new connection per change)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> WebSocket — dynamic subscription changes (user opens different stock charts) require bidirectional communication. SSE reconnect storms at 1M connections = unacceptable.</p>
+<p>The two differ across almost every dimension that matters here. WebSocket is bidirectional; SSE is server-to-client only. Changing a subscription on WebSocket is a message on the existing connection; on SSE it means closing and reopening the connection entirely, which is also where SSE's reconnect cost balloons compared to WebSocket's near-zero cost for the same change. The one place SSE wins outright is connection overhead — a plain HTTP connection is lighter than a persistent TCP one — and both are universally supported by browsers, so that's not a factor either way.</p>
+<p><strong>Chosen:</strong> WebSocket — dynamic subscription changes (a user opening a different stock's chart) demand bidirectional communication, and SSE's reconnect storm at 1 million concurrent connections is not a cost this system can absorb.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> SSE is "server pushes to client." WebSocket is "client and server talk." The moment the client needs to change what it's subscribed to — which happens constantly in a trading app — you need WebSocket.</p>
+<strong>Key Insight:</strong> The trade-off actually being accepted here isn't about the mechanism being right — it's the operational cost of the mechanism being right: stateful connections mean the WebSocket Gateway has to maintain session state, requiring sticky routing or a Redis session map, real infrastructure SSE would never have needed.</p>
 </blockquote>
 <hr />
 <h3 id="influxdb-vs-postgresql-for-stock-prices">InfluxDB vs PostgreSQL for Stock Prices</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>InfluxDB</th>
-<th>PostgreSQL</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Write throughput</td>
-<td>1M+ points/sec per node</td>
-<td>~50K rows/sec ceiling</td>
-</tr>
-<tr>
-<td>Query type</td>
-<td>Time-range aggregations (OHLCV)</td>
-<td>General SQL</td>
-</tr>
-<tr>
-<td>Storage efficiency</td>
-<td>Automatic compression for time-series</td>
-<td>Row-based, less efficient for time data</td>
-</tr>
-<tr>
-<td>Downsampling</td>
-<td>Built-in continuous queries</td>
-<td>Manual jobs</td>
-</tr>
-<tr>
-<td>Operational complexity</td>
-<td>Higher</td>
-<td>Lower</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> InfluxDB — 56B rows/year of price data. PostgreSQL would require extreme sharding and still struggle with time-range aggregation queries. InfluxDB is purpose-built for this exact access pattern.</p>
+<p>The two aren't close on the dimension that matters most here: InfluxDB sustains over a million points a second per node, where PostgreSQL tops out around 50,000 rows a second. InfluxDB's query model is built around time-range aggregations — exactly what an OHLCV candle query is — where PostgreSQL offers general-purpose SQL with no particular advantage for that access pattern. Storage compounds the gap further: InfluxDB compresses time-series data automatically, where PostgreSQL's row-based storage is comparatively inefficient for the same shape of data, and InfluxDB's downsampling is a built-in continuous query where PostgreSQL would need hand-rolled batch jobs to do the same aging-out. The one thing PostgreSQL wins on is operational simplicity — InfluxDB is a second, less familiar system to run well.</p>
+<p><strong>Chosen:</strong> InfluxDB — at roughly 56 billion rows a year, PostgreSQL would require extreme sharding just to survive the write rate, and would still be a poor fit for range-based aggregation once it got there. InfluxDB is purpose-built for precisely this access pattern.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Time-series data has two properties that general databases handle poorly: extremely high append-only write rate and range-based aggregation queries. InfluxDB is built for exactly this — OHLCV queries over billions of rows are sub-second.</p>
+<strong>Key Insight:</strong> Time-series data has two properties general-purpose databases handle poorly: extremely high append-only write throughput, and queries that are almost always range-based aggregations rather than point lookups. InfluxDB is built around exactly those two properties — OHLCV queries over billions of rows come back sub-second.</p>
 </blockquote>
 <hr />
 <h3 id="strong-consistency-vs-latency-the-core-fintech-trade-off">Strong Consistency vs Latency (the core fintech trade-off)</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Strong Consistency (CP)</th>
-<th>Eventual Consistency (AP)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Wallet balance</td>
-<td>Always correct, never negative</td>
-<td>May allow double-spend window</td>
-</tr>
-<tr>
-<td>Order deduplication</td>
-<td>Guaranteed via idempotency key + DB constraint</td>
-<td>Possible duplicate at exchange</td>
-</tr>
-<tr>
-<td>Read latency</td>
-<td>Higher (lock acquisition, quorum reads)</td>
-<td>Lower (any replica responds)</td>
-</tr>
-<tr>
-<td>Write throughput</td>
-<td>Lower (serialised per-user wallet)</td>
-<td>Higher (no coordination)</td>
-</tr>
-<tr>
-<td>Failure mode</td>
-<td>Order rejected (safe)</td>
-<td>Order accepted incorrectly (dangerous)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Strong consistency for all financial state (wallet, orders, trades). Eventual consistency only for non-financial display (P&amp;L calculations, portfolio UI, price charts).</p>
+<p>Strong consistency (CP) guarantees the wallet balance is always correct and never negative, order deduplication is enforced through the idempotency key and a DB constraint, and any failure shows up as a safely rejected order — at the cost of higher read latency (lock acquisition, quorum reads) and lower write throughput, since writes to the same user's wallet are serialized. Eventual consistency (AP) inverts every one of those trade-offs: lower latency, higher throughput, no coordination overhead — but it opens a real double-spend window and can let a bad order through as an accepted-but-wrong outcome instead of a clean rejection.</p>
+<p><strong>Chosen:</strong> Strong consistency for all financial state — wallet, orders, trades. Eventual consistency is reserved for the non-financial display layer: P&amp;L calculations, portfolio UI, price charts.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> This is the opposite of Facebook. Facebook chooses AP because a stale feed for 2 seconds is fine. A trading platform chooses CP because ₹10,000 deducted twice is a legal liability. The CAP choice must follow the failure mode consequence, not a general preference.</p>
+<strong>Key Insight:</strong> This is the opposite of Facebook's default. Facebook chooses AP because a two-second-stale feed costs nothing. A trading platform chooses CP because ₹10,000 deducted twice is a legal liability, not a UX hiccup. The CAP choice has to follow the actual consequence of being wrong, not a general architectural preference.</p>
 </blockquote>
 <hr />
 <h3 id="sync-vs-async-order-processing">Sync vs Async Order Processing</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Synchronous</th>
-<th>Async (Kafka)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>User-facing latency</td>
-<td>Lower (direct response)</td>
-<td>Higher (PENDING → eventual confirmation)</td>
-</tr>
-<tr>
-<td>Order durability</td>
-<td>Lost on crash</td>
-<td>Kafka = at-least-once, no loss</td>
-</tr>
-<tr>
-<td>Exchange API calls</td>
-<td>Every order hits exchange</td>
-<td>Only validated orders hit exchange (saves cost)</td>
-</tr>
-<tr>
-<td>Scalability</td>
-<td>Bottlenecked by validation DB</td>
-<td>Each stage scales independently</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Async — exchange API calls cost real money. Async pipeline ensures only valid orders reach the exchange, and every order is durably queued before processing.</p>
+<p>A synchronous pipeline gives lower user-facing latency — a direct response, no waiting on a queue — but it loses an order outright if the service handling it crashes mid-request, and every single order hits the exchange's paid API regardless of whether it was ever going to be valid. The async version accepted here trades that immediacy for durability: Kafka gives at-least-once delivery, so nothing is lost to a crash, only validated orders ever reach the exchange (saving real money on API calls), and each stage of the pipeline scales independently instead of the whole thing being bottlenecked by however fast the validation database can respond.</p>
+<p><strong>Chosen:</strong> Async — every exchange API call has a real cost, and this pipeline guarantees only orders that actually pass validation ever generate one, while durably queuing every order the instant it arrives regardless of how fast downstream processing is running.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> In a stock broker, async order processing is not just a performance choice — it's a cost control mechanism. Every unnecessary exchange API call is a financial expense. The Kafka buffer + validator layer is the gatekeeper.</p>
+<strong>Key Insight:</strong> In a stock broker, async order processing isn't purely a performance choice — it's a cost-control mechanism. Every unnecessary exchange API call is a direct financial expense, and the Kafka buffer plus Validator layer is what stands between "every order" and "only the orders that deserve to reach the exchange."</p>
 </blockquote>
 <hr />
 <h2 id="frontend-design-15-of-this-system-your-differentiator">Frontend Design (15% of this system — your differentiator)</h2>
@@ -1276,7 +761,53 @@ async function fetchChart(symbol, interval) {
 </tbody>
 </table>
 <hr />
-<h2 id="interview-summary">Interview Summary</h2>
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Six non-functional requirements were set out in §3. Here's how the design actually satisfies each one — the specific mechanism doing the work, not just a restatement of the promise.</p>
+<p><strong>Price latency (&lt; 50ms):</strong> The entire price path is fast-path only — Exchange WebSocket → Kafka → Redis pub/sub → client WebSocket — with no database read or write blocking any hop. The InfluxDB write happens in parallel with the Redis publish (§5), never before it, so historical durability never taxes the number a live user is actually staring at.</p>
+<p><strong>Order latency (&lt; 100ms):</strong> This target holds for the part of the flow that's genuinely synchronous: the Kafka write that durably accepts the order and returns <code>PENDING</code> to the client. Full exchange confirmation is deliberately asynchronous (§8.3) — the &lt; 100ms promise is about the order being safely and durably <em>accepted</em>, not about the exchange having executed it yet, and that distinction is the entire reason the API returns <code>PENDING</code> rather than making the user wait.</p>
+<p><strong>Availability (99.9% during market hours):</strong> Kafka's replication factor of 3 means a broker failure never loses in-flight orders, and PostgreSQL's Multi-AZ failover recovers a lost primary with only a brief write pause (§9.1). Because the price feed and the order pipeline are two separate flows, a failure in one doesn't take the other down with it.</p>
+<p><strong>Consistency (money and stock never inconsistent):</strong> This is the requirement the whole design bends around. <code>SELECT ... FOR UPDATE</code> makes the wallet-balance check-and-deduct atomic per user (§8.2), the funds-hold pattern means a rejected order never actually costs the user money, and the idempotency key on every exchange call rules out an accidental duplicate trade. Everything financial is strongly consistent; only the display layer (P&amp;L, watchlist, price charts) is allowed to be eventually consistent.</p>
+<p><strong>Order durability (zero loss):</strong> Every order is written to Kafka before any processing touches it at all — not after validation, not after the exchange call, before either. A crash anywhere downstream of that write just means replaying from the last committed Kafka offset, with the idempotent <code>order_id</code> check making that replay safe rather than a source of duplicates.</p>
+<p><strong>Historical data retention (5+ years):</strong> InfluxDB's append-only, time-indexed storage absorbs the roughly 56 billion rows a year this system generates, with built-in downsampling keeping years-old data queryable without the storage cost growing without bound.</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Technique</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Price latency &lt; 50ms</td>
+<td>Fast path with no DB read/write in the hot loop; InfluxDB write happens in parallel, not before</td>
+</tr>
+<tr>
+<td>Order latency &lt; 100ms</td>
+<td>Kafka write is the synchronous, durable part; exchange confirmation is deliberately async</td>
+</tr>
+<tr>
+<td>Availability 99.9%</td>
+<td>Kafka replication factor 3; PostgreSQL Multi-AZ failover; independent price/order flows</td>
+</tr>
+<tr>
+<td>Consistency — money never wrong</td>
+<td><code>SELECT FOR UPDATE</code> row lock, funds-hold pattern, idempotency key on exchange calls</td>
+</tr>
+<tr>
+<td>Zero order loss</td>
+<td>Kafka write before any processing; idempotent replay from last committed offset</td>
+</tr>
+<tr>
+<td>5+ years historical retention</td>
+<td>InfluxDB append-only time-series storage with built-in downsampling</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats a stock broker as three concurrent flows layered in front of one expensive, authoritative black box: a low-latency price feed nobody can afford to block with a database write, an order pipeline that has to be both durable and cheap to the exchange, and a portfolio view that only ever trusts confirmed trades. The hardest problem wasn't the price feed's throughput — it was making the wallet-and-order path impossible to get wrong under real concurrency, without slowing every other order down to guarantee it. Every other decision in this design — Kafka before validation, a single Exchange Gateway, Order DB split from Trade DB — exists in service of that one non-negotiable fact: the broker's job is to validate, forward, track, and display, and it can never let its own convenience touch someone else's money.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
