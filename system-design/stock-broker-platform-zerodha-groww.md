@@ -334,7 +334,7 @@ The API splits into four groups that mirror the four things a user actually does
 Two choices in this table aren't self-evident from the columns alone. First, `userId` is read from the JWT header on every order and portfolio call, never taken as a URL or body parameter — a user simply cannot construct a request that reads or cancels someone else's order, because the identity comes from something they can't forge. Second, `POST /orders` returns `PENDING` the instant the order is durably queued in Kafka — it does not wait for the exchange to respond. That's a deliberate asynchronous design (walked through fully in §8.3): the API contract is "your order is safely accepted," not "your order has executed," and the client discovers the real outcome later via `GET /orders/:orderId` or a push notification.
 
 > [!TIP]
-> **Interview tip on WebSocket vs SSE for price feed:** say it out loud as a subscription-management problem. "With SSE, every time a user wants to add a new stock to their view, the client has to close and reopen the connection with an updated symbol list. With WebSocket, they just send a subscribe/unsubscribe message over the connection that's already open." That one sentence is usually enough to justify the choice in an interview.
+> **Interview tip:** notice that adding a symbol to a user's watchlist is just another message on the same open connection (`{ action: "subscribe", symbols: [...] }`), not a new API call — the full reasoning for choosing WebSocket over SSE here is in §8.1.
 
 ---
 
