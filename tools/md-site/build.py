@@ -4,12 +4,15 @@
 Usage:
     python3 build.py <source-dir> <output-dir>
 """
+import hashlib
 import html
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 
 import markdown as md_lib
 
@@ -106,27 +109,157 @@ MERMAID_FENCE_RE = re.compile(
     r'<pre><code class="language-mermaid">(.*?)</code></pre>', re.S | re.I
 )
 
+# Only flowchart/graph diagrams get converted to hand-drawn Excalidraw-style
+# images. sequenceDiagram (and any other mermaid diagram type) keeps the
+# live mermaid.js rendering path below -- the mermaid-to-excalidraw library
+# has a known rendering defect where sequence-diagram message labels get an
+# arrow line drawn through the text, so converting those would be a
+# legibility regression rather than an improvement.
+FLOWCHART_FIRST_LINE_RE = re.compile(r"^\s*(graph|flowchart)\b", re.I)
 
-def convert_markdown(text):
+RENDERER_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "mermaid-to-excalidraw",
+)
+# Persistent, content-addressed cache of rendered SVGs, committed to git so
+# a plain `python3 build.py ...` rebuild stays pure-Python (and fast) as
+# long as no diagram's mermaid source actually changed -- Node/Playwright
+# is only invoked for genuinely new/changed diagrams.
+MERMAID_SVG_CACHE_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "mermaid-cache"
+)
+
+
+def _is_flowchart(raw_mermaid_text):
+    first_line = next(
+        (line for line in raw_mermaid_text.splitlines() if line.strip()), ""
+    )
+    return bool(FLOWCHART_FIRST_LINE_RE.match(first_line))
+
+
+def _diagram_hash(raw_mermaid_text):
+    return hashlib.sha256(raw_mermaid_text.encode("utf-8")).hexdigest()[:16]
+
+
+def collect_flowchart_diagrams(source_texts):
+    """Scan raw (pre-HTML) markdown texts for ```mermaid fences whose first
+    line is graph/flowchart. Returns {hash: raw_mermaid_text}."""
+    fence_re = re.compile(r"```mermaid\n(.*?)```", re.S)
+    diagrams = {}
+    for text in source_texts:
+        for match in fence_re.finditer(text):
+            raw = match.group(1).rstrip("\n")
+            if _is_flowchart(raw):
+                diagrams[_diagram_hash(raw)] = raw
+    return diagrams
+
+
+def render_missing_diagrams(diagrams_by_hash):
+    """Render any hashes in diagrams_by_hash not already present in
+    MERMAID_SVG_CACHE_DIR, via the Node/Playwright renderer in
+    tools/mermaid-to-excalidraw/. Failures (missing Node, a crashed
+    renderer, or an individual diagram erroring) are logged and simply
+    skipped -- convert_markdown() falls back to live mermaid.js rendering
+    for anything not found in the cache, so a renderer problem degrades
+    gracefully instead of breaking the site build."""
+    os.makedirs(MERMAID_SVG_CACHE_DIR, exist_ok=True)
+    missing = {
+        h: text
+        for h, text in diagrams_by_hash.items()
+        if not os.path.exists(os.path.join(MERMAID_SVG_CACHE_DIR, f"{h}.svg"))
+    }
+    if not missing:
+        return
+
+    print(
+        f"Rendering {len(missing)} new flowchart diagram(s) via "
+        f"mermaid-to-excalidraw...",
+        file=sys.stderr,
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        input_path = os.path.join(tmp, "input.json")
+        output_path = os.path.join(tmp, "output.json")
+        with open(input_path, "w", encoding="utf-8") as f:
+            json.dump(
+                [{"id": h, "mermaid": text} for h, text in missing.items()], f
+            )
+        try:
+            subprocess.run(
+                ["node", "render.js", input_path, output_path],
+                cwd=RENDERER_DIR,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+        ) as e:
+            detail = getattr(e, "stderr", "") or str(e)
+            print(
+                f"WARNING: mermaid-to-excalidraw render failed, falling back "
+                f"to live mermaid.js for {len(missing)} new diagram(s): "
+                f"{detail}",
+                file=sys.stderr,
+            )
+            return
+
+        with open(output_path, "r", encoding="utf-8") as f:
+            results = json.load(f)
+
+    for h, result in results.items():
+        if "svg" in result:
+            with open(
+                os.path.join(MERMAID_SVG_CACHE_DIR, f"{h}.svg"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(result["svg"])
+        else:
+            print(
+                f"WARNING: diagram {h} failed to convert "
+                f"({result.get('error')}), falling back to live mermaid.js",
+                file=sys.stderr,
+            )
+
+
+def convert_markdown(text, asset_prefix=""):
     body = md_lib.markdown(
         text,
         extensions=["fenced_code", "tables", "toc", "attr_list", "md_in_html"],
     )
 
     def replace_mermaid(match):
-        # Deliberately NOT html.unescape()-d. A diagram label can contain
-        # illustrative HTML/script-looking text (e.g. a sequence diagram
-        # showing a server response of `<script src="bundle.js">`) --
-        # unescaping that would inject a REAL, live <script> tag into the
-        # page, which browsers then parse in raw-text mode until the next
-        # literal "</script>" anywhere later in the document, silently
-        # swallowing everything in between as inert script content. Kept
+        # Deliberately NOT html.unescape()-d when falling back to the live
+        # mermaid.js path. A diagram label can contain illustrative
+        # HTML/script-looking text (e.g. a sequence diagram showing a
+        # server response of `<script src="bundle.js">`) -- unescaping that
+        # would inject a REAL, live <script> tag into the page, which
+        # browsers then parse in raw-text mode until the next literal
+        # "</script>" anywhere later in the document, silently swallowing
+        # everything in between as inert script content. Kept
         # entity-escaped, this text stays safe/inert in the HTML source;
         # mermaid.js still gets the correct decoded string at runtime
         # because browsers automatically decode entities when JS reads a
         # text node's .textContent, so nothing is lost for rendering.
-        raw = match.group(1).rstrip("\n")
-        return f'<div class="mermaid">\n{raw}\n</div>'
+        raw_escaped = match.group(1).rstrip("\n")
+        raw = html.unescape(raw_escaped)
+
+        if _is_flowchart(raw):
+            svg_hash = _diagram_hash(raw)
+            svg_path = os.path.join(MERMAID_SVG_CACHE_DIR, f"{svg_hash}.svg")
+            if os.path.exists(svg_path):
+                return (
+                    '<figure class="diagram-figure">'
+                    f'<img class="excalidraw-diagram" '
+                    f'src="{asset_prefix}diagrams/{svg_hash}.svg" '
+                    'alt="Architecture diagram" loading="lazy">'
+                    "</figure>"
+                )
+
+        return f'<div class="mermaid">\n{raw_escaped}\n</div>'
 
     return MERMAID_FENCE_RE.sub(replace_mermaid, body)
 
@@ -159,6 +292,7 @@ PAGE_TEMPLATE = """<!doctype html>
 <script src="{asset_prefix}sidebar.js" defer></script>
 <script src="{asset_prefix}highlight.min.js" defer></script>
 <script src="{asset_prefix}mermaid.min.js" defer></script>
+<script src="{asset_prefix}diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {{
   hljs.configure({{ cssSelector: 'pre code[class^="language-"]' }});
@@ -215,6 +349,21 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
             )
         seen_slugs[slug] = filename
 
+    # Read every source file once up front: collect_flowchart_diagrams()
+    # needs the raw text of all files before any HTML is generated (so a
+    # diagram reused verbatim across two files is only rendered once), and
+    # the per-file loop below reuses these same strings instead of
+    # re-reading from disk.
+    source_texts = {}
+    for filename in md_files:
+        with open(
+            os.path.join(source_dir, filename), "r", encoding="utf-8"
+        ) as f:
+            source_texts[filename] = f.read()
+
+    flowchart_diagrams = collect_flowchart_diagrams(source_texts.values())
+    render_missing_diagrams(flowchart_diagrams)
+
     # Wipe the generated subdirectories up front so reruns can't leave
     # stale pages behind (e.g. a note renamed or deleted in source_dir
     # must not leave its old notes/<slug>.html sitting around). Scoped to
@@ -232,6 +381,20 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
         shutil.rmtree(assets_out)
     shutil.copytree(assets_dir, assets_out)
 
+    # Copy every cached hand-drawn diagram SVG into this site's assets/
+    # output (content-addressed by hash, so unused entries from other
+    # docs/sites just sit there harmlessly -- simpler than tracking exactly
+    # which hashes this particular build actually references).
+    diagrams_out = os.path.join(assets_out, "diagrams")
+    os.makedirs(diagrams_out, exist_ok=True)
+    if os.path.isdir(MERMAID_SVG_CACHE_DIR):
+        for svg_filename in os.listdir(MERMAID_SVG_CACHE_DIR):
+            if svg_filename.endswith(".svg"):
+                shutil.copy2(
+                    os.path.join(MERMAID_SVG_CACHE_DIR, svg_filename),
+                    os.path.join(diagrams_out, svg_filename),
+                )
+
     # The sidebar is shared across every page and built client-side (see
     # assets/sidebar.js) from this single JSON file, instead of being
     # rendered inline into each page -- so adding/removing/re-categorizing
@@ -241,16 +404,13 @@ def build(source_dir, output_dir, assets_dir=ASSETS_DIR):
         json.dump(nav_data, f, ensure_ascii=False, indent=2)
 
     for filename in md_files:
-        with open(
-            os.path.join(source_dir, filename), "r", encoding="utf-8"
-        ) as f:
-            source_text = f.read()
+        source_text = source_texts[filename]
 
         slug = slugify(filename)
         page_title = extract_title(
             source_text, fallback=title_from_filename(filename)
         )
-        content_html = convert_markdown(source_text)
+        content_html = convert_markdown(source_text, asset_prefix="../assets/")
 
         page = PAGE_TEMPLATE.format(
             # ADDITION (carried forward from Task 3's code review):

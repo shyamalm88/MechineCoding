@@ -1,0 +1,20 @@
+{
+  "name": "mermaid-to-excalidraw-renderer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Batch-converts mermaid flowchart diagrams into hand-drawn Excalidraw-style SVGs for tools/md-site/build.py.",
+  "type": "commonjs",
+  "scripts": {
+    "render": "node render.js"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "playwright": "^1.62.1"
+  }
+}
