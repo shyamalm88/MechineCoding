@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -254,68 +255,9 @@ At 1.67M updates/sec: WebSocket = 33 MB/s vs HTTP = 3.3 GB/s -&gt; WebSocket win
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts simple and adds Kafka and surge pricing as the system matures — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Rider[&quot;Rider App&quot;]
-    Driver[&quot;Driver App&quot;]
-    LB[&quot;Load Balancer / API Gateway&quot;]
-    RS[&quot;Ride Service - fare calc&quot;]
-    MS[&quot;Match Service&quot;]
-    LS[&quot;Location Service&quot;]
-    NS[&quot;Notification Service - FCM/APNs&quot;]
-    DB[(&quot;PostgreSQL - trips, users, drivers&quot;)]
-    Redis[(&quot;Redis - geo index, state, lock&quot;)]
-    Maps[&quot;Google Maps API&quot;]
-
-    Rider --&gt;|HTTPS| LB
-    Driver --&gt;|WebSocket| LB
-    LB --&gt; RS
-    LB --&gt; MS
-    LB --&gt; LS
-    RS --&gt; Maps
-    RS --&gt; DB
-    MS --&gt; Redis
-    MS --&gt; NS
-    LS --&gt; Redis
-    NS --&gt;|push| Driver
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/b8d0efb2f67cfafe.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-with-kafka-and-surge-pricing">Evolved Design (with Kafka and Surge Pricing)</h3>
-<div class="mermaid">
-graph TD
-    Rider[&quot;Rider App&quot;]
-    Driver[&quot;Driver App&quot;]
-    LB[&quot;Load Balancer&quot;]
-    RS[&quot;Ride Service&quot;]
-    SC[&quot;Surge Calculator&quot;]
-    MS[&quot;Match Service&quot;]
-    LS[&quot;Location Service&quot;]
-    NS[&quot;Notification Service&quot;]
-    PS[&quot;Payment Service&quot;]
-    RateDB[(&quot;Rate DB - price per km per vehicle&quot;)]
-    ReqDB[(&quot;Ride Request DB - analytics&quot;)]
-    Redis[(&quot;Redis Geo + State + Lock&quot;)]
-    K[[&quot;Kafka - trip events&quot;]]
-    TripDB[(&quot;PostgreSQL - trips, payments&quot;)]
-    Maps[&quot;Google Maps API&quot;]
-
-    Rider --&gt;|HTTPS| LB
-    Driver --&gt;|WebSocket| LB
-    LB --&gt; RS
-    LB --&gt; MS
-    LB --&gt; LS
-    RS --&gt; Maps
-    RS --&gt; RateDB
-    RS --&gt; ReqDB
-    ReqDB --&gt; SC
-    SC --&gt;|surge multiplier| Redis
-    RS --&gt;|reads surge from Redis| RS
-    MS --&gt; Redis
-    MS --&gt; NS
-    LS --&gt; Redis
-    LS --&gt; K
-    K --&gt; TripDB
-    K --&gt; PS
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c49fb88173c77584.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="the-full-sequence">The Full Sequence</h3>
 <p>The diagrams above show the components; this shows the actual message sequence between them, end to end:</p>
 <div class="mermaid">
@@ -544,21 +486,7 @@ Round 2: 3km, 2-min timeout  -- balance quality + availability
 Round 3: 5km, 2-min timeout  -- availability over quality
 Round 4: fail request        -- &quot;no driver found&quot;
 </code></pre>
-<div class="mermaid">
-flowchart TD
-    A[&quot;Ride request received&quot;] --&gt; B[&quot;Step 1+2: GEORADIUS + eligibility filter&quot;]
-    B --&gt; C[&quot;Step 3: ETA-rank top 20&quot;]
-    C --&gt; D[&quot;Step 4: Take top driver&quot;]
-    D --&gt; E[&quot;WATCH/MULTI/EXEC: IDLE to RESERVED&quot;]
-    E --&gt;|EXEC nil - already taken| D
-    E --&gt;|EXEC OK| F[&quot;Push offer via WebSocket - 15s timeout&quot;]
-    F --&gt;|ACCEPT| G[&quot;Confirmed. Notify rider.&quot;]
-    F --&gt;|DENY or timeout| H[&quot;RESERVED to IDLE. Next candidate.&quot;]
-    H --&gt; D
-    D --&gt;|All candidates exhausted| I[&quot;Expand radius: 2km to 3km to 5km&quot;]
-    I --&gt;|Max radius exhausted| J[&quot;No driver found - return error&quot;]
-    I --&gt; B
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/5ecc21985e70069f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Matching is not about finding the nearest driver — it is about finding the fastest pickup. ETA is the metric, not distance. A driver 0.5km away in traffic has a worse ETA than one 1.2km away on an open road. Every system that ranks by distance is optimizing for the wrong thing.</p>
@@ -570,15 +498,7 @@ flowchart TD
 <p>Here's the problem: at peak demand, more riders want rides than there are drivers available. Without any price signal, every rider competes for the same shrinking pool of drivers, matching fails more often, and the drivers who are online earn nothing extra for absorbing that surge in demand. Surge pricing exists to fix that imbalance — it's a market-clearing mechanism, not a way to extract more revenue.</p>
 <p>A static per-kilometer rate doesn't solve this: it charges the same price during a 3am downpour, when three drivers are online and thirty people want a ride, as it does on a quiet Tuesday morning. Matching rates drop, riders wait longer, and drivers have no extra incentive to come online exactly when they're needed most.</p>
 <p>The fix is a demand-signal feedback loop that runs entirely independently of matching itself:</p>
-<div class="mermaid">
-graph LR
-    R[&quot;Fare requests&quot;] --&gt; ReqDB[(&quot;Ride Request DB&quot;)]
-    ReqDB --&gt; SC[&quot;Surge Calculator - runs every 60s&quot;]
-    SC --&gt;|reads demand per geohash cell| SC
-    SC --&gt;|writes surge:geohash multiplier| Redis[(&quot;Redis - TTL 60s&quot;)]
-    RS[&quot;Ride Service&quot;] --&gt;|reads multiplier on each fare call| Redis
-    RS --&gt;|final fare = base x multiplier| Rider[&quot;Rider App&quot;]
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/a4a8c860639769e5.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Every 60 seconds, the Surge Calculator looks at each geohash cell and computes a demand ratio — active ride requests divided by idle drivers in that cell — and maps it onto a multiplier:</p>
 <pre><code>demand_ratio = active_ride_requests / idle_drivers_in_cell
 multiplier:

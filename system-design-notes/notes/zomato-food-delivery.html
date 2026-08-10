@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -270,82 +271,9 @@ Concurrent tracking sessions at lunch/dinner peak: 50,000
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts simple and grows into the full event-driven design as the system matures — here's both versions.</p>
 <p><strong>Simple Design</strong></p>
-<div class="mermaid">
-graph TD
-    CustomerApp[&quot;Customer App&quot;]
-    DriverApp[&quot;Delivery Partner App&quot;]
-    RestPortal[&quot;Restaurant Portal&quot;]
-    CDN[&quot;CDN - Static Assets and Images&quot;]
-    GW[&quot;API Gateway + Load Balancer&quot;]
-    WS[&quot;WebSocket Server&quot;]
-    Services[&quot;Microservices Layer&quot;]
-    DB[(&quot;PostgreSQL - Orders and Payments&quot;)]
-    Mongo[(&quot;MongoDB - Menus and Catalogs&quot;)]
-    Cache[(&quot;Redis - Cache and Sessions&quot;)]
-
-    CustomerApp --&gt;|HTTPS| CDN
-    CDN --&gt; GW
-    DriverApp --&gt; GW
-    RestPortal --&gt; GW
-    GW --&gt; WS
-    GW --&gt; Services
-    Services --&gt; DB
-    Services --&gt; Mongo
-    Services --&gt; Cache
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/eb6763994e5a1501.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Evolved Design with Kafka, Cassandra, and Elasticsearch</strong></p>
-<div class="mermaid">
-graph TD
-    GW[&quot;API Gateway&quot;]
-    WS[&quot;WebSocket Server&quot;]
-
-    OrderSvc[&quot;Order Service&quot;]
-    PaySvc[&quot;Payment Service&quot;]
-    RestSvc[&quot;Restaurant Service&quot;]
-    SearchSvc[&quot;Search Service&quot;]
-    TrackSvc[&quot;Tracking Service&quot;]
-    DeliverySvc[&quot;Delivery Matching Service&quot;]
-    NotifSvc[&quot;Notification Service&quot;]
-    LocationSvc[&quot;Location Update Service&quot;]
-
-    Kafka[[&quot;Kafka - Event Bus&quot;]]
-
-    PG[(&quot;PostgreSQL - Orders and Payments&quot;)]
-    Mongo[(&quot;MongoDB - Menus and Reviews&quot;)]
-    ES[(&quot;Elasticsearch - Search and Geo&quot;)]
-    RedisCache[(&quot;Redis - Cache, Sessions, Geo Index&quot;)]
-    Cassandra[(&quot;Cassandra - GPS History&quot;)]
-    S3[&quot;S3 + CDN - Images&quot;]
-
-    GW --&gt; OrderSvc
-    GW --&gt; PaySvc
-    GW --&gt; RestSvc
-    GW --&gt; SearchSvc
-    GW --&gt; DeliverySvc
-    GW --&gt; WS
-    GW --&gt; LocationSvc
-
-    OrderSvc --&gt; Kafka
-    PaySvc --&gt; Kafka
-    RestSvc --&gt; Kafka
-    DeliverySvc --&gt; Kafka
-    LocationSvc --&gt; Kafka
-
-    Kafka --&gt; TrackSvc
-    Kafka --&gt; NotifSvc
-    Kafka --&gt; DeliverySvc
-    Kafka --&gt; RestSvc
-    Kafka --&gt; WS
-
-    OrderSvc --&gt; PG
-    PaySvc --&gt; PG
-    RestSvc --&gt; Mongo
-    SearchSvc --&gt; ES
-    TrackSvc --&gt; Cassandra
-    TrackSvc --&gt; RedisCache
-    DeliverySvc --&gt; RedisCache
-    RestSvc --&gt; S3
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/d60d35297184d58f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> No service calls another service directly. All cross-service communication flows through Kafka. A Notification Service outage cannot block order placement. A Tracking Service slowdown cannot delay the delivery assignment. Each service fails in isolation.</p>
@@ -647,23 +575,7 @@ sequenceDiagram
 <p>With 1 million active delivery partners each pinging their GPS position every 10 seconds, the system receives 100,000 writes per second at peak — the single hardest scaling challenge anywhere in this design (§4). Route those writes directly at any relational or document database and you hit its write ceiling and cascade into latency spikes across the entire platform, not just tracking.</p>
 <p>The obvious approach — write every GPS ping straight into PostgreSQL or MongoDB — doesn't survive contact with that number. PostgreSQL handles roughly 50,000 writes/sec under contention before its WAL saturates and response times blow out; 100,000 writes/sec is past that ceiling, not near it. MongoDB fares somewhat better, but still can't reliably absorb bursts of this size without the added complexity of horizontal sharding.</p>
 <p>The fix is to never let a database see the raw write rate at all. Kafka sits in front of everything and absorbs the full 100,000 writes/sec as a durable buffer; a Kafka consumer — the Location Update Service — reads off that buffer and fans each ping out to two destinations built for two different jobs. Redis gets a sub-millisecond write to <code>driver:loc:{id}</code> with a 10-second TTL, because that's the live position the Delivery Matching Service actually queries. Cassandra gets an async, append-only write to the GPS history table, purely for audit and dispute resolution — the Delivery Matching Service never touches Cassandra at all.</p>
-<div class="mermaid">
-graph LR
-    Driver[&quot;Driver App - every 10s&quot;]
-    Kafka[[&quot;Kafka - location.update topic&quot;]]
-    Consumer[&quot;Location Update Service - Kafka consumer&quot;]
-    Redis[(&quot;Redis - driver:loc:id - TTL=10s&quot;)]
-    Cassandra[(&quot;Cassandra - GPS History - append-only&quot;)]
-    Matching[&quot;Delivery Matching Service&quot;]
-    WS[&quot;WebSocket Server&quot;]
-
-    Driver --&gt;|GPS ping| Kafka
-    Kafka --&gt; Consumer
-    Consumer --&gt;|sub-ms write| Redis
-    Consumer --&gt;|async audit| Cassandra
-    Redis --&gt;|GEORADIUS query| Matching
-    Redis --&gt;|location read| WS
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/62f6796dae94eff1.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>The 10-second TTL on <code>driver:loc:{id}</code> does more than bound memory use — it's a liveness check that costs nothing extra to run. If a driver's app crashes, loses signal, or simply goes offline, their key just expires on its own ten seconds after the last ping, and the Delivery Matching Service can no longer see them in a <code>GEORADIUS</code> query. There's no stale-driver cleanup job anywhere in this design, because the TTL already is the cleanup job.</p>
 <p>The trade-off this makes deliberately is that Redis isn't durable — if it restarts, every live driver location it held is gone. That's acceptable specifically because the data is ephemeral by nature: a driver re-registers their position on their very next ping, within 10 seconds, and Cassandra still holds the full history for anything that needs to look backward. Ephemeral data belongs in ephemeral storage; losing it briefly costs nothing that a full history in Cassandra can't answer.</p>
 <blockquote>

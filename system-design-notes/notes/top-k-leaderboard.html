@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -234,66 +235,9 @@ Client ──GET /leaderboard──▶ Ranking Service ──▶ Redis Z-Set (re
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts simple and grows into the full hybrid pipeline described above — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    C[(&quot;Clients&quot;)]
-    LB[&quot;Load Balancer + API Gateway&quot;]
-    SS[&quot;Score Service&quot;]
-    RS[&quot;Ranking Service&quot;]
-    SDB[(&quot;Score DB&quot;)]
-
-    C --&gt; LB
-    LB --&gt; SS
-    LB --&gt; RS
-    SS --&gt; SDB
-    RS --&gt; SDB
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/338fecc01b144e82.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-solution-3-hybrid">Evolved Design — Solution 3 Hybrid</h3>
-<div class="mermaid">
-graph TD
-    C[(&quot;Clients&quot;)]
-    LB[&quot;Load Balancer + API Gateway&quot;]
-
-    subgraph Ingestion Pipeline
-        SS[&quot;Score Service&quot;]
-        K[[&quot;Kafka - score-events&quot;]]
-        DBC[&quot;DB Consumer&quot;]
-        RC[&quot;Redis Consumer&quot;]
-    end
-
-    subgraph Storage Layer
-        CDB[(&quot;Cassandra - ScoreDB&quot;)]
-        RZ[(&quot;Redis Z-Set Cluster&quot;)]
-        ADB[(&quot;InfluxDB - Aggregated DB&quot;)]
-        CH[(&quot;Redis Cache - pre-computed&quot;)]
-    end
-
-    subgraph Aggregation
-        FL[&quot;Apache Flink&quot;]
-    end
-
-    subgraph Query Layer
-        RS[&quot;Ranking Service&quot;]
-        WS[&quot;WebSocket Server&quot;]
-    end
-
-    C --&gt; LB
-    LB --&gt; SS
-    LB --&gt; RS
-    LB --&gt; WS
-    SS --&gt; K
-    K --&gt; DBC
-    K --&gt; RC
-    DBC --&gt; CDB
-    RC --&gt; RZ
-    CDB --&gt; FL
-    FL --&gt; ADB
-    ADB --&gt; CH
-    RS --&gt; RZ
-    RS --&gt; CH
-    RS --&gt; ADB
-    WS --&gt; RZ
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/e415cf56daee9afb.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="the-full-sequence">The Full Sequence</h3>
 <p>The diagrams above show the components; these show the actual message sequence between them, end to end — one for a score being ingested, one for a top-K query hitting the fast path or falling through to history, and one for how historical aggregation happens in the background.</p>
 <h4 id="score-ingestion-write-path">Score Ingestion (Write Path)</h4>
@@ -346,13 +290,7 @@ sequenceDiagram
     end
 </div>
 <h4 id="historical-aggregation-flink-batch-path">Historical Aggregation (Flink Batch Path)</h4>
-<div class="mermaid">
-flowchart TD
-    CDB[(&quot;Cassandra - ScoreDB&quot;)] --&gt;|Stream / Micro-batch| FL[&quot;Apache Flink&quot;]
-    FL --&gt;|Aggregate by region + window| ADB[(&quot;InfluxDB - Aggregated DB&quot;)]
-    ADB --&gt;|Pre-computed rankings| CH[(&quot;Redis Cache&quot;)]
-    CH --&gt;|Fast lookup| RS[&quot;Ranking Service&quot;]
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/91ff0e39cb9e49b4.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="6-api-design">6. API Design</h2>
 <p>The API is small — three endpoints — because a leaderboard only needs to support three actions from the outside: report a score, ask for the current ranking, and ask where one specific entity stands relative to everyone else.</p>

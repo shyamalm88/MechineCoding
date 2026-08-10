@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -360,20 +361,7 @@ sequenceDiagram
 <li><strong>Sync</strong> — Event Service writes to PostgreSQL, publishes <code>calendar.event.updated</code> to Kafka. Notification Service consumes, looks up WebSocket connections for all <code>calendarId</code> subscribers in Redis, pushes the update.</li>
 <li><strong>Re-render</strong> — Every collaborator's client receives the WS push. Client patches its local event array with the change, re-runs layout for the affected time slot, and re-renders the moved event at the new position.</li>
 </ol>
-<div class="mermaid">
-flowchart TD
-    A[&quot;LOAD - GET /events&quot;] --&gt; B[&quot;LAYOUT - Interval partitioning\nSort, group, assign columns&quot;]
-    B --&gt; C[&quot;RENDER - Virtual scroll\nAbsolute CSS positioning&quot;]
-    C --&gt; D[&quot;INTERACT - User drags/edits\nDOM mutation at 60fps&quot;]
-    D --&gt; E[&quot;Optimistic update - local state&quot;]
-    E --&gt; F[&quot;PATCH /events/:id async&quot;]
-    F --&gt; G{&quot;API success?&quot;}
-    G --&gt;|Yes| H[&quot;PostgreSQL write\nKafka publish&quot;]
-    G --&gt;|No| I[&quot;Revert optimistic update\nError toast&quot;]
-    H --&gt; J[&quot;Notification Service\nWebSocket fan-out&quot;]
-    J --&gt; K[&quot;RE-RENDER - Collaborator clients\nPatch local state, re-run layout&quot;]
-    K --&gt; C
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/553fac1258a7ce6b.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!IMPORTANT]
 The cycle is: Load once → Layout locally → Render virtually → Interact optimistically → Sync async → Re-render incrementally. No full page reload at any step. Each phase is independent and can fail gracefully without breaking the others.</p>
@@ -381,53 +369,9 @@ The cycle is: Load once → Layout locally → Render virtually → Interact opt
 <hr />
 <h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / iOS / Android&quot;]
-    CDN[&quot;CDN - Static Assets&quot;]
-    API[&quot;API Gateway + Auth&quot;]
-    ES[&quot;Event Service&quot;]
-    CS[&quot;Calendar Service&quot;]
-    DB[(&quot;PostgreSQL - Events + Calendars&quot;)]
-    Cache[(&quot;Redis - User Sessions + Calendar Metadata&quot;)]
-
-    Client --&gt; CDN
-    Client --&gt; API
-    API --&gt; ES
-    API --&gt; CS
-    ES --&gt; DB
-    CS --&gt; DB
-    ES --&gt; Cache
-    CS --&gt; Cache
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c065f54c1ad9c452.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-with-real-time-scale">Evolved Design (with Real-Time + Scale)</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / iOS / Android&quot;]
-    CDN[&quot;CDN - JS + CSS + Fonts&quot;]
-    API[&quot;API Gateway - Auth + Rate Limit&quot;]
-    ES[&quot;Event Service&quot;]
-    CS[&quot;Calendar Service&quot;]
-    NS[&quot;Notification Service&quot;]
-    WSS[&quot;WebSocket Server - Cluster&quot;]
-    DB[(&quot;PostgreSQL Primary + Read Replicas&quot;)]
-    Cache[(&quot;Redis - WS Session Map + Calendar Cache&quot;)]
-    MQ[[&quot;Kafka - calendar-events topic&quot;]]
-
-    Client --&gt; CDN
-    Client --&gt; API
-    Client --&gt;|&quot;wss://&quot;| WSS
-    API --&gt; ES
-    API --&gt; CS
-    ES --&gt; DB
-    CS --&gt; DB
-    ES --&gt; MQ
-    MQ --&gt; NS
-    NS --&gt; Cache
-    NS --&gt; WSS
-    WSS --&gt; Client
-    ES --&gt; Cache
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/619c60a91fdf4763.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> The WebSocket server is stateless fanout — it doesn't store event data. Kafka decouples write path from notification path. Event Service never directly calls WebSocket servers.</p>
@@ -503,22 +447,7 @@ Within each overlapping group: maintain an array of columns, each tracking the l
 After all events in a group are assigned: <code>width = 1 / totalColumns</code>. <code>left offset = columnIndex / totalColumns</code>. A group of 3 overlapping events each renders at 33% width, placed at 0%, 33%, 66% left.</p>
 <p><strong>Complexity:</strong> O(n log n) sort + O(n·c) placement where c = max concurrent overlaps. For typical calendars (c ≤ 5), effectively O(n).</p>
 <p><strong>Trade-off accepted:</strong> The greedy column assignment doesn't always minimize column count for adversarial inputs (that's NP-hard for general interval graphs). For calendar data — where c is small and events are human-scheduled — greedy produces the same result as optimal.</p>
-<div class="mermaid">
-flowchart TD
-    A[&quot;1. Sort events by start time&quot;] --&gt; B[&quot;2. Scan to group overlapping events&quot;]
-    B --&gt; C[&quot;3. For each event in group - find first available column&quot;]
-    C --&gt; D{&quot;Column end time &lt;= event start?&quot;}
-    D --&gt;|Yes| E[&quot;Place event in that column&quot;]
-    D --&gt;|No| F[&quot;Add new column, place event there&quot;]
-    E --&gt; G[&quot;Update column end time&quot;]
-    F --&gt; G
-    G --&gt; H{&quot;More events in group?&quot;}
-    H --&gt;|Yes| C
-    H --&gt;|No| I[&quot;4. width = 1/totalCols, left = colIndex/totalCols&quot;]
-    I --&gt; J{&quot;More groups?&quot;}
-    J --&gt;|Yes| B
-    J --&gt;|No| K[&quot;Render all events with computed positions&quot;]
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/37697076193f39d5.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Event layout is the interval partitioning problem. Minimum columns needed = maximum depth of overlapping events at any point. This is computed entirely client-side in O(n log n) — the backend only returns raw start/end times.</p>

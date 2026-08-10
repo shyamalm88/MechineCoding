@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -243,71 +244,9 @@ Viewer --&gt; API Gateway --&gt; Metadata Service --&gt; Redis Cache
 </details>
 <hr />
 <h3 id="simple-design-start-here-in-the-interview">Simple Design (Start Here in the Interview)</h3>
-<div class="mermaid">
-graph TD
-    C[&quot;Client (Web / Mobile / TV)&quot;]
-    AG[&quot;API Gateway&quot;]
-    US[&quot;Upload Service&quot;]
-    SS[&quot;Streaming / Metadata Service&quot;]
-    TR[&quot;Transcoding Service&quot;]
-    S3[&quot;S3 Object Storage&quot;]
-    DB[(&quot;PostgreSQL&quot;)]
-    CDN[&quot;CDN&quot;]
-
-    C --&gt; AG
-    AG --&gt; US
-    AG --&gt; SS
-    US --&gt; S3
-    US --&gt; TR
-    TR --&gt; S3
-    SS --&gt; DB
-    SS --&gt; CDN
-    CDN --&gt; C
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/fd30d3b3c333d402.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-after-identifying-bottlenecks">Evolved Design (After Identifying Bottlenecks)</h3>
-<div class="mermaid">
-graph TD
-    C[&quot;Client&quot;]
-    AG[&quot;API Gateway&quot;]
-    US[&quot;Upload Service&quot;]
-    S3r[(&quot;S3 Raw Videos&quot;)]
-    KF[[&quot;Kafka - Transcode Jobs&quot;]]
-    TW[&quot;Transcode Workers - Auto-scaling Pool&quot;]
-    S3t[(&quot;S3 Transcoded Segments&quot;)]
-    CDN[&quot;CDN Edge - Global PoPs&quot;]
-    MS[&quot;Metadata Service&quot;]
-    RC[(&quot;Redis Cache - Metadata + View Counts&quot;)]
-    CS[(&quot;Cassandra - Video Metadata + View Counts&quot;)]
-    ES[(&quot;Elasticsearch - Search Index&quot;)]
-    REC[&quot;Recommendation Service - ML&quot;]
-    NS[&quot;Notification Service&quot;]
-    KF2[[&quot;Kafka - View Events + Search Events&quot;]]
-    BJ[&quot;Batch Jobs - Count flush, CDN warm, ML features&quot;]
-
-    C --&gt;|upload| AG
-    AG --&gt; US
-    US --&gt; S3r
-    S3r --&gt;|S3 event| US
-    US --&gt; KF
-    KF --&gt; TW
-    TW --&gt; S3t
-    TW --&gt; MS
-    TW --&gt; CDN
-    C --&gt;|watch| AG
-    AG --&gt; MS
-    MS --&gt; RC
-    RC --&gt;|miss| CS
-    MS --&gt; CDN
-    CDN --&gt; C
-    C --&gt; KF2
-    KF2 --&gt; BJ
-    BJ --&gt; CS
-    BJ --&gt; ES
-    BJ --&gt; REC
-    MS --&gt; ES
-    REC --&gt; RC
-    TW --&gt; NS
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/9425c708a76b84c3.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Scaling this out is what turns one Kafka queue and one database into the fuller picture above — a dedicated view-event/search-event queue (KF2) feeding batch jobs, a recommendation service reading from that same pipeline, and a notification service fanning out off the back of the transcode workers. None of that is optional once the numbers from §4 are in play.</p>
 <blockquote>
 <p>[!NOTE]
@@ -563,22 +502,7 @@ sequenceDiagram
 <h3 id="82-transcoding-pipeline">8.2 Transcoding Pipeline</h3>
 <p>Here's the problem: 500 hours of video arrive every minute, and a single one-hour 4K video alone can take 20-40 minutes to transcode even on powerful hardware. At roughly 72 videos arriving per second (§4), there's no way to run this work synchronously — what's needed is a distributed, async pipeline that auto-scales with demand rather than a fixed pool sized for an average day.</p>
 <p>The reason raw video lands in S3 before transcoding starts, and not sometime after, comes straight from thinking through what happens when a worker crashes mid-job. If the raw bytes only ever lived in the Upload Service's memory or local disk, a crash would mean the source video is simply gone with nothing left to retry. Writing it to S3 first means any worker — including a brand-new one spun up to replace the crashed one — can pick the job back up from scratch. Durability is the input contract.</p>
-<div class="mermaid">
-flowchart TD
-    A[&quot;Raw Video in S3&quot;] --&gt; B[&quot;Kafka: transcode_jobs topic&quot;]
-    B --&gt; C[&quot;Worker picks job&quot;]
-    C --&gt; D{&quot;Job type&quot;}
-    D --&gt;|&quot;video&quot;| E[&quot;Transcode to 360p/720p/1080p/4K&quot;]
-    D --&gt;|&quot;thumbnail&quot;| F[&quot;Extract frames, pick best, resize&quot;]
-    E --&gt; G[&quot;Write segments + manifest to S3&quot;]
-    F --&gt; H[&quot;Write thumbnails to S3&quot;]
-    G --&gt; I[&quot;Update video status to live in Cassandra&quot;]
-    H --&gt; I
-    I --&gt; J[&quot;Trigger CDN prefetch for manifest + first 3 segments&quot;]
-    J --&gt; K[&quot;Publish video_live event to Kafka&quot;]
-    K --&gt; L[&quot;Notification Service fans out to subscribers&quot;]
-    K --&gt; M[&quot;Search indexer writes to Elasticsearch&quot;]
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/064854a2b5fa6481.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Which codec a video ends up transcoded into is itself a compatibility-versus-efficiency trade made per output, not one blanket choice: H.264 covers every device for broad compatibility, H.265 gets used for 4K since it's about 50% smaller than H.264 at the same quality, VP9 covers the web with better-than-H.264 compression at no licensing cost, and AV1 — the best compression available, but slow to encode — is reserved for popular videos where the encode cost is worth paying repeatedly across millions of views.</p>
 <p>Scaling the worker pool itself is driven by a single signal: Kafka consumer lag. Once queue depth crosses 1,000 jobs, more EC2 spot instances spin up automatically. Transcoding is CPU-bound and embarrassingly parallel — exactly the kind of workload spot instances with checkpointing are built for, since a preempted instance just means the checkpoint resumes on another one.</p>
 <blockquote>

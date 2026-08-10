@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -206,87 +207,9 @@ Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts simple and grows a token vault, Kafka, and a separate ledger database as the system matures — here's both versions.</p>
 <p><strong>Simple Design:</strong></p>
-<div class="mermaid">
-graph TD
-    User[&quot;User Browser&quot;]
-    Merchant[&quot;Merchant Backend&quot;]
-    APIGW[&quot;API Gateway + Load Balancer&quot;]
-    PIS[&quot;Payment Intent Service&quot;]
-    CSS[&quot;Checkout Session Service&quot;]
-    FraudSvc[&quot;Fraud and Risk Service&quot;]
-    PPS[&quot;Payment Processing Service&quot;]
-    LedgerSvc[&quot;Ledger Service&quot;]
-    Processor[&quot;Payment Processor - External&quot;]
-    WebhookSvc[&quot;Webhook Service&quot;]
-    IntentDB[(&quot;PostgreSQL - Intents + Transactions + Ledger&quot;)]
-    Redis[(&quot;Redis - Sessions + Idempotency + Fraud counters&quot;)]
-
-    User --&gt;|clicks Buy Now| Merchant
-    Merchant --&gt;|POST /payment-intents| APIGW
-    APIGW --&gt; PIS
-    PIS --&gt;|idempotency check| Redis
-    PIS --&gt; IntentDB
-    PIS --&gt;|intent_id| Merchant
-    Merchant --&gt;|POST /checkout/sessions| APIGW
-    APIGW --&gt; CSS
-    CSS --&gt; Redis
-    CSS --&gt;|checkout_url| Merchant
-    Merchant --&gt;|redirect user| User
-    User --&gt;|POST /payments| APIGW
-    APIGW --&gt; FraudSvc
-    FraudSvc --&gt;|risk score| APIGW
-    APIGW --&gt; PPS
-    PPS --&gt;|authorize| Processor
-    Processor --&gt;|auth response| PPS
-    PPS --&gt; LedgerSvc
-    LedgerSvc --&gt; IntentDB
-    PPS --&gt; WebhookSvc
-    WebhookSvc --&gt;|webhook| Merchant
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/873c928e2c9efb71.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Evolved Design — Token Vault + Kafka + Separate Ledger DB:</strong></p>
-<div class="mermaid">
-graph TD
-    User[&quot;User Browser - gateway checkout page&quot;]
-    Merchant[&quot;Merchant Backend&quot;]
-    APIGW[&quot;API Gateway - Auth, TLS, Rate Limiting&quot;]
-    PIS[&quot;Payment Intent Service&quot;]
-    CSS[&quot;Checkout Session Service&quot;]
-    FraudSvc[&quot;Fraud and Risk Service - velocity + ML&quot;]
-    PPS[&quot;Payment Processing Service&quot;]
-    Vault[&quot;Token Vault - PCI DSS isolated segment&quot;]
-    LedgerSvc[&quot;Ledger Service - double-entry, immutable&quot;]
-    Processor[&quot;Payment Processor - External&quot;]
-    Kafka[[&quot;Kafka - Webhook and Ledger events&quot;]]
-    WebhookWorker[&quot;Webhook Worker - retry + HMAC sign&quot;]
-    ReconcileJob[&quot;Reconciliation Job - runs hourly&quot;]
-    IntentDB[(&quot;PostgreSQL - Intents and Transactions - sharded by merchant_id&quot;)]
-    LedgerDB[(&quot;PostgreSQL - Ledger entries - append-only, partitioned by month&quot;)]
-    Redis[(&quot;Redis - Sessions TTL 10min, Idempotency TTL 24h, Fraud counters&quot;)]
-
-    Merchant --&gt;|POST /payment-intents + Idempotency-Key| APIGW
-    APIGW --&gt; PIS
-    PIS --&gt;|check idempotency key| Redis
-    PIS --&gt; IntentDB
-    Merchant --&gt;|redirect user| User
-    User --&gt;|POST /payments - card data| APIGW
-    APIGW --&gt;|validate session| Redis
-    APIGW --&gt;|fraud check sync 50ms| FraudSvc
-    FraudSvc --&gt;|velocity counters| Redis
-    FraudSvc --&gt;|risk score - allow or block| APIGW
-    APIGW --&gt; PPS
-    PPS --&gt;|tokenize card data| Vault
-    Vault --&gt;|token| PPS
-    PPS --&gt;|token + amount| Processor
-    Processor --&gt;|auth response| PPS
-    PPS --&gt;|write debit + credit entries| LedgerSvc
-    LedgerSvc --&gt; LedgerDB
-    PPS --&gt; IntentDB
-    PPS --&gt; Kafka
-    Kafka --&gt; WebhookWorker
-    WebhookWorker --&gt;|HMAC-signed webhook| Merchant
-    ReconcileJob --&gt;|compare ledger vs processor| LedgerDB
-    ReconcileJob --&gt;|fetch settlement file| Processor
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/d2009a14bd841fd5.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="the-full-sequence">The Full Sequence</h3>
 <p>The diagrams above show the components; this shows the actual message sequence between them, end to end — the same fifteen seconds from Farhan's story, now traced hop by hop.</p>
 <p><strong>Phase 1 — Intent:</strong> Devika's backend calls <code>POST /payment-intents</code> with an idempotency key in the header. The Payment Intent Service checks Redis first — has this key been seen before? If so, it returns the cached response, which is exactly what prevents a double charge on a network retry. If it's genuinely new, the service inserts an intent record into PostgreSQL with <code>status = CREATED</code>, caches the idempotency key in Redis for 24 hours, and hands <code>intent_id</code> back to Devika's backend.</p>
@@ -555,22 +478,7 @@ sequenceDiagram
 <p><strong>Here's the problem it solves:</strong> at 10,000 TPS, fraudulent cards from card-testing attacks, stolen credentials, and geo-anomaly attacks arrive mixed into the exact same traffic as legitimate payments. Without a gate in front of authorization, every fraudulent transaction that gets through is a direct financial loss, plus processor fees, plus the cost of unwinding it after the fact.</p>
 <p><strong>Why the obvious approach fails:</strong> running a full ML model synchronously on every one of those 10,000 transactions a second means either investing in very low-latency model serving, or accepting real latency directly on the critical path — and a single slow inference call blocks the payment behind it, which is exactly the kind of dependency this design otherwise goes out of its way to avoid.</p>
 <p><strong>The chosen mechanism — a two-phase gated architecture:</strong></p>
-<div class="mermaid">
-graph LR
-    Payment[&quot;Incoming payment&quot;]
-    FastRules[&quot;Phase 1a: Fast Rules - Redis velocity + blocklist - under 5ms&quot;]
-    ML[&quot;Phase 1b: ML Score - inference service - under 50ms, 40ms timeout&quot;]
-    Decision[&quot;Risk threshold: 0-30 ALLOW / 31-70 CHALLENGE / 71-100 DECLINE&quot;]
-    PostAuth[&quot;Phase 2: Post-payment monitoring - async, off critical path&quot;]
-    Processor[&quot;Payment Processor&quot;]
-
-    Payment --&gt; FastRules
-    FastRules --&gt; ML
-    ML --&gt; Decision
-    Decision --&gt;|allow| Processor
-    Decision --&gt;|challenge - 3DS| PostAuth
-    Processor --&gt; PostAuth
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/b280307c3431c49a.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Phase 1a runs four independent checks against Redis, each contributing its own slice of a running risk score, and all of them finishing in well under 5ms because they're pure in-memory lookups and counters — no external call, no disk read. A velocity check increments a per-card-hash counter for the last hour; crossing five transactions in that window — the classic signature of a card-testing attack — adds 40 points. A blocklist check adds 60 points, or triggers an instant decline outright, if the card hash or the requesting IP is already known-bad. An amount-anomaly check adds 20 points if the current transaction is more than five times the card's own 30-day rolling average. And a geo-anomaly check adds 30 points if the card's issuing country doesn't match the country the request is actually coming from.</p>
 <p>Phase 1b hands whatever survives Phase 1a to an ML inference service, which looks at the transaction sequence, device fingerprint, and merchant category code against the card's own history, and adds a <code>risk_delta</code> of 0–40 on top of the Phase 1a score — all within a 50ms budget, with a hard 40ms timeout. If the model doesn't answer in time, the system falls back to the Phase 1a score alone rather than blocking the payment on model availability — the critical path is never held hostage to whether the ML service happens to be healthy.</p>
 <p>The combined score then sorts into one of three outcomes: 0–30 allows the transaction straight through to the processor, 31–70 routes it into a 3D Secure challenge rather than an automatic authorization, and 71–100 is treated as high enough risk to stop before it ever reaches the processor at all.</p>

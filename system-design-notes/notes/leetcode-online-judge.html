@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -276,52 +277,9 @@ sequenceDiagram
 <hr />
 <h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Browser Client - Monaco IDE&quot;]
-    LB[&quot;Load Balancer&quot;]
-    API[&quot;Primary API Server&quot;]
-    DB[(&quot;PostgreSQL DB&quot;)]
-    Containers[&quot;Docker Containers - one per runtime&quot;]
-
-    Client --&gt;|HTTPS| LB
-    LB --&gt; API
-    API --&gt;|Read problems, write submissions| DB
-    API --&gt;|Dispatch code directly| Containers
-    Containers --&gt;|Pass/fail result| API
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c5657fab65765a4c.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-queue-cache-cdc">Evolved Design — Queue, Cache, CDC</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Browser Client&quot;]
-    LB[&quot;Load Balancer&quot;]
-    API[&quot;Primary API Server&quot;]
-    DB[(&quot;PostgreSQL DB&quot;)]
-    Queue[[&quot;SQS Queue&quot;]]
-    Worker[&quot;Submission Worker&quot;]
-    Docker[&quot;Docker Containers - Python, Java, JS, Go&quot;]
-    Redis([&quot;Redis - Leaderboard ZSET&quot;])
-    CDC[&quot;CDC Stream - Postgres logical replication&quot;]
-    Kafka[[&quot;Kafka - CDC event bus&quot;]]
-    S3[(&quot;S3 - Code Blobs&quot;)]
-
-    Client --&gt;|GET problems, POST submit, GET poll| LB
-    LB --&gt; API
-    API --&gt;|Read problems| DB
-    API --&gt;|Store code blob| S3
-    API --&gt;|Enqueue submission ref| Queue
-    Queue --&gt;|Pull job| Worker
-    Worker --&gt;|Fetch code| S3
-    Worker --&gt;|Run code| Docker
-    Docker --&gt;|Result| Worker
-    Worker --&gt;|Write submission row| DB
-    DB --&gt;|Change stream| CDC
-    CDC --&gt;|Publish event| Kafka
-    Kafka --&gt;|Consume| Worker
-    Worker --&gt;|ZADD score| Redis
-    API --&gt;|ZRANGE leaderboard| Redis
-    API --&gt;|GET submission status| DB
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0e9702a827c62a7f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="9-data-model">9. Data Model</h2>
 <table>
@@ -384,19 +342,7 @@ graph TD
 <p><strong>VM per execution:</strong> Full OS isolation, maximum security. Problem: VMs take minutes to boot and consume gigabytes of memory. At 500 submissions/sec during a burst, the resource cost is prohibitive.</p>
 <p><strong>Chosen: Docker containers with a warm pool</strong></p>
 <p>One container per supported runtime (Python, Java, JavaScript, C++, Go) kept warm and reused across submissions. Startup is under 100ms for a warm container.</p>
-<div class="mermaid">
-graph LR
-    Worker[&quot;Submission Worker&quot;]
-    PyC[&quot;Container: Python 3.11&quot;]
-    JavaC[&quot;Container: Java 21&quot;]
-    JSC[&quot;Container: Node.js 20&quot;]
-    GoC[&quot;Container: Go 1.22&quot;]
-
-    Worker --&gt;|language=python| PyC
-    Worker --&gt;|language=java| JavaC
-    Worker --&gt;|language=javascript| JSC
-    Worker --&gt;|language=go| GoC
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/2e973fd3ca22f526.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Security hardening applied inside each container:</strong></p>
 <table>
 <thead>

@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -249,93 +250,9 @@ Mailbox DB      Recipient SMTP Server
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts as a single service reading and writing straight to the database, and grows into a full pipeline as async delivery, validation, spam filtering, and search get layered in. Here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / Mobile Client&quot;]
-    API[&quot;API Gateway + Auth&quot;]
-    UserSvc[&quot;User Service&quot;]
-    MailSvc[&quot;Mail Send Service&quot;]
-    DraftDB[(&quot;Draft DB&quot;)]
-    UserDB[(&quot;User DB - Sharded&quot;)]
-    MailboxDB[(&quot;Mailbox DB&quot;)]
-
-    Client --&gt; API
-    API --&gt; UserSvc
-    API --&gt; MailSvc
-    UserSvc --&gt; UserDB
-    MailSvc --&gt; DraftDB
-    MailSvc --&gt; MailboxDB
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/b93d2729ce58a1b6.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-full-pipeline">Evolved Design (Full Pipeline)</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / Mobile&quot;]
-    API[&quot;API Gateway&quot;]
-    UserSvc[&quot;User Service&quot;]
-    UserCache[(&quot;User Cache - Redis&quot;)]
-    UserDB[(&quot;User DB - Consistent Hash Sharded&quot;)]
-    ComposeSvc[&quot;Compose Service&quot;]
-    DraftDB[(&quot;Draft DB&quot;)]
-    S3[&quot;S3 - Attachments&quot;]
-    AttachScanner[&quot;Attachment Scanner&quot;]
-    S3ValDB[(&quot;S3 Validation DB&quot;)]
-    MailSvc[&quot;Mail Send Service&quot;]
-    OutboxTable[(&quot;Mailbox DB - Outbox Table&quot;)]
-    OutboxConsumer[&quot;Outbox Consumer - CDC&quot;]
-    Kafka1[[&quot;Kafka - Inbound + Outbound Topics&quot;]]
-    Orchestrator[&quot;Delivery Orchestrator&quot;]
-    SpamSvc[&quot;Spam Checker&quot;]
-    PolicySvc[&quot;Policy Checker&quot;]
-    AttachCheck[&quot;Attachment Check&quot;]
-    ValDB[(&quot;Validation DB&quot;)]
-    InboundConsumer[&quot;Inbound Delivery Consumer&quot;]
-    SMTPWorker[&quot;SMTP Relay Worker&quot;]
-    MXCache[(&quot;MX Cache&quot;)]
-    MXResolver[&quot;MX Resolver - DNS&quot;]
-    MailboxItems[(&quot;Mailbox Items + Metadata DB&quot;)]
-    InboundSMTP[&quot;Inbound SMTP Service&quot;]
-    SearchSvc[&quot;Search Service&quot;]
-    ESEngine[(&quot;Elasticsearch&quot;)]
-    Aggregator[&quot;Aggregator Service&quot;]
-    NotifSvc[&quot;Notification Service&quot;]
-    ExternalSMTP[&quot;External SMTP Server - Outlook / Yahoo&quot;]
-
-    Client --&gt; API
-    API --&gt; UserSvc
-    API --&gt; ComposeSvc
-    API --&gt; MailSvc
-    API --&gt; SearchSvc
-    UserSvc --&gt; UserCache
-    UserCache --&gt; UserDB
-    ComposeSvc --&gt; DraftDB
-    ComposeSvc --&gt; S3
-    S3 --&gt; AttachScanner
-    AttachScanner --&gt; S3ValDB
-    MailSvc --&gt; DraftDB
-    MailSvc --&gt; OutboxTable
-    OutboxTable --&gt; OutboxConsumer
-    OutboxConsumer --&gt; Kafka1
-    Kafka1 --&gt; Orchestrator
-    Orchestrator --&gt; SpamSvc
-    Orchestrator --&gt; PolicySvc
-    Orchestrator --&gt; AttachCheck
-    AttachCheck --&gt; S3ValDB
-    SpamSvc --&gt; ValDB
-    PolicySvc --&gt; ValDB
-    Orchestrator --&gt; Kafka1
-    Kafka1 --&gt; InboundConsumer
-    Kafka1 --&gt; SMTPWorker
-    SMTPWorker --&gt; MXCache
-    MXCache --&gt; MXResolver
-    SMTPWorker --&gt; ExternalSMTP
-    InboundConsumer --&gt; MailboxItems
-    MailboxItems --&gt; Aggregator
-    Aggregator --&gt; ESEngine
-    SearchSvc --&gt; ESEngine
-    InboundConsumer --&gt; NotifSvc
-    InboundSMTP --&gt; Kafka1
-    NotifSvc --&gt; Client
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/4407ce624e32816c.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="the-full-flow-end-to-end">The Full Flow, End to End</h3>
 <p>The diagrams above show the components; here's the actual message sequence running through them, for both directions of delivery.</p>
 <p><strong>Sending internally (Gmail to Gmail).</strong> Maya's client calls <code>POST /emails/send</code> with just a <code>draftId</code> and the recipient list — the Mail Send Service fetches the actual body and attachment references from the Draft DB, keeping the send request itself lightweight regardless of message size. That content gets written into the Outbox Table with status <code>PENDING</code>; this is the durability guarantee described above, and it's deliberately a separate step from fetching the draft, because a crash after this point can never lose the email. From here the pipeline takes over on its own: the Outbox Consumer (a CDC process watching the table) publishes the event to Kafka, and the Delivery Orchestrator picks it up and fires spam, policy, and attachment checks in parallel rather than one after another — sequentially, three checks at roughly 200ms each would add up to 600ms per email, which at 3.5 million emails a second is not a latency budget the system has. Once every check comes back green, the Orchestrator looks at the recipient's domain: <code>bob@gmail.com</code> is internal, so the event goes to the <code>inbound-send-request</code> topic, the Delivery Consumer copies the email straight into Bob's Mailbox Items table, marks the Outbox row <code>DELIVERED</code>, and the Notification Service pushes "New email from Maya" to Bob's device.</p>
@@ -618,19 +535,7 @@ sequenceDiagram
 </code></pre>
 <p>— fails almost immediately in practice: spammers evade fixed keyword lists trivially, which leaves both a low catch rate and a high false-positive rate on legitimate mail that happens to mention similar words.</p>
 <p>The actual filter is a layered scoring pipeline, and the order of the layers matters as much as the layers themselves:</p>
-<div class="mermaid">
-flowchart TD
-    Email[&quot;Inbound Email&quot;] --&gt; L1[&quot;Layer 1: Sender Reputation\n(IP/domain blocklist + reputation score)&quot;]
-    L1 --&gt;|Score &gt; hard threshold| REJECT[&quot;Reject immediately\n(don't even score content)&quot;]
-    L1 --&gt;|Continue| L2[&quot;Layer 2: Authentication\n(SPF check + DKIM signature verify)&quot;]
-    L2 --&gt;|Fail| PENALISE[&quot;Add penalty score&quot;]
-    L2 --&gt; L3[&quot;Layer 3: Content Analysis\n(ML model: TF-IDF + neural classifier)&quot;]
-    L3 --&gt; L4[&quot;Layer 4: Behavioral Signals\n(user reports, unsubscribes, read rate)&quot;]
-    L4 --&gt; SCORE[&quot;Final Score 0.0 - 1.0&quot;]
-    SCORE --&gt;|score &lt; 0.3| INBOX[&quot;Route to INBOX&quot;]
-    SCORE --&gt;|0.3 to 0.7| REVIEW[&quot;Route to SPAM folder&quot;]
-    SCORE --&gt;|score &gt; 0.7| BLOCK[&quot;Block + notify sender&quot;]
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/6b098d3c6b15a648.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Sender reputation goes first because it's the cheapest check available — a Redis lookup against an IP/domain blocklist and reputation score, under a millisecond, and it alone eliminates roughly 60% of spam before a single byte of content is even read. Authentication comes next: SPF checks whether the sending IP is actually authorized for its claimed domain, DKIM verifies the cryptographic signature, both cached and resolved in under 5ms, and together they eliminate spoofed sender domains specifically. Only what survives both of those cheap layers reaches Content Analysis — an ML classifier trained on billions of labelled emails, looking at TF-IDF features, URL reputation, attachment type, and link density, at 50–100ms per email — which is exactly why the order matters: applying that ML scan to all 3.5 million emails a second would be computationally impossible, but after reputation filtering removes 60%, only around 40% (roughly 1.4M/sec) actually need it, which is a load a horizontally scaled inference fleet can absorb. Behavioral signals — how often recipients mark similar mail as spam, whether they read or delete unread — run asynchronously, pre-computed daily, and adapt the scoring to user-specific preference over time rather than a single global rule.</p>
 <p>The final score routes the email three ways: below 0.3 goes straight to <code>INBOX</code>, between 0.3 and 0.7 goes to the <code>SPAM</code> folder where the user can still recover it, and above 0.7 gets rejected at the SMTP layer itself — before the <code>250</code> is ever sent, so the sender gets a bounce instead of a silent drop.</p>
 <p>The trade-off accepted is that probabilistic scoring is never perfect: some spam will still reach an inbox, and some legitimate email will land in spam. No filter of this kind achieves 100% accuracy. The thresholds (0.3/0.7) are tunable, and in practice get adjusted per-user based on their own "mark as not spam" actions.</p>

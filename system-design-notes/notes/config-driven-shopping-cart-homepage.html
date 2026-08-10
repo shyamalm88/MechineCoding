@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -194,70 +195,9 @@ App servers only: ~2,300 req/sec x 50 KB = ~115 MB/sec
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts simple and adds A/B testing, edge personalization, and streaming as the system matures — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Client Browser&quot;]
-    CDN[&quot;CDN Edge - Cloudflare or Akamai&quot;]
-    SSR[&quot;SSR Layer - Next.js&quot;]
-    BFF[&quot;BFF GraphQL Gateway&quot;]
-    ConfigSvc[&quot;Config Service&quot;]
-    PersonSvc[&quot;Personalization Engine&quot;]
-    DataSvcs[&quot;Data Services - Products, Recs, Ads&quot;]
-    ConfigDB[(&quot;PostgreSQL - Templates and Versions&quot;)]
-    Redis[(&quot;Redis - Template Cache and User Segments&quot;)]
-
-    Client --&gt;|&quot;GET /&quot;| CDN
-    CDN --&gt;|cache miss| SSR
-    SSR --&gt;|resolve segment and experiment| PersonSvc
-    SSR --&gt;|fetch validated template| ConfigSvc
-    SSR --&gt;|fetch above-fold data| BFF
-    BFF --&gt; DataSvcs
-    ConfigSvc --&gt; Redis
-    ConfigSvc --&gt; ConfigDB
-    PersonSvc --&gt; Redis
-    SSR --&gt;|SSR HTML above-fold| Client
-    Client --&gt;|GraphQL streaming| BFF
-    BFF --&gt;|&quot;@defer patches&quot;| Client
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/530a20ffc46ea8db.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-ab-testing-edge-personalization-streaming">Evolved Design - A/B Testing + Edge Personalization + Streaming</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Client Browser&quot;]
-    CDN[&quot;CDN Edge - cohort-aware cache&quot;]
-    SSR[&quot;SSR Service - above-fold HTML&quot;]
-    BFF[&quot;BFF GraphQL Gateway&quot;]
-    ConfigSvc[&quot;Config Service - CRUD, versioning, validation, rollout&quot;]
-    ExpSvc[&quot;A/B Experiment Service - consistent hash&quot;]
-    PersonSvc[&quot;Personalization Engine - segment resolver&quot;]
-    RenderEngine[&quot;Rendering Engine - component registry and fallback&quot;]
-    HeroSvc[&quot;Hero Banner Service&quot;]
-    RecSvc[&quot;Recommendation Service&quot;]
-    AdSvc[&quot;Ad Service&quot;]
-    ConfigDB[(&quot;PostgreSQL - Templates, Experiments, Versions&quot;)]
-    Redis[(&quot;Redis - Template Cache, Segment Cache, Experiment Cache&quot;)]
-    Kafka[[&quot;Kafka - Config Change Events&quot;]]
-
-    Client --&gt;|&quot;GET /&quot;| CDN
-    CDN --&gt;|cohort cache hit| Client
-    CDN --&gt;|cache miss| SSR
-    SSR --&gt;|resolve experiment| ExpSvc
-    SSR --&gt;|resolve segment| PersonSvc
-    PersonSvc --&gt; Redis
-    SSR --&gt;|fetch template| ConfigSvc
-    ConfigSvc --&gt; Redis
-    ConfigSvc --&gt; ConfigDB
-    SSR --&gt;|fetch above-fold| BFF
-    BFF --&gt; HeroSvc
-    SSR --&gt;|SSR HTML and stream start| Client
-    Client --&gt;|hydrate| RenderEngine
-    Client --&gt;|continue streaming| BFF
-    BFF --&gt; RecSvc
-    BFF --&gt; AdSvc
-    BFF --&gt;|&quot;@defer patches&quot;| Client
-    ConfigDB --&gt;|config change event| Kafka
-    Kafka --&gt;|CDN purge| CDN
-    Kafka --&gt;|cache invalidate| Redis
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8f127001f8caa394.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="page-load-sequence">Page Load Sequence</h3>
 <p>The diagrams above show the components; this shows the actual message sequence behind Ananya's page load, end to end. A CDN cache miss forwards the request to SSR, which resolves her segment via the Personalization Engine (under 10ms, from Redis: frequent buyer, mobile, India), then resolves her experiment variant via the Experiment Service (under 5ms, a deterministic hash that returns both the variant and the templateId to fetch), then pulls that exact template from the Config Service (also Redis-backed). SSR fetches above-the-fold data through the BFF in parallel — target under 150ms — and returns fully rendered HTML for everything above the fold; that's the moment First Contentful Paint is achieved. Everything below the fold then streams in progressively over GraphQL as the browser requests it.</p>
 <div class="mermaid">
@@ -513,18 +453,7 @@ User &quot;u_abc123&quot; always hashes to bucket 37 -- always variant_A
 <h3 id="82-server-driven-ui-rendering-pipeline">8.2 Server-Driven UI Rendering Pipeline</h3>
 <p>Here's the problem: the backend sends <code>"type": "HeroBanner"</code> in the config JSON, and the client has to render it without knowing the full list of possible types at build time — because new types get added to config on the business team's schedule, not the frontend's release schedule. A client hardcoded to a fixed set of known types would crash, or render nothing useful, the moment it receives a type it's never seen.</p>
 <p>The Rendering Engine handles this with a registry lookup rather than a hardcoded switch: when a section arrives, it looks up <code>section.type</code> in the component registry. If the type is known, the matching component renders inside a container already sized to <code>layoutMeta.height</code> — showing a skeleton at that exact height until its data arrives from the BFF, then swapping to the real component once it has. If the type isn't known, the client doesn't guess or crash — it renders an empty div at the declared height and moves on, so the rest of the page is unaffected. A second failure mode is handled the same defensive way: every section is wrapped in its own ErrorBoundary, so a component that throws at runtime shows a section-level error state at its reserved height rather than taking the whole page down. A third failure mode is data simply never arriving — the skeleton stays visible past a threshold, and after 5 seconds the section shows a refresh prompt with section-level retry, rather than hanging forever.</p>
-<div class="mermaid">
-flowchart TD
-    A[&quot;Config JSON section arrives&quot;] --&gt; B[&quot;Component Registry lookup by type&quot;]
-    B --&gt; C[&quot;Is type known in registry?&quot;]
-    C --&gt;|Yes| D[&quot;Render component inside height-reserved container&quot;]
-    C --&gt;|No| E[&quot;Render empty div at layoutMeta.height - no CLS, no crash&quot;]
-    D --&gt; F[&quot;Is data loaded from BFF?&quot;]
-    F --&gt;|No| G[&quot;Show skeleton at exact layoutMeta.height&quot;]
-    F --&gt;|Yes| H[&quot;Render component with data&quot;]
-    D --&gt; I[&quot;Does component throw at runtime?&quot;]
-    I --&gt;|Yes| J[&quot;ErrorBoundary catches - show section error state at reserved height&quot;]
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/545c3ce11f13c65f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Not every section needs to be ready at the same moment, either. Above-fold components — HeroBanner, NavigationBar — are eagerly bundled, since they must be available at FCP. Below-fold components are loaded lazily instead, behind Suspense and an IntersectionObserver with a 200px rootMargin that starts pre-loading a section just before it scrolls into view. That single change cuts the initial JS bundle by roughly 40%, because none of the below-fold component code has to ship before the page is interactive.</p>
 <blockquote>
 <p>[!NOTE]

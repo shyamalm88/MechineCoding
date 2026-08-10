@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -261,61 +262,9 @@ Peak (10x average):       ~5,800 uploads/sec
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts as a small set of services and grows a dedup service, a quota service, and a message queue as the system matures — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Client App - Chunker + Watcher + Upload Manager&quot;]
-    LB[&quot;Load Balancer / API Gateway&quot;]
-    US[&quot;Upload Service&quot;]
-    MS[&quot;Metadata Service&quot;]
-    NS[&quot;Notification Service&quot;]
-    S3[(&quot;S3 Blob Storage&quot;)]
-    MetaDB[(&quot;Metadata DB - PostgreSQL&quot;)]
-    Redis[(&quot;Redis - sessions + quota cache&quot;)]
-
-    Client --&gt;|HTTPS| LB
-    LB --&gt; US
-    LB --&gt; MS
-    US --&gt;|generate pre-signed URL| S3
-    Client --&gt;|upload chunks directly| S3
-    S3 --&gt;|upload complete event| US
-    US --&gt; MetaDB
-    US --&gt; NS
-    NS --&gt;|WebSocket or push| Client
-    MS --&gt; MetaDB
-    MS --&gt; Redis
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8bb52069132aa0c6.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-with-cdn-dedup-sync-queue">Evolved Design — with CDN, Dedup, Sync Queue</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Client App&quot;]
-    LB[&quot;Load Balancer&quot;]
-    US[&quot;Upload Service&quot;]
-    MS[&quot;Metadata Service&quot;]
-    NS[&quot;Notification Service&quot;]
-    DS[&quot;Dedup Service&quot;]
-    QS[&quot;Quota Service&quot;]
-    S3[(&quot;S3 Blob Storage - multi-AZ&quot;)]
-    CDN[&quot;CDN - download acceleration&quot;]
-    MetaDB[(&quot;PostgreSQL - Metadata + Permissions&quot;)]
-    Redis[(&quot;Redis - Quota cache + sessions&quot;)]
-    MQ[[&quot;Message Queue - Kafka or SQS&quot;]]
-
-    Client --&gt;|1. initiate upload| LB
-    LB --&gt; US
-    US --&gt;|2. check quota| QS
-    QS --&gt; Redis
-    US --&gt;|3. check dedup hash| DS
-    DS --&gt; MetaDB
-    US --&gt;|4. pre-signed URL| S3
-    Client --&gt;|5. upload chunks directly to S3| S3
-    S3 --&gt;|6. upload event| MQ
-    MQ --&gt;|7. confirm and write metadata| US
-    US --&gt; MetaDB
-    MQ --&gt;|8. fan-out sync| NS
-    NS --&gt;|9. WebSocket push to other devices| Client
-    Client --&gt;|download| CDN
-    CDN --&gt; S3
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/3b8aa5a485ddc525.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="the-upload-path-step-by-step">The Upload Path, Step by Step</h3>
 <p>The two diagrams above show the components; this is the actual sequence between them when Maya drags her photo folder in.</p>
 <p>The client kicks things off by calling <code>POST /files/upload/init</code> with the file's name, size, and a SHA-256 hash of its full content and of each chunk. The Upload Service's first move isn't to start accepting bytes — it's to check whether this content, or parts of it, already exist in storage, since there's no point issuing an upload slot for a chunk that's already sitting in S3 under someone else's file. For whatever chunks genuinely are new, it checks the user's quota, then asks S3 to mint a pre-signed PUT URL for each one — a short-lived, single-object upload token — and hands the whole batch back to the client in one response. The client uploads only those new chunks, in parallel, straight to S3; the app server is never in that data path at all, which is the whole point (§8.1 goes deeper on why). Once every chunk lands, the client calls <code>POST /files/upload/complete</code> with the file's ID and each chunk's ETag, and only then does the Upload Service commit the file's metadata record to PostgreSQL — pointing at the chunk hashes, never at the bytes directly — and atomically decrement the user's quota. The last step happens without the client waiting on it: a <code>file_ready</code> event goes onto the message queue, the Notification Service consumes it, and every other device signed into that account gets a WebSocket push telling it something changed.</p>

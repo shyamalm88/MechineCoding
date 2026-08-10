@@ -180,3 +180,59 @@ main blockquote {
   color: var(--sidebar-group);
   font-size: 0.95rem;
 }
+
+.diagram-figure {
+  background: var(--mermaid-card-bg);
+  border: 1px solid var(--mermaid-card-border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin: 0 0 1.2rem;
+  display: flex;
+  justify-content: center;
+}
+
+.excalidraw-diagram {
+  max-width: 100%;
+  height: auto;
+  cursor: zoom-in;
+}
+
+.diagram-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(35, 32, 55, 0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
+  overflow: auto;
+}
+.diagram-lightbox.open { display: flex; }
+.diagram-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  background: #fff;
+  border-radius: 10px;
+  transition: transform 0.15s ease;
+  transform-origin: center center;
+  cursor: zoom-out;
+}
+.diagram-lightbox-controls {
+  display: none;
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  gap: 0.5rem;
+  z-index: 1001;
+}
+.diagram-lightbox-controls button {
+  font-size: 0.85rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--sidebar-border);
+  background: #fff;
+  cursor: pointer;
+  color: var(--text);
+}
+.diagram-lightbox-controls button:hover { background: var(--sidebar-hover); }

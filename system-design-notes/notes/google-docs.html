@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -231,57 +232,10 @@ Redis cursor entries:   1 KB x 1M active documents    =  ~1 GB (negligible)
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts as a single OT Server layer and evolves sticky routing as the fleet grows — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    ClientA[&quot;Browser - User A&quot;]
-    ClientB[&quot;Browser - User B&quot;]
-    CDN[&quot;CDN - Snapshot Cache&quot;]
-    APIGW[&quot;HTTP API Gateway&quot;]
-    WSGW[&quot;WebSocket Gateway - Sticky Routing&quot;]
-    OT[&quot;OT Server - per document shard&quot;]
-    DocMeta[&quot;Document Metadata Service&quot;]
-    MetaDB[(&quot;PostgreSQL - Document Metadata&quot;)]
-    OpsLog[(&quot;Cassandra - Operations Log&quot;)]
-    SnapshotStore[(&quot;S3 - Document Snapshots&quot;)]
-    Redis([&quot;Redis Cluster - Canonical State + Cursors&quot;])
-    Kafka[[&quot;Kafka - Operations Stream&quot;]]
-    SnapshotWorker[&quot;Snapshot Worker - Background&quot;]
-
-    ClientA -- REST CRUD --&gt; APIGW
-    ClientB -- REST CRUD --&gt; APIGW
-    ClientA -- WebSocket ops --&gt; WSGW
-    ClientB -- WebSocket ops --&gt; WSGW
-    ClientA -- initial doc load --&gt; CDN
-    CDN -- origin fetch --&gt; SnapshotStore
-    APIGW --&gt; DocMeta
-    DocMeta --&gt; MetaDB
-    WSGW -- route by doc_id --&gt; OT
-    OT -- store op --&gt; OpsLog
-    OT -- canonical state + cursors --&gt; Redis
-    OT -- publish op event --&gt; Kafka
-    Kafka --&gt; SnapshotWorker
-    SnapshotWorker --&gt; SnapshotStore
-    SnapshotWorker --&gt; OpsLog
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/def9402170475b48.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-architecture-sticky-websocket-routing">Evolved Architecture: Sticky WebSocket Routing</h3>
 <p>As the fleet grows past a single OT Server, every client editing a given document still has to land on the same node — a session map takes over that job explicitly instead of leaving it to whichever node the load balancer happens to pick:</p>
-<div class="mermaid">
-graph TD
-    Client[&quot;Browser Client&quot;]
-    LB[&quot;Load Balancer - L4 TCP&quot;]
-    WSGW1[&quot;WebSocket Gateway Node 1&quot;]
-    WSGW2[&quot;WebSocket Gateway Node 2&quot;]
-    OT1[&quot;OT Server Shard A - doc_id hash 0-499&quot;]
-    OT2[&quot;OT Server Shard B - doc_id hash 500-999&quot;]
-    SessionMap([&quot;Redis - Session Map: doc_id to OT Node&quot;])
-
-    Client -- WS upgrade --&gt; LB
-    LB -- consistent hash --&gt; WSGW1
-    WSGW1 -- lookup OT node for doc_id --&gt; SessionMap
-    WSGW1 -- forward op --&gt; OT1
-    WSGW2 -- lookup OT node for doc_id --&gt; SessionMap
-    WSGW2 -- forward op --&gt; OT2
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8c52c30b04b3b887.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> OT requires all operations for a document to pass through a single server — this is a correctness requirement, not a scaling limitation. Without a single ordering point, two OT servers could transform the same pair of concurrent ops in different orders, producing permanently divergent documents. The session map in Redis routes every client for a given doc_id to the same OT Server node.</p>
@@ -523,25 +477,7 @@ sequenceDiagram
    -&gt; Reconciliation job fires (see Deep Dive 8.3)
    -&gt; Redis key deleted
 </code></pre>
-<div class="mermaid">
-graph TD
-    UserA[&quot;User A - first join&quot;]
-    UserB[&quot;User B - mid-session join&quot;]
-    OT[&quot;OT Server&quot;]
-    Redis([&quot;Redis: doc-id-canonical (live doc) + cursor-id (presence)&quot;])
-    S3[(&quot;S3 Snapshot Store&quot;)]
-    OpsLog[(&quot;Cassandra Ops Log&quot;)]
-
-    UserA --&gt;|WebSocket op| OT
-    UserB --&gt;|WebSocket op| OT
-    OT --&gt;|cache miss - first access| S3
-    S3 --&gt;|load snapshot| Redis
-    OT --&gt;|apply op to canonical copy| Redis
-    OT --&gt;|append op| OpsLog
-    OT --&gt;|auto-save every 10-20s| S3
-    OT --&gt;|HSET cursor update| Redis
-    UserB --&gt;|join: GET canonical| Redis
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/99ea2993a3e8dcb2.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Redis is holding two fundamentally different things here, and losing either one has a different blast radius. <code>doc:{id}:canonical</code> is the live document content — hot, session-scoped, and its eviction is what triggers reconciliation, but losing it is entirely recoverable: reload the S3 snapshot and replay at most 10-20 seconds of operations from Cassandra, since that's the longest gap the auto-save cadence ever leaves. <code>cursor:{id}</code> is ephemeral user state on a 30-second TTL — safe to lose outright on a Redis failover, since clients simply re-send their cursor position on the next keystroke.</p>
 <blockquote>
 <p>[!NOTE]
@@ -568,20 +504,7 @@ Step 8: DELETE all document_operations rows for ops in this session
 Net result: session collapses into one committed major version.
             S3 is clean; ops log is clean; metadata points to latest file.
 </code></pre>
-<div class="mermaid">
-flowchart TD
-    Trigger[&quot;Last user disconnects - Redis TTL expires&quot;]
-    FetchVersion[&quot;Fetch most recent major version row from document_versions&quot;]
-    FetchBase[&quot;Fetch S3 snapshot via snapshot_url&quot;]
-    FetchOps[&quot;Fetch all ops since base version_id from Cassandra&quot;]
-    Replay[&quot;Re-apply ops to base state via OT engine&quot;]
-    WriteMajor[&quot;Write new major version to S3 - new version_id&quot;]
-    UpdateMeta[&quot;Kafka event - metadata consumer updates documents.blob_url&quot;]
-    Cleanup[&quot;DELETE minor version rows and session op events&quot;]
-    Done[&quot;Document clean - ready for next session&quot;]
-
-    Trigger --&gt; FetchVersion --&gt; FetchBase --&gt; FetchOps --&gt; Replay --&gt; WriteMajor --&gt; UpdateMeta --&gt; Cleanup --&gt; Done
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/fd372868a252c48f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Maya's "restore to an hour ago" from the Day in the Life story runs the same replay logic in reverse: given a target version V, find the largest major-version row at or before V, fetch its snapshot, fetch every operation between that snapshot and V, and apply them in order. It's the identical mechanism the reconciliation job already uses to collapse a session — just stopped partway through instead of run to completion.</p>
 <p>Without this job, every document would accumulate unbounded minor versions in S3 and an unbounded number of operation events in Cassandra forever. The job keeps storage cost linear with the number of editing <em>sessions</em>, not the number of keystrokes ever typed — the same "buffer and merge" shape as LSM-tree compaction, paying the merge cost once, at the session boundary, rather than on every write.</p>
 <blockquote>

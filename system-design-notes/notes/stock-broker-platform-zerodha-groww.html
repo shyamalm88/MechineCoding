@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -200,100 +201,9 @@ This system prioritizes <strong>consistency over availability</strong> — the o
 <h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
 <p>The architecture starts simple and grows into the full pipeline as the pieces above come together — here's both versions.</p>
 <h3 id="simple-design">Simple Design</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / Mobile Client&quot;]
-    APIGW[&quot;API Gateway&quot;]
-    WSGW[&quot;WebSocket Gateway&quot;]
-    UserSvc[&quot;User Service&quot;]
-    PriceSvc[&quot;Price Tracker Service&quot;]
-    OrderSvc[&quot;Order Service&quot;]
-    PortfolioSvc[&quot;Portfolio Service&quot;]
-    Exchange[&quot;Exchange NSE / BSE&quot;]
-    UserDB[(&quot;User DB - PostgreSQL&quot;)]
-    OrderDB[(&quot;Order DB - PostgreSQL&quot;)]
-    InfluxDB[(&quot;InfluxDB - Price History&quot;)]
-
-    Client --&gt; APIGW
-    Client --&gt;|WS| WSGW
-    APIGW --&gt; UserSvc
-    APIGW --&gt; OrderSvc
-    APIGW --&gt; PortfolioSvc
-    WSGW --&gt; PriceSvc
-    UserSvc --&gt; UserDB
-    OrderSvc --&gt; OrderDB
-    PriceSvc --&gt; InfluxDB
-    PriceSvc --&gt;|WS| Exchange
-    OrderSvc --&gt; Exchange
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8a4500e6ffd535f3.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-full-pipeline">Evolved Design (Full Pipeline)</h3>
-<div class="mermaid">
-graph TD
-    Client[&quot;Web / Mobile Client&quot;]
-    APIGW[&quot;API Gateway&quot;]
-    WSGW[&quot;WebSocket Gateway - Dedicated&quot;]
-    UserSvc[&quot;User Service&quot;]
-    KYCSvc[&quot;Third-Party KYC Service&quot;]
-    PaySvc[&quot;Payment Service&quot;]
-    PayGW[&quot;Payment Gateway&quot;]
-    PayDB[(&quot;Payment DB - PostgreSQL&quot;)]
-    UserDB[(&quot;User DB - PostgreSQL&quot;)]
-    ExchangeGW[&quot;Exchange Gateway&quot;]
-    Exchange[&quot;Exchange NSE / BSE&quot;]
-    Kafka1[[&quot;Kafka - stock-prices topic&quot;]]
-    PriceInjector[&quot;Price Injector Service&quot;]
-    InfluxDB[(&quot;InfluxDB - Price History&quot;)]
-    Redis[(&quot;Redis Pub/Sub - Live Prices&quot;)]
-    PriceSvc[&quot;Price Tracker Service - WS Server&quot;]
-    WatchDB[(&quot;Watch DB - PostgreSQL&quot;)]
-    WatchSvc[&quot;Watchlist Service&quot;]
-    Kafka2[[&quot;Kafka - raw-orders / verified-orders / rejected-orders / order-status&quot;]]
-    ValidatorSvc[&quot;Validator Service&quot;]
-    OrderSvc[&quot;Order Service&quot;]
-    OrderTracker[&quot;Order Tracker Service&quot;]
-    OrderDB[(&quot;Order DB - PostgreSQL&quot;)]
-    TradeDB[(&quot;Trade DB - PostgreSQL&quot;)]
-    PortfolioSvc[&quot;Portfolio Service&quot;]
-    NotifSvc[&quot;Notification Service&quot;]
-
-    Client --&gt; APIGW
-    Client --&gt;|WS| WSGW
-    APIGW --&gt; UserSvc
-    APIGW --&gt; PaySvc
-    APIGW --&gt; OrderSvc
-    APIGW --&gt; PortfolioSvc
-    APIGW --&gt; WatchSvc
-    WSGW --&gt; PriceSvc
-    UserSvc --&gt; UserDB
-    UserSvc --&gt; KYCSvc
-    PaySvc --&gt; PayGW
-    PaySvc --&gt; PayDB
-    ExchangeGW --&gt;|WS 20 connections| Exchange
-    ExchangeGW --&gt; Kafka1
-    Kafka1 --&gt; PriceInjector
-    PriceInjector --&gt; InfluxDB
-    PriceInjector --&gt; Redis
-    Redis --&gt; PriceSvc
-    PriceSvc --&gt; InfluxDB
-    WatchSvc --&gt; WatchDB
-    WatchSvc --&gt; PriceSvc
-    OrderSvc --&gt; Kafka2
-    Kafka2 --&gt; ValidatorSvc
-    ValidatorSvc --&gt; UserDB
-    ValidatorSvc --&gt; PayDB
-    ValidatorSvc --&gt; Kafka2
-    Kafka2 --&gt; OrderSvc
-    OrderSvc --&gt; Exchange
-    OrderSvc --&gt; OrderDB
-    Exchange --&gt; Kafka2
-    Kafka2 --&gt; OrderTracker
-    OrderTracker --&gt; OrderDB
-    OrderTracker --&gt; TradeDB
-    OrderTracker --&gt; NotifSvc
-    PortfolioSvc --&gt; TradeDB
-    PortfolioSvc --&gt; PriceSvc
-    NotifSvc --&gt; Client
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/19e8f0cf106a85e7.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="the-full-sequence">The Full Sequence</h3>
 <p>The diagrams above show the components; these two show the actual message sequence between them, end to end — one for the price feed Ravi watches passively, one for the order he places actively.</p>
 <div class="mermaid">
