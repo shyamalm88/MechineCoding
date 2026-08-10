@@ -5,11 +5,120 @@
 
 ---
 
-## 🧠 Mental Model
+## 1. What Is a Top K Leaderboard?
 
-A Top K Leaderboard has exactly two jobs: **ingest scores fast** and **answer "who's in the top K?" instantly**. The tension is that writes arrive at 1M/sec (you can't compute rankings synchronously on each write), and reads demand < 100ms latency (you can't do a full DB scan per query). The solution is to **decouple ingestion from ranking** and maintain a pre-sorted data structure that is always ready to answer the top-K query.
+A Top K Leaderboard is the system behind every "who's #1 right now" screen — a gaming tournament rank, a trending-videos chart, a most-liked-songs list. Something in the product keeps generating scores (a kill, a view, a like), and somewhere else a user just wants to see the current top handful of names, filtered to their region and a specific time window, updated fast enough to feel alive rather than stale.
 
-Three progressively better solutions exist, each trading off latency vs durability vs scale:
+The two things this system has to be good at pull in opposite directions. It has to absorb a flood of new scores continuously without falling behind, and it has to answer "what's the current top 100" in well under a tenth of a second, without recomputing the whole ranking from scratch on every single question asked. Everything in this design exists to reconcile those two jobs.
+
+---
+
+## 2. A Day in the Life
+
+Kabir is three matches deep into a weekend tournament in his favorite battle royale game. Every time he eliminates another player, his score ticks up on screen, and the live leaderboard panel next to it — the top 10 players in his region, for this tournament — reshuffles in real time. He watches his name climb from #14 to #9 within about a second of his last kill landing. He never refreshes anything; the leaderboard just updates itself, like it's alive.
+
+Across the app, a friend of his is looking at a completely different kind of leaderboard. She opens "Top Songs This Week" for India, glances at it once, and closes the app — no live updates needed, just an accurate snapshot from a few minutes ago is plenty.
+
+Both screens are answering the exact same underlying question — "who's currently ranked highest, out of everyone, right now?" — just at wildly different speeds and staleness tolerances. That's the whole design problem this system has to solve.
+
+By the time Kabir's match ends, his final placement — top 9, filtered to his region, for this specific tournament's time window — is fixed. Win or lose, the leaderboard behind that number processed his score and everyone else's without him ever noticing anything about how it worked. Everything from here on is how that experience actually gets built.
+
+---
+
+## 3. Requirements — and Why They Matter
+
+**Scope.** In scope: score ingestion (insert/update), top-K queries with time-frame and region filters, real-time ranking updates via WebSocket for gaming, and individual rank lookup with surrounding players. Out of scope: user authentication, content storage, probabilistic top-K (the Count-Min Sketch variant only comes up as a possible future enhancement), and recommendation feeds.
+
+**Functional requirements:**
+
+1. Score/view/like events can be ingested into the system in real time (insert, update, delete)
+2. Clients can query the top K entities (players, videos, songs) by score for a given leaderboard
+3. Queries support time-frame filters: last hour, day, 30 days, 90 days, or all-time
+4. Queries support region filters (country-level)
+5. Value of K is bounded: 1 ≤ K ≤ 10,000; large K responses are paginated
+6. Individual rank lookup: given a user ID and time window, return their rank + K surrounding players
+7. Real-time leaderboard updates via WebSocket (for gaming/live events)
+
+<details markdown="1">
+<summary><strong>Point to Ponder:</strong> A client can ask for K up to 10,000 — does the Ranking Service actually compute and hand back 10,000 ranked entities on every single request?</summary>
+
+No — K is capped server-side at 10,000, but any response over 50 items is always paginated with a cursor rather than returned in one shot, and the client fetches further pages lazily as it scrolls. See §6 API Design and §9 Bottlenecks & Scaling for why this matters: without it, a K=10,000 request would force the Ranking Service to serialize and transfer ten thousand ranked rows synchronously — exactly the kind of slow, monolithic response the pagination exists to prevent.
+
+</details>
+
+**Non-functional requirements — and why each one matters to a real user, not just as a target:**
+
+| Requirement | Target | Why it matters |
+|---|---|---|
+| Top-K query latency | < 100ms (p99) | A leaderboard screen that takes noticeably longer than that to load feels broken, not just slow — especially mid-tournament, when a player is actively refreshing to see where they stand. |
+| Score ingestion latency | < 500ms (eventual consistency acceptable) | A player's score needs to register quickly enough that their very next action — checking their rank — reflects the kill or view that just happened, not a stale count from before it. |
+| Availability | 99.99% (AP — high availability over strong consistency) | A leaderboard that's down doesn't show a stale rank, it shows nothing at all — during a live tournament or a trending chart's peak traffic, that's the worst possible moment for the screen to go blank. |
+| Consistency | Eventual — leaderboard positions may lag by seconds | Nobody actually needs their rank to be provably correct to the millisecond; they need it to feel live, and a few seconds of lag doesn't break that. |
+| Durability | Zero score loss after Kafka acknowledgement | A dropped score event isn't a rendering glitch — it's a real kill, view, or like that silently never counted, and a player or creator would rightly notice and distrust that. |
+| Accuracy | Exact top-K (not probabilistic approximation) | An approximate "you're probably around #9" is fine for some products, but a tournament prize boundary sitting at exactly #10 needs an exact answer, not a best guess with error bars. |
+| Scale | 1M ingestion events/sec, billions of entities | Not a promise to any one user directly — it's the raw throughput the system has to sustain just to keep the two latency promises above true while millions of scores are changing at once. |
+
+**Consistency Model:**
+
+| Domain | Model | Reason |
+|---|---|---|
+| Leaderboard rankings | Eventual | A video moving from #2 to #1 can lag by seconds |
+| Score ingestion | At-least-once (Kafka) | No event loss; idempotent consumer handles duplicates |
+| Historical aggregation | Batch-consistent | Flink processes completed time windows; slight delay is acceptable |
+| Individual rank lookup | Eventual | Rank may be 1–2 positions off in high-velocity events |
+
+<details markdown="1">
+<summary><strong>Point to Ponder:</strong> If a Redis node crashes mid-tournament, does the leaderboard just lose its rankings?</summary>
+
+Only briefly. The design takes periodic snapshots of the sorted set to Cassandra, and a crashed node rebuilds its rankings from that snapshot on restart — rankings are unavailable for the few minutes that rebuild takes, not lost outright. See §8.1 Deep Dives and §9.1 Failure Scenarios for the full mechanism.
+
+</details>
+
+---
+
+## 4. Scale, From First Principles
+
+Before designing anything, it's worth asking what "1M events/sec" and "under 100ms" actually demand once the numbers are multiplied out, rather than treating them as slogans.
+
+**Starting assumptions:**
+```
+Ingestion rate:                  1,000,000 score events/sec
+Total entities:                  billions (players, videos, songs)
+K range:                         1 to 10,000
+Active time windows:             hour, day, 30 days, 90 days, all-time
+Regions:                         global, partitioned by country
+Read QPS (leaderboard queries):  ~50,000/sec
+Latency SLA -- top-K fetch:      < 100ms
+Latency SLA -- score ingestion:  < 500ms
+Consistency model:               Eventual (AP)
+Result type:                     Accurate (exact top-K, not probabilistic)
+```
+
+**How many actual writes does one score event turn into?** A single event doesn't just touch one leaderboard — it has to update every active time window and every relevant region grouping it belongs to:
+```
+1M events/sec x multiple time windows (hour/day/30d/90d) x multiple regions
+  -> ~5-10M Redis Sorted Set updates/sec at full global scale
+```
+That multiplication, not the raw 1M/sec ingestion rate, is the real driver behind partitioning Redis into a cluster — a single Redis node was never going to absorb 5-10 million writes a second on its own.
+
+**What does keeping that much data sorted and in memory actually cost?** Redis has to hold every active region-window combination's top entities at once:
+```
+10 active regions x 4 time windows x top-10K entities x 100 bytes/entry
+  -> ~40 GB per Redis cluster
+```
+Forty gigabytes per cluster is manageable, but only because the design bounds it deliberately — with snapshots and TTL-based eviction (the hybrid approach in §8.3), that number stays bounded over time instead of growing without limit. Without TTL eviction, "all-time" data alone would make it unbounded.
+
+**Does every leaderboard read hit that same expensive write path?** No — reads and writes are already separated by the time they reach Redis. A `ZREVRANGE` read is O(log N + K), cheap regardless of how many writes are landing on the same key concurrently, which is exactly why ~50,000 reads/sec coexisting with 5-10M writes/sec isn't a contradiction — they aren't contending for the same resource the way a lock-based store would force them to.
+
+These numbers are what drive every major decision in the sections ahead: Kafka to absorb the 1M/sec ingestion burst before anything durable has to keep pace with it, Redis Sorted Sets for sub-millisecond ranking that a relational `ORDER BY` could never sustain at this write rate, Cassandra for a write-heavy durable event log that never has to answer a ranking question itself, and Apache Flink + InfluxDB for the historical aggregation that keeps Redis from ever having to hold "all-time" data in memory.
+
+---
+
+## 5. High-Level Architecture
+
+Remember Kabir's leaderboard reshuffling mid-match, and his friend's much slower-moving trending chart, from the story above — here's what actually produces both of those screens.
+
+A Top K Leaderboard is really two concurrent systems sharing one ranking pipeline: an **ingestion path** that has to absorb up to a million score events a second without falling behind, and a **query path** that has to answer "who's in the top K right now" in well under a tenth of a second — for both of Kabir's kinds of screens at once. The tension between those two is the entire design problem: rankings can't be recomputed synchronously on every single write at that volume, and a query can't do a full database scan at that latency. The fix is to decouple the two entirely — writes flow through a buffer into storage that stays pre-sorted, and reads only ever touch that pre-sorted structure, never the raw event stream.
 
 ```
 INGESTION PATH
@@ -24,13 +133,18 @@ User/Service ──▶ Score Service ──▶ Kafka ─────────
                                    Aggregated DB (InfluxDB)
                                           │
                                        Cache
-
-QUERY PATH (Solution 3 — Hybrid)
-Client ──GET /leaderboard──▶ Ranking Service ──▶ Redis Z-Set (recent data)
-                                              └──▶ Aggregated DB (historical data, on cache miss)
 ```
 
-**⚡ Core Design Principles**
+Two consumers read the same Kafka topic independently and in parallel — a DB Consumer writing every event to Cassandra for durability, and a Redis Consumer updating the sorted set for immediate ranking — deliberately never the same consumer doing both. That split is what keeps a slow Cassandra write from ever blocking a Redis update a live leaderboard is waiting on, and keeps a Redis hiccup from ever risking the durable copy of the event, since the DB Consumer already has its own independently.
+
+<details markdown="1">
+<summary><strong>Point to Ponder:</strong> Why does ingestion fan out to two separate consumers (DB Consumer and Redis Consumer) off the same Kafka topic, instead of one consumer writing to both stores?</summary>
+
+Because Cassandra and Redis have completely different failure and latency profiles, and coupling them means the slower one sets the pace for both. A single consumer writing to Cassandra first, then Redis, would mean a durable disk write blocks how fast a live ranking updates; writing to Redis first, then Cassandra, risks a ranking that's live but not actually durable if the process crashes in between. Two independent consumers reading the same Kafka offset means either one can fall behind or restart without touching the other — Kafka's own retention is what makes that safe.
+
+</details>
+
+### Core Design Principles
 
 | Path | Optimized For | Mechanism |
 |---|---|---|
@@ -38,166 +152,24 @@ Client ──GET /leaderboard──▶ Ranking Service ──▶ Redis Z-Set (re
 | Reliable Path (historical + durability) | Correctness + durability | Cassandra (durable log) → Flink → InfluxDB (aggregated, queryable by time window) |
 | Real-time Path (gaming leaderboards) | Live updates | WebSocket server pushes Redis Z-Set delta on every score change |
 
----
-
-## 1. Problem + Scope
-
-Design a Top K Leaderboard system that can ingest 1M score/view/like events per second and serve a ranked list of top K entities (players, videos, songs) filtered by region and time window in under 100ms.
-
-**In Scope:** Score ingestion (insert/update), top-K query with time frame and region filters, real-time ranking updates via WebSocket (gaming), individual rank lookup with surrounding players.
-
-**Out of Scope:** User authentication, content storage, probabilistic top-K (Count-Min Sketch variant mentioned as enhancement only), recommendation feeds.
-
----
-
-## 2. Assumptions & Scale
-
-| Metric | Value |
-|---|---|
-| Ingestion rate (score events/sec) | 1,000,000/sec (1M/sec) |
-| Total entities (players/videos/songs) | Billions |
-| K range (max result set size) | 1 – 10,000 |
-| Active time windows | Hour, Day, 30 days, 90 days, All-time |
-| Regions | Global (partitioned by country) |
-| Read QPS (leaderboard queries) | ~50,000/sec |
-| Latency SLA — top-K fetch | < 100ms |
-| Latency SLA — score ingestion | < 500ms |
-| Consistency model | Eventual (AP) |
-| Result type | Accurate (exact top-K, not probabilistic) |
-
-**Write amplification (key insight):**
-1M events/sec × multiple time windows (hour/day/30d/90d) × multiple regions = **~5–10M Redis Z-Set updates/sec** at full global scale. This is the core driver for Redis Cluster partitioning.
-
-**Redis memory estimate (Solution 1/3):**
-- 10 active regions × 4 time windows × top-10K entities × 100 bytes per entry = ~40 GB per Redis cluster
-- With snapshots and TTL-based eviction (Solution 3), this stays bounded
-
-> These numbers drive the following decisions: Kafka for ingestion buffering (absorbs 1M/sec burst), Redis Sorted Set for < 1ms ranking, Cassandra for durable write-heavy score storage, Apache Flink + InfluxDB for historical aggregation.
-
----
-
-## 3. Functional Requirements
-
-- Score/view/like events can be ingested into the system in real time (insert, update, delete)
-- Clients can query the top K entities (players, videos, songs) by score for a given leaderboard
-- Queries support time-frame filters: last hour, day, 30 days, 90 days, or all-time
-- Queries support region filters (country-level)
-- Value of K is bounded: 1 ≤ K ≤ 10,000; large K responses are paginated
-- Individual rank lookup: given a user ID and time window, return their rank + K surrounding players
-- Real-time leaderboard updates via WebSocket (for gaming/live events)
-
----
-
-## 4. Non-Functional Requirements
-
-| Requirement | Target |
-|---|---|
-| Top-K query latency | < 100ms (p99) |
-| Score ingestion latency | < 500ms (eventual consistency acceptable) |
-| Availability | 99.99% (AP — high availability over strong consistency) |
-| Consistency | Eventual — leaderboard positions may lag by seconds |
-| Durability | Zero score loss after Kafka acknowledgement |
-| Accuracy | Exact top-K (not probabilistic approximation) |
-| Scale | 1M ingestion events/sec, billions of entities |
-
-**Consistency Model:**
-
-| Domain | Model | Reason |
-|---|---|---|
-| Leaderboard rankings | Eventual | A video moving from #2 to #1 can lag by seconds |
-| Score ingestion | At-least-once (Kafka) | No event loss; idempotent consumer handles duplicates |
-| Historical aggregation | Batch-consistent | Flink processes completed time windows; slight delay is acceptable |
-| Individual rank lookup | Eventual | Rank may be 1–2 positions off in high-velocity events |
-
----
-
-## 5. API Design
-
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/v1/scores` | Ingest a score event `{entityId, leaderboardId, score, region, timestamp}` |
-| GET | `/api/v1/leaderboard/:id?window=30d&region=IN&k=100&cursor=` | Fetch top-K entities for a leaderboard; cursor-based pagination for K > 50 |
-| GET | `/api/v1/leaderboard/:id/rank?userId=&window=30d&k=5` | Get user's rank + K surrounding players (2 above, 2 below for k=5) |
-
-**Notes:**
-- `GET /leaderboard` supports both REST (trending lists) and **WebSocket upgrade** (gaming live leaderboards)
-- `window` accepts: `1h`, `1d`, `7d`, `30d`, `90d`, `all`
-- `region` is ISO 3166-1 alpha-2 (e.g. `IN`, `US`, `GB`)
-- K is capped server-side at 10,000; responses > 50 items are always paginated
-
-> [!NOTE]
-> **Key Insight:** The same leaderboard endpoint serves two protocols. REST for YouTube trending (poll every 5 minutes). WebSocket for gaming leaderboards (push delta on every rank change). Don't build two endpoints — the ranking logic is identical; only the delivery mechanism differs.
-
----
-
-## 6. End-to-End Flow
-
-### 6.1 — Score Ingestion (Write Path)
-
-```mermaid
-sequenceDiagram
-    participant C as Client/Service
-    participant AG as API Gateway
-    participant SS as Score Service
-    participant K as Kafka score-events
-    participant DBC as DB Consumer
-    participant RC as Redis Consumer
-    participant CDB as Cassandra ScoreDB
-    participant RZ as Redis Z-Set
-
-    C->>AG: POST /scores {entityId, score, region, ts}
-    AG->>SS: Route to Score Service
-    SS->>K: Publish to score-events topic
-    SS-->>C: 202 Accepted
-    K->>DBC: DB Consumer consumes
-    DBC->>CDB: Write {entityId, score, region, timestamp}
-    K->>RC: Redis Consumer consumes (parallel)
-    RC->>RZ: ZINCRBY leaderboard:{region}:{window} score entityId
+```
+QUERY PATH (Hybrid)
+Client ──GET /leaderboard──▶ Ranking Service ──▶ Redis Z-Set (recent data)
+                                              └──▶ Aggregated DB (historical data, on cache miss)
 ```
 
-### 6.2 — Top-K Query (Fast Path — Solution 3 Hybrid)
+<details markdown="1">
+<summary><strong>Point to Ponder:</strong> Why does the fast path (Redis) never actually serve an "all-time" leaderboard query?</summary>
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant AG as API Gateway
-    participant RS as Ranking Service
-    participant RZ as Redis Z-Set
-    participant ADB as InfluxDB Aggregated DB
-    participant CH as Cache
+Because all-time data has no natural bound — it only ever grows, and Redis is memory, the one resource this design can't afford to let grow without limit. Every other time window (hour, day, 30d, 90d) gets a TTL that keeps its Redis footprint bounded and eventually expires it; all-time simply has no TTL to give it, so it's always routed straight to InfluxDB instead of ever being held in Redis at all. See §8.3 Deep Dives for the full TTL strategy.
 
-    C->>AG: GET /leaderboard/music?window=30d&region=IN&k=100
-    AG->>RS: Route to Ranking Service
-    RS->>RZ: ZREVRANGE leaderboard:IN:30d 0 99
-    alt Redis cache hit (recent data)
-        RZ-->>RS: Sorted list of top-100 entityIds + scores
-        RS-->>C: 200 OK - ranked list
-    else Redis miss (historical window or TTL expired)
-        RS->>CH: Check aggregation cache
-        alt Cache hit
-            CH-->>RS: Pre-computed result
-        else Cache miss
-            RS->>ADB: Query SELECT top K WHERE region=IN AND window=30d ORDER BY score DESC
-            ADB-->>RS: Ranked result
-            RS->>CH: Write to cache (TTL 5 min)
-        end
-        RS-->>C: 200 OK - ranked list
-    end
-```
-
-### 6.3 — Historical Aggregation (Flink Batch Path)
-
-```mermaid
-flowchart TD
-    CDB[("Cassandra - ScoreDB")] -->|Stream / Micro-batch| FL["Apache Flink"]
-    FL -->|Aggregate by region + window| ADB[("InfluxDB - Aggregated DB")]
-    ADB -->|Pre-computed rankings| CH[("Redis Cache")]
-    CH -->|Fast lookup| RS["Ranking Service"]
-```
+</details>
 
 ---
 
-## 7. High-Level Architecture
+### From Simple to Evolved
+
+The architecture starts simple and grows into the full hybrid pipeline described above — here's both versions.
 
 ### Simple Design
 
@@ -264,18 +236,105 @@ graph TD
     WS --> RZ
 ```
 
+### The Full Sequence
+
+The diagrams above show the components; these show the actual message sequence between them, end to end — one for a score being ingested, one for a top-K query hitting the fast path or falling through to history, and one for how historical aggregation happens in the background.
+
+#### Score Ingestion (Write Path)
+
+```mermaid
+sequenceDiagram
+    participant C as Client/Service
+    participant AG as API Gateway
+    participant SS as Score Service
+    participant K as Kafka score-events
+    participant DBC as DB Consumer
+    participant RC as Redis Consumer
+    participant CDB as Cassandra ScoreDB
+    participant RZ as Redis Z-Set
+
+    C->>AG: POST /scores {entityId, score, region, ts}
+    AG->>SS: Route to Score Service
+    SS->>K: Publish to score-events topic
+    SS-->>C: 202 Accepted
+    K->>DBC: DB Consumer consumes
+    DBC->>CDB: Write {entityId, score, region, timestamp}
+    K->>RC: Redis Consumer consumes (parallel)
+    RC->>RZ: ZINCRBY leaderboard:{region}:{window} score entityId
+```
+
+#### Top-K Query (Fast Path — Solution 3 Hybrid)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant AG as API Gateway
+    participant RS as Ranking Service
+    participant RZ as Redis Z-Set
+    participant ADB as InfluxDB Aggregated DB
+    participant CH as Cache
+
+    C->>AG: GET /leaderboard/music?window=30d&region=IN&k=100
+    AG->>RS: Route to Ranking Service
+    RS->>RZ: ZREVRANGE leaderboard:IN:30d 0 99
+    alt Redis cache hit (recent data)
+        RZ-->>RS: Sorted list of top-100 entityIds + scores
+        RS-->>C: 200 OK - ranked list
+    else Redis miss (historical window or TTL expired)
+        RS->>CH: Check aggregation cache
+        alt Cache hit
+            CH-->>RS: Pre-computed result
+        else Cache miss
+            RS->>ADB: Query SELECT top K WHERE region=IN AND window=30d ORDER BY score DESC
+            ADB-->>RS: Ranked result
+            RS->>CH: Write to cache (TTL 5 min)
+        end
+        RS-->>C: 200 OK - ranked list
+    end
+```
+
+#### Historical Aggregation (Flink Batch Path)
+
+```mermaid
+flowchart TD
+    CDB[("Cassandra - ScoreDB")] -->|Stream / Micro-batch| FL["Apache Flink"]
+    FL -->|Aggregate by region + window| ADB[("InfluxDB - Aggregated DB")]
+    ADB -->|Pre-computed rankings| CH[("Redis Cache")]
+    CH -->|Fast lookup| RS["Ranking Service"]
+```
+
 ---
 
-## 8. Data Model
+## 6. API Design
 
-| Entity | Storage | Key Columns | Why this store |
-|---|---|---|---|
-| Raw Score Events | Cassandra | entity_id (partition), region, timestamp (clustering), score, leaderboard_id | Write-heavy (1M/sec); partition by entity_id gives even distribution; time-series access pattern |
-| Redis Sorted Set (recent) | Redis | Key: `lb:{leaderboardId}:{region}:{window}` → ZSet of `(entityId, score)` | In-memory sorted data structure; ZREVRANGE = O(log N + K); auto-ranks on ZINCRBY |
-| Aggregated Rankings | InfluxDB | measurement: leaderboard, tags: region + window, fields: entity_id + score, time: bucket_start | Time-series DB is optimal for time-windowed aggregations; tag-based indexing avoids full scans |
-| Aggregation Cache | Redis | Key: `cache:{leaderboardId}:{region}:{window}:{page}` → JSON list | TTL = 5 min; prevents repeated InfluxDB queries for same parameters |
+The API is small — three endpoints — because a leaderboard only needs to support three actions from the outside: report a score, ask for the current ranking, and ask where one specific entity stands relative to everyone else.
 
-**Redis Z-Set key design:**
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/scores` | Ingest a score event `{entityId, leaderboardId, score, region, timestamp}` |
+| GET | `/api/v1/leaderboard/:id?window=30d&region=IN&k=100&cursor=` | Fetch top-K entities for a leaderboard; cursor-based pagination for K > 50 |
+| GET | `/api/v1/leaderboard/:id/rank?userId=&window=30d&k=5` | Get user's rank + K surrounding players (2 above, 2 below for k=5) |
+
+Two things about this table aren't obvious from the columns alone. First, `GET /leaderboard` isn't one protocol — it responds to a plain REST call for a client that's fine polling every five minutes, and to a WebSocket upgrade for a client that needs a push the instant something changes, and the ranking logic underneath doesn't know or care which one asked. Second, K is capped server-side at 10,000, and any response over 50 items is always paginated with a cursor — which is what keeps a K=10,000 request (see §3's Point to Ponder) from ever forcing a single giant payload through the Ranking Service.
+
+`window` accepts `1h`, `1d`, `7d`, `30d`, `90d`, `all`; `region` is ISO 3166-1 alpha-2 (e.g. `IN`, `US`, `GB`).
+
+> [!NOTE]
+> **Key Insight:** The same leaderboard endpoint serves two protocols. REST for YouTube trending (poll every 5 minutes). WebSocket for gaming leaderboards (push delta on every rank change). Don't build two endpoints — the ranking logic is identical; only the delivery mechanism differs.
+
+---
+
+## 7. Data Model
+
+Four kinds of data live in this system, and separating them by how fresh they need to be — rather than treating "leaderboard data" as one undifferentiated blob — is what makes each storage choice fall out almost on its own.
+
+**Raw score events are write-heavy and need to survive forever, so they get an append-only durable log.** At up to 1M events a second, this is the highest-volume write path in the whole system, and it needs to be replayable if anything downstream ever falls behind or crashes. Cassandra fits because partitioning by `entity_id` spreads that volume evenly across the cluster, and a time-series access pattern — writes ordered by timestamp within a partition — is exactly what Cassandra's clustering keys are built for.
+
+**Rankings that need to answer "top K right now" in under a millisecond live in Redis, as a sorted set — not a table.** A Redis Sorted Set keeps itself sorted on every write (`ZINCRBY`), so a read (`ZREVRANGE`) is O(log N + K) instead of a scan, and it's in memory, which is the only way to hit a sub-millisecond target at all. The key design is the load-bearing decision here: one key per `(leaderboardId, region, window)` combination, not one giant global key — a single all-time-all-region key would have to scan past every entry that doesn't match a specific region or window just to answer one query.
+
+**Historical, time-windowed rankings that don't need millisecond freshness go to a time-series database instead of staying in Redis forever.** InfluxDB is built around exactly the access pattern this data has — group by time bucket, tag-filter by region and window — and its tag-based indexing avoids the full scan a general-purpose relational table would require. This is also where "all-time" actually lives, since that window has no natural TTL to bound it in Redis.
+
+**Anything computed from an InfluxDB query gets cached, because recomputing the same aggregation for the next requester of the same leaderboard is pure waste.** A 5-minute TTL on the aggregation cache is long enough that the same `(leaderboardId, region, window, page)` combination, hit by many different users in a short window, only pays the InfluxDB query cost once.
 
 ```
 leaderboard:{leaderboardId}:{region}:{window}
@@ -285,80 +344,67 @@ e.g.
   leaderboard:videos:GLOBAL:7d → ZSet { "vid_aaa": 210000000, ... }
 ```
 
+| Entity | Storage | Key Columns |
+|---|---|---|
+| Raw Score Events | Cassandra | entity_id (partition), region, timestamp (clustering), score, leaderboard_id |
+| Redis Sorted Set (recent) | Redis | Key: `lb:{leaderboardId}:{region}:{window}` → ZSet of `(entityId, score)` |
+| Aggregated Rankings | InfluxDB | measurement: leaderboard, tags: region + window, fields: entity_id + score, time: bucket_start |
+| Aggregation Cache | Redis | Key: `cache:{leaderboardId}:{region}:{window}:{page}` → JSON list, TTL 5 min |
+
 > [!NOTE]
-> **Key Insight:** One Redis key per (leaderboard × region × time window). This is the critical schema decision. A single global key with all-time data cannot answer "top K for last 30 days in India" without scanning the whole set. Separate keys make every query O(log N + K) with zero filtering.
+> **Key Insight:** One Redis key per (leaderboard × region × time window) is the critical schema decision in this design. A single global key can't answer "top K for the last 30 days in India" without scanning past everything that doesn't match — separate keys make every query O(log N + K) with zero filtering needed.
 
 ---
 
-## 9. Deep Dives
+## 8. Deep Dives
 
-### 9.1 — Solution 1: Redis Sorted Set (Pure In-Memory Ranking)
+### 8.1 Solution 1 — Redis Sorted Sets as a Distributed Heap
 
-**Here's the problem we're solving:** At 1M inserts/sec we need ranked results in < 100ms. A SQL `ORDER BY score DESC LIMIT K` over billions of rows takes seconds. We need a data structure that is always sorted and can return top-K in microseconds.
+Here's the problem: at 1M inserts a second, ranked results need to come back in under 100ms. Ask a SQL database to `ORDER BY score DESC LIMIT K` over billions of rows and it takes seconds, not milliseconds — nowhere close. What's actually needed is a data structure that stays sorted continuously, so answering "top K" is never more than a lookup.
 
-**The insight from DSA:** LeetCode #347 (Top K Frequent Elements) uses a min-heap. Redis Sorted Set is exactly a heap in the form of a distributed data structure — scores are the heap key, ZINCRBY updates in O(log N), ZREVRANGE returns top K in O(log N + K).
+That's a familiar shape from data structures: LeetCode's Top K Frequent Elements problem answers the same "give me the top K without re-sorting everything" question with a min-heap, and Redis's Sorted Set is exactly that heap, reimplemented as a distributed primitive. `ZINCRBY` updates a score in O(log N), the same way pushing onto a heap does; `ZREVRANGE` returns the top K in O(log N + K), the same way peeking a heap's top does.
 
-**How it works:**
-1. Every score event published to Kafka is consumed by the Redis Consumer
-2. Redis Consumer calls `ZINCRBY leaderboard:IN:30d delta entityId`
-3. Redis auto-maintains sorted order — no server-side sorting needed
-4. Ranking Service calls `ZREVRANGE leaderboard:IN:30d 0 K-1 WITHSCORES` → returns top K instantly
+The mechanism itself is almost embarrassingly simple once framed that way. Every score event that reaches the Redis Consumer becomes a `ZINCRBY leaderboard:IN:30d delta entityId` call; Redis maintains sorted order on every one of those writes with no separate sort step ever needed; and the Ranking Service answers a query with `ZREVRANGE leaderboard:IN:30d 0 K-1 WITHSCORES`, returning the top K instantly because the sorting work already happened at write time, not read time.
 
-**Limitations and fixes:**
+Left exactly as described, though, this has four real gaps. All-time data has nowhere to stop growing, so every key needs its own TTL, scoped per time window, rather than one key holding everything forever. A single Redis node is a single point of failure for the entire leaderboard, so the fix is a Redis Cluster partitioned by region — an IN node, a US node, and so on — rather than one node carrying global load. If that node crashes anyway, whatever rankings it held are gone unless something else has a copy, which is why the design takes periodic snapshots to Cassandra and rebuilds the Z-Set from that snapshot on restart. And because a single score event has to update every active time window at once, the Redis Consumer isn't making one write per event — it's making four (hour, day, 30d, 90d), which is exactly the write-amplification math from §4.
 
-| Problem | Fix |
-|---|---|
-| All-time data bloats Redis memory | Create one key per time window; apply TTL on each key |
-| Single Redis node = SPOF | Redis Cluster partitioned by region (IN node, US node, etc.) |
-| Redis node crash = lose rankings | Take periodic snapshots to Cassandra; rebuild Z-Set from snapshot on restart |
-| Multiple time windows = redundant writes | Write to all active window keys on each event (hour, day, 30d, 90d) — 4 ZINCRBY calls per event |
-
-**Trade-off accepted:** Redis Cluster adds operational complexity. Rebuilding from snapshot after a crash takes minutes during which rankings are unavailable. Acceptable at small-to-mid scale (single region).
+The trade-off this solution accepts, and doesn't fully escape even with those four fixes, is operational: a Redis Cluster is more moving parts than a single node, and rebuilding from a snapshot after a crash takes minutes, during which that region's rankings simply aren't available. That's acceptable at small-to-mid scale in a single region, but not yet a complete answer at global scale — which is exactly the limitation Solution 2 and Solution 3 exist to close.
 
 > [!NOTE]
 > **Key Insight:** Redis Sorted Set is a DSA heap promoted to a distributed system primitive. ZINCRBY = heap push. ZREVRANGE = heap peek top K. The entire ranking problem reduces to choosing the right data structure.
 
 ---
 
-### 9.2 — Solution 2: Apache Flink + InfluxDB (Pre-computed Batch Aggregation)
+### 8.2 Solution 2 — Batch Aggregation with Apache Flink and InfluxDB
 
-**Here's the problem we're solving:** At global scale (50+ regions, 5 time windows), a Redis Cluster holding all combinations requires enormous memory and complex operational management. We need a solution that scales globally without keeping everything in RAM.
+Here's the problem Solution 1 doesn't solve: at true global scale — 50-plus regions, 5 time windows, all held in memory at once — a Redis Cluster covering every combination needs an enormous amount of RAM and an operationally heavy cluster to match. Something has to scale globally without keeping everything resident in memory all the time.
 
-**Naive solution — SQL database with ORDER BY:**
+The naive fallback — just run the ranking query against the durable store directly — doesn't survive the numbers either:
 ```sql
 SELECT entity_id, SUM(score) FROM scores
 WHERE region='IN' AND timestamp > NOW() - INTERVAL 30 DAY
 GROUP BY entity_id ORDER BY SUM(score) DESC LIMIT 100
 ```
-Over billions of rows in Cassandra, this full-table aggregation takes minutes. Unacceptable.
+Run that `GROUP BY ... ORDER BY` over billions of rows in Cassandra and it takes minutes, not milliseconds — nowhere close to workable as a live query path.
 
-**Chosen solution — Flink stream processing to InfluxDB:**
-1. Cassandra ScoreDB acts as the durable event store
-2. Apache Flink reads the stream of score events (or micro-batches from Cassandra)
-3. Flink computes rolling aggregates per (leaderboard, region, time window)
-4. Results written to InfluxDB (time-series DB) — tagged by region + window
-5. Ranking Service queries InfluxDB; result cached in Redis for 5 minutes
+The fix is to stop treating ranking as something computed at query time at all, and instead compute it once, ahead of time, on a schedule. Cassandra's ScoreDB stays exactly what it already was — the durable event store — and Apache Flink reads that stream (or micro-batches from it) and continuously computes rolling aggregates per `(leaderboard, region, time window)`, writing the results into InfluxDB, a database purpose-built for exactly this shape: time-indexed, tag-based, range-queryable. When a leaderboard query does arrive, the Ranking Service reads from InfluxDB — already aggregated, already sorted — and caches that result in Redis for 5 minutes so the next request for the same leaderboard doesn't touch InfluxDB again.
 
-**Why InfluxDB over PostgreSQL for aggregated data:**
-- InfluxDB is natively optimised for `GROUP BY time(1d), region` queries
-- Tag-based indexing means no full table scan — queries hit only matching partitions
-- Retention policies automatically expire old buckets — no manual cleanup
-- PostgreSQL alternative requires heavy partitioning + indexing to match InfluxDB performance
+InfluxDB wins this specific job over a more familiar option like PostgreSQL for reasons that all trace back to the same property: it's natively built for `GROUP BY time(1d), region`-shaped queries, its tag-based indexing means a query only ever touches matching partitions instead of scanning the whole table, and its retention policies expire old buckets automatically instead of needing a manual cleanup job. Getting PostgreSQL to match any of that would mean bolting on heavy partitioning and indexing by hand — reproducing, with more effort, what InfluxDB already does by default.
 
-**Trade-off accepted:** Leaderboard lags behind real-time by Flink's processing delay (seconds to minutes depending on window size). Rankings are not live. Acceptable for trending videos/songs; not acceptable for gaming competitions.
+The trade-off is real and worth naming directly: because Flink's aggregation runs on a schedule rather than synchronously with every write, the leaderboard this produces lags real-time by however long that processing takes — seconds to minutes, depending on window size. That's a fine trade for a trending-videos or most-played-songs chart, where nobody expects the #3 slot to update the instant a view lands. It is not acceptable for a live gaming competition, where a player expects to see their kill reflected now, not in two minutes — which is exactly the gap Solution 3 exists to close.
 
 > [!NOTE]
-> **Key Insight:** Pre-computation shifts the cost from read time to write time. The ranking computation happens once per Flink micro-batch and is amortised across all readers. 50,000 concurrent users querying the same leaderboard all hit the same pre-computed InfluxDB result.
+> **Key Insight:** Pre-computation shifts the cost from read time to write time. The ranking computation happens once per Flink micro-batch and is amortised across every reader after that — 50,000 concurrent users querying the same leaderboard all hit the same pre-computed InfluxDB result, instead of 50,000 separate aggregations.
 
 ---
 
-### 9.3 — Solution 3: Hybrid (Redis for Recent + InfluxDB for Historical)
+### 8.3 Solution 3 — The Hybrid: Redis for Recent, InfluxDB for Historical
 
-**Here's the problem we're solving:** Solution 1 has durability risk and memory scale limits. Solution 2 has real-time lag. We need both: live rankings for current windows AND durable, queryable history for past windows.
+Here's the problem: Solution 1 has a durability gap and a memory ceiling; Solution 2 has real-time lag. Neither one alone is the whole answer — what's actually needed is live rankings for the windows people check constantly, and durable, queryable history for the windows people check rarely, without settling system-wide for just one of those two properties.
 
-**The insight:** Recent data (last 30 days) is queried most frequently and changes fast — keep it in Redis. Historical data (last quarter, last year) is queried rarely and doesn't change — store it in InfluxDB. The two stores are complementary, not competing.
+Recent data — the last 30 days — gets checked constantly and changes by the second, which favors Redis. Historical data — last quarter, last year — gets checked rarely and never changes once the window has closed, which favors InfluxDB. Split the storage along that line and the two stores stop competing for the same job and become complementary: each one only has to be good at the kind of query it's actually suited for.
 
-**Architecture:**
+Concretely, every score event still flows through Kafka the same way it always has, fanning out to the DB Consumer (Cassandra, the durable log) and the Redis Consumer (the sorted set, keyed by window) in parallel, exactly as in §5. What's new is that the Redis Z-Set now also gets periodically snapshotted to InfluxDB as a backup, and on the read side, the Ranking Service tries Redis first — a hit for any of the recent windows (hour, day, 30d, 90d) — and only falls through to InfluxDB when the window has aged out of Redis or is "all-time," which was never routed to Redis in the first place.
 
 ```
 Score Event
@@ -379,63 +425,51 @@ Query:
                    └──▶ InfluxDB (miss for expired/historical windows: past quarters)
 ```
 
-**TTL strategy for Redis keys:**
+The TTL on each Redis key isn't arbitrary — it's set to comfortably outlive the window it represents, so a key doesn't expire while it's still the natural place to answer a query, but also doesn't linger indefinitely once it's genuinely gone cold. The last-hour window gets a 2-hour TTL, just enough buffer above the window itself to auto-expire stale data without cutting it off early. The last-day window gets 48 hours — twice the window, to absorb gradual query falloff rather than a hard cutoff exactly at 24 hours. The 30-day window gets 60 days, so the current month and the previous one both stay warm in Redis at once. The 90-day window gets 120 days for the same reason, one quarter ahead. All-time gets no TTL in Redis at all, because it has no natural size bound — it's routed to InfluxDB unconditionally, which is the direct answer to §5's Point to Ponder about why the fast path never serves all-time.
 
-| Window | Redis TTL | Why |
-|---|---|---|
-| Last 1 hour | 2 hours | Small buffer above window; auto-expires stale data |
-| Last 1 day | 48 hours | 2× window to allow for gradual query falloff |
-| Last 30 days | 60 days | Current + previous month always warm |
-| Last 90 days | 120 days | Current quarter always warm |
-| All-time | No TTL (InfluxDB only) | Too large for Redis; always routed to InfluxDB |
+| Window | Redis TTL |
+|---|---|
+| Last 1 hour | 2 hours |
+| Last 1 day | 48 hours |
+| Last 30 days | 60 days |
+| Last 90 days | 120 days |
+| All-time | No TTL (InfluxDB only) |
 
-**Failure recovery:**
-- Redis cluster node fails → Ranking Service routes to InfluxDB cache automatically
-- Redis rebuilds from InfluxDB snapshot on restart (minutes, not hours)
-- Cassandra node fails → Kafka retains unprocessed events; DB Consumer catches up on recovery
+Failure recovery follows directly from the same split. A Redis cluster node failing routes the Ranking Service to InfluxDB automatically — slightly higher latency for that window while Redis is down, but never a missing answer — and the rebuild that follows pulls from the InfluxDB snapshot rather than starting from nothing, so recovery is minutes, not hours. A Cassandra node failing is a calmer story: Kafka simply retains the events that couldn't be written yet, and the DB Consumer catches up on the backlog once the node recovers, since nothing about Kafka's retention depended on Cassandra being healthy in the meantime.
 
-**Trade-off accepted:** Hybrid adds two data stores and a Flink pipeline. Operational complexity is higher. But it delivers < 1ms Redis reads for current windows AND durable InfluxDB storage for history — the correct engineering trade-off at global scale.
+The trade-off this hybrid accepts openly is more moving parts: two data stores plus a Flink pipeline is more to operate than either solution alone. What it buys back is the thing neither Solution 1 nor Solution 2 could deliver by itself — sub-millisecond Redis reads for the windows people actually check constantly, and durable InfluxDB storage for everything else — the correct engineering trade-off at global scale.
 
 > [!NOTE]
-> **Key Insight:** "Recent" and "historical" are different access patterns requiring different storage engines. Treating them as the same problem leads to either over-engineering Redis (Solution 1) or under-serving real-time (Solution 2). The split is the insight.
+> **Key Insight:** "Recent" and "historical" are different access patterns, not the same problem running at two speeds. Treating them as one problem means either over-engineering Redis to hold data it was never suited for, or under-serving real-time queries the way Solution 2 does on its own. Splitting the storage by access pattern, not by convenience, is the insight.
 
 ---
 
-### 9.4 — Real-Time Leaderboard Updates (WebSocket)
+### 8.4 Real-Time Updates for Gaming — WebSocket and Redis Pub/Sub
 
-**Here's the problem we're solving:** A gaming competition has 100,000 players. When a player's score changes, all viewers watching the live leaderboard need to see the update within milliseconds. HTTP polling at 100ms intervals × 100K viewers = 1M requests/sec just for polling — wasteful and slow.
+Here's the problem: a gaming tournament with 100,000 players means every score change has to reach every viewer watching that leaderboard within milliseconds, not on the next periodic refresh. If clients polled for updates every 100 milliseconds, that's 100,000 viewers times ten polls a second — 1 million requests a second, just for polling, the overwhelming majority of which would return "nothing changed."
 
-**Chosen solution — WebSocket + Redis Pub/Sub:**
-1. Redis Consumer calls ZINCRBY as before
-2. After each write, Redis Consumer publishes a delta event to a Redis Pub/Sub channel: `leaderboard:{id}:{region}:updates`
-3. WebSocket Server subscribes to that channel
-4. WebSocket Server pushes rank-change deltas to connected clients: `{entityId, oldRank, newRank, score}`
-5. Client updates the UI locally — no full re-fetch needed
+The fix replaces polling with a push. After the Redis Consumer runs its usual `ZINCRBY`, it also publishes a delta event — just the change, not the whole leaderboard — to a Redis Pub/Sub channel scoped to that leaderboard, region, and update type (`leaderboard:{id}:{region}:updates`). A WebSocket Server subscribed to that channel forwards each delta straight to every connected client as `{entityId, oldRank, newRank, score}`, and the client applies that single change to the list it's already holding, rather than re-fetching and re-rendering the whole thing.
 
-**Why delta events, not full list push:**
-- Full top-K list (100 entities) per update × 10,000 rank changes/sec × 100K viewers = 100TB/sec of data. Infeasible.
-- Delta events (10 bytes each) × same parameters = 10GB/sec. Manageable with fan-out.
+The reason it's a delta and not a full re-push of the top-K list is the same kind of arithmetic that ruled out polling in the first place: pushing the full top-100 list on every one of 10,000 rank changes a second, to 100,000 viewers, works out to 100TB/sec — obviously infeasible. A 10-byte delta event at the same volume is 10GB/sec, which fan-out infrastructure can actually absorb.
 
-**For trending lists (YouTube, Spotify):** Use REST polling at 5-minute intervals. Rankings change slowly; WebSocket overhead is not justified.
+Not every leaderboard needs this at all, though — a trending list like a most-played-songs chart, where rankings move over hours rather than seconds, is well served by REST polling at 5-minute intervals from §6; building WebSocket infrastructure for a chart nobody expects to update in real time would be solving a problem that doesn't exist for that use case.
 
 > [!NOTE]
 > **Key Insight:** WebSocket vs REST is a math problem. 1M score events/sec means rank changes are continuous during a live event. HTTP polling at any reasonable interval either misses updates or creates a request storm. WebSocket is the only viable choice for live gaming leaderboards.
 
 ---
 
-## 10. Bottlenecks & Scaling
+## 9. Bottlenecks & Scaling
 
-| Bottleneck | Breaks at | Solution |
-|---|---|---|
-| Score Service single node | > 100K req/sec | Horizontal scale-out; stateless service; Kafka absorbs all burst |
-| Kafka topic throughput | > 1M/sec on single partition | Partition by `leaderboardId % N`; 100+ partitions; Consumer Group auto-distributes |
-| Redis Z-Set single node memory | > 50GB per instance | Redis Cluster partitioned by region; separate cluster per major region (IN, US, EU) |
-| Redis write throughput (ZINCRBY) | > 500K/sec per node | Redis Cluster with multiple shards; pipeline ZINCRBY calls in batch |
-| Flink processing lag | Grows with data volume | Increase parallelism (more Flink task slots); tune micro-batch interval |
-| InfluxDB query latency | Grows with data age | Retention policies; continuous queries (pre-aggregate to coarser buckets) |
-| Ranking Service fan-out (K=10,000) | Slow pagination | Cursor-based pagination; max 50 per page; client requests next page lazily |
+Every component in this pipeline has a point where the traffic in front of it outgrows the shape it was built for — and because ingestion, ranking, and aggregation are three genuinely separate paths, each one hits its ceiling independently rather than all failing at once.
 
-**Redis Cluster partition strategy:**
+On the ingestion side, the Score Service is the first thing under pressure, breaking past 100,000 requests a second on a single node — but because it's stateless, horizontal scale-out handles that directly, with Kafka absorbing whatever burst arrives faster than new instances can spin up. Kafka itself has a ceiling too: a single partition tops out well below the 1M events/sec this system needs to sustain, which is why the topic is split across 100-plus partitions keyed by `leaderboardId % N`, letting a Consumer Group auto-distribute load across however many consumers are running.
+
+On the Redis side, memory is the first wall — a single instance holding more than roughly 50GB starts to strain — which is exactly the case for the region-partitioned Redis Cluster from §8.1, giving each major region (IN, US, EU) its own cluster rather than one global instance carrying everyone. Write throughput has its own separate ceiling, around 500,000 `ZINCRBY` calls a second per node, addressed the same way: more shards, plus pipelining ZINCRBY calls in batches rather than issuing them one round trip at a time.
+
+On the processing side, Flink's aggregation lag grows with data volume rather than staying flat, and the fix is the boring, reliable one — more Flink task-slot parallelism, and tuning the micro-batch interval so each batch stays a manageable size as volume grows. InfluxDB's query latency grows with data age for a related reason — older, less-aggregated data takes longer to scan — which retention policies and continuous queries (pre-aggregating into coarser buckets as data ages) keep in check.
+
+And on the read side, the Ranking Service's own fan-out becomes the bottleneck exactly where §3's Point to Ponder said it would: a K=10,000 request would mean slow, monolithic pagination if it were ever actually served in one shot, which is why it never is — cursor-based pagination caps every response at 50 items, and the client requests further pages lazily instead of the server ever assembling all 10,000 at once.
 
 ```
 Redis Cluster
@@ -445,52 +479,38 @@ Redis Cluster
   └── Shard 3: leaderboard:*:*    (Rest of World)
 ```
 
-Consistent hashing on region ensures a country's data always lands on the same shard, allowing `ZREVRANGE` to be a local operation without cross-shard coordination.
+Consistent hashing on region is what makes this partitioning actually work — a country's data always lands on the same shard, so `ZREVRANGE` stays a purely local operation on one shard, never needing cross-shard coordination to answer a single leaderboard query.
 
 ---
 
-## 11. Failure Scenarios
+### 9.1 Failure Scenarios
 
-| Failure | Impact | Recovery |
-|---|---|---|
-| Redis node failure | Ranking queries fall through to InfluxDB; slightly higher latency | Automatic failover to InfluxDB; rebuild Redis from snapshot on restart |
-| Kafka broker failure | Score events queue at producers; ingestion pauses | Kafka replication (ISR=2); failover to replica broker within seconds |
-| DB Consumer crash | Score events not persisted to Cassandra | Consumer resumes from last committed Kafka offset; at-least-once delivery |
-| Redis Consumer crash | Redis Z-Set falls behind | Consumer resumes from Kafka offset; Z-Set catches up; eventual consistency |
-| Flink job failure | Historical aggregation stalls | Flink checkpointing allows restart from last checkpoint; no data loss |
-| InfluxDB node failure | Historical queries fail | InfluxDB cluster replication; failover to replica; Redis Cache still serves recent data |
-| Score deletion/correction | Wrong entity in top-K | Trigger Flink re-computation for affected window; Redis Z-Set key can be invalidated and rebuilt from Cassandra |
+Failures in this system split cleanly along the same fast-path/reliable-path line drawn back in §5 — what breaks in Redis recovers fast because nothing there was ever the only copy; what breaks in Kafka or the durable stores recovers more slowly, but recovers completely, because nothing there is allowed to be lost.
+
+On the Redis side, a node failure or a Redis Consumer crash both resolve the way already walked through in §8.1 and §8.3: queries fall through to InfluxDB automatically while Redis is down, and the node rebuilds its rankings from the InfluxDB snapshot on restart — a gap of minutes, not a loss of data. A Redis Consumer specifically just resumes from its last Kafka offset once it's back, catching the sorted set up to eventual consistency rather than needing any special recovery path of its own.
+
+On the Kafka and durable-storage side, the same pattern repeats across every component: nothing is dropped, only delayed. A Kafka broker failure pauses producers briefly, but replication (ISR=2) means a replica takes over within seconds and nothing already published is lost. A DB Consumer crash simply resumes from its last committed Kafka offset once restarted, relying on at-least-once delivery to make sure no event it hadn't yet processed is skipped. A Flink job failure stalls historical aggregation, but Flink's own checkpointing means it restarts from its last checkpoint rather than reprocessing from scratch or losing partial work. An InfluxDB node failure takes down historical queries specifically, recovered via InfluxDB's own cluster replication and failover to a replica — and critically, the Redis cache in front of it keeps serving recent data throughout, since that path never depended on InfluxDB being healthy in the first place.
+
+One failure mode here is a correction, not a crash: when a score gets deleted or corrected after the fact, whatever entity that touched is now wrong in the top-K for that window. The fix triggers Flink to re-run its computation for just the affected window, and the corresponding Redis Z-Set key can be invalidated and rebuilt straight from Cassandra's durable log — the same rebuild-from-source mechanism used for a crash, applied here to a correction instead.
 
 ---
 
-## 12. Trade-offs
+### 9.2 Trade-offs
 
-### Ranking Approach: Redis Z-Set vs SQL ORDER BY vs Pre-computed Batch
+### Ranking Approach: Redis Sorted Set vs SQL ORDER BY vs Flink + InfluxDB
 
-| Dimension | Redis Sorted Set | SQL ORDER BY | Flink + InfluxDB |
-|---|---|---|---|
-| Query latency | < 1ms (in-memory) | Seconds (full scan) | 5–50ms (pre-computed, cached) |
-| Real-time accuracy | Near real-time (< 1 sec lag) | Real-time (on each query) | Eventual (seconds to minutes lag) |
-| Storage cost | High (all data in RAM) | Low (disk) | Medium (aggregated only) |
-| Durability | Low (RAM volatile) | High (ACID) | High (durable + replayable) |
-| Scale | Limited by memory | Limited by query cost | Scales globally |
+These three differ most sharply on the axis that matters most for a leaderboard: query latency. Redis answers in under a millisecond because the data is already sorted in memory; SQL's `ORDER BY` takes seconds because it has to scan and sort on every query; Flink + InfluxDB lands in between, 5–50ms, because the sorting already happened ahead of time and the query is just a read of a cached, pre-computed result. Real-time accuracy inverts that ordering somewhat — Redis is near real-time (well under a second of lag), SQL is technically real-time since it computes fresh on every call, and Flink + InfluxDB is eventually consistent, with a lag of seconds to minutes depending on batch timing. Storage cost follows from where the data lives: Redis pays for keeping everything in RAM (high), SQL is cheap because it's on disk (low), and Flink + InfluxDB sits in the middle (medium) since it only stores the aggregated result, not every raw event. Durability runs the opposite direction from latency — Redis is the weakest of the three since RAM is volatile, SQL is strongest via ACID guarantees, and Flink + InfluxDB is durable and replayable because it's built from Cassandra's own durable log. And on raw scale, Redis is limited by how much fits in memory, SQL is limited by how expensive a full-table scan gets, while Flink + InfluxDB is the only one of the three that scales globally without hitting either ceiling.
 
-**Chosen:** Solution 3 hybrid — Redis for recent windows (< 1ms, near real-time), Flink + InfluxDB for historical (durable, scalable).
+**Chosen:** the Solution 3 hybrid — Redis for recent windows (< 1ms, near real-time), Flink + InfluxDB for historical windows (durable, scalable).
 
 > [!NOTE]
-> **Key Insight:** No single store is correct for all time windows. Redis wins at "last 30 days," InfluxDB wins at "last 3 years." The right answer is always "it depends on the time window" — saying this out loud immediately signals senior-level thinking.
+> **Interview tip:** naming the exact crossover point out loud — recent windows to Redis, historical windows to InfluxDB, and exactly why "all-time" never touches Redis at all (§8.3) — is what separates reciting three storage options from actually understanding why the split exists.
 
 ---
 
 ### Event Ingestion: Kafka vs Direct DB Write
 
-| Dimension | Kafka Buffer | Direct DB Write |
-|---|---|---|
-| Burst absorption | Handles 1M/sec without back-pressure | DB overwhelmed at 1M/sec |
-| Durability | Durable log; replay on consumer failure | Lost on write failure |
-| Decoupling | Score Service is independent of downstream consumers | Score Service coupled to DB + Redis |
-| Latency | +50ms (Kafka round-trip) | Lower write latency |
-| Operational cost | Kafka cluster to manage | Simpler stack |
+A Kafka buffer absorbs the full 1M-events/sec burst without back-pressure, where a direct database write would simply get overwhelmed at that rate. It's also durable on its own terms — a log that can be replayed if a downstream consumer crashes — where a direct write that fails is just lost. And it decouples the Score Service from whatever's downstream of it: the service publishes and moves on, rather than staying coupled to the health and speed of both Cassandra and Redis at once. The cost is real but small in context: roughly 50ms of round-trip latency added by going through Kafka at all, plus an actual cluster to operate, where a direct write would have been architecturally simpler and marginally faster.
 
 **Chosen:** Kafka. At 1M events/sec, direct DB writes create an unavoidable bottleneck. Kafka's 50ms overhead is irrelevant given the 500ms ingestion SLA. The replay-on-failure guarantee alone justifies the complexity.
 
@@ -501,17 +521,12 @@ Consistent hashing on region ensures a country's data always lands on the same s
 
 ### Score DB: Cassandra vs PostgreSQL
 
-| Dimension | Cassandra | PostgreSQL |
-|---|---|---|
-| Write throughput | 1M+/sec (multi-master) | ~50–100K/sec (single primary) |
-| Time-range queries | Good (clustering key by timestamp) | Good (with partitioning) |
-| Aggregation support | Poor (no GROUP BY) | Excellent |
-| Durability | Strong (RF=3) | Strong (WAL + replicas) |
+Cassandra's multi-master write path sustains 1M+ writes a second, where a single-primary PostgreSQL instance tops out around 50,000–100,000. Both handle time-range queries reasonably well — Cassandra via a clustering key on timestamp, PostgreSQL via partitioning — so that dimension doesn't really separate them. Where they diverge sharply is aggregation support: PostgreSQL's `GROUP BY` is excellent, while Cassandra has essentially none. And durability is close to a wash — Cassandra's replication factor of 3 and PostgreSQL's write-ahead log plus replicas both deliver strong durability, just through different mechanisms.
 
 **Chosen:** Cassandra for Score DB (raw events) — it's a write-only append log. Aggregation never happens on Cassandra; that's Flink's job. InfluxDB for the aggregated store — native time-series aggregation with tag-based indexing.
 
-> [!NOTE]
-> **Key Insight:** Cassandra is the ingest buffer; InfluxDB is the query surface. Cassandra never answers ranking questions directly. This separation of concerns is what makes 1M writes/sec + < 100ms reads coexist in the same system.
+> [!IMPORTANT]
+> A datastore that's write-optimized rarely wants to also be query-optimized. Pulling those two jobs apart — Cassandra ingests, InfluxDB is queried — is what lets 1M writes/sec and sub-100ms reads coexist in the same system, instead of one requirement compromising the other.
 
 ---
 
@@ -526,7 +541,43 @@ Consistent hashing on region ensures a country's data always lands on the same s
 
 ---
 
-## Interview Summary
+## 10. Evaluation: Did We Meet the Requirements?
+
+Seven non-functional requirements were set out in §3. Here's how the design actually satisfies each one — the mechanism doing the work, not just the promise restated.
+
+**Top-K query latency (< 100ms p99):** The fast path never touches a disk-backed database on a read — `ZREVRANGE` runs against an in-memory Redis sorted set that's already sorted before the query arrives, and even a cache miss only escalates to a 5-minute-cached InfluxDB read rather than a live aggregation (§8.2, §8.3).
+
+**Score ingestion latency (< 500ms):** A score event's actual synchronous cost to the caller is a single Kafka publish — durable and cheap — with everything after that (the Cassandra write, the Redis update) happening asynchronously off the critical path, comfortably inside the 500ms budget (§5).
+
+**Availability (99.99%):** Ingestion, fast-path ranking, and historical aggregation are three independent flows (§5) — a Redis node failing doesn't take down ingestion, and a Kafka broker failing doesn't take down ranking reads, because §9.1's failure recovery is scoped per component, not system-wide.
+
+**Consistency (eventual, seconds of lag acceptable):** This is a deliberate choice, not a limitation the design settled for — §8.3's TTL strategy and Redis-first, InfluxDB-fallback read path both assume and accept that a ranking can be a few seconds stale, exactly what the Consistency Model table in §3 states for every domain in this system except score ingestion itself.
+
+**Durability (zero score loss after Kafka acknowledgement):** Every event is durably in Kafka before either downstream consumer touches it, and both consumers resume from their last committed offset on restart (§9.1) — a crash anywhere downstream of that acknowledgement delays a score's effect, it never erases it.
+
+**Accuracy (exact top-K, not probabilistic):** Every solution in §8 — the sorted set, the Flink aggregation, the hybrid — computes an exact ranking from real event data; nothing in this design approximates. The Count-Min Sketch alternative mentioned in scope (§3) stays an unbuilt option specifically because exactness was a stated requirement, not a default.
+
+**Scale (1M events/sec, billions of entities):** This isn't something achieved after the fact — it's the number that ruled out a relational `ORDER BY` and a single Redis node before either was ever seriously considered (§4), and every subsequent decision (Kafka, sharded Redis, Flink + InfluxDB) exists because that number was true from the start.
+
+| Requirement | Mechanism |
+|---|---|
+| Top-K query latency < 100ms | In-memory Redis ZREVRANGE, 5-min-cached InfluxDB fallback on miss |
+| Score ingestion latency < 500ms | Synchronous Kafka publish only; downstream writes are async |
+| Availability 99.99% | Three independent flows; per-component failure recovery (§9.1) |
+| Consistency — eventual | TTL-bounded Redis freshness, Redis-first InfluxDB-fallback reads |
+| Durability — zero loss | Kafka replication + offset-based resume on every consumer |
+| Accuracy — exact top-K | Every solution computes real rankings from real events, no sampling |
+| Scale — 1M events/sec, billions of entities | Kafka buffering, sharded Redis, Flink + InfluxDB (§4) |
+
+---
+
+## 11. Conclusion
+
+This design treats a Top K Leaderboard as two speeds of the same underlying question — "who's on top right now" — answered differently depending on how fresh the answer needs to be. A flood of writes gets buffered and split into a fast, ephemeral ranking path and a slow, durable aggregation path, and a read gets routed to whichever one actually has the freshest answer for the time window being asked about. The hardest problem wasn't any single piece of that pipeline — Redis Sorted Sets, Kafka, Flink, and InfluxDB are each individually well-understood tools — it was recognizing that "recent" and "historical" are genuinely different problems that don't belong in the same store, and building the hybrid that lets each be handled by the tool actually suited to it. Everything else in this design, from the write-amplification math in §4 to the region-sharded Redis Cluster in §9, falls out of getting that one split right.
+
+---
+
+## 12. Interview Summary
 
 ### Key Decisions
 
