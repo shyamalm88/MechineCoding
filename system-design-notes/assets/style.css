@@ -166,21 +166,7 @@ main blockquote {
   border-radius: 0 8px 8px 0;
 }
 
-.mermaid {
-  background: var(--mermaid-card-bg);
-  border: 1px solid var(--mermaid-card-border);
-  border-radius: 10px;
-  padding: 1rem;
-  margin-bottom: 1.2rem;
-  display: flex;
-  justify-content: center;
-}
-
-.empty-state {
-  color: var(--sidebar-group);
-  font-size: 0.95rem;
-}
-
+.mermaid,
 .diagram-figure {
   background: var(--mermaid-card-bg);
   border: 1px solid var(--mermaid-card-border);
@@ -189,12 +175,46 @@ main blockquote {
   margin: 0 0 1.2rem;
   display: flex;
   justify-content: center;
+  position: relative;
+  cursor: zoom-in;
+  transition: border-color 0.15s ease;
+}
+.mermaid:hover,
+.diagram-figure:hover {
+  border-color: var(--accent);
+}
+
+/* Hover affordance signalling the diagram is clickable to zoom -- applies
+   to both hand-drawn Excalidraw images and live mermaid.js SVGs. */
+.mermaid::after,
+.diagram-figure::after {
+  content: "🔍 Click to zoom";
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--sidebar-text);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.mermaid:hover::after,
+.diagram-figure:hover::after {
+  opacity: 1;
+}
+
+.empty-state {
+  color: var(--sidebar-group);
+  font-size: 0.95rem;
 }
 
 .excalidraw-diagram {
   max-width: 100%;
   height: auto;
-  cursor: zoom-in;
 }
 
 .diagram-lightbox {
@@ -209,9 +229,14 @@ main blockquote {
   overflow: auto;
 }
 .diagram-lightbox.open { display: flex; }
-.diagram-lightbox img {
+.diagram-lightbox-content {
   max-width: 100%;
   max-height: 100%;
+}
+.diagram-lightbox-content img,
+.diagram-lightbox-content svg {
+  max-width: 100%;
+  max-height: calc(100vh - 4rem);
   background: #fff;
   border-radius: 10px;
   transition: transform 0.15s ease;

@@ -361,7 +361,20 @@ sequenceDiagram
 <li><strong>Sync</strong> — Event Service writes to PostgreSQL, publishes <code>calendar.event.updated</code> to Kafka. Notification Service consumes, looks up WebSocket connections for all <code>calendarId</code> subscribers in Redis, pushes the update.</li>
 <li><strong>Re-render</strong> — Every collaborator's client receives the WS push. Client patches its local event array with the change, re-runs layout for the affected time slot, and re-renders the moved event at the new position.</li>
 </ol>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/553fac1258a7ce6b.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+flowchart TD
+    A[&quot;LOAD - GET /events&quot;] --&gt; B[&quot;LAYOUT - Interval partitioning\nSort, group, assign columns&quot;]
+    B --&gt; C[&quot;RENDER - Virtual scroll\nAbsolute CSS positioning&quot;]
+    C --&gt; D[&quot;INTERACT - User drags/edits\nDOM mutation at 60fps&quot;]
+    D --&gt; E[&quot;Optimistic update - local state&quot;]
+    E --&gt; F[&quot;PATCH /events/:id async&quot;]
+    F --&gt; G{&quot;API success?&quot;}
+    G --&gt;|Yes| H[&quot;PostgreSQL write\nKafka publish&quot;]
+    G --&gt;|No| I[&quot;Revert optimistic update\nError toast&quot;]
+    H --&gt; J[&quot;Notification Service\nWebSocket fan-out&quot;]
+    J --&gt; K[&quot;RE-RENDER - Collaborator clients\nPatch local state, re-run layout&quot;]
+    K --&gt; C
+</div>
 <blockquote>
 <p>[!IMPORTANT]
 The cycle is: Load once → Layout locally → Render virtually → Interact optimistically → Sync async → Re-render incrementally. No full page reload at any step. Each phase is independent and can fail gracefully without breaking the others.</p>

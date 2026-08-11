@@ -279,9 +279,62 @@ Async: the same event is also published to Kafka -&gt; Activity Service -&gt; Bi
 </code></pre>
 <p><strong>Why go through named events instead of just letting clients read the database changes directly?</strong> Four reasons, each ruling out a simpler alternative: the database is disk-backed and too slow to double as a real-time broadcast channel; events decouple a mutation from its fan-out, so the Board Service never needs to know which WebSocket servers happen to hold which connections; events are replayable, so a client reconnecting after a dropped connection can catch up from its <code>last_event_id</code> instead of needing a full reload; and the same event stream that drives real-time sync is also the audit log the Activity Service consumes — one source of truth, two consumers.</p>
 <p>With that event model in hand, the components fall out fairly directly. The simple version of the system is a Board Service that owns writes to PostgreSQL and publishes to Redis, a WebSocket tier that relays those publishes to connected browsers, and direct browser-to-S3 uploads for attachments so files never transit the API layer:</p>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/e9d91c763ce741fd.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    U[&quot;Browser Client&quot;]
+    AG[&quot;API Gateway + LB&quot;]
+    BS[&quot;Board Service&quot;]
+    WS[&quot;WebSocket Server&quot;]
+    DB[(&quot;PostgreSQL\nBoard State&quot;)]
+    RP[(&quot;Redis\nPub/Sub + Cache&quot;)]
+    S3[&quot;S3\nAttachments&quot;]
+
+    U--&gt;AG
+    AG--&gt;BS
+    BS--&gt;DB
+    BS--&gt;RP
+    RP--&gt;WS
+    WS--&gt;U
+    U--&gt;|direct upload|S3
+</div>
 <p>The evolved version adds what scale actually forces: multiple Board Service instances behind the gateway, PostgreSQL sharded by <code>board_id</code>, a Redis snapshot cache separated from the Redis Pub/Sub channels (they serve very different access patterns), a CDN for static assets, and Kafka carrying events onward to a Notification Service and an append-only Activity Service feeding BigQuery:</p>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/1eb4e14598897c3a.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    U[&quot;Browser Client&quot;]
+    CDN[&quot;CDN\nStatic Assets&quot;]
+    AG[&quot;API Gateway\nAuth + Rate Limit&quot;]
+    BS1[&quot;Board Service 1&quot;]
+    BS2[&quot;Board Service 2&quot;]
+    WS1[&quot;WS Server 1\nsticky sessions&quot;]
+    WS2[&quot;WS Server 2\nsticky sessions&quot;]
+    DB[(&quot;PostgreSQL\nSharded by board_id&quot;)]
+    RC[(&quot;Redis Cache\nBoard Snapshots TTL=60s&quot;)]
+    RP[(&quot;Redis Pub/Sub\nboard:{id} channels&quot;)]
+    NS[&quot;Notification Service&quot;]
+    AS[&quot;Activity Service\nAppend-only&quot;]
+    BQ[(&quot;BigQuery\nActivity Log&quot;)]
+    S3[&quot;S3\nAttachments&quot;]
+    K[[&quot;Kafka\nAsync events&quot;]]
+
+    U--&gt;CDN
+    U--&gt;AG
+    AG--&gt;BS1
+    AG--&gt;BS2
+    BS1--&gt;DB
+    BS2--&gt;DB
+    BS1--&gt;RC
+    BS1--&gt;RP
+    BS2--&gt;RP
+    RP--&gt;WS1
+    RP--&gt;WS2
+    WS1--&gt;U
+    WS2--&gt;U
+    BS1--&gt;K
+    K--&gt;NS
+    K--&gt;AS
+    AS--&gt;BQ
+    U--&gt;|pre-signed URL|S3
+</div>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>Why Redis Pub/Sub, not Kafka, for this hop.</strong> Kafka appears in the evolved diagram above, but only on the durable side (notifications, the activity log feeding BigQuery) — never on the path a card move takes to reach another member's screen. Board mutations have to reach every connected member in under 200ms; Kafka's throughput is massive, but its broker adds roughly 10–100ms of latency on top, which eats a meaningful chunk of that budget before the message has even left the building. Redis Pub/Sub is in-memory and sub-millisecond to publish, and it's a good fit specifically because the fan-out here is small — an average of 4 recipients per board, not thousands.</p>

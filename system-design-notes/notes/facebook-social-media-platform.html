@@ -242,7 +242,79 @@ Avg followers per user:          200
 <h3 id="simple-design">Simple Design</h3>
 <figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/5c8cea3308b4bd0f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design-production-scale">Evolved Design (Production Scale)</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/cd9bcac71a02cdc3.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    U[(&quot;Users / Clients&quot;)]
+    LB[&quot;Load Balancer + API Gateway&quot;]
+
+    subgraph Write Pipeline
+        CS[&quot;Content Service&quot;]
+        K1[[&quot;Kafka - raw-post&quot;]]
+        MOD[&quot;Moderator Service (AI/ML)&quot;]
+        K2[[&quot;Kafka - filtered-post&quot;]]
+        K3[[&quot;Kafka - blocked-post&quot;]]
+        PC[&quot;Post Consumer&quot;]
+        PM[&quot;Post Materializer&quot;]
+    end
+
+    subgraph Storage
+        PDB[(&quot;Cassandra - Post DB&quot;)]
+        S3[(&quot;S3 - Media&quot;)]
+        UDB[(&quot;PostgreSQL - User DB&quot;)]
+        FDB[(&quot;PostgreSQL - Follower DB&quot;)]
+    end
+
+    subgraph Feed System
+        FOS[&quot;Fan-out Service&quot;]
+        KF[[&quot;Kafka - fan-out tasks&quot;]]
+        FOC[&quot;Fan-out Consumer&quot;]
+        FC[(&quot;Redis - Feed Cache&quot;)]
+        PMC[(&quot;Redis - Post Materialization Cache&quot;)]
+        FOLC[(&quot;Redis - Follower Cache&quot;)]
+        BF[&quot;Backfill Service&quot;]
+        FEED[&quot;Feed Service&quot;]
+    end
+
+    subgraph Engagement Pipeline
+        KEng[[&quot;Kafka - engagement&quot;]]
+        EC[&quot;Engagement Consumer&quot;]
+        LDB[(&quot;PostgreSQL - Like DB&quot;)]
+        CDB[(&quot;Cassandra - Comment DB&quot;)]
+    end
+
+    NS[&quot;Notification Service&quot;]
+    USvc[&quot;User Service&quot;]
+
+    U --&gt; LB
+    LB --&gt; CS
+    LB --&gt; FEED
+    LB --&gt; USvc
+    CS --&gt; K1
+    K1 --&gt; MOD
+    MOD --&gt; K2
+    MOD --&gt; K3
+    K2 --&gt; PC
+    K2 --&gt; FOS
+    K2 --&gt; PM
+    PC --&gt; PDB
+    PC --&gt; S3
+    PM --&gt; PMC
+    K3 --&gt; NS
+    FOS --&gt; FOLC
+    FOS --&gt; KF
+    KF --&gt; FOC
+    FOC --&gt; FC
+    FEED --&gt; FC
+    FEED --&gt; BF
+    BF --&gt; FOLC
+    BF --&gt; PMC
+    BF --&gt; KF
+    USvc --&gt; UDB
+    LB --&gt; KEng
+    KEng --&gt; EC
+    EC --&gt; LDB
+    EC --&gt; CDB
+</div>
 <h3 id="the-write-path-step-by-step">The Write Path, Step by Step</h3>
 <p>When Maya taps "Post," the API Gateway authenticates her JWT and routes the request to the Content Service, which publishes it to the Kafka <code>raw-post</code> topic immediately and returns <code>202 Accepted</code> with a <code>post_id</code> in under 50ms. That's a deliberate async choice: synchronous moderation at 58,000 posts/sec would require 29,000 concurrent AI/ML calls in flight at once — architecturally infeasible — so the write response and the moderation decision are decoupled from the start.</p>
 <p>From there, the Moderator Service consumes <code>raw-post</code>, runs its AI/ML classifier (an image hash check plus a text policy check), and routes the event onward: valid posts go to <code>filtered-post</code>, blocked posts go to <code>blocked-post</code> where the Notification Service picks them up and alerts the user.</p>
@@ -557,7 +629,21 @@ Read:   Feed Service identifies celebrity followees via Follower Cache
 <p><strong>Here's the problem.</strong> A user follows 500 people. In the last hour, those 500 people collectively published 300 posts. Nobody wants to see all 300 — the feed shows 50. Which 50? Chronological order is the obvious answer, and it's also a bad one: a post from a user's best friend from two hours ago is often more relevant than a brand's post from two minutes ago. Recency is a poor proxy for what someone actually wants to see.</p>
 <p><strong>Why the naive solution fails.</strong> Sorting is straightforward to build — <code>ZREVRANGE user:feed:{userId} 0 49</code> returns the 50 most recent posts with no extra machinery. The problem shows up the moment engagement is measured: a viral post from a close friend gets buried below noise from accounts the user barely interacts with, simply because the noise happened to post more recently. Engagement collapses, because "most recent" and "most wanted" are two different orderings that only coincidentally agree.</p>
 <p><strong>The chosen solution is a two-stage pipeline: candidate generation, then ML ranking.</strong></p>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/3dc41bec9e7e30e9.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+flowchart TD
+    FC[(&quot;Redis Feed Cache\n500 post_id candidates&quot;)]
+    CG[&quot;Candidate Generator\nfilter by recency + follow strength&quot;]
+    FE[&quot;Feature Extractor\npull signals for each candidate post&quot;]
+    ML[&quot;ML Ranking Model\npredict P(engagement)&quot;]
+    RS[(&quot;Ranked Feed\ntop 50 returned to client&quot;)]
+    SI[(&quot;Signal Store\nRedis - user behaviour events)&quot;)]
+
+    FC --&gt; CG
+    CG --&gt; FE
+    FE --&gt; ML
+    SI --&gt; ML
+    ML --&gt; RS
+</div>
 <p>Stage one is a fast filter with no ML at all: starting from roughly 500 candidate <code>post_id</code>s already sitting in the Redis Feed Cache from fan-out, lightweight rules drop anything older than 7 days and weight up posts from users the viewer has actually interacted with in the last 30 days. That narrows 500 candidates down to around 200 — cheap, and enough to make the expensive stage tractable.</p>
 <p>Stage two runs an ML model over those 200 survivors, predicting, for each one, the probability the viewer will like it, comment on it, share it, or click it. The features feeding that prediction fall into four categories, and losing any one of them would blind the model to a real signal: post features (post age, media type — video, image, or text — like count, and comment velocity, meaning likes per minute since posting); author features (the poster's relationship to the viewer — close friend, page, or group — and the poster's own recent engagement rate); user behaviour signals (the viewer's past interactions with this specific poster, the content types the viewer historically engages with, and time of day — mobile mornings skew toward short text, evenings toward video); and contextual signals (device type, network speed — nobody wants a video ranked first on a slow connection — and how long the viewer's session has run so far). Each candidate gets a score between 0.0 and 1.0 representing predicted engagement probability, and the top 50 scores become the feed.</p>
 <p>Fitting this into the request path end to end:</p>

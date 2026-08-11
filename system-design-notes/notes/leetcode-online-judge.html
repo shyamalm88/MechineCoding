@@ -277,7 +277,20 @@ sequenceDiagram
 <hr />
 <h2 id="8-high-level-architecture">8. High-Level Architecture</h2>
 <h3 id="simple-design">Simple Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c5657fab65765a4c.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    Client[&quot;Browser Client - Monaco IDE&quot;]
+    LB[&quot;Load Balancer&quot;]
+    API[&quot;Primary API Server&quot;]
+    DB[(&quot;PostgreSQL DB&quot;)]
+    Containers[&quot;Docker Containers - one per runtime&quot;]
+
+    Client --&gt;|HTTPS| LB
+    LB --&gt; API
+    API --&gt;|Read problems, write submissions| DB
+    API --&gt;|Dispatch code directly| Containers
+    Containers --&gt;|Pass/fail result| API
+</div>
 <h3 id="evolved-design-queue-cache-cdc">Evolved Design — Queue, Cache, CDC</h3>
 <figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0e9702a827c62a7f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />

@@ -1,8 +1,9 @@
 document.addEventListener('DOMContentLoaded', function () {
   var overlay = document.createElement('div');
   overlay.className = 'diagram-lightbox';
-  var img = document.createElement('img');
-  overlay.appendChild(img);
+  var content = document.createElement('div');
+  content.className = 'diagram-lightbox-content';
+  overlay.appendChild(content);
   document.body.appendChild(overlay);
 
   var controls = document.createElement('div');
@@ -16,16 +17,36 @@ document.addEventListener('DOMContentLoaded', function () {
   document.body.appendChild(controls);
 
   var scale = 1;
-  function applyScale() { img.style.transform = 'scale(' + scale + ')'; }
+  function applyScale() {
+    var el = content.firstElementChild;
+    if (el) el.style.transform = 'scale(' + scale + ')';
+  }
 
-  function open(src, alt) {
+  // src is either an <img> src URL (Excalidraw diagrams) or an existing
+  // rendered <svg> element (live mermaid.js diagrams, e.g. sequence
+  // diagrams) -- the lightbox displays either kind the same way.
+  function openWithImage(src, alt) {
+    content.innerHTML = '';
+    var img = document.createElement('img');
     img.src = src;
     img.alt = alt || '';
+    content.appendChild(img);
+    openCommon();
+  }
+
+  function openWithSvg(svgEl) {
+    content.innerHTML = '';
+    content.appendChild(svgEl.cloneNode(true));
+    openCommon();
+  }
+
+  function openCommon() {
     scale = 1;
     applyScale();
     overlay.classList.add('open');
     controls.style.display = 'flex';
   }
+
   function close() {
     overlay.classList.remove('open');
     controls.style.display = 'none';
@@ -33,9 +54,18 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   document.addEventListener('click', function (e) {
-    var target = e.target.closest('.excalidraw-diagram');
-    if (target) { open(target.src, target.alt); return; }
-    if (e.target === overlay || e.target === img) { close(); }
+    var excalidrawImg = e.target.closest('.excalidraw-diagram');
+    if (excalidrawImg) { openWithImage(excalidrawImg.src, excalidrawImg.alt); return; }
+
+    var mermaidDiv = e.target.closest('.mermaid');
+    if (mermaidDiv) {
+      var svgEl = mermaidDiv.querySelector('svg');
+      if (svgEl) { openWithSvg(svgEl); return; }
+    }
+
+    if (e.target === overlay || e.target.closest('.diagram-lightbox-content')) {
+      close();
+    }
   });
 
   controls.addEventListener('click', function (e) {

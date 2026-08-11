@@ -553,7 +553,19 @@ sequenceDiagram
 <p>At 10x today's scale — 11.6 million messages/sec, 500 million concurrent WebSocket connections — five parts of this design hit a ceiling, and each one breaks for a different underlying reason.</p>
 <p>The Chat Server fleet is the most direct one: 1,000 servers each holding 50,000 connections is a memory-per-server ceiling, not a CPU one, and it's solved the same way it was built in the first place — reduce connections per server, auto-scale the fleet horizontally, and let the WebSocket Gateway's consistent hashing keep the load spread evenly rather than piling onto whichever servers happen to be handling active conversations. Kafka's ~46 partitions, sized for 2.3 million messages/sec, hits a subtler ceiling: consumer lag starts growing and delivery latency climbs well before the partitions themselves run out of capacity, so the fix is simply increasing partition count linearly alongside the consumer fleet, keeping the two in lockstep. Cassandra scales its write path linearly by adding nodes — that part doesn't break — but a viral group conversation can create a hot partition, since every message for one <code>conversation_id</code> still lands on the same set of nodes; sharding the partition key into <code>(conversation_id, bucket)</code>, bucketed by day or hour, bounds how large any single partition can ever grow, no matter how active the conversation gets. Redis's session map, sitting at roughly 5GB for 50 million users today, simply grows to about 50GB at 500 million — still comfortably inside what a Redis Cluster holds, and since the workload is read-heavy, adding read replicas absorbs the growth without adding write contention. And group fan-out is the one that breaks by a completely different mechanism: the async Fan-out Service that works fine for ordinary groups turns a single message into 10 million Kafka events the moment a group has 10 million members — the fix isn't scaling that service harder, it's routing large groups to a dedicated, rate-limited broadcast pipeline instead of asking the general-purpose fan-out path to absorb a load it was never sized for.</p>
 <p>That last point is really a difference in strategy by group size, not just scale, and it's worth showing as its own decision tree:</p>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c9b399afcccbe428.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+flowchart TD
+    Msg[&quot;Group message arrives&quot;]
+    Check{&quot;Group size?&quot;}
+    Small[&quot;Less than 100 members: synchronous fan-out\nChat Server fetches member list,\npublishes N delivery events directly&quot;]
+    Medium[&quot;100 to 10K members: async fan-out\nSingle Kafka event, Fan-out Service\nexpands to N delivery events&quot;]
+    Large[&quot;More than 10K members: broadcast pipeline\nDedicated broadcast workers,\nrate-limited, sharded by member range&quot;]
+
+    Msg --&gt; Check
+    Check --&gt;|small| Small
+    Check --&gt;|medium| Medium
+    Check --&gt;|large| Large
+</div>
 <blockquote>
 <p>[!NOTE]
 <strong>Key Insight:</strong> Fan-out strategy is a function of group size — the threshold is tuneable. Small group = synchronous is fine (bounded work). Large group = synchronous blocks the sender and overloads the Chat Server. The threshold (100 members) is an engineering decision, not a fixed rule.</p>

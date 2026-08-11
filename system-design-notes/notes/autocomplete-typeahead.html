@@ -166,7 +166,37 @@ Key Insight: The trie is not a search structure at read time — it's a lookup t
 <h3 id="simple-design">Simple Design</h3>
 <figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/6e296f706107fcb3.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="evolved-design">Evolved Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/4a8fa02977fab343.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    U[&quot;User Browser&quot;]
+    CDN[&quot;CDN Edge Cache&quot;]
+    ALB[&quot;Load Balancer&quot;]
+    AS1[&quot;Autocomplete Service 1&quot;]
+    AS2[&quot;Autocomplete Service 2&quot;]
+    RT[(&quot;Redis Trie Cluster\n26 shards by first char&quot;)]
+    RH[(&quot;Redis User History&quot;)]
+    TR[(&quot;Redis Trending&quot;)]
+    ES[(&quot;Elasticsearch\nFuzzy Fallback&quot;)]
+    K[[&quot;Kafka\nSearch Logs&quot;]]
+    FL[&quot;Flink\nReal-time Window 5min&quot;]
+    SP[&quot;Spark\nHourly Batch&quot;]
+    CA[(&quot;Cassandra\nQuery Frequency&quot;)]
+    TB[&quot;Trie Builder Job&quot;]
+
+    U--&gt;CDN
+    CDN--&gt;ALB
+    ALB--&gt;AS1
+    ALB--&gt;AS2
+    AS1--&gt;RT
+    AS1--&gt;RH
+    AS1--&gt;TR
+    AS1--&gt;ES
+    AS2--&gt;RT
+    U--&gt;K
+    K--&gt;FL--&gt;TR
+    K--&gt;SP--&gt;CA
+    CA--&gt;TB--&gt;RT
+</div>
 <p><strong>Core Design Principles</strong></p>
 <table>
 <thead>

@@ -535,7 +535,19 @@ sequenceDiagram
 </code></pre>
 <p>— fails almost immediately in practice: spammers evade fixed keyword lists trivially, which leaves both a low catch rate and a high false-positive rate on legitimate mail that happens to mention similar words.</p>
 <p>The actual filter is a layered scoring pipeline, and the order of the layers matters as much as the layers themselves:</p>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/6b098d3c6b15a648.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+flowchart TD
+    Email[&quot;Inbound Email&quot;] --&gt; L1[&quot;Layer 1: Sender Reputation\n(IP/domain blocklist + reputation score)&quot;]
+    L1 --&gt;|Score &gt; hard threshold| REJECT[&quot;Reject immediately\n(don't even score content)&quot;]
+    L1 --&gt;|Continue| L2[&quot;Layer 2: Authentication\n(SPF check + DKIM signature verify)&quot;]
+    L2 --&gt;|Fail| PENALISE[&quot;Add penalty score&quot;]
+    L2 --&gt; L3[&quot;Layer 3: Content Analysis\n(ML model: TF-IDF + neural classifier)&quot;]
+    L3 --&gt; L4[&quot;Layer 4: Behavioral Signals\n(user reports, unsubscribes, read rate)&quot;]
+    L4 --&gt; SCORE[&quot;Final Score 0.0 - 1.0&quot;]
+    SCORE --&gt;|score &lt; 0.3| INBOX[&quot;Route to INBOX&quot;]
+    SCORE --&gt;|0.3 to 0.7| REVIEW[&quot;Route to SPAM folder&quot;]
+    SCORE --&gt;|score &gt; 0.7| BLOCK[&quot;Block + notify sender&quot;]
+</div>
 <p>Sender reputation goes first because it's the cheapest check available — a Redis lookup against an IP/domain blocklist and reputation score, under a millisecond, and it alone eliminates roughly 60% of spam before a single byte of content is even read. Authentication comes next: SPF checks whether the sending IP is actually authorized for its claimed domain, DKIM verifies the cryptographic signature, both cached and resolved in under 5ms, and together they eliminate spoofed sender domains specifically. Only what survives both of those cheap layers reaches Content Analysis — an ML classifier trained on billions of labelled emails, looking at TF-IDF features, URL reputation, attachment type, and link density, at 50–100ms per email — which is exactly why the order matters: applying that ML scan to all 3.5 million emails a second would be computationally impossible, but after reputation filtering removes 60%, only around 40% (roughly 1.4M/sec) actually need it, which is a load a horizontally scaled inference fleet can absorb. Behavioral signals — how often recipients mark similar mail as spam, whether they read or delete unread — run asynchronously, pre-computed daily, and adapt the scoring to user-specific preference over time rather than a single global rule.</p>
 <p>The final score routes the email three ways: below 0.3 goes straight to <code>INBOX</code>, between 0.3 and 0.7 goes to the <code>SPAM</code> folder where the user can still recover it, and above 0.7 gets rejected at the SMTP layer itself — before the <code>250</code> is ever sent, so the sender gets a bounce instead of a silent drop.</p>
 <p>The trade-off accepted is that probabilistic scoring is never perfect: some spam will still reach an inbox, and some legitimate email will land in spam. No filter of this kind achieves 100% accuracy. The thresholds (0.3/0.7) are tunable, and in practice get adjusted per-user based on their own "mark as not spam" actions.</p>

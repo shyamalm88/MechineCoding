@@ -255,9 +255,87 @@ It is about:
 <p>Because "a couple of seconds" is measured against a five-second budget, not against zero. The outbox's DB write plus CDC detection adds 2–5 seconds on its own — on a bad day, that alone can eat the entire OTP window before the message has even reached Kafka, let alone the user's phone. An OTP that arrives after it expires has failed exactly as completely as one that never arrived, so the fast path skips the outbox rather than gambling the whole budget on it. See §8.2 in Deep Dives for the full trade-off.</p>
 </details>
 <h3 id="simple-design">Simple Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/ee4f716a702efb64.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    C[&quot;Client (Amazon/Uber)&quot;]
+    AG[&quot;API Gateway + Load Balancer&quot;]
+    TS[&quot;Template Service&quot;]
+    UPS[&quot;User Preference Service&quot;]
+    NS[&quot;Notification Service&quot;]
+    TDB[(&quot;Template DB&quot;)]
+    UPDB[(&quot;User Preference DB&quot;)]
+    EP[&quot;Email Provider&quot;]
+    SP[&quot;SMS Provider&quot;]
+    IP[&quot;InApp Provider&quot;]
+    EXT[&quot;External Services\nSendGrid / Twilio / FCM&quot;]
+
+    C--&gt;AG
+    AG--&gt;TS--&gt;TDB
+    AG--&gt;UPS--&gt;UPDB
+    AG--&gt;NS
+    NS--&gt;EP
+    NS--&gt;SP
+    NS--&gt;IP
+    EP--&gt;EXT
+    SP--&gt;EXT
+    IP--&gt;EXT
+</div>
 <h3 id="evolved-design">Evolved Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/665b5554d499a4f5.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    C[&quot;Client (Amazon/Uber)&quot;]
+    AG[&quot;API Gateway\nAuth + Rate Limit + Routing&quot;]
+    TS[&quot;Template Service&quot;]
+    UPS[&quot;User Preference Service&quot;]
+    NS[&quot;Notification Service&quot;]
+    TDB[(&quot;Template DB\nPostgreSQL&quot;)]
+    UPDB[(&quot;User Preference DB\nPostgreSQL&quot;)]
+    RC[(&quot;Redis\nUser Pref Cache TTL=60s&quot;)]
+    NDB[(&quot;Notification DB\nPostgreSQL\n+ Outbox Table&quot;)]
+    K[[&quot;Kafka\n9 Topics\ncritical/standard/promo x email/sms/push\n+ DLQ + retry + delivery-status&quot;]]
+    CDC[&quot;CDC Pipeline\nDebezium&quot;]
+    KUP[[&quot;Kafka\nuser-preference topic&quot;]]
+    UPC[&quot;User Preference Consumer&quot;]
+    EP[&quot;Email Provider&quot;]
+    SP[&quot;SMS Provider&quot;]
+    IP[&quot;InApp Provider&quot;]
+    OTPP[&quot;OTP Provider\nmore replicas&quot;]
+    DC[&quot;Delivery Consumer&quot;]
+    BQ[(&quot;BigQuery\nEvent Log&quot;)]
+    RS[&quot;Reporting Service&quot;]
+    SG[&quot;SendGrid / SES&quot;]
+    TW[&quot;Twilio / MSG91&quot;]
+    FCM[&quot;FCM / APNs&quot;]
+
+    C--&gt;AG
+    AG--&gt;TS--&gt;TDB
+    AG--&gt;UPS--&gt;KUP--&gt;UPC--&gt;UPDB
+    AG--&gt;NS
+    NS--&gt;|critical priority|K
+    NS--&gt;|standard+promo|NDB
+    NDB--&gt;CDC--&gt;K
+    K--&gt;EP
+    K--&gt;SP
+    K--&gt;IP
+    K--&gt;OTPP
+    EP--&gt;RC
+    SP--&gt;RC
+    IP--&gt;RC
+    RC--&gt;UPDB
+    EP--&gt;SG
+    SP--&gt;TW
+    IP--&gt;FCM
+    OTPP--&gt;TW
+    SG--&gt;|webhook|K
+    TW--&gt;|webhook|K
+    FCM--&gt;|webhook|K
+    K--&gt;DC
+    DC--&gt;NDB
+    DC--&gt;BQ
+    BQ--&gt;RS
+    NDB--&gt;RS
+    RS--&gt;C
+</div>
 <h3 id="the-full-sequence">The Full Sequence</h3>
 <p>The diagrams above show the components; here's the actual message sequence for each of the two paths.</p>
 <p>For a standard or promotional notification: the client's request goes through the API Gateway, which validates the API key and applies inbound rate limiting — a token bucket capping a client around 100K notifications/min, so one client's flood can't starve another (§8.6 has the full mechanism) — before handing off to the Notification Service. From there, a single database transaction inserts a <code>PENDING</code> notification row and an <code>UNPUBLISHED</code> outbox row together — only once that transaction commits does the client get its <code>202 Accepted</code>, because ACKing any earlier would be a promise the system hasn't actually kept yet (§8.1 covers exactly why). The CDC pipeline then notices the new outbox row and publishes it onto the right <code>{priority}-{channel}</code> topic; whichever provider owns that topic checks the recipient's cached preference before doing anything else, forwards to the actual external service (SendGrid, Twilio, or FCM/APNs), and once that service fires a delivery webhook back, the Delivery Consumer updates both the Notification DB and BigQuery's event log — which is exactly what the Reporting Service reads from to serve the client dashboard: final status from the Notification DB, the granular per-notification event timeline from BigQuery.</p>

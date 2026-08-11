@@ -183,9 +183,44 @@ Requests/second (peak):  1M RPS
 <p>Because rules change rarely — nowhere near as often as token counts, which change on every single request — so paying a network round-trip for something that's almost always the same answer would be pure waste on the hottest path in the system. §8.6 covers the push mechanism (etcd) that keeps that in-memory cache correct without ever polling for it.</p>
 </details>
 <h3 id="simple-design">Simple Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0763eef6a7bad9e3.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    U[&quot;Client&quot;]
+    GW[&quot;API Gateway\n(rate limiter lives here)&quot;]
+    R[(&quot;Redis\ntoken buckets&quot;)]
+    MS1[&quot;Microservice A&quot;]
+    MS2[&quot;Microservice B&quot;]
+
+    U--&gt;GW
+    GW--&gt;R
+    GW--&gt;MS1
+    GW--&gt;MS2
+</div>
 <h3 id="evolved-design">Evolved Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0881b3270113a1a2.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    U[&quot;Client&quot;]
+    GW1[&quot;API Gateway 1&quot;]
+    GW2[&quot;API Gateway 2&quot;]
+    GW3[&quot;API Gateway N&quot;]
+    R1[(&quot;Redis Shard 1\n+ Replica&quot;)]
+    R2[(&quot;Redis Shard 2\n+ Replica&quot;)]
+    RN[(&quot;Redis Shard 20\n+ Replica&quot;)]
+    ZK[&quot;etcd / ZooKeeper\nConfig Store&quot;]
+    MS[&quot;Microservices&quot;]
+
+    U--&gt;GW1
+    U--&gt;GW2
+    U--&gt;GW3
+    GW1--&gt;R1
+    GW1--&gt;R2
+    GW2--&gt;RN
+    R1-.-|async replication|R1
+    ZK--&gt;|push rule changes|GW1
+    ZK--&gt;|push rule changes|GW2
+    GW1--&gt;MS
+    GW2--&gt;MS
+</div>
 <p>The simple version is a single gateway talking to a single Redis instance — fine for understanding the shape of the system, but it doesn't survive contact with the scale numbers from §4. The evolved version is the same idea repeated across many gateway instances and 20 Redis shards, with etcd pushing rule changes out to every gateway instead of any of them polling for updates.</p>
 <h3 id="the-full-sequence">The Full Sequence</h3>
 <p>Trace Alice's request all the way through, and then the scraper's rejected one right behind it. Alice's <code>GET /feed</code> hits an API Gateway carrying her identity — a <code>userId</code> pulled from the JWT in her <code>Authorization</code> header since she's logged in, a source IP from <code>X-Forwarded-For</code> if a request is anonymous instead, or an <code>API-Key</code> header if the caller is a developer integration. The gateway already knows which rule applies to her before it touches Redis at all: premium users get 1000 requests/minute, regular users get 100/minute, and that mapping came from etcd on gateway startup, not a lookup on this request. With identity and rule both in hand, the gateway calls Redis with a single Lua script — an atomic read-modify-write that reads the bucket, calculates the refill, and writes the result back, all in one indivisible round trip:</p>
