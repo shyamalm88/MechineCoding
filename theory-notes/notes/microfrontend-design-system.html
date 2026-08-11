@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -549,22 +550,7 @@ remotes: {
 }
 </code></pre>
 <h3 id="blue-green-deployment">Blue-Green Deployment</h3>
-<div class="mermaid">
-flowchart TD
-    START[&quot;CDN: remoteEntry.js → BLUE (stable)&quot;]
-    SMOKE{&quot;Smoke tests pass?&quot;}
-    SWITCH[&quot;CDN switches pointer to GREEN&quot;]
-    GREEN[&quot;remoteEntry.js → GREEN (new version)&quot;]
-    NEW[&quot;New sessions → GREEN&quot;]
-    OLD[&quot;In-progress sessions finish on BLUE (graceful)&quot;]
-    RB[&quot;Rollback: pointer stays on BLUE&quot;]
-
-    START --&gt; SMOKE
-    SMOKE --&gt;|&quot;✅ pass&quot;| SWITCH --&gt; GREEN
-    SMOKE --&gt;|&quot;❌ fail&quot;| RB
-    GREEN --&gt; NEW
-    GREEN --&gt; OLD
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/61aed6c654e04e7a.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="rollback-strategy">Rollback Strategy</h3>
 <pre><code>Problem: Chat team deployed v2.1.0 with a bug.
 Shell is fetching: chat.example.com/remoteEntry.js → v2.1.0

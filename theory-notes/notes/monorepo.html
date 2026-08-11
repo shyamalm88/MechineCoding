@@ -9,6 +9,7 @@
 <script src="../assets/sidebar.js" defer></script>
 <script src="../assets/highlight.min.js" defer></script>
 <script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
 <script defer>
 document.addEventListener('DOMContentLoaded', function () {
   hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
@@ -148,24 +149,7 @@ turbo run build --filter=apps/web  # build only web and its deps
 turbo run lint test build          # run multiple tasks
 </code></pre>
 <h3 id="task-dependency-graph">Task Dependency Graph</h3>
-<div class="mermaid">
-graph TD
-    UB[&quot;packages/ui build&quot;]
-    AB[&quot;packages/api-client build&quot;]
-    WB[&quot;apps/web build&quot;]
-    MB[&quot;apps/mobile build&quot;]
-    DB[&quot;apps/admin build&quot;]
-
-    UB --&gt; WB
-    UB --&gt; MB
-    UB --&gt; DB
-    AB --&gt; WB
-    AB --&gt; MB
-    AB --&gt; DB
-
-    style UB fill:#f9f,stroke:#333
-    style AB fill:#f9f,stroke:#333
-</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/13494660b377c825.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><code>^build</code> means: before building this package, build all its dependencies first. Turborepo runs <code>ui</code> and <code>api-client</code> builds in parallel, then <code>web</code>, <code>mobile</code>, and <code>admin</code> in parallel after.</p>
 <h3 id="remote-caching-the-killer-feature">Remote Caching — the killer feature</h3>
 <pre><code class="language-bash"># First CI run: tasks execute + outputs cached to Turborepo cloud
