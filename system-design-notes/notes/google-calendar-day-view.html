@@ -38,108 +38,80 @@ document.addEventListener('DOMContentLoaded', function () {
 Google Calendar Day View is frontend-heavy — but the backend is non-trivial. The frontend solves: virtual scrolling a 24-hour grid, drag-and-drop with snapping, overlapping event layout (interval partitioning), and RRULE expansion. The backend solves: ACID event storage, conflict resolution for concurrent edits, and fan-out notifications to shared calendar members. Both sections get full coverage.</p>
 </blockquote>
 <hr />
-<h2 id="1-problem-scope">1. Problem + Scope</h2>
-<p>Design the Google Calendar <strong>Day View</strong> — a time-grid UI that displays all events for a single day, supports creating/editing/deleting events via drag, resize, and click, handles recurring events, and broadcasts real-time updates to shared-calendar collaborators.</p>
-<p><strong>In scope:</strong> Day view grid, event CRUD, drag &amp; resize, recurring events (RRULE), overlapping event layout, real-time collaboration on shared calendars, all-day events, timezone rendering.</p>
-<p><strong>Out of scope:</strong> Meeting Room booking, Google Meet integration, calendar migration/import, Google Tasks integration.</p>
+<h2 id="1-what-is-google-calendar-day-view">1. What Is Google Calendar Day View?</h2>
+<p>Google Calendar's Day View is the screen you land on when you want to see one specific day up close: a 24-hour grid running top to bottom, with every meeting and reminder drawn in its actual time slot, so a glance tells you you're free at 2pm and slammed from 9 to 11. You create an event by clicking and dragging across the hours you want to block off, move an existing event by dragging it, resize it by dragging its edge, and delete it when it's no longer needed. Some events repeat — a standup every weekday, a rent reminder every month — and the grid has to show the right occurrence on the right day without anyone having created a thousand separate copies of it behind the scenes. And because calendars are usually shared — a team calendar, a family calendar — when one person moves a meeting, everyone else looking at that same calendar needs to see it move too, within about a second.</p>
+<p>At the scale this runs at, the hard part isn't drawing boxes on a grid — it's making all of that feel instantaneous and correct at once: instant enough that dragging a box never stutters, and correct enough that two people editing the same shared meeting at the same moment never silently clobber each other.</p>
 <hr />
-<h2 id="2-assumptions-scale">2. Assumptions &amp; Scale</h2>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Daily Active Users</td>
-<td>500M</td>
-</tr>
-<tr>
-<td>Avg events visible in day view</td>
-<td>10–20 per user</td>
-</tr>
-<tr>
-<td>Peak concurrent users</td>
-<td>50M</td>
-</tr>
-<tr>
-<td>Event reads (day view load)</td>
-<td>3–5 API calls</td>
-</tr>
-<tr>
-<td>Peak event writes</td>
-<td>10M updates/min → ~167K writes/sec</td>
-</tr>
-<tr>
-<td>Event storage per user/year</td>
-<td>~10K events × 1KB = 10MB</td>
-</tr>
-<tr>
-<td>Total storage</td>
-<td>500M × 10MB = 5PB</td>
-</tr>
-<tr>
-<td>WebSocket connections (shared calendars)</td>
-<td>~5M concurrent</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Scale calculation for write path:</strong></p>
-<p>167K writes/sec is easily handled by a PostgreSQL cluster with read replicas. No NoSQL needed — events are relational (attendees, calendars, permissions). The fan-out to collaborators (shared calendar update → notify N users) is the harder problem at scale.</p>
-<p><em>These numbers drive the following decisions: PostgreSQL for ACID event storage, Redis for WebSocket session routing, Kafka for fan-out notifications to shared calendar members.</em></p>
+<h2 id="2-a-day-in-the-life">2. A Day in the Life</h2>
+<p>Ananya opens Monday's Day View at 8am, coffee in hand. The grid shows her recurring 9:30 standup, a couple of meetings already on the books, and a wide-open stretch from 1 to 5. She clicks at 2pm and drags down to 3:30, and a new "Design Review" block appears under her cursor as she goes — she doesn't fill in a form first, she just draws the time she wants.</p>
+<p>A few minutes later she realizes the review needs more room. She grabs the bottom edge of the block and drags it further down; the block grows in real time, snapping cleanly to the quarter-hour instead of landing on some odd time like 3:22. The moment she lets go, the block is just... there, sitting at its new size. No spinner, no "saving," nothing to wait for.</p>
+<p>Then she spots a conflict: her 9:30 standup overlaps a client call that just got scheduled. She drags the standup 15 minutes later. Because it's a recurring meeting, the app asks whether she means to move just today's occurrence or every future Monday — she picks "just this one," and only today's box shifts; next Monday's standup stays exactly where it was.</p>
+<p>Across the office, her teammate Rohit has the same shared "Product Team" calendar open. He never touched anything — but the instant Ananya drops the Design Review block, it simply appears on his screen too, sitting in the 2–3:30 slot as if it had always been there.</p>
+<p>Later, Ananya's laptop briefly drops its wifi mid-drag while she's resizing another event. It doesn't hang or vanish into some broken half-state — a small "failed to save" toast appears and the event snaps back to where it was before she started. She reconnects, drags again, and it sticks the second time.</p>
+<p>By lunch she's rearranged half her day, split off one occurrence of a recurring meeting from the rest of the series, and never once thought about a database, a queue, or a WebSocket — she was just moving boxes around on a grid, and Rohit's grid stayed in sync with hers the whole time. Everything from here on is how that experience actually gets built.</p>
 <hr />
-<h2 id="3-functional-requirements">3. Functional Requirements</h2>
-<ul>
-<li>Display a 24-hour time grid for a selected date, showing all events for the user</li>
-<li>Create events via click-and-drag on the grid</li>
-<li>Edit events: drag to move (reschedule), drag edge to resize (change duration)</li>
+<h2 id="3-requirements-and-why-they-matter">3. Requirements — and Why They Matter</h2>
+<p><strong>Scope.</strong> In scope: Day view grid, event CRUD, drag &amp; resize, recurring events (RRULE), overlapping event layout, real-time collaboration on shared calendars, all-day events, timezone rendering. Out of scope: meeting room booking, Google Meet integration, calendar migration/import, Google Tasks integration.</p>
+<p><strong>Functional requirements:</strong></p>
+<ol>
+<li>Display a 24-hour time grid for a selected date, showing every event the user has that day</li>
+<li>Create events by clicking and dragging across a range of the grid</li>
+<li>Edit events: drag to move (reschedule), drag an edge to resize (change duration)</li>
 <li>Delete events</li>
-<li>Handle overlapping events — render them side-by-side without overlap</li>
-<li>Support recurring events defined by RRULE (daily, weekly, monthly, custom)</li>
-<li>Show all-day events in a dedicated strip at the top</li>
-<li>Render events from multiple calendars with color coding</li>
-<li>Real-time sync: if a collaborator edits a shared event, the other user's view updates within 1 second</li>
-<li>Timezone-aware: store in UTC, render in the user's local timezone</li>
-</ul>
-<hr />
-<h2 id="4-non-functional-requirements">4. Non-Functional Requirements</h2>
+<li>Handle overlapping events — render them side-by-side instead of stacked and hidden</li>
+<li>Support recurring events defined by RRULE (daily, weekly, monthly, custom), including editing just one occurrence versus all future ones</li>
+<li>Show all-day events in a dedicated strip at the top of the grid</li>
+<li>Render events from multiple calendars at once, color-coded by calendar</li>
+<li>Real-time sync: a collaborator's edit to a shared event shows up in every other viewer's grid within 1 second</li>
+<li>Timezone-aware rendering: store events in UTC, display them in each viewer's local timezone</li>
+</ol>
+<details>
+<summary><strong>Point to Ponder:</strong> Requirement 5 says overlapping events render "side-by-side" — but what actually decides how many columns to split them into, and how wide each one is?</summary>
+<p>It isn't a fixed number of columns waiting to be filled in — the width is computed fresh for every cluster of overlapping events, based on the maximum number of events that are simultaneously active at any single instant inside that cluster. Three events overlapping at once get 33% width each; two get 50% each. This is the classic interval-partitioning problem (the same one behind "minimum machines needed to run overlapping jobs without collision"), and it runs entirely client-side. See §8.1 Deep Dives for the full algorithm.</p>
+</details>
+<p><strong>Non-functional requirements — and why each one matters to a real user, not just as a target:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Requirement</th>
 <th>Target</th>
+<th>Why it matters</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Initial load latency</td>
 <td>&lt; 500ms (events visible)</td>
+<td>A day view that takes a visible beat to populate feels like the app forgot your schedule — trust in "this is accurate" starts eroding before a single event has even rendered.</td>
 </tr>
 <tr>
 <td>Drag &amp; resize frame rate</td>
 <td>60 fps (no jank)</td>
+<td>A calendar box that stutters or lags behind the cursor while being dragged feels physically broken in a way a slow API response doesn't — it's the one interaction users judge instantly, by feel.</td>
 </tr>
 <tr>
 <td>Real-time update latency</td>
 <td>&lt; 1 second for shared calendars</td>
+<td>If Rohit's grid updates half a minute after Ananya moves a meeting, the two of them can genuinely double-book the same slot before either one realizes there's a conflict.</td>
 </tr>
 <tr>
 <td>Availability</td>
 <td>99.9%</td>
+<td>A calendar that's unreachable right before a meeting isn't a minor inconvenience — it's the one moment someone actually needs to check whether they're free or already double-booked.</td>
 </tr>
 <tr>
 <td>Consistency</td>
 <td>Eventual for real-time; strong for event creation/deletion</td>
+<td>Real-time sync can afford to lag a beat without anyone noticing, but two people must never both be told they successfully booked the same slot — that has to be provably correct, not eventually correct.</td>
 </tr>
 <tr>
 <td>Offline</td>
 <td>Read-only view from local cache; writes queued</td>
+<td>Losing connectivity shouldn't mean losing access to "what's on my calendar today" — and a change made offline shouldn't just be silently dropped once the network comes back.</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Consistency model:</strong></p>
+<p><strong>Consistency Model by domain:</strong></p>
 <table>
 <thead>
 <tr>
@@ -162,18 +134,33 @@ Google Calendar Day View is frontend-heavy — but the backend is non-trivial. T
 <tr>
 <td>RRULE expansion</td>
 <td>Computed on read</td>
-<td>Recurrences are derived — no consistency issue</td>
+<td>Recurrences are derived — no consistency issue to solve</td>
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> Ananya and Rohit both have the shared "Product Team" calendar open. What actually happens if they both edit the same event at the exact same moment?</summary>
+<p>The system doesn't let the second write silently overwrite the first without anyone noticing. Every event carries a version number, and an update has to say which version it started from — if that version has already moved on by the time the write lands, the write is rejected with a conflict rather than silently applied, and the losing client is told to refresh and try again. See §8.5 Deep Dives for the full mechanism.</p>
+</details>
 <hr />
-<h2 id="mental-model">🧠 Mental Model</h2>
-<p>Google Calendar Day View has <strong>three core flows</strong>:</p>
-<ol>
-<li><strong>Load flow</strong> — user navigates to a date → client fetches events for that day → frontend computes the layout (overlaps, positions, widths) → renders the grid</li>
-<li><strong>Edit flow</strong> — user drags/resizes/clicks → optimistic UI update locally → API call → server persists → WebSocket broadcasts change to collaborators</li>
-<li><strong>Real-time flow</strong> — collaborator edits a shared event → Event Service writes to DB → Kafka message → Notification Service → WebSocket push → all connected clients for that calendar receive the update</li>
-</ol>
+<h2 id="4-scale-from-first-principles">4. Scale, From First Principles</h2>
+<p>Before designing anything, it's worth asking what the raw numbers actually demand, rather than treating "real-time" and "500 million users" as slogans.</p>
+<p><strong>Starting assumptions:</strong></p>
+<pre><code>Daily Active Users:                500M
+Avg events visible in day view:    10-20 per user
+Peak concurrent users:             50M
+Event reads (day view load):       3-5 API calls
+Peak event writes:                 10M updates/min
+WebSocket connections (shared):    ~5M concurrent
+</code></pre>
+<p><strong>How many writes per second does "10M updates/min" at peak actually mean?</strong> Divide by 60 seconds and it's about 167,000 writes per second. That number is small enough to matter: a well-provisioned PostgreSQL cluster with read replicas handles 167K writes/sec without needing anything exotic. There's no case here for a NoSQL store, either — calendar events are inherently relational (an event belongs to a calendar, a calendar has members with roles, an event has attendees), and those multi-table relationships are exactly what ACID transactions and joins are built for. The genuinely hard problem at this scale isn't the write itself — it's what happens after the write, when a shared-calendar edit has to fan out to every collaborator watching that calendar.</p>
+<p><strong>What does storing a year of events for every user actually cost?</strong> At roughly 10,000 events per user per year, and about 1KB per event, that's 10MB of event data per user per year — and multiplied across 500 million users, 5 petabytes total. That's a large absolute number, but it's a solved, boring problem: shard the storage, replicate it, let it grow. It's nowhere near as sharp a constraint as the 167K writes/sec figure above, which is exactly why this design spends far more effort on the write and fan-out path than on raw storage capacity.</p>
+<p><strong>What does "real-time for shared calendars" cost in open connections?</strong> Roughly 5 million concurrent WebSocket connections at peak — every client with a shared calendar open needs a live channel waiting for updates. That number is what rules out anything that isn't a horizontally-scaled, stateless-by-design WebSocket server cluster with a session map living somewhere shared (not in any one server's memory), since no single server is going to hold 5 million open sockets.</p>
+<p>These numbers are what drive every major decision in the sections ahead: PostgreSQL for ACID event storage (167K writes/sec doesn't need anything more exotic), Redis for WebSocket session routing (5M connections can't live in any one server's memory), and Kafka for fan-out notifications to shared calendar members (the actual hard problem once a write lands).</p>
+<hr />
+<h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
+<p>Remember Ananya dragging her Design Review block into existence, and Rohit's screen updating without him touching anything — here's what's actually running underneath both of those moments.</p>
+<p>Google Calendar Day View is really three flows sharing the same underlying data. The <strong>load flow</strong> runs once, when a user opens a date: the client fetches that day's events, and a client-side layout engine works out overlaps, column positions, and widths before anything gets drawn. The <strong>edit flow</strong> runs every time a user drags, resizes, or clicks: the change is applied to the screen immediately, and only afterward does an API call go out to actually persist it. The <strong>real-time flow</strong> is what makes Rohit's screen move without him doing anything: once a collaborator's edit is durably saved, it gets published to every other client watching that same calendar over an open WebSocket connection.</p>
 <pre><code>User navigates to Day View
          │
          ▼
@@ -199,7 +186,6 @@ Google Calendar Day View is frontend-heavy — but the backend is non-trivial. T
     │  4. WS broadcast to collaborators │
     └───────────────────────────────────┘
 </code></pre>
-<p><strong>⚡ Core Design Principles</strong></p>
 <table>
 <thead>
 <tr>
@@ -221,8 +207,87 @@ Google Calendar Day View is frontend-heavy — but the backend is non-trivial. T
 </tr>
 </tbody>
 </table>
+<details>
+<summary><strong>Point to Ponder:</strong> Why does the client compute overlap columns and widths itself, instead of asking the server to return events pre-positioned?</summary>
+<p>Because that computation is pure CPU work over data the client already has — no network round-trip could make it faster than just doing it locally, and running it on the server would mean every day-view load pays for a computation the client can do itself in well under a millisecond. It also means the server's job stays simple: return raw start/end times and let each client (web, iOS, Android) implement its own layout strategy independently, instead of every platform being locked to whatever layout format the server decided to hand back. See §8.1 Deep Dives.</p>
+</details>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The WebSocket server is stateless fan-out — it doesn't store event data, and the Event Service never calls a WebSocket server directly. Kafka sits between them so the write path never has to wait on how many collaborators need notifying.</p>
+</blockquote>
+<h3 id="from-simple-to-evolved">From Simple to Evolved</h3>
+<p>The architecture starts as a straightforward CRUD service and grows real-time collaboration and scale-out on top — here's both versions.</p>
+<p><strong>Simple Design</strong></p>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c065f54c1ad9c452.svg" alt="Architecture diagram" loading="lazy"></figure>
+<p><strong>Evolved Design (with Real-Time + Scale)</strong></p>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/619c60a91fdf4763.svg" alt="Architecture diagram" loading="lazy"></figure>
+<h3 id="the-full-sequence">The Full Sequence</h3>
+<p>The diagrams above show the components; the sequences below show the actual message flow through them, for the two moments Ananya's story hinged on — opening the day view, and dragging an event — plus the complete cycle that ties both together.</p>
+<p><strong>Opening the day view.</strong> The client requests <code>GET /api/v1/events?calendarId=primary&amp;start=&amp;end=</code> for the selected date. The Event Service queries PostgreSQL for the base events plus any RRULE exceptions that fall on that day, and for each recurring event it expands the RRULE server-side into a concrete occurrence for that specific day — the client never has to know a series is recurring at all, it just receives event objects. That response lands in under 500ms, and only then does the client run its layout engine (sort → group overlaps → assign columns) and render the visible portion of the 24-hour grid via virtual scrolling, positioning each event absolutely with <code>top = (startMinutes / 1440) * gridHeight</code> and <code>height = (durationMinutes / 1440) * gridHeight</code>. Once the grid is up, the client opens a WebSocket connection and subscribes to the calendars it needs live updates for.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant User
+    participant Client
+    participant EventService
+    participant PostgreSQL
+    participant WS as WebSocket Server
+
+    User-&gt;&gt;Client: Navigate to Day View
+    Client-&gt;&gt;EventService: GET /events?start=&amp;end=
+    EventService-&gt;&gt;PostgreSQL: Query events + RRULE expansions
+    PostgreSQL--&gt;&gt;EventService: Event rows
+    EventService--&gt;&gt;Client: JSON event array
+    Client-&gt;&gt;Client: Run Layout Engine
+    Client-&gt;&gt;Client: Render virtual grid
+    Client-&gt;&gt;WS: Connect + subscribe to calendar channels
+    WS--&gt;&gt;Client: Connection established
+</div>
+<p><strong>Dragging an event.</strong> The moment Ananya starts dragging, the client applies an optimistic update — the event follows her cursor immediately, with its original time held in memory in case the change needs to be rolled back. As it moves, the position snaps to the nearest 15-minute increment. On drop, the client computes the final start/end times and fires <code>PATCH /api/v1/events/:id</code>. The Event Service writes to PostgreSQL — creating a recurrence-exception row instead of touching the base event if this was a single occurrence of a recurring series — then publishes <code>calendar.event.updated</code> to Kafka. The Notification Service consumes that event, looks up every WebSocket connection subscribed to the calendar, and pushes the update, so Rohit's client re-renders the moved event without him doing anything. If the PATCH fails instead — a network error, a version conflict — the client reverts its optimistic update and shows an error toast, and the event snaps back to where it started.</p>
+<div class="mermaid">
+sequenceDiagram
+    participant User
+    participant Client
+    participant EventService
+    participant Kafka
+    participant NotifService as Notification Service
+    participant Collaborator
+
+    User-&gt;&gt;Client: Drag event to new time
+    Client-&gt;&gt;Client: Optimistic update - move event visually
+    User-&gt;&gt;Client: Drop event
+    Client-&gt;&gt;EventService: PATCH /events/:id with new start/end
+    EventService-&gt;&gt;EventService: Write to PostgreSQL
+    EventService-&gt;&gt;Kafka: Publish calendar.event.updated
+    Kafka-&gt;&gt;NotifService: Consume event
+    NotifService-&gt;&gt;Collaborator: WS push calendar.event.updated
+    Collaborator-&gt;&gt;Collaborator: Re-render event at new time
+    alt PATCH fails
+        EventService--&gt;&gt;Client: 4xx/5xx error
+        Client-&gt;&gt;Client: Revert optimistic update
+    end
+</div>
+<p>Put those two sequences together and there's one continuous cycle running underneath the whole day view: load once, lay out and render locally, let every interaction update the screen optimistically, sync the actual write asynchronously, and re-render incrementally for anyone else watching — never a full page reload at any point in that loop.</p>
+<div class="mermaid">
+flowchart TD
+    A[&quot;LOAD - GET /events&quot;] --&gt; B[&quot;LAYOUT - Interval partitioning\nSort, group, assign columns&quot;]
+    B --&gt; C[&quot;RENDER - Virtual scroll\nAbsolute CSS positioning&quot;]
+    C --&gt; D[&quot;INTERACT - User drags/edits\nDOM mutation at 60fps&quot;]
+    D --&gt; E[&quot;Optimistic update - local state&quot;]
+    E --&gt; F[&quot;PATCH /events/:id async&quot;]
+    F --&gt; G{&quot;API success?&quot;}
+    G --&gt;|Yes| H[&quot;PostgreSQL write\nKafka publish&quot;]
+    G --&gt;|No| I[&quot;Revert optimistic update\nError toast&quot;]
+    H --&gt; J[&quot;Notification Service\nWebSocket fan-out&quot;]
+    J --&gt; K[&quot;RE-RENDER - Collaborator clients\nPatch local state, re-run layout&quot;]
+    K --&gt; C
+</div>
+<blockquote>
+<p>[!IMPORTANT]
+Each phase of that cycle — load, layout, render, interact, sync, re-render — is independent and can fail gracefully without breaking the others. A failed sync reverts one event, not the whole grid; a dropped WebSocket connection loses live updates, not the ability to load and browse the calendar at all.</p>
+</blockquote>
 <hr />
-<h2 id="5-api-design">5. API Design</h2>
+<h2 id="6-api-design">6. API Design</h2>
+<p>The API splits along the same two axes as the architecture above: a REST surface for the request/response actions (fetch, create, edit, delete), and a WebSocket channel for the one thing that's inherently push-based — telling a client something changed without it having to ask.</p>
 <p><strong>Calendar APIs</strong></p>
 <table>
 <thead>
@@ -282,122 +347,18 @@ Google Calendar Day View is frontend-heavy — but the backend is non-trivial. T
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>[!TIP]
-<strong>Interview tip:</strong> The <code>recurrenceAction</code> parameter on PATCH/DELETE is a key design question. Options: <code>THIS</code> (only this instance), <code>THIS_AND_FOLLOWING</code>, <code>ALL</code>. Say: "I expose this as a query parameter because the semantic differs from a normal update — it's modifying the RRULE or creating an exception, not just patching data."</p>
-</blockquote>
+<p>The one field in that table that isn't self-explanatory is <code>recurrenceAction</code> on PATCH and DELETE. It exists because editing a recurring event isn't really "update this row" — it's a choice between three fundamentally different operations: <code>THIS</code> modifies or deletes only today's occurrence (creating a recurrence-exception record), <code>THIS_AND_FOLLOWING</code> splits the series in two at this point, and <code>ALL</code> rewrites the base event's rule entirely. Exposing that as an explicit query parameter, rather than trying to infer intent from the payload, is what lets the client ask Ananya the "just this one, or all future standups?" question up front and send back an unambiguous answer instead of the server having to guess.</p>
 <hr />
-<h2 id="6-end-to-end-flow">6. End-to-End Flow</h2>
-<h3 id="61-day-view-load">6.1 Day View Load</h3>
-<ol>
-<li>User navigates to Day View for date <code>2025-03-28</code>.</li>
-<li>Client sends <code>GET /api/v1/events?calendarId=primary&amp;start=2025-03-28T00:00Z&amp;end=2025-03-28T23:59Z</code>.</li>
-<li>Event Service queries PostgreSQL: fetch base events + any RRULE exceptions that fall on this date. For each recurring event, expand the RRULE server-side and return the occurrence for this day as a concrete event object.</li>
-<li>Response arrives (≤ 500ms). Client receives array of event objects, each with <code>id</code>, <code>start</code>, <code>end</code>, <code>title</code>, <code>calendarId</code>.</li>
-<li>Layout Engine runs: sorts events by start time → groups overlapping events → assigns each event a column index and a width fraction. A group of 3 overlapping events each gets width = 1/3 of the slot.</li>
-<li>Virtual scroll renders only the visible portion of the 24h grid. Events are positioned absolutely using <code>top = (startMinutes / 1440) * gridHeight</code> and <code>height = (durationMinutes / 1440) * gridHeight</code>.</li>
-<li>WebSocket connection opens to <code>wss://calendar.google.com/ws?calendarId=primary</code>. Client subscribes to shared calendars.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant User
-    participant Client
-    participant EventService
-    participant PostgreSQL
-    participant WS as WebSocket Server
-
-    User-&gt;&gt;Client: Navigate to Day View
-    Client-&gt;&gt;EventService: GET /events?start=&amp;end=
-    EventService-&gt;&gt;PostgreSQL: Query events + RRULE expansions
-    PostgreSQL--&gt;&gt;EventService: Event rows
-    EventService--&gt;&gt;Client: JSON event array
-    Client-&gt;&gt;Client: Run Layout Engine
-    Client-&gt;&gt;Client: Render virtual grid
-    Client-&gt;&gt;WS: Connect + subscribe to calendar channels
-    WS--&gt;&gt;Client: Connection established
-</div>
-<h3 id="62-drag-drop-move-event">6.2 Drag &amp; Drop (Move Event)</h3>
-<ol>
-<li>User starts dragging an event. Client immediately applies <strong>optimistic update</strong>: the event visually follows the cursor. The original time is saved in memory for rollback.</li>
-<li>As the event moves, client snaps the <code>top</code> position to the nearest 15-minute increment (every <code>gridHeight / 96</code> pixels).</li>
-<li>On drag end, client computes the new <code>start</code>/<code>end</code> from the final Y position.</li>
-<li>Client sends <code>PATCH /api/v1/events/:id</code> with <code>{ start: newStart, end: newEnd }</code>.</li>
-<li>Event Service writes to PostgreSQL. If the event is a recurring instance and <code>recurrenceAction=THIS</code>, it creates an exception record (stores the modified occurrence, marks the RRULE to skip this date).</li>
-<li>Event Service publishes <code>calendar.event.updated</code> to Kafka topic <code>calendar-events</code>.</li>
-<li>Notification Service consumes from Kafka, looks up all WebSocket connections subscribed to this <code>calendarId</code>, and pushes the update.</li>
-<li>All collaborators' clients receive the WS event and re-render the event at the new time.</li>
-<li><strong>If PATCH fails</strong> (network error, conflict): client reverts optimistic update, shows error toast, event snaps back to original position.</li>
-</ol>
-<div class="mermaid">
-sequenceDiagram
-    participant User
-    participant Client
-    participant EventService
-    participant Kafka
-    participant NotifService as Notification Service
-    participant Collaborator
-
-    User-&gt;&gt;Client: Drag event to new time
-    Client-&gt;&gt;Client: Optimistic update - move event visually
-    User-&gt;&gt;Client: Drop event
-    Client-&gt;&gt;EventService: PATCH /events/:id with new start/end
-    EventService-&gt;&gt;EventService: Write to PostgreSQL
-    EventService-&gt;&gt;Kafka: Publish calendar.event.updated
-    Kafka-&gt;&gt;NotifService: Consume event
-    NotifService-&gt;&gt;Collaborator: WS push calendar.event.updated
-    Collaborator-&gt;&gt;Collaborator: Re-render event at new time
-    alt PATCH fails
-        EventService--&gt;&gt;Client: 4xx/5xx error
-        Client-&gt;&gt;Client: Revert optimistic update
-    end
-</div>
-<h3 id="63-complete-lifecycle-load-layout-render-interact-sync-re-render">6.3 🔄 Complete Lifecycle: Load → Layout → Render → Interact → Sync → Re-render</h3>
-<p>This is the full end-to-end picture — every phase a request passes through from the moment a user opens the day view to the moment a collaborator sees the update.</p>
-<ol>
-<li><strong>Load</strong> — User navigates to a date. Client fires <code>GET /events?start=&amp;end=</code>. Event Service queries PostgreSQL, expands RRULE occurrences for this day, returns JSON array.</li>
-<li><strong>Layout</strong> — Client runs the interval partitioning algorithm: sort → group overlapping events → assign columns → compute width fractions. Pure CPU, no network.</li>
-<li><strong>Render</strong> — Virtual scroll activates. Only the visible hour range is rendered as DOM nodes. Events are positioned absolutely: <code>top = (startMin/1440) * gridH</code>, <code>height = (durationMin/1440) * gridH</code>.</li>
-<li><strong>Interact</strong> — User drags an event. DOM mutation (no React re-render) moves the event at 60fps. On drop: snap to nearest 15-min grid, compute new time, fire <code>PATCH /events/:id</code> optimistically.</li>
-<li><strong>Sync</strong> — Event Service writes to PostgreSQL, publishes <code>calendar.event.updated</code> to Kafka. Notification Service consumes, looks up WebSocket connections for all <code>calendarId</code> subscribers in Redis, pushes the update.</li>
-<li><strong>Re-render</strong> — Every collaborator's client receives the WS push. Client patches its local event array with the change, re-runs layout for the affected time slot, and re-renders the moved event at the new position.</li>
-</ol>
-<div class="mermaid">
-flowchart TD
-    A[&quot;LOAD - GET /events&quot;] --&gt; B[&quot;LAYOUT - Interval partitioning\nSort, group, assign columns&quot;]
-    B --&gt; C[&quot;RENDER - Virtual scroll\nAbsolute CSS positioning&quot;]
-    C --&gt; D[&quot;INTERACT - User drags/edits\nDOM mutation at 60fps&quot;]
-    D --&gt; E[&quot;Optimistic update - local state&quot;]
-    E --&gt; F[&quot;PATCH /events/:id async&quot;]
-    F --&gt; G{&quot;API success?&quot;}
-    G --&gt;|Yes| H[&quot;PostgreSQL write\nKafka publish&quot;]
-    G --&gt;|No| I[&quot;Revert optimistic update\nError toast&quot;]
-    H --&gt; J[&quot;Notification Service\nWebSocket fan-out&quot;]
-    J --&gt; K[&quot;RE-RENDER - Collaborator clients\nPatch local state, re-run layout&quot;]
-    K --&gt; C
-</div>
-<blockquote>
-<p>[!IMPORTANT]
-The cycle is: Load once → Layout locally → Render virtually → Interact optimistically → Sync async → Re-render incrementally. No full page reload at any step. Each phase is independent and can fail gracefully without breaking the others.</p>
-</blockquote>
-<hr />
-<h2 id="7-high-level-architecture">7. High-Level Architecture</h2>
-<h3 id="simple-design">Simple Design</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/c065f54c1ad9c452.svg" alt="Architecture diagram" loading="lazy"></figure>
-<h3 id="evolved-design-with-real-time-scale">Evolved Design (with Real-Time + Scale)</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/619c60a91fdf4763.svg" alt="Architecture diagram" loading="lazy"></figure>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> The WebSocket server is stateless fanout — it doesn't store event data. Kafka decouples write path from notification path. Event Service never directly calls WebSocket servers.</p>
-</blockquote>
-<hr />
-<h2 id="8-data-model">8. Data Model</h2>
+<h2 id="7-data-model">7. Data Model</h2>
+<p>Six kinds of data live in this system, and they split cleanly into two groups by one question: does losing this data for a few seconds matter, or does it matter forever?</p>
+<p><strong>Everything that must never be lost lives in PostgreSQL.</strong> Events, recurrence exceptions, calendars, and calendar membership are all relational by nature — an event belongs to a calendar, a calendar has members with roles, and a write that changes an event's attendees has to respect those members' permissions. That's exactly the shape ACID transactions and foreign-key joins exist for, and it's what makes double-booking structurally impossible rather than merely unlikely. Recurrence exceptions get their own table rather than living inline on the event, specifically so a single edited occurrence doesn't require touching — or duplicating — the base recurring event at all; the exception just overrides what the RRULE would otherwise generate for that one date.</p>
+<p><strong>Everything ephemeral, fast-path, and safely disposable lives in Redis.</strong> The WebSocket session map (<code>calendarId → [connectionId, ...]</code>) only needs to survive as long as the connection itself does — there's no reason to persist it anywhere durable, and a Redis lookup during fan-out is the only kind of lookup fast enough not to become the bottleneck when hundreds of collaborators need notifying at once. Calendar metadata (name, color, sharing list) gets a 5-minute TTL cache in front of PostgreSQL for the same underlying reason as the WS session map: it's read on every single day-view load, so shaving that lookup down to an in-memory hit — even one that's occasionally 5 minutes stale — measurably reduces load on the database that's actually the source of truth.</p>
 <table>
 <thead>
 <tr>
 <th>Entity</th>
 <th>Storage</th>
 <th>Key Columns</th>
-<th>Why this store</th>
 </tr>
 </thead>
 <tbody>
@@ -405,141 +366,90 @@ The cycle is: Load once → Layout locally → Render virtually → Interact opt
 <td>Event</td>
 <td>PostgreSQL</td>
 <td><code>event_id</code>, <code>calendar_id</code>, <code>owner_id</code>, <code>title</code>, <code>start_utc</code>, <code>end_utc</code>, <code>rrule</code>, <code>is_all_day</code></td>
-<td>ACID — prevents double-booking; relational joins for attendees</td>
 </tr>
 <tr>
 <td>Recurrence Exception</td>
 <td>PostgreSQL</td>
 <td><code>event_id</code>, <code>original_date</code>, <code>new_start_utc</code>, <code>new_end_utc</code>, <code>is_deleted</code></td>
-<td>Models RRULE overrides without duplicating base event</td>
 </tr>
 <tr>
 <td>Calendar</td>
 <td>PostgreSQL</td>
 <td><code>calendar_id</code>, <code>owner_id</code>, <code>name</code>, <code>color</code>, <code>timezone</code></td>
-<td>Relational — permissions, sharing, color metadata</td>
 </tr>
 <tr>
 <td>Calendar Members</td>
 <td>PostgreSQL</td>
 <td><code>calendar_id</code>, <code>user_id</code>, <code>role</code> (owner/editor/viewer)</td>
-<td>Many-to-many sharing; permission checks at write time</td>
 </tr>
 <tr>
 <td>WS Session Map</td>
 <td>Redis</td>
-<td><code>calendarId → [connectionId, ...]</code></td>
-<td>Ephemeral; TTL = connection lifetime. DB lookup = too slow for fanout</td>
+<td><code>calendarId → [connectionId, ...]</code> (TTL = connection lifetime)</td>
 </tr>
 <tr>
 <td>Calendar Metadata Cache</td>
 <td>Redis</td>
-<td><code>userId:calendars → JSON</code></td>
-<td>TTL = 5min. Avoids DB hit on every day view load</td>
+<td><code>userId:calendars → JSON</code> (TTL = 5min)</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Recurring events are stored as a <strong>rule + exceptions model</strong> (not pre-expanded rows). Expansion happens at read time. Pre-expanding 10 years of weekly events = 520 rows per event × 500M users = storage explosion.</p>
+<strong>Key Insight:</strong> Recurring events are stored as a <strong>rule + exceptions model</strong>, not pre-expanded rows. Pre-expanding 10 years of a weekly event into one row per occurrence would mean roughly 520 rows for that single event — multiplied across 500 million users, a storage explosion for no benefit, since the vast majority of those rows would never once be read.</p>
 </blockquote>
 <hr />
-<h2 id="9-deep-dives">9. Deep Dives</h2>
-<h3 id="91-layout-algorithm-interval-partitioning-problem">9.1 🧠 Layout Algorithm — Interval Partitioning Problem</h3>
-<p><strong>Here's the problem we're solving:</strong> Multiple events on the same day can have overlapping time ranges. Rendering them stacked (one behind the other) makes them unreadable. We need an algorithm that places overlapping events side-by-side with correct widths so all are visible simultaneously.</p>
-<p>This is a classic <strong>interval partitioning problem</strong> — the same problem as scheduling jobs on the minimum number of machines such that no two overlapping jobs share a machine. The minimum number of machines needed = the maximum number of events overlapping at any single point in time.</p>
-<p><strong>Naive solution:</strong> Render each event at full width. Overlapping events cover each other — user can't see or click the hidden events.</p>
-<p><strong>🧠 Layout Algorithm (Core) — 4 Steps:</strong></p>
-<p><strong>Step 1 — Sort events by start time</strong>
-Sort all events for the day by <code>start_utc</code> ascending. This ensures we process events in chronological order and can greedily assign columns.</p>
-<p><strong>Step 2 — Group overlapping events</strong>
-Scan the sorted list. Maintain a running <code>groupEndTime</code> = max end time seen so far. If the next event's start &lt; <code>groupEndTime</code>, it belongs to the current overlapping group. When <code>start &gt;= groupEndTime</code>, the current group is complete — finalize widths and start a new group.</p>
-<p><strong>Step 3 — Assign columns</strong>
-Within each overlapping group: maintain an array of columns, each tracking the latest <code>end_time</code> of the event placed there. For each event, find the first column where <code>column.endTime &lt;= event.startTime</code>. Place the event there and update the column's end time. If no column fits, add a new column.</p>
-<p><strong>Step 4 — Calculate width dynamically</strong>
-After all events in a group are assigned: <code>width = 1 / totalColumns</code>. <code>left offset = columnIndex / totalColumns</code>. A group of 3 overlapping events each renders at 33% width, placed at 0%, 33%, 66% left.</p>
-<p><strong>Complexity:</strong> O(n log n) sort + O(n·c) placement where c = max concurrent overlaps. For typical calendars (c ≤ 5), effectively O(n).</p>
-<p><strong>Trade-off accepted:</strong> The greedy column assignment doesn't always minimize column count for adversarial inputs (that's NP-hard for general interval graphs). For calendar data — where c is small and events are human-scheduled — greedy produces the same result as optimal.</p>
+<h2 id="8-deep-dives">8. Deep Dives</h2>
+<h3 id="81-layout-algorithm-interval-partitioning">8.1 Layout Algorithm — Interval Partitioning</h3>
+<p>Here's the problem being solved: multiple events on the same day can have overlapping time ranges, and rendering them stacked — one behind another — makes the hidden ones unreadable and unclickable. What's needed is an algorithm that places overlapping events side-by-side with widths that make all of them visible and tappable at once.</p>
+<p>The naive approach — just render every event at full width — doesn't survive contact with a single overlap. Two events covering the same 30 minutes end up drawn on top of each other, and whichever one paints last wins the pixel; the other is invisible until the user happens to know to look for it.</p>
+<p>This is actually a well-known problem wearing a calendar UI's clothes: it's interval partitioning, the same problem as scheduling jobs across the minimum number of machines such that no two overlapping jobs share one. The minimum number of "machines" — columns, in this case — needed at any point is exactly the maximum number of events overlapping at that instant, which is also exactly the number the width calculation has to divide by.</p>
+<p>The mechanism starts by sorting every event for the day by <code>start_utc</code>, which matters because everything downstream is a greedy, single-pass algorithm, and greedy column assignment is only provably correct if events are processed in chronological order. Scanning that sorted list, the algorithm tracks a running <code>groupEndTime</code> — the latest end time seen so far in the current cluster of overlapping events. As long as the next event starts before that time, it belongs to the same cluster; the moment an event starts at or after <code>groupEndTime</code>, the current cluster is settled, its columns and widths get finalized, and a fresh cluster begins. Within a cluster, each event is placed greedily: scan the existing columns left to right, and drop the event into the first one whose last-placed event has already ended by the time this one starts; if none qualifies, open a new column. Once every event in the cluster has a column, the math is simple — an event's width is 1 divided by however many columns the cluster ended up needing, and its horizontal offset is its column index divided by that same count. Three events overlapping at once each get 33% width, sitting at 0%, 33%, and 66% from the left.</p>
+<pre><code>1. Sort events by start_utc ascending
+2. Scan and group overlapping events via a running groupEndTime
+3. Within each group: place each event in the first column whose last event has already ended
+4. width = 1 / totalColumns, left offset = columnIndex / totalColumns
+</code></pre>
+<p>The whole thing runs in O(n log n) for the sort plus O(n·c) for placement, where c is the maximum number of events overlapping at any single instant — for real calendars, where c rarely exceeds 5, that's effectively O(n). The one thing this greedy approach doesn't guarantee is the mathematically minimum number of columns for adversarial input, which is NP-hard for general interval graphs — but calendar data isn't adversarial, it's human-scheduled, and for small c the greedy result matches the optimal one anyway.</p>
 <figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/37697076193f39d5.svg" alt="Architecture diagram" loading="lazy"></figure>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Event layout is the interval partitioning problem. Minimum columns needed = maximum depth of overlapping events at any point. This is computed entirely client-side in O(n log n) — the backend only returns raw start/end times.</p>
+<strong>Key Insight:</strong> Event layout is the interval partitioning problem. The minimum number of columns needed equals the maximum depth of overlapping events at any single point in time. This is computed entirely client-side in O(n log n) — the backend only ever returns raw start/end times.</p>
 </blockquote>
 <hr />
-<h3 id="92-drag-drop-with-15-minute-snapping">9.2 Drag &amp; Drop with 15-Minute Snapping</h3>
-<p><strong>Here's the problem we're solving:</strong> Drag-and-drop on a continuous pixel grid gives sub-second precision, but calendar events are scheduled in meaningful increments (15 min, 30 min). Allowing arbitrary placement (e.g., 10:03 AM) creates chaos. We need to snap movement to 15-minute increments in real time, at 60fps.</p>
-<p><strong>Naive solution:</strong> On each mouse/touch move, compute the time from Y position, round to nearest 15 minutes, re-render the event. Problem: React re-renders on every mousemove event = 60–120 events/sec = performance bottleneck.</p>
-<p><strong>Chosen solution — CSS transform + commit-on-drop:</strong></p>
-<ol>
-<li>During drag: <strong>do not update React state</strong> on every mousemove. Instead, directly mutate the DOM element's <code>transform: translateY(px)</code>. This bypasses React entirely and runs at 60fps with zero re-renders.</li>
-<li>Snap logic runs in the event handler (not in React): <code>snappedY = Math.round(rawY / snapInterval) * snapInterval</code> where <code>snapInterval = gridHeight / 96</code> (96 = 4 per hour × 24 hours).</li>
-<li>On drop: compute the new time from <code>snappedY</code>, then trigger a single React state update + API call.</li>
-<li>Optimistic update: React state updates immediately with the new time. API call fires async. If it fails, revert.</li>
-</ol>
-<p><strong>Trade-off accepted:</strong> Directly mutating the DOM breaks React's virtual DOM contract — this event's position is "out of sync" during drag. This is acceptable because: (a) it's a known, contained exception; (b) the React state is corrected on drop; (c) the visual result is smooth 60fps — no alternative achieves this with React re-renders.</p>
+<h3 id="82-drag-drop-with-15-minute-snapping">8.2 Drag &amp; Drop with 15-Minute Snapping</h3>
+<p>Here's the problem: dragging on a continuous pixel grid gives sub-second precision, but calendar events are meaningfully scheduled in increments — 15 minutes, 30 minutes. Letting an event land at an arbitrary time like 10:03 AM just creates visual and scheduling noise. The interaction needs to snap to 15-minute increments in real time, while still running at 60fps.</p>
+<p>The obvious way to build this — recompute the time from the cursor's Y position on every mouse or touch move, round to the nearest 15 minutes, and re-render — falls apart on the numbers. A drag generates 60 to 120 mousemove events per second, and if each one triggers a React re-render, that re-render cost becomes the bottleneck long before anything visual goes wrong; the frame rate drops and the drag starts to feel sticky.</p>
+<p>The fix is to stop asking React to do anything during the drag at all. While the event is being dragged, its position is updated by directly mutating the DOM element's <code>transform: translateY(px)</code> — bypassing React's reconciliation entirely, which is what makes 60fps achievable with zero re-renders in the first place. The snap math runs in the raw event handler, outside React: <code>snappedY = Math.round(rawY / snapInterval) * snapInterval</code>, where <code>snapInterval = gridHeight / 96</code> (96 being 4 slots per hour across 24 hours). Only on drop does React re-enter the picture — a single state update fires with the new time, applied optimistically so the event appears to have already moved, while the actual <code>PATCH</code> call goes out asynchronously in the background and reverts the state if it fails.</p>
+<p>Deliberately mutating the DOM like this breaks React's usual virtual-DOM contract — for the duration of the drag, the dragged event's on-screen position and React's internal model of it are out of sync. That's acceptable specifically because the window is bounded and self-correcting: it lasts only as long as the drag itself, gets reconciled the instant the user drops, and there's no alternative that hits 60fps while re-rendering through React on every single pixel of motion.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Drag-and-drop at 60fps = decouple visual feedback (DOM mutation) from data update (React state). Commit once on drop, not on every pixel.</p>
+<strong>Key Insight:</strong> Drag-and-drop at 60fps means decoupling visual feedback (DOM mutation) from data update (React state) — commit once on drop, not on every pixel moved.</p>
 </blockquote>
 <hr />
-<h3 id="93-recurring-events-rrule-expansion">9.3 Recurring Events — RRULE Expansion</h3>
-<p><strong>Here's the problem we're solving:</strong> A "weekly team standup every Monday" is one event logically, but needs to appear on every Monday in the day view. How do we store this efficiently and handle edits (change only this occurrence vs. all future ones)?</p>
-<p><strong>Naive solution — Pre-expand and store:</strong> Create one DB row per occurrence. A weekly event for 2 years = 104 rows. Fine for one user. At 500M users with average 20 recurring events each = 500M × 20 × 52 = 520 billion rows. Not viable.</p>
-<p><strong>Chosen solution — Store rule, expand on read:</strong></p>
-<ul>
-<li>Store one row with the RRULE string (RFC 5545 format): e.g., <code>RRULE:FREQ=WEEKLY;BYDAY=MO</code></li>
-<li>On <code>GET /events?start=&amp;end=</code>, the Event Service calls an RRULE library to expand only the occurrences within the requested window. For a day view, this expands at most 1–2 occurrences.</li>
-<li><strong>Exceptions</strong> (user edits "only this event"): store a row in <code>recurrence_exceptions</code> with <code>original_date</code> + modified fields. The expand logic checks exceptions and overrides the generated occurrence.</li>
-<li><strong>"This and following"</strong>: update the base event's <code>UNTIL</code> to <code>originalDate - 1 day</code>, create a new base event starting from <code>originalDate</code> with the new RRULE. Two rows represent the split.</li>
-</ul>
-<p><strong>Trade-off accepted:</strong> Expansion logic lives in the service layer (not the DB). This means every day-view load runs the RRULE library. At 50M concurrent users loading day views, this is ~50M RRULE expansions/sec. Each expansion is O(1) for a single-day window — microseconds. Acceptable.</p>
+<h3 id="83-recurring-events-rrule-expansion">8.3 Recurring Events — RRULE Expansion</h3>
+<p>Here's the problem: a "weekly team standup every Monday" is logically one event, but it has to appear on every Monday the day view is opened. Storing it efficiently, and handling edits that apply to only one occurrence versus all future ones, is harder than it first looks.</p>
+<p>Pre-expanding and storing one database row per occurrence doesn't survive the arithmetic. A weekly event running for two years is 104 rows — manageable for one user in isolation. But at 500 million users, each averaging around 20 recurring events, expanded across roughly 52 occurrences a year, that's 500M × 20 × 52 — 520 billion rows, for data that's almost entirely redundant with a single rule.</p>
+<p>The actual mechanism stores exactly one row per recurring series, holding the RRULE string in RFC 5545 format (e.g. <code>RRULE:FREQ=WEEKLY;BYDAY=MO</code>), and defers expansion to read time. When a day view loads via <code>GET /events?start=&amp;end=</code>, the Event Service calls an RRULE library to expand only the occurrences that fall inside the requested window — for a single day, that's at most one or two occurrences, not the whole series. An edit to just one occurrence — "move today's standup 15 minutes, but not next week's" — gets stored as a row in a separate <code>recurrence_exceptions</code> table, keyed by <code>original_date</code> with the modified fields; the expansion logic checks that table on every read and substitutes the exception in place of whatever the raw rule would have generated. A "this and all future" edit is handled by splitting the series: the original event's <code>UNTIL</code> gets set to the day before the change, and a new base event starts from that date forward carrying the updated rule — two rows representing what's logically one series with a kink in it.</p>
+<p>Pushing expansion into the service layer rather than the database means every single day-view load runs the RRULE library — at 50 million concurrent users, that's roughly 50 million expansions a second. What makes that acceptable is that each expansion is bounded by the width of the query window, not by how long the series has existed: a decade-old daily standup and a series created yesterday both cost the same microseconds to expand for a single day's view.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> RRULE is a read-time computation problem, not a storage problem. Store the rule + exceptions. Expand at query time. Pre-expanding = write amplification with no benefit.</p>
+<strong>Key Insight:</strong> Expansion cost depends only on the width of the query window, never on how far back the series started or how far into the future it repeats — which is exactly what keeps 50M concurrent expansions a second cheap instead of scaling with series history.</p>
 </blockquote>
 <hr />
-<h3 id="94-timezone-rendering">9.4 Timezone Rendering</h3>
-<p><strong>Here's the problem we're solving:</strong> A user in New York creates an event at 9 AM EST. Their colleague in London views the same shared event. London should see it at 2 PM GMT. The stored time must be unambiguous regardless of who reads it or where.</p>
-<p><strong>Solution:</strong>
-- All times stored in UTC in the DB (<code>start_utc</code>, <code>end_utc</code> — TIMESTAMPTZ columns).
-- Each calendar has a <code>timezone</code> field (IANA timezone string, e.g., <code>America/New_York</code>). Each user also has a profile timezone.
-- On read: <code>start_utc</code> is returned to the client. The client renders using <code>Intl.DateTimeFormat</code> with the user's local timezone.
-- The day view renders the grid in the <strong>user's timezone</strong>, not the event's origin timezone.
-- For recurring events with DST transitions: the RRULE library handles DST-aware expansion (a "9 AM" weekly event stays at 9 AM local time across DST boundaries, not at a fixed UTC offset).</p>
+<h3 id="84-timezone-rendering">8.4 Timezone Rendering</h3>
+<p>Here's the problem: a user in New York creates an event at 9 AM EST. A colleague in London views the same shared event and needs to see it at 2 PM GMT — the stored time has to be unambiguous no matter who reads it or where they are.</p>
+<p>The solution keeps all of that ambiguity out of storage entirely. Every event's <code>start_utc</code> and <code>end_utc</code> are <code>TIMESTAMPTZ</code> columns holding UTC, full stop — the database never represents a time in any timezone but that one. Each calendar carries an IANA timezone string (e.g. <code>America/New_York</code>), and each user has a profile timezone of their own. On read, the client receives the raw UTC value and renders it locally via <code>Intl.DateTimeFormat</code> using the viewer's own timezone — the day view's grid itself is drawn in the viewer's timezone, not the timezone the event happened to be created in. Recurring events add one more wrinkle: DST transitions mean a "9 AM every Monday" meeting has to stay at 9 AM local time as clocks shift, not drift to a fixed UTC offset, which is exactly the kind of DST-aware calculation the RRULE library handles at expansion time.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Store UTC, render local. The DB never knows about timezones. The client knows everything about display. DST is a display-layer problem.</p>
+<strong>Key Insight:</strong> Store UTC, render local. The database never knows about timezones at all — display, including DST, is entirely a client-side concern.</p>
 </blockquote>
 <hr />
-<h3 id="95-backend-consistency-conflict-resolution-notification-fan-out">9.5 Backend: Consistency, Conflict Resolution &amp; Notification Fan-Out</h3>
-<p><strong>Here's the problem we're solving:</strong> The backend has three non-trivial responsibilities that are easy to underestimate: (1) preventing double-booking when two users edit the same event concurrently, (2) ensuring event writes are ACID so attendee lists never get corrupted, and (3) fanning out notifications efficiently when a shared calendar event is modified.</p>
-<hr />
-<p><strong>Consistency — Why PostgreSQL, not a NoSQL store:</strong></p>
-<p>Calendar events have relational integrity requirements: an event belongs to a calendar, a calendar has members with roles, an event has attendees. A write that adds an attendee must also check the user's permission level. These multi-table constraints require ACID transactions — not eventual consistency.</p>
-<p>At 167K writes/sec, a sharded PostgreSQL cluster (sharded by <code>user_id</code>) handles this easily. Each shard owns a user's events. Cross-user queries don't exist — a user only reads their own calendars and explicitly shared ones.</p>
-<hr />
-<p><strong>Conflict Resolution — Concurrent edits to a shared event:</strong></p>
-<p>Problem: User A and User B both open the same shared meeting. A changes the title; B changes the time — simultaneously. Both fire <code>PATCH /events/:id</code>. The second write wins silently. Neither user knows their collaborator was editing at the same time.</p>
-<p>Chosen solution — <strong>optimistic locking with <code>version</code> field:</strong></p>
-<ul>
-<li>Every event row has a <code>version</code> integer.</li>
-<li><code>PATCH /events/:id</code> must include the <code>version</code> the client last saw.</li>
-<li>Event Service: <code>UPDATE events SET ..., version = version+1 WHERE event_id = :id AND version = :clientVersion</code>.</li>
-<li>If rows updated = 0 → version mismatch → return <code>409 Conflict</code>.</li>
-<li>Client receives 409 → fetches latest event state → shows diff to user → user resolves.</li>
-</ul>
-<p>For calendar events (unlike Google Docs), last-write-wins is often acceptable — two people rarely edit the same 30-minute meeting simultaneously. Optimistic locking adds safety without the complexity of OT/CRDT.</p>
-<hr />
-<p><strong>Notification Fan-Out — Shared calendars with many members:</strong></p>
-<p>Problem: A company-wide "All Hands" calendar has 5,000 members. One edit → must push WebSocket notification to up to 5,000 active connections. Doing this synchronously in the Event Service blocks the write path.</p>
-<p>Chosen solution — <strong>Kafka + Notification Service:</strong></p>
-<ol>
-<li>Event Service writes to PostgreSQL, then publishes <code>{ eventId, calendarId, changes }</code> to Kafka topic <code>calendar-events</code>. Write path done — returns 200 to client immediately.</li>
-<li>Notification Service (separate process) consumes from Kafka. Looks up <code>calendarId → [userId, ...]</code> from Calendar Members table (cached in Redis, TTL = 10min).</li>
-<li>For each member: check if they have an active WebSocket connection via <code>ws-sessions:{userId}</code> in Redis. If yes, route to the correct WS server node via Redis pub/sub and push the event.</li>
-<li>Offline members: skip WS push. On their next day-view load, they'll fetch fresh data from PostgreSQL.</li>
-</ol>
-<p>This decouples the write path from notification delivery. A 5,000-member calendar generates 5,000 WS pushes — but that's Notification Service's problem, not Event Service's.</p>
+<h3 id="85-backend-consistency-conflict-resolution-notification-fan-out">8.5 Backend: Consistency, Conflict Resolution &amp; Notification Fan-Out</h3>
+<p>Three backend responsibilities are easy to underestimate in a system that looks, from the frontend, like it's mostly about dragging boxes: keeping writes ACID so attendee data never corrupts, resolving concurrent edits without silently discarding one of them, and fanning out notifications efficiently when a shared calendar changes.</p>
+<p>Consistency comes first, and it's the reason this design reaches for PostgreSQL rather than a NoSQL store. An event belongs to a calendar, a calendar has members with roles, an event has attendees — and a write that adds an attendee has to also check that user's permission level against the calendar's membership table in the same transaction. Those cross-table constraints need ACID guarantees, not eventual consistency, and at 167K writes/sec (§4) a PostgreSQL cluster sharded by <code>user_id</code> absorbs that easily, since cross-user queries never happen in the first place — a user only ever reads their own calendars and the ones explicitly shared with them.</p>
+<p>Conflict resolution is the second responsibility, and it's specifically about what happens when Ananya and Rohit (§3's Point to Ponder) both edit the same shared event at once — one changing the title, the other the time, at the same instant. Without anything guarding against it, whichever <code>PATCH</code> lands second would silently win, and neither of them would know their collaborator's change had been overwritten. The fix is optimistic locking via a <code>version</code> integer on every event row: a <code>PATCH</code> must include the version the client last saw, and the update runs as <code>UPDATE events SET ..., version = version+1 WHERE event_id = :id AND version = :clientVersion</code>. If zero rows update, the version has already moved — the server returns <code>409 Conflict</code>, and the losing client fetches the latest state and shows the user what changed before letting them retry. For calendar events specifically — unlike, say, a collaboratively edited document — this is a reasonable bar: two people rarely edit the exact same 30-minute meeting in the same instant, so optimistic locking buys correctness without needing the complexity of a full operational-transform or CRDT scheme.</p>
+<p>Notification fan-out is the third, and the one that scales the worst if handled naively. A company-wide "All Hands" calendar with 5,000 members means a single edit has to reach up to 5,000 active WebSocket connections — doing that synchronously inside the write path would mean the Event Service blocks on however many collaborators happen to be subscribed. Instead, the Event Service writes to PostgreSQL, publishes <code>{ eventId, calendarId, changes }</code> to the <code>calendar-events</code> Kafka topic, and returns <code>200 OK</code> to the editor immediately — the write is done as far as the client is concerned. The Notification Service, a separate process entirely, consumes from Kafka at its own pace, looks up <code>calendarId → [userId, ...]</code> from the Calendar Members table (cached in Redis with a 10-minute TTL so this lookup doesn't hit PostgreSQL on every event), and for each member checks whether they have an active session via <code>ws-sessions:{userId}</code> in Redis before routing the push to the correct WebSocket server node. Members with no active session simply don't get a push — they'll pick up the change on their next day-view load instead.</p>
 <div class="mermaid">
 sequenceDiagram
     participant UserA
@@ -564,196 +474,95 @@ sequenceDiagram
 </div>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> The backend's job is consistency + fan-out, not layout or rendering. PostgreSQL gives ACID. Optimistic locking resolves concurrent edits. Kafka decouples the write path from the notification path — Event Service never waits for 5,000 WS pushes.</p>
+<strong>Key Insight:</strong> These three responsibilities — ACID storage, optimistic-lock conflict resolution, and Kafka-buffered fan-out — are what let a single edit to a 5,000-member calendar return <code>200 OK</code> to the editor before a single WebSocket push has actually gone out.</p>
 </blockquote>
 <hr />
-<h2 id="10-bottlenecks-scaling">10. Bottlenecks &amp; Scaling</h2>
-<p><strong>What breaks first at 10× scale:</strong></p>
-<ol>
-<li><strong>Event Service write path</strong> — 1.67M writes/sec. Single PostgreSQL primary caps at ~50–100K writes/sec.</li>
-<li>Shard by <code>user_id</code> (or <code>calendar_id</code>). Events are never queried cross-user — sharding is clean.</li>
-<li>
-<p>Each shard = independent PostgreSQL primary + 2 read replicas.</p>
-</li>
-<li>
-<p><strong>RRULE fan-out for shared calendars</strong> — When a user edits a recurring event with 500 attendees, Notification Service must push to 500 WebSocket connections.</p>
-</li>
-<li>Kafka topic partitioned by <code>calendar_id</code>. Each Notification Service instance handles a partition. Scales horizontally.</li>
-<li>
-<p>WebSocket server cluster: Redis pub/sub routes messages to the correct WS server node holding each connection.</p>
-</li>
-<li>
-<p><strong>Day view cache</strong> — 50M concurrent users each load ~20 events. At 3–5 API calls per load, that's 150–250M reads/sec.</p>
-</li>
-<li>Cache recent day views in Redis: key = <code>events:{userId}:{date}</code>, TTL = 5 minutes.</li>
-<li>Cache invalidation: when an event is written, invalidate all affected users' date keys. Acceptable since events are rarely shared with &gt;10 users.</li>
-</ol>
-<p><strong>CDN strategy:</strong> All static assets (JS, CSS, fonts) served from CDN edge. First load: 200ms. Subsequent loads: service worker cache → near-instant.</p>
+<h2 id="9-bottlenecks-scaling">9. Bottlenecks &amp; Scaling</h2>
+<p>Every component here has a point where it stops fitting the traffic in front of it — and because the write path, the fan-out path, and the read path are three genuinely separate flows, each one hits its ceiling independently.</p>
+<p>The Event Service's write path is the first thing to break at 10x scale, going from 167K to roughly 1.67M writes/sec, well past what a single PostgreSQL primary can sustain — a single primary caps out somewhere around 50–100K writes/sec. Because events are never queried cross-user, sharding by <code>user_id</code> (or <code>calendar_id</code>) is a clean fix with no awkward cross-shard joins to worry about: each shard becomes its own independent PostgreSQL primary with two read replicas.</p>
+<p>RRULE fan-out for shared calendars is the second wall, and it hits hardest on the largest calendars — editing a recurring event with 500 attendees means the Notification Service has to push to 500 WebSocket connections from one write. The fix scales the same lever twice: the Kafka topic gets partitioned by <code>calendar_id</code> so each Notification Service instance only ever handles a slice of the total load, and the WebSocket server cluster uses Redis pub/sub to route each message to whichever specific node is actually holding that connection.</p>
+<p>The day-view cache is the third pressure point, and it's a read-volume problem rather than a write one: 50 million concurrent users, each pulling roughly 3–5 API calls per load, works out to 150–250 million reads a second. Caching recent day views in Redis — key <code>events:{userId}:{date}</code>, TTL 5 minutes — absorbs the overwhelming majority of that without touching PostgreSQL. Invalidation stays simple because it has to: when an event is written, every affected user's date key gets invalidated directly, which is workable precisely because events are rarely shared with more than a handful of people.</p>
+<p>None of this touches static asset delivery, which scales independently through the CDN: JS, CSS, and fonts are served from edge nodes, giving a roughly 200ms first load, with a service worker cache making every subsequent load near-instant.</p>
 <hr />
-<h2 id="11-failure-scenarios">11. Failure Scenarios</h2>
-<table>
-<thead>
-<tr>
-<th>Failure</th>
-<th>Impact</th>
-<th>Recovery</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>PostgreSQL primary fails</td>
-<td>Event writes fail; reads continue from replica</td>
-<td>Automatic failover (Patroni / RDS Multi-AZ). Reads never interrupted.</td>
-</tr>
-<tr>
-<td>WebSocket server node fails</td>
-<td>~N/totalNodes users lose real-time updates</td>
-<td>Client reconnects with exponential backoff. WS session map in Redis allows reconnection to any node.</td>
-</tr>
-<tr>
-<td>Kafka consumer lag</td>
-<td>Real-time updates delayed (seconds to minutes)</td>
-<td>Backpressure alert. Consumer auto-scales. Events are durable in Kafka — no loss, just delay.</td>
-</tr>
-<tr>
-<td>PATCH fails on drag drop</td>
-<td>Event appears moved in client but not saved</td>
-<td>Optimistic update reverts. User sees error toast: "Failed to save — changes reverted."</td>
-</tr>
-<tr>
-<td>Clock skew between clients</td>
-<td>Concurrent edits to same event overlap</td>
-<td>Last-write-wins with server timestamp. For shared events, this is acceptable — calendar conflicts are rare.</td>
-</tr>
-<tr>
-<td>CDN outage</td>
-<td>Initial load fails or is slow</td>
-<td>API Gateway serves static assets as fallback (slower but functional).</td>
-</tr>
-</tbody>
-</table>
+<h3 id="91-failure-scenarios">9.1 Failure Scenarios</h3>
+<p>Failures split cleanly along the same line the architecture already draws between ephemeral and durable state — what lives in Redis or Kafka recovers fast because nothing there was ever the only copy of anything; what lives in PostgreSQL recovers more carefully, because it has to.</p>
+<p>On the ephemeral side, a WebSocket server node failing takes down real-time updates for roughly one node's share of the total connections — but because the WS session map lives in Redis rather than in any one server's memory, an affected client just reconnects with exponential backoff and re-establishes its subscription against a different node. Kafka consumer lag behaves similarly: real-time updates get delayed anywhere from seconds to minutes while a backpressure alert triggers the consumer to auto-scale, but because events stay durable in Kafka the whole time, nothing is actually lost — only delayed.</p>
+<p>On the durable side, a PostgreSQL primary failing stops writes but not reads — reads keep serving from a replica while automatic failover (Patroni, or RDS Multi-AZ) promotes a new primary, so the read path is never actually interrupted.</p>
+<p>Two failure modes are specific to the interaction layer rather than any single backend component. A <code>PATCH</code> failing right after a drag-and-drop leaves the event visually moved on screen but not actually saved — the client's optimistic update reverts, and the user sees "Failed to save — changes reverted" rather than a silently wrong calendar. And clock skew between two clients editing concurrently is resolved the same way §8.5's version field resolves any other concurrent edit: last-write-wins by server timestamp, which is an acceptable trade specifically because true simultaneous edits to the same shared event are rare in practice.</p>
+<p>Last, a CDN outage affects delivery, not correctness — the initial load fails or slows down, but the API Gateway can serve static assets as a fallback, slower but functional, rather than the app becoming entirely unreachable.</p>
 <hr />
-<h2 id="12-trade-offs">12. Trade-offs</h2>
+<h3 id="92-trade-offs">9.2 Trade-offs</h3>
 <h3 id="optimistic-ui-vs-confirmed-update">Optimistic UI vs. Confirmed Update</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>Optimistic UI</th>
-<th>Wait for confirmation</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Perceived latency</td>
-<td>Instant (0ms)</td>
-<td>Full round-trip (100–300ms)</td>
-</tr>
-<tr>
-<td>Risk</td>
-<td>Revert on failure (jarring UX)</td>
-<td>No visual inconsistency</td>
-</tr>
-<tr>
-<td>Complexity</td>
-<td>Rollback logic required</td>
-<td>Simple</td>
-</tr>
-<tr>
-<td>User experience</td>
-<td>Smooth, modern feel</td>
-<td>Laggy on slow networks</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> Optimistic UI — calendar events rarely fail to save. The latency improvement (0ms vs 200ms) is significant at scale and across mobile connections.</p>
+<p>The two differ most in what the user actually experiences waiting for a response. Optimistic UI shows the change instantly — 0ms perceived latency — at the cost of an occasional jarring revert if the underlying write fails, and it requires real rollback logic to make that revert clean. Waiting for server confirmation avoids that risk entirely — there's never a visual inconsistency to correct — but it means every drag pays the full round-trip, 100–300ms, which reads as laggy, especially on a mobile connection.</p>
+<p><strong>Chosen:</strong> Optimistic UI. Calendar event writes rarely fail, so the 0ms-versus-200ms latency gain is worth paying for across every drag, on every connection quality, at this scale.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> Optimistic UI is only viable when the failure rate is low and rollback is well-defined. Event drag-and-drop fails &lt;0.1% of the time — making it the ideal candidate.</p>
+<strong>Key Insight:</strong> Optimistic UI is only viable when the failure rate is genuinely low and rollback is well-defined. Event drag-and-drop fails under 0.1% of the time — which is exactly the condition that makes it the right default here rather than a risky shortcut.</p>
 </blockquote>
 <hr />
 <h3 id="websocket-vs-polling-for-real-time-sync">WebSocket vs. Polling for Real-Time Sync</h3>
-<table>
-<thead>
-<tr>
-<th>Dimension</th>
-<th>WebSocket</th>
-<th>Long Polling</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Real-time latency</td>
-<td>&lt; 100ms</td>
-<td>1–30s</td>
-</tr>
-<tr>
-<td>Server connections</td>
-<td>Persistent (expensive)</td>
-<td>Stateless (cheaper per req)</td>
-</tr>
-<tr>
-<td>Scale complexity</td>
-<td>Need WS cluster + Redis routing</td>
-<td>Any stateless server</td>
-</tr>
-<tr>
-<td>Bandwidth</td>
-<td>Low (push only changed data)</td>
-<td>Higher (repeated full requests)</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chosen:</strong> WebSocket — for collaborative calendars, 1-second real-time latency is the UX requirement. Polling at 1-second intervals for 500M users = 500M requests/sec of empty polls. That's the wrong math.</p>
+<p>Polling at any interval short enough to feel "real-time" runs into an arithmetic wall at this scale: 500 million users each polling once a second is 500 million requests a second, the overwhelming majority of which return "nothing changed." WebSocket sidesteps that entirely by only sending a frame when something actually changes, which is also what gets real-time latency under 100ms instead of the 1–30 second range polling is stuck with. The costs run the other direction: a WebSocket connection is persistent and stateful, meaning it needs sticky routing to keep each client pinned to the server holding its socket, where a polling request can land on any stateless server with no coordination at all.</p>
+<p><strong>Chosen:</strong> WebSocket — the 1-second real-time requirement from §3 is the actual UX bar, and no polling interval gets there without generating a request storm along the way.</p>
 <blockquote>
 <p>[!NOTE]
-<strong>Key Insight:</strong> WebSocket vs polling is a math problem. 500M users × 1 poll/sec = 500M empty requests/sec. WebSocket = push only when something changes.</p>
+<strong>Key Insight:</strong> Polling's cost scales with the number of users, whether or not anything changed for them. A pushed update's cost scales with the number of things that actually changed. At 500M users, that's the difference between a design that works and one that doesn't.</p>
 </blockquote>
 <hr />
 <h3 id="recurring-event-storage-pre-expand-vs-rule-expand">Recurring Event Storage: Pre-Expand vs. Rule + Expand</h3>
+<p>Pre-expanding rows makes reads trivially simple — a plain range query over rows that already exist — at the cost of storage that grows with <code>n × recurrences</code>. Even a modest 2-year window means somewhere between 52 rows per event (weekly) and 730 (daily) — and stretched out to 10 years, as §7 already showed, that's ~520 rows for a single weekly event alone, times 500 million users. Storing the rule and expanding on read keeps storage at O(n) — one row per series, no matter how long it's been running — but trades that for a real cost on every read: an RRULE library call instead of a plain query. The two approaches also diverge on edits: pre-expanded rows update a single row for a one-off exception but touch many rows for "change all future occurrences"; the rule-based model handles a one-off with an exception-table lookup and "all future" by writing a new <code>UNTIL</code> plus a fresh rule row — bounded work either way.</p>
+<p><strong>Chosen:</strong> rule + expand on read. The storage difference is overwhelming at 500 million users, and — as §8.3 already showed — the read-time cost of expanding a single day's window is bounded and cheap regardless of how long the series has existed, so the one cost this approach does pay never actually grows with scale.</p>
+<blockquote>
+<p>[!NOTE]
+<strong>Key Insight:</strong> The read cost for a single day view is nearly identical either way — at most a couple of occurrences either come pre-computed or get computed on the fly. It's the write and storage cost that diverges radically, which is why that's the dimension this decision actually turns on.</p>
+</blockquote>
+<hr />
+<h2 id="10-evaluation-did-we-meet-the-requirements">10. Evaluation: Did We Meet the Requirements?</h2>
+<p>Six non-functional requirements were set out in §3. Here's how the design actually satisfies each one — not just the promise restated, but the specific mechanism doing the work.</p>
+<p><strong>Initial load latency (&lt; 500ms):</strong> The day view's <code>GET /events</code> query runs against PostgreSQL once, returning raw event data plus server-expanded RRULE occurrences for that single day only — never the full history of a recurring series (§8.3) — and layout/rendering happen entirely client-side afterward, off the network critical path (§5).</p>
+<p><strong>Drag &amp; resize frame rate (60fps):</strong> The drag interaction never touches React state mid-drag at all — it mutates the DOM's <code>transform</code> directly and commits to React once, on drop (§8.2). There's no re-render loop for a frame rate to compete against.</p>
+<p><strong>Real-time update latency (&lt; 1 second):</strong> A collaborator's edit flows PostgreSQL write → Kafka publish → Notification Service consume → WebSocket push, with every hop sub-second and the Event Service never blocking on how many collaborators are subscribed (§8.5).</p>
+<p><strong>Availability (99.9%):</strong> PostgreSQL failover (Patroni/RDS Multi-AZ) keeps reads uninterrupted through a primary failure, and a WebSocket node failing loses live updates only for its own share of connections, not the app as a whole, since session state lives in Redis rather than any one server (§9.1).</p>
+<p><strong>Consistency (strong for CRUD, eventual for real-time):</strong> The optimistic-locking <code>version</code> field (§8.5) makes event creation and deletion strongly consistent — no double-booking is structurally possible — while real-time propagation is allowed to lag by up to a second via Kafka, which is the one place this design deliberately isn't strongly consistent, because nothing requires it to be.</p>
+<p><strong>Offline (read-only cache, queued writes):</strong> A cached local copy of the day view keeps the grid viewable with no connection, and a write attempted offline queues rather than silently failing — the same optimistic-update-plus-revert mechanism that recovers from a failed <code>PATCH</code> (§9.1) is what makes a queued write safe to retry once connectivity returns.</p>
 <table>
 <thead>
 <tr>
-<th>Dimension</th>
-<th>Pre-expand rows</th>
-<th>RRULE rule + expand on read</th>
+<th>Requirement</th>
+<th>Mechanism</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Read complexity</td>
-<td>Simple SQL range query</td>
-<td>RRULE library call</td>
+<td>Initial load latency &lt; 500ms</td>
+<td>Single PostgreSQL query, single-day RRULE expansion, client-side layout</td>
 </tr>
 <tr>
-<td>Write complexity</td>
-<td>Simple</td>
-<td>Simple</td>
+<td>Drag &amp; resize 60fps</td>
+<td>DOM <code>transform</code> mutation during drag; one React commit on drop</td>
 </tr>
 <tr>
-<td>Storage</td>
-<td>O(n × recurrences) = billions of rows</td>
-<td>O(n) — one row per recurring series</td>
+<td>Real-time update &lt; 1s</td>
+<td>PostgreSQL → Kafka → Notification Service → WebSocket push</td>
 </tr>
 <tr>
-<td>Handling exceptions</td>
-<td>Update single row</td>
-<td>Exception table lookup</td>
+<td>Availability 99.9%</td>
+<td>PostgreSQL failover; Redis-backed WS session map survives node loss</td>
 </tr>
 <tr>
-<td>Handling "edit all future"</td>
-<td>Update many rows</td>
-<td>Update UNTIL + new rule row</td>
+<td>Consistency — strong CRUD / eventual real-time</td>
+<td>Optimistic-lock <code>version</code> field for writes; Kafka lag for propagation</td>
+</tr>
+<tr>
+<td>Offline read-only + queued writes</td>
+<td>Local cache for reads; optimistic-update/revert mechanism for queued writes</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Chosen:</strong> RRULE rule + expand on read — storage efficiency is overwhelming at 500M users. RRULE expansion for a single day is O(1) — trivial cost.</p>
-<blockquote>
-<p>[!NOTE]
-<strong>Key Insight:</strong> Expand at read time for a 24-hour window = at most 2–3 occurrences. Pre-expand for 2 years = 52–730 rows per event. The read cost is the same; the write/storage cost is radically different.</p>
-</blockquote>
 <hr />
-<h2 id="interview-summary">Interview Summary</h2>
+<h2 id="11-conclusion">11. Conclusion</h2>
+<p>This design treats the Day View as two things happening at once behind one grid: a frontend that has to feel instantaneous — laying out overlaps, snapping drags, rendering 60fps — using nothing but data it already has locally, and a backend whose actual job is narrower than it looks: keep writes ACID, resolve concurrent edits without silently dropping one, and get a change to every collaborator in under a second without ever making the editor wait for that fan-out to finish. Neither half was the hard part in isolation — interval partitioning and optimistic locking are each well-understood on their own. The hard part was keeping them from leaking into each other: the frontend never waits on the backend to feel fast, and the backend never lets frontend-speed assumptions compromise correctness. Every other decision in this design — Redis for what's disposable, PostgreSQL for what isn't, Kafka in between — falls out of drawing that line correctly.</p>
+<hr />
+<h2 id="12-interview-summary">12. Interview Summary</h2>
 <h3 id="key-decisions">Key Decisions</h3>
 <table>
 <thead>
