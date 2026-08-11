@@ -117,6 +117,72 @@ MERMAID_FENCE_RE = re.compile(
 # legibility regression rather than an improvement.
 FLOWCHART_FIRST_LINE_RE = re.compile(r"^\s*(graph|flowchart)\b", re.I)
 
+# More mermaid-to-excalidraw rendering defects found after the initial
+# rollout, all specific to flowchart diagrams:
+#   (1) `subgraph` clusters convert at a badly wrong scale, rendering tiny
+#       in the corner of a mostly blank canvas.
+#   (2) A self-loop edge (a node pointing back to itself, e.g.
+#       `RS -->|reads X| RS`) gets its label smashed together with the
+#       loop's own arrow, producing garbled overlapping text.
+#   (3) A literal `\n` inside a node label (valid mermaid syntax for a
+#       line break, e.g. `A["Line one\nLine two"]`) is not interpreted --
+#       it shows up as the literal two characters `\n` in the rendered
+#       label instead of a line break.
+# All three are mechanically detectable and excluded below, falling back
+# to the live mermaid.js path, which has always rendered them correctly.
+#
+# A FOURTH defect is NOT mechanically detectable and cost a full manual
+# visual audit to find: when two or more labeled edges converge on (or
+# pass close to) the same point in the layout -- e.g. two edges into the
+# same target node, or a mutual A<->B pair -- their labels can render
+# overlapping/interleaved into unreadable text, seemingly regardless of
+# the diagram's graph topology (cycles and mutual pairs are extremely
+# common in these diagrams and usually render fine; only some do not).
+# Graph-theoretic heuristics tried during that audit (any cycle, any
+# mutual 2-node pair) were both far too broad -- they flagged diagrams
+# that actually render perfectly. There is no known reliable static
+# predictor for this defect: after converting any new diagram, render it
+# and visually check every edge label for overlapping/smashed-together
+# text before trusting the cache.
+#
+# These six hashes were found broken by that manual audit and don't match
+# any of the mechanical checks above (no subgraph, no literal self-loop,
+# no `\n`), so they're excluded explicitly. Without this, render_missing_
+# diagrams() would treat a missing cache entry for one of these as "needs
+# re-rendering" and silently regenerate the same broken output:
+#   5ecc21985e70069f  ride-booking-uber-rapido.md    8.1 (D<->E mutual pair)
+#   8c52c30b04b3b887  google-docs.md                 two edges -> Redis, same label
+#   99ea2993a3e8dcb2  google-docs.md                 two convergent-edge collisions
+#   c5657fab65765a4c  leetcode-online-judge.md       API<->Containers mutual pair
+#   d2009a14bd841fd5  payment-gateway-stripe.md      APIGW<->FraudSvc mutual pair
+#   def9402170475b48  google-docs.md                 two adjacent edges near gateways
+KNOWN_BROKEN_HASHES = {
+    "5ecc21985e70069f",
+    "8c52c30b04b3b887",
+    "99ea2993a3e8dcb2",
+    "c5657fab65765a4c",
+    "d2009a14bd841fd5",
+    "def9402170475b48",
+}
+
+SUBGRAPH_RE = re.compile(r"^\s*subgraph\b", re.I | re.M)
+SELF_LOOP_RE = re.compile(
+    r"^\s*(\w+)(?:\[[^\]]*\]|\([^)]*\)|\{[^}]*\})?\s*-[-.=]*>+\s*"
+    r"(?:\|[^|]*\|\s*)?(\w+)\b",
+    re.M,
+)
+
+
+def _has_self_loop(raw_mermaid_text):
+    return any(
+        source == target
+        for source, target in SELF_LOOP_RE.findall(raw_mermaid_text)
+    )
+
+
+def _has_literal_backslash_n_label(raw_mermaid_text):
+    return "\\n" in raw_mermaid_text
+
 RENDERER_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "mermaid-to-excalidraw",
@@ -137,19 +203,38 @@ def _is_flowchart(raw_mermaid_text):
     return bool(FLOWCHART_FIRST_LINE_RE.match(first_line))
 
 
+def _is_convertible(raw_mermaid_text):
+    """Whether this diagram is eligible for the hand-drawn Excalidraw
+    conversion: a flowchart, with none of the constructs known to render
+    incorrectly through mermaid-to-excalidraw (see the SUBGRAPH_RE /
+    SELF_LOOP_RE / _has_literal_backslash_n_label comment above). This
+    catches three of the four known defect classes mechanically; the
+    fourth (converging-edge label collisions) has no reliable static
+    predictor, so specific hashes found broken by manual review are
+    blocklisted explicitly via KNOWN_BROKEN_HASHES."""
+    return (
+        _is_flowchart(raw_mermaid_text)
+        and not SUBGRAPH_RE.search(raw_mermaid_text)
+        and not _has_self_loop(raw_mermaid_text)
+        and not _has_literal_backslash_n_label(raw_mermaid_text)
+        and _diagram_hash(raw_mermaid_text) not in KNOWN_BROKEN_HASHES
+    )
+
+
 def _diagram_hash(raw_mermaid_text):
     return hashlib.sha256(raw_mermaid_text.encode("utf-8")).hexdigest()[:16]
 
 
 def collect_flowchart_diagrams(source_texts):
-    """Scan raw (pre-HTML) markdown texts for ```mermaid fences whose first
-    line is graph/flowchart. Returns {hash: raw_mermaid_text}."""
+    """Scan raw (pre-HTML) markdown texts for ```mermaid fences eligible
+    for hand-drawn conversion (see _is_convertible). Returns
+    {hash: raw_mermaid_text}."""
     fence_re = re.compile(r"```mermaid\n(.*?)```", re.S)
     diagrams = {}
     for text in source_texts:
         for match in fence_re.finditer(text):
             raw = match.group(1).rstrip("\n")
-            if _is_flowchart(raw):
+            if _is_convertible(raw):
                 diagrams[_diagram_hash(raw)] = raw
     return diagrams
 
@@ -247,7 +332,7 @@ def convert_markdown(text, asset_prefix=""):
         raw_escaped = match.group(1).rstrip("\n")
         raw = html.unescape(raw_escaped)
 
-        if _is_flowchart(raw):
+        if _is_convertible(raw):
             svg_hash = _diagram_hash(raw)
             svg_path = os.path.join(MERMAID_SVG_CACHE_DIR, f"{svg_hash}.svg")
             if os.path.exists(svg_path):
