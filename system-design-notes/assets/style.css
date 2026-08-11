@@ -230,13 +230,20 @@ main blockquote {
 }
 .diagram-lightbox.open { display: flex; }
 .diagram-lightbox-content {
-  max-width: 100%;
-  max-height: 100%;
+  /* A fixed-size box so the diagram always fills the available space --
+     object-fit: contain below then scales the diagram UP or DOWN to fit
+     this box while preserving its aspect ratio, regardless of the
+     diagram's own intrinsic/inline size (max-width alone only ever
+     shrinks, never enlarges, which is what made small diagrams render
+     tiny here before). */
+  width: min(94vw, 1800px);
+  height: calc(100vh - 4rem);
 }
 .diagram-lightbox-content img,
 .diagram-lightbox-content svg {
-  max-width: 100%;
-  max-height: calc(100vh - 4rem);
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   background: #fff;
   border-radius: 10px;
   transition: transform 0.15s ease;

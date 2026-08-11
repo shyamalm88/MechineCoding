@@ -36,7 +36,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function openWithSvg(svgEl) {
     content.innerHTML = '';
-    content.appendChild(svgEl.cloneNode(true));
+    var clone = svgEl.cloneNode(true);
+    // mermaid.js bakes an inline style (e.g. max-width: 1163px) onto the
+    // SVG to fit it inside its original in-page card. Cloned as-is, that
+    // inline style outranks our CSS and stops the diagram from scaling up
+    // to fill the lightbox. Strip it so our stylesheet rules apply.
+    clone.removeAttribute('style');
+    content.appendChild(clone);
     openCommon();
   }
 
