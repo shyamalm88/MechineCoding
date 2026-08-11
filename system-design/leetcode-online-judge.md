@@ -251,7 +251,7 @@ The API surface splits into what a user does before code even runs (browse, view
 | POST | /api/v1/contests/{id}/register | Register for a contest |
 
 > [!NOTE]
-> **POST /submissions is the most important endpoint — it is intentionally async.** The submission is queued immediately and the client polls GET /submissions/{id} every 3 seconds. This is NOT a design compromise — LeetCode itself works this way. Polling is correct here because execution time is variable (milliseconds to seconds), and WebSocket would be overkill for a single status check.
+> **POST /submissions is the most important endpoint — it is intentionally async.** The submission is queued immediately and the client polls GET /submissions/{id} every 3 seconds. This is NOT a design compromise — LeetCode itself works this way; §9.2 walks through why polling beats a WebSocket here.
 
 ---
 
