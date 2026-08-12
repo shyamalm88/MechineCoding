@@ -270,31 +270,18 @@ fetch('/api/transfer', {
 </tbody>
 </table>
 <h3 id="the-secure-token-pattern">The Secure Token Pattern</h3>
-<pre><code>┌──────────┐                              ┌──────────┐
-│  Client  │                              │  Server  │
-└────┬─────┘                              └────┬─────┘
-     │                                         │
-     │  Login: username/password               │
-     │────────────────────────────────────────▶│
-     │                                         │
-     │  Access Token (15min) in JSON body      │
-     │  Refresh Token in HttpOnly cookie       │
-     │◀────────────────────────────────────────│
-     │                                         │
-     │  Store access token IN MEMORY ONLY      │
-     │                                         │
-     │  API calls with: Authorization: Bearer  │
-     │────────────────────────────────────────▶│
-     │                                         │
-     │  Access token expired (401)             │
-     │◀────────────────────────────────────────│
-     │                                         │
-     │  POST /refresh (HttpOnly cookie sent)   │
-     │────────────────────────────────────────▶│
-     │                                         │
-     │  New access token in response body      │
-     │◀────────────────────────────────────────│
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant Server
+    Client-&gt;&gt;Server: Login: username/password
+    Server--&gt;&gt;Client: Access Token (15min) in JSON body + Refresh Token in HttpOnly cookie
+    Note over Client: Store access token IN MEMORY ONLY
+    Client-&gt;&gt;Server: API call with Authorization: Bearer
+    Server--&gt;&gt;Client: Access token expired (401)
+    Client-&gt;&gt;Server: POST /refresh (HttpOnly cookie sent)
+    Server--&gt;&gt;Client: New access token in response body
+</div>
 <p><strong>Why this pattern?</strong>
 - Access token in memory: XSS can't steal it from localStorage
 - Refresh token in HttpOnly cookie: XSS can't read it

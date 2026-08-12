@@ -44,18 +44,16 @@ doc goes deeper into <em>why</em> they exist and the model underneath them.</p>
 started rendering an update, it ran to completion on the main thread,
 uninterruptible, even for a slow tree. A large re-render could block user
 input for hundreds of milliseconds.</p>
-<pre><code>Legacy (React ≤17) — synchronous, blocking:
-┌──────────────────────────────────────────────┐
-│  render(update) ───────────────────────────▶  │  commit
-│  Main thread blocked the whole time.          │  (user input queued, laggy)
-└──────────────────────────────────────────────┘
-
-Concurrent (React 18+) — interruptible, prioritized:
-┌───────┐  ┌───────┐  ┌───────┐         ┌───────┐
-│ chunk │  │ chunk │  │ URGENT│ ◀── interrupts low-priority work
-└───────┘  └───────┘  │ update│         └───────┘
-                       └───────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Legacy (React &lt;=17) - synchronous, blocking&quot;
+        L1[&quot;render(update)&quot;] --&gt;|&quot;Main thread blocked the whole time&quot;| L2[&quot;commit (user input queued, laggy)&quot;]
+    end
+    subgraph &quot;Concurrent (React 18+) - interruptible, prioritized&quot;
+        Ch1[&quot;chunk&quot;] --&gt; Ch2[&quot;chunk&quot;] --&gt; Ch3[&quot;chunk&quot;]
+        Urgent[&quot;URGENT update&quot;] -.-&gt;|interrupts low-priority work| Ch2
+    end
+</div>
 <p><strong>Concurrent rendering doesn't mean multi-threaded.</strong> JavaScript is still
 single-threaded. What changes is that React can:
 - Split rendering work into small units and yield back to the browser
@@ -286,14 +284,12 @@ you're in client-rendered territory, everything under it is client-rendered
 too) — the one exception is passing a Server Component in as <code>children</code>/props
 from above, since it's already been rendered to a serialized description by
 the time the client sees it.</p>
-<pre><code>┌───────────────────────────────────────────────┐
-│ Server Component tree (runs on server only)    │
-│   ┌─────────────────────────────────────────┐ │
-│   │ Client Component boundary (&quot;use client&quot;) │ │
-│   │   — ships JS, hydrates, can use hooks    │ │
-│   └─────────────────────────────────────────┘ │
-└───────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Server Component tree (runs on server only)&quot;
+        CB[&quot;Client Component boundary (use client) - ships JS, hydrates, can use hooks&quot;]
+    end
+</div>
 <p>Why it matters: no <code>useState</code>/<code>useEffect</code>/event handlers means smaller
 client bundles (the Server Component's code and its dependencies never
 ship), and no client-server round trip for data the component needs at

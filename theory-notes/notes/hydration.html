@@ -196,20 +196,15 @@ sequenceDiagram
 <blockquote>
 <p><strong>The idea:</strong> Most of a page is static content. Only isolated "islands" need JavaScript and interactivity. Hydrate only the islands, not the entire page.</p>
 </blockquote>
-<pre><code>+------------------------------------------+
-|  STATIC HEADER (no JS needed)            |
-+------------------------------------------+
-|  STATIC ARTICLE BODY (no JS needed)      |
-|                                          |
-|  ┌──────────────────┐   ┌────────────┐  |
-|  │  🏝 ISLAND       │   │ 🏝 ISLAND  │  |
-|  │  Comment Form    │   │ Like Btn   │  |
-|  │  (JS hydrated)   │   │ (hydrated) │  |
-|  └──────────────────┘   └────────────┘  |
-+------------------------------------------+
-|  STATIC FOOTER (no JS needed)            |
-+------------------------------------------+
-</code></pre>
+<div class="mermaid">
+graph TD
+    H[&quot;Static Header (no JS needed)&quot;] --&gt; AB
+    subgraph AB[&quot;Static Article Body (no JS needed)&quot;]
+        I1[&quot;Island: Comment Form (JS hydrated)&quot;]
+        I2[&quot;Island: Like Btn (hydrated)&quot;]
+    end
+    AB --&gt; F[&quot;Static Footer (no JS needed)&quot;]
+</div>
 <p><strong>Frameworks implementing this:</strong>
 - <strong>Astro</strong> — islands are explicit <code>client:*</code> directives
 - <strong>Fresh (Deno)</strong> — islands are components in <code>/islands/</code> directory

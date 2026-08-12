@@ -104,16 +104,7 @@ index.html      →  Cache-Control: no-cache
 <h2 id="2-networking-infrastructure-layers">2. Networking &amp; Infrastructure Layers</h2>
 <p>This is where you manage the <strong>"Thundering Herd"</strong> problem and geographical latency.</p>
 <h3 id="the-caching-hierarchy">The Caching Hierarchy</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  Browser Cache                                              │
-│  └─▶ Service Worker Cache                                   │
-│      └─▶ Forward Proxy (ISP/Corporate)                      │
-│          └─▶ CDN Edge (Cloudflare, Akamai)                  │
-│              └─▶ Reverse Proxy (Nginx/Varnish)              │
-│                  └─▶ Application Cache (Redis)              │
-│                      └─▶ Database                           │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/be4d4263eeed78c2.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="forward-proxy-cache-ispcorporate-layer">Forward Proxy Cache (ISP/Corporate Layer)</h3>
 <p>Caches requests made by users behind a firewall.</p>
 <p><strong>The Trap:</strong> You have <strong>zero control</strong> here. If you don't use fingerprinted filenames, a corporate proxy might serve an old version of your React app for weeks.</p>
