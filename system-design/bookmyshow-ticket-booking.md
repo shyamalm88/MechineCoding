@@ -64,66 +64,46 @@ Design a scalable ticket booking system similar to BookMyShow that allows users 
 
 ## 2. High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           CLIENT TIER                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                     │
-│  │   Web App   │  │  Mobile App │  │   Admin     │                     │
-│  │  (React)    │  │ (iOS/And.)  │  │   Portal    │                     │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                     │
-└─────────┼─────────────────┼─────────────────┼───────────────────────────┘
-          │                 │                 │
-          └─────────────────┼─────────────────┘
-                            │
-          ┌─────────────────▼─────────────────┐
-          │      API Gateway (Kong/NGINX)      │
-          │  - Rate Limiting                   │
-          │  - Load Balancing                  │
-          │  - Authentication                  │
-          └─────────────────┬─────────────────┘
-                            │
-    ┌───────────────────────┼───────────────────────┐
-    │                       │                       │
-┌───▼────────┐  ┌──────────▼────────┐  ┌──────────▼────────┐
-│  Catalog   │  │   Booking Service  │  │ Payment Service   │
-│  Service   │  │   (CRITICAL)       │  │                   │
-│            │  │  - Seat Locking    │  │  - Payment Gateway│
-│  - Movies  │  │  - Reservation     │  │  - Webhook Handler│
-│  - Theaters│  │  - Booking Mgmt    │  │  - Refunds        │
-│  - Shows   │  └──────────┬────────┘  └──────────┬────────┘
-└─────┬──────┘             │                      │
-      │                    │                      │
-      │    ┌───────────────▼──────────┐  ┌────────▼────────┐
-      │    │  Notification Service    │  │  User Service   │
-      │    │  - Email                 │  │  - Auth         │
-      │    │  - SMS                   │  │  - Profile      │
-      │    │  - Push Notifications    │  │  - History      │
-      │    └──────────────────────────┘  └─────────────────┘
-      │
-┌─────┴──────────────────────────────────────────────────────────────┐
-│                      DATA & CACHE LAYER                             │
-│                                                                      │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────────┐ │
-│  │ PostgreSQL │  │   Redis    │  │ Elasticsearch│ │  S3/CDN     │ │
-│  │  (Primary) │  │ Distributed│  │   (Search)   │  │  (Assets)   │ │
-│  │            │  │   Cache +  │  │              │  │             │ │
-│  │  - Users   │  │Seat Locking│  │  - Movies    │  │  - Images   │ │
-│  │  - Bookings│  │            │  │  - Theaters  │  │  - Tickets  │ │
-│  │  - Seats   │  └────────────┘  └──────────────┘  └─────────────┘ │
-│  │  - Payments│                                                     │
-│  └────────────┘                                                     │
-│                                                                      │
-│  ┌────────────┐  ┌────────────┐                                    │
-│  │  Message   │  │   Event    │                                    │
-│  │   Queue    │  │   Store    │                                    │
-│  │  (Kafka)   │  │  (Events)  │                                    │
-│  └────────────┘  └────────────┘                                    │
-└──────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Client Tier"
+        WebApp["Web App (React)"]
+        MobileApp["Mobile App (iOS/And.)"]
+        AdminPortal["Admin Portal"]
+    end
 
-┌──────────────────────────────────────────────────────────────────────┐
-│                    MONITORING & OBSERVABILITY                         │
-│  - Prometheus/Grafana  - ELK Stack  - Distributed Tracing (Jaeger) │
-└──────────────────────────────────────────────────────────────────────┘
+    WebApp --> Gateway
+    MobileApp --> Gateway
+    AdminPortal --> Gateway
+
+    Gateway["API Gateway (Kong/NGINX) - Rate Limiting, Load Balancing, Authentication"]
+
+    Gateway --> Catalog
+    Gateway --> Booking
+    Gateway --> Payment
+
+    Catalog["Catalog Service - Movies, Theaters, Shows"]
+    Booking["Booking Service (CRITICAL) - Seat Locking, Reservation, Booking Mgmt"]
+    Payment["Payment Service - Payment Gateway, Webhook Handler, Refunds"]
+
+    Booking --> Notification["Notification Service - Email, SMS, Push Notifications"]
+    Payment --> UserSvc["User Service - Auth, Profile, History"]
+    Catalog --> DataLayer
+
+    subgraph DataLayer ["Data & Cache Layer"]
+        Postgres["PostgreSQL (Primary) - Users, Bookings, Seats, Payments"]
+        Redis["Redis - Distributed Cache + Seat Locking"]
+        Elastic["Elasticsearch (Search) - Movies, Theaters"]
+        S3["S3/CDN (Assets) - Images, Tickets"]
+        Kafka["Message Queue (Kafka)"]
+        EventStore["Event Store (Events)"]
+    end
+
+    subgraph Monitoring ["Monitoring & Observability"]
+        Prom["Prometheus/Grafana"]
+        ELK["ELK Stack"]
+        Jaeger["Distributed Tracing (Jaeger)"]
+    end
 ```
 
 ## System Invariants
@@ -206,28 +186,21 @@ This hybrid model guarantees:
 
 #### Seat Selection Component
 
+```mermaid
+graph TD
+    subgraph "Seat Selection Interface"
+        Screen["SCREEN THIS WAY"]
+        Legend["Legend: Available (green) | Selected (yellow) | Booked (red) | Locked by others (clock)"]
+        RowA["Row A: Available, Available, Booked, Booked, Available, Available, Available, Available"]
+        RowB["Row B: Available, Selected, Selected, Available, Locked, Locked, Available, Available"]
+        RowC["Row C: Booked, Booked, Booked, Booked, Available, Available, Available, Available"]
+        Summary["Selected: B2, B3 (2 seats) - Price: $30.00 - Time Remaining: 09:45"]
+        Actions["Cancel | Proceed to Payment"]
+        Screen --> Legend --> RowA --> RowB --> RowC --> Summary --> Actions
+    end
 ```
-┌─────────────────────────────────────────────────────┐
-│          Seat Selection Interface                   │
-│                                                      │
-│  ┌────────────────────────────────────────────┐    │
-│  │            SCREEN THIS WAY                  │    │
-│  └────────────────────────────────────────────┘    │
-│                                                      │
-│  Legend: 🟩 Available  🟨 Selected  🟥 Booked      │
-│          ⏰ Locked (by others)                      │
-│                                                      │
-│  Row A:  [🟩][🟩][🟥][🟥][🟩][🟩][🟩][🟩]        │
-│  Row B:  [🟩][🟨][🟨][🟩][⏰][⏰][🟩][🟩]        │
-│  Row C:  [🟥][🟥][🟥][🟥][🟩][🟩][🟩][🟩]        │
-│                                                      │
-│  Selected: B2, B3 (2 seats)                         │
-│  Price: $30.00                                      │
-│  Time Remaining: 09:45                              │
-│                                                      │
-│  [Cancel]              [Proceed to Payment]         │
-└─────────────────────────────────────────────────────┘
 
+```
 State Management:
 - Local State: selectedSeats[], seatMap{}
 - WebSocket: Real-time seat availability updates (optional)
@@ -237,27 +210,18 @@ State Management:
 
 #### Payment Component
 
+```mermaid
+graph TD
+    subgraph "Payment Gateway"
+        Summary["Booking Summary: Movie: Avengers Endgame | Theater: PVR Cinemas, Mall Road | Seats: B2, B3 | Amount: $30.00"]
+        Method["Payment Method: Credit/Debit Card, UPI, Net Banking, Wallet (selected)"]
+        Timer["Time Remaining: 04:45"]
+        PayNow["Pay Now"]
+        Summary --> Method --> Timer --> PayNow
+    end
 ```
-┌─────────────────────────────────────────────────────┐
-│          Payment Gateway                             │
-│                                                      │
-│  Booking Summary:                                   │
-│  Movie: Avengers Endgame                            │
-│  Theater: PVR Cinemas, Mall Road                    │
-│  Seats: B2, B3                                      │
-│  Amount: $30.00                                     │
-│                                                      │
-│  Payment Method:                                    │
-│  ( ) Credit/Debit Card                              │
-│  ( ) UPI                                            │
-│  ( ) Net Banking                                    │
-│  (•) Wallet                                         │
-│                                                      │
-│  Time Remaining: 04:45                              │
-│                                                      │
-│  [Pay Now]                                          │
-└─────────────────────────────────────────────────────┘
 
+```
 Flow:
 1. Seats locked → Payment UI shown
 2. Payment initiated → Backend validation
@@ -270,52 +234,20 @@ Flow:
 
 #### Booking Service (Core Component)
 
-```
-┌───────────────────────────────────────────────────────┐
-│              BOOKING SERVICE                          │
-│                                                        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │        Seat Lock Manager (CRITICAL)           │   │
-│  │                                                │   │
-│  │  acquireLock(showId, seatIds[], userId)      │   │
-│  │  - Check availability                         │   │
-│  │  - Set Redis lock (10 min TTL)               │   │
-│  │  - Store in seat_locks table                 │   │
-│  │                                                │   │
-│  │  releaseLock(lockId)                          │   │
-│  │  - Remove Redis lock                          │   │
-│  │  - Update seat_locks status                   │   │
-│  │                                                │   │
-│  │  extendLock(lockId)                           │   │
-│  │  - Refresh Redis TTL                          │   │
-│  └──────────────────────────────────────────────┘   │
-│                                                        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │        Booking Manager                        │   │
-│  │                                                │   │
-│  │  createBooking(lockId, paymentDetails)       │   │
-│  │  - Validate lock ownership                    │   │
-│  │  - Create booking record                      │   │
-│  │  - Update seat status (BOOKED)               │   │
-│  │  - Trigger payment                            │   │
-│  │                                                │   │
-│  │  confirmBooking(bookingId, paymentId)        │   │
-│  │  - Mark booking CONFIRMED                     │   │
-│  │  - Release lock                               │   │
-│  │  - Generate e-ticket                          │   │
-│  │  - Send notification                          │   │
-│  └──────────────────────────────────────────────┘   │
-│                                                        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │        Cancellation Manager                   │   │
-│  │                                                │   │
-│  │  cancelBooking(bookingId)                     │   │
-│  │  - Validate cancellation policy               │   │
-│  │  - Update seat status (AVAILABLE)            │   │
-│  │  - Initiate refund                            │   │
-│  │  - Update booking status                      │   │
-│  └──────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    BS["Booking Service"]
+    BS --> SLM["Seat Lock Manager (CRITICAL)"]
+    SLM --> SLM1["acquireLock(showId, seatIds[], userId) - Check availability, Set Redis lock (10 min TTL), Store in seat_locks table"]
+    SLM --> SLM2["releaseLock(lockId) - Remove Redis lock, Update seat_locks status"]
+    SLM --> SLM3["extendLock(lockId) - Refresh Redis TTL"]
+
+    BS --> BM["Booking Manager"]
+    BM --> BM1["createBooking(lockId, paymentDetails) - Validate lock ownership, Create booking record, Update seat status (BOOKED), Trigger payment"]
+    BM --> BM2["confirmBooking(bookingId, paymentId) - Mark booking CONFIRMED, Release lock, Generate e-ticket, Send notification"]
+
+    BS --> CM["Cancellation Manager"]
+    CM --> CM1["cancelBooking(bookingId) - Validate cancellation policy, Update seat status (AVAILABLE), Initiate refund, Update booking status"]
 ```
 
 ---
@@ -324,142 +256,63 @@ Flow:
 
 ### 4.1 Browse & Search Flow
 
-```
-User → API Gateway → Catalog Service → Cache/DB → Response
-                           │
-                           ├─→ Check Redis Cache (theaters, movies)
-                           │      └─→ Cache Hit → Return
-                           │
-                           └─→ Cache Miss → PostgreSQL
-                                  └─→ Update Cache → Return
+```mermaid
+graph TD
+    User --> Gateway["API Gateway"] --> Catalog["Catalog Service"]
+    Catalog --> CheckCache["Check Redis Cache (theaters, movies)"]
+    CheckCache -->|Cache Hit| Response["Response"]
+    CheckCache -->|Cache Miss| Postgres["PostgreSQL"]
+    Postgres --> UpdateCache["Update Cache"] --> Response
 ```
 
 ### 4.2 Seat Selection & Locking Flow (CRITICAL)
 
-```
-┌──────┐                                                    ┌─────────┐
-│ User │                                                    │ Backend │
-└───┬──┘                                                    └────┬────┘
-    │                                                            │
-    │ 1. GET /shows/{showId}/seats                              │
-    │────────────────────────────────────────────────────────>  │
-    │                                                            │
-    │ 2. Return seat map (Available/Booked/Locked)             │
-    │ <────────────────────────────────────────────────────────│
-    │   (Query Redis + DB for current status)                  │
-    │                                                            │
-    │ 3. User clicks seats B2, B3                               │
-    │                                                            │
-    │ 4. POST /bookings/lock                                    │
-    │    { showId, seatIds: [B2, B3], userId }                 │
-    │────────────────────────────────────────────────────────>  │
-    │                                                            │
-    │              5. DISTRIBUTED LOCK ACQUISITION              │
-    │                                                            │
-    │              ┌─────────────────────────────┐             │
-    │              │ Redis Distributed Lock      │             │
-    │              │                              │             │
-    │              │ SETNX show:123:seat:B2      │             │
-    │              │ userId:456 EX 600           │             │
-    │              │                              │             │
-    │              │ If success → Lock acquired  │             │
-    │              │ If fail → Seat locked       │             │
-    │              └─────────────────────────────┘             │
-    │                                                            │
-    │              6. Update seat_locks table                   │
-    │              INSERT INTO seat_locks                       │
-    │              (show_id, seat_id, user_id,                 │
-    │               locked_at, expires_at)                      │
-    │                                                            │
-    │ 7. Response: { lockId, expiresAt, seats[] }              │
-    │ <────────────────────────────────────────────────────────│
-    │                                                            │
-    │ 8. Timer starts: 10:00 countdown                          │
-    │                                                            │
-    │ 9. Periodic lock extension (every 2 mins)                │
-    │    PUT /bookings/lock/{lockId}/extend                     │
-    │────────────────────────────────────────────────────────>  │
-    │ <────────────────────────────────────────────────────────│
-    │                                                            │
+```mermaid
+graph TD
+    User -->|"1. GET /shows/{showId}/seats"| Backend
+    Backend -->|"2. Return seat map (Available/Booked/Locked) - Query Redis + DB for current status"| User
+    User --> Click["3. User clicks seats B2, B3"]
+    Click -->|"4. POST /bookings/lock { showId, seatIds: [B2, B3], userId }"| Backend
+    Backend --> LockAcq["5. Distributed Lock Acquisition"]
+    LockAcq --> RedisLock["Redis Distributed Lock: SETNX show:123:seat:B2 userId:456 EX 600 - If success -> Lock acquired, If fail -> Seat locked"]
+    RedisLock --> DBUpdate["6. Update seat_locks table: INSERT INTO seat_locks (show_id, seat_id, user_id, locked_at, expires_at)"]
+    DBUpdate -->|"7. Response: { lockId, expiresAt, seats[] }"| User
+    User --> Timer["8. Timer starts: 10:00 countdown"]
+    Timer -->|"9. Periodic lock extension (every 2 mins) PUT /bookings/lock/{lockId}/extend"| Backend
+    Backend --> Timer
 ```
 
 ### 4.3 Booking & Payment Flow
 
-```
-┌──────┐      ┌─────────┐      ┌─────────┐      ┌──────────┐
-│ User │      │ Booking │      │ Payment │      │ Gateway  │
-└───┬──┘      └────┬────┘      └────┬────┘      └────┬─────┘
-    │              │                 │                │
-    │ 1. Pay Now   │                 │                │
-    │─────────────>│                 │                │
-    │              │                 │                │
-    │              │ 2. Validate Lock│                │
-    │              │    ownership    │                │
-    │              │                 │                │
-    │              │ 3. Create Booking (PENDING)      │
-    │              │    └─> DB Transaction           │
-    │              │                 │                │
-    │              │ 4. Initiate Payment              │
-    │              │────────────────>│                │
-    │              │                 │                │
-    │              │                 │ 5. Process     │
-    │              │                 │───────────────>│
-    │              │                 │                │
-    │              │                 │ 6. Response    │
-    │              │                 │<───────────────│
-    │              │                 │                │
-    │              │ 7. Payment Success               │
-    │              │<────────────────│                │
-    │              │                 │                │
-    │              │ 8. Confirm Booking               │
-    │              │    BEGIN TRANSACTION             │
-    │              │    - Update booking: CONFIRMED   │
-    │              │    - Update seats: BOOKED        │
-    │              │    - Release Redis lock          │
-    │              │    - Delete seat_locks record    │
-    │              │    COMMIT                        │
-    │              │                 │                │
-    │              │ 9. Generate E-ticket             │
-    │              │    Publish event → Notification  │
-    │              │                 │                │
-    │ 10. Confirmation                                │
-    │<─────────────│                 │                │
-    │              │                 │                │
-    │              │                 │                │
-    ▼              ▼                 ▼                ▼
+```mermaid
+graph LR
+    User -->|"1. Pay Now"| Booking
+    Booking --> Validate["2. Validate Lock ownership"]
+    Validate --> CreateBooking["3. Create Booking (PENDING) - DB Transaction"]
+    CreateBooking -->|"4. Initiate Payment"| Payment
+    Payment -->|"5. Process"| Gateway
+    Gateway -->|"6. Response"| Payment
+    Payment -->|"7. Payment Success"| Confirm
+    Confirm["8. Confirm Booking - BEGIN TRANSACTION, Update booking: CONFIRMED, Update seats: BOOKED, Release Redis lock, Delete seat_locks record, COMMIT"]
+    Confirm --> Ticket["9. Generate E-ticket - Publish event -> Notification"]
+    Ticket -->|"10. Confirmation"| User
 
-FAILURE SCENARIO:
-    │              │                 │                │
-    │              │ Payment Failed  │                │
-    │              │<────────────────│                │
-    │              │                 │                │
-    │              │ Update booking: FAILED           │
-    │              │ Release seat locks               │
-    │              │ Seats → AVAILABLE               │
-    │              │                 │                │
-    │ Retry/Cancel │                 │                │
-    │<─────────────│                 │                │
+    Payment -->|"FAILURE SCENARIO: Payment Failed"| BookingFail["Update booking: FAILED - Release seat locks - Seats -> AVAILABLE"]
+    BookingFail -->|"11. Retry/Cancel"| User
 ```
 
 ### 4.4 Lock Expiration & Cleanup
 
-```
-┌─────────────────────────────────────────────────────────┐
-│          Background Job: Lock Cleanup                   │
-│                                                          │
-│  Runs every 1 minute                                    │
-│                                                          │
-│  1. Query seat_locks WHERE expires_at < NOW()          │
-│                                                          │
-│  2. For each expired lock:                              │
-│     - Remove Redis lock                                 │
-│     - Update seat status → AVAILABLE                    │
-│     - Mark seat_lock → EXPIRED                          │
-│     - Publish event (seat available)                    │
-│                                                          │
-│  3. Clean up orphaned locks (Redis exists, DB missing) │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Job["Background Job: Lock Cleanup - Runs every 1 minute"]
+    Job --> Query["1. Query seat_locks WHERE expires_at < NOW()"]
+    Query --> ForEach["2. For each expired lock"]
+    ForEach --> RemoveLock["Remove Redis lock"]
+    ForEach --> UpdateStatus["Update seat status -> AVAILABLE"]
+    ForEach --> MarkExpired["Mark seat_lock -> EXPIRED"]
+    ForEach --> PublishEvent["Publish event (seat available)"]
+    Job --> Cleanup["3. Clean up orphaned locks (Redis exists, DB missing)"]
 ```
 
 ---
@@ -1036,13 +889,13 @@ Invalidation Events:
 4. Movie updated → Invalidate movie:{id}
 
 Invalidation Flow:
-┌──────────┐      ┌──────────┐      ┌─────────┐
-│  Service │─────>│ Database │─────>│  Cache  │
-│          │      │  UPDATE  │      │ INVALID │
-└──────────┘      └──────────┘      └─────────┘
-     │                                     │
-     └─────> Publish Event ────────────────┘
-             (Kafka: cache.invalidate)
+```
+
+```mermaid
+graph LR
+    Service --> Database["Database UPDATE"]
+    Database --> Cache["Cache INVALID"]
+    Service -->|"Publish Event (Kafka: cache.invalidate)"| Cache
 ```
 
 ### 7.3 Cache Warming
@@ -1307,14 +1160,16 @@ async function acquireMultipleSeats(showId, seatIds, userId) {
 
 #### Horizontal Scaling
 
+```mermaid
+graph TD
+    LB["Load Balancer"]
+    LB --> I1["Booking Service (Instance 1)"]
+    LB --> I2["Booking Service (Instance 2)"]
+    LB --> I3["Booking Service (Instance 3)"]
+    LB --> I4["Booking Service (Instance 4)"]
 ```
-Load Balancer
-    │
-    ├─── Booking Service (Instance 1)
-    ├─── Booking Service (Instance 2)
-    ├─── Booking Service (Instance 3)
-    └─── Booking Service (Instance 4)
 
+```
 All instances are stateless
 Shared Redis for locks
 Shared PostgreSQL (with read replicas)
@@ -1797,20 +1652,18 @@ Answer:
    - Reduce DB queries by 95%
 
 Architecture:
-┌──────────────┐
-│ Queue System │ → Token → Seat Selection (500/min)
-│ (100K users) │                ↓
-└──────────────┘        ┌──────────────┐
-                        │ Load Balancer│
-                        └──────┬───────┘
-                    ┌──────────┼──────────┐
-                    ▼          ▼          ▼
-                [Server1]  [Server2]  [Server3]
-                    │          │          │
-                    └──────────┼──────────┘
-                               ▼
-                        [Redis Cluster]
-                        [DB + Replicas]
+```
+
+```mermaid
+graph TD
+    Queue["Queue System (100K users)"] -->|Token| SeatSelection["Seat Selection (500/min)"]
+    SeatSelection --> LB["Load Balancer"]
+    LB --> Server1["Server1"]
+    LB --> Server2["Server2"]
+    LB --> Server3["Server3"]
+    Server1 --> RedisCluster["Redis Cluster / DB + Replicas"]
+    Server2 --> RedisCluster
+    Server3 --> RedisCluster
 ```
 
 **Q4: What if payment succeeds but the booking confirmation fails due to database error?**
@@ -1979,20 +1832,13 @@ Answer:
    - Materialized views for reports
 
 Architecture:
-┌─────────────────────────────────────────────────┐
-│                Global CDN                        │
-│          (Static content, images)               │
-└────────────────┬────────────────────────────────┘
-                 │
-      ┌──────────┴──────────┐
-      │                     │
-┌─────▼──────┐       ┌──────▼─────┐
-│  US Region │       │ APAC Region│
-│            │       │            │
-│ App: 50    │       │ App: 50    │
-│ Redis: 3   │       │ Redis: 3   │
-│ DB: Primary│       │ DB: Replica│
-└────────────┘       └────────────┘
+```
+
+```mermaid
+graph TD
+    CDN["Global CDN (Static content, images)"]
+    CDN --> US["US Region - App: 50, Redis: 3, DB: Primary"]
+    CDN --> APAC["APAC Region - App: 50, Redis: 3, DB: Replica"]
 ```
 
 ### Data Consistency
@@ -2431,24 +2277,13 @@ async function processRefund(refundId) {
 
 **Challenge**: Seat maps are inherently visual and grid-based, making them difficult for screen reader users.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│            Accessible Seat Selection Interface               │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Navigation Modes:                                           │
-│  1. Grid Navigation (Arrow keys)                            │
-│  2. Row Navigation (Jump between rows)                      │
-│  3. Search by Seat (Type "A5" to jump)                      │
-│  4. Filter by Type (Show only available/premium)            │
-│                                                              │
-│  Screen Reader Announcements:                               │
-│  "Row A, Seat 1, Available, Regular, $200"                  │
-│  "Row A, Seat 2, Selected, Premium, $300"                   │
-│  "Row A, Seat 3, Booked, Not available"                     │
-│  "Row A, Seat 4, Locked by another user"                    │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Accessible Seat Selection Interface"
+        Nav["Navigation Modes: 1. Grid Navigation (Arrow keys) 2. Row Navigation (Jump between rows) 3. Search by Seat (Type 'A5' to jump) 4. Filter by Type (Show only available/premium)"]
+        SR["Screen Reader Announcements: 'Row A, Seat 1, Available, Regular, $200' | 'Row A, Seat 2, Selected, Premium, $300' | 'Row A, Seat 3, Booked, Not available' | 'Row A, Seat 4, Locked by another user'"]
+        Nav --> SR
+    end
 ```
 
 **Accessible Seat Grid Implementation:**
@@ -2849,43 +2684,14 @@ Mobile Accessibility:
 
 ### 13.1 Responsive Seat Map
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│              Mobile Seat Map Strategies                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Strategy 1: Horizontal Scroll                               │
-│  ┌─────────────────────────────────────────┐                │
-│  │ ←  [A1][A2][A3][A4][A5][A6][A7][A8]  → │                │
-│  │     [B1][B2][B3][B4][B5][B6][B7][B8]    │                │
-│  └─────────────────────────────────────────┘                │
-│  Pros: Natural scrolling, no zoom needed                    │
-│  Cons: Hard to see full layout                              │
-│                                                              │
-│  Strategy 2: Pinch-to-Zoom                                  │
-│  ┌─────────────────────────────────────────┐                │
-│  │        [Minimap in corner]              │                │
-│  │    ┌──────────────────────┐            │                │
-│  │    │ [A1][A2][A3][A4]     │            │                │
-│  │    │ [B1][B2][B3][B4]  👆  │            │                │
-│  │    └──────────────────────┘            │                │
-│  └─────────────────────────────────────────┘                │
-│  Pros: See detail and overview                              │
-│  Cons: More complex interaction                              │
-│                                                              │
-│  Strategy 3: Row-by-Row Selection (Recommended for mobile)  │
-│  ┌─────────────────────────────────────────┐                │
-│  │  Select Row:  [A] [B] [C] [D] [E] ...   │                │
-│  │                                          │                │
-│  │  Row B Seats:                           │                │
-│  │  [1✓] [2✓] [3] [4] [5×] [6] [7] [8]   │                │
-│  │                                          │                │
-│  │  Selected: B1, B2  |  $400             │                │
-│  └─────────────────────────────────────────┘                │
-│  Pros: Large touch targets, clear flow                      │
-│  Cons: Less visual context                                  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Mobile Seat Map Strategies"
+        S1["Strategy 1: Horizontal Scroll - rows scroll left/right with arrow indicators (A1-A8, B1-B8). Pros: Natural scrolling, no zoom needed. Cons: Hard to see full layout"]
+        S2["Strategy 2: Pinch-to-Zoom - minimap in corner shows overview while zoomed (A1-A4, B1-B4). Pros: See detail and overview. Cons: More complex interaction"]
+        S3["Strategy 3: Row-by-Row Selection (Recommended for mobile) - select a row (A-E), then pick seats within that row, e.g. Selected: B1, B2 | $400. Pros: Large touch targets, clear flow. Cons: Less visual context"]
+        S1 --> S2 --> S3
+    end
 ```
 
 ### 13.2 Pinch-to-Zoom Implementation
@@ -3223,42 +3029,22 @@ async function saveTicketOffline(booking) {
 
 ### 14.1 PCI DSS Compliance
 
+```mermaid
+graph TD
+    subgraph "Frontend (Out of Scope)"
+        PF["Payment Form with iframe (Hosted by Payment Gateway) - Card Number: ****, Expiry: **/**, CVV: ***"]
+    end
+    subgraph "Backend (PCI SAQ-A)"
+        BE["Never touches card data - Only receives payment tokens - Tokens stored encrypted (AES-256) - Audit logs for all payment actions"]
+    end
+    subgraph "Payment Gateway (PCI Level 1)"
+        PG["Razorpay / Stripe / PayU - Handles actual card processing - Stores encrypted card data - Returns token/reference"]
+    end
+    PF -->|"Token only (no card data)"| BE
+    BE --> PG
 ```
-┌─────────────────────────────────────────────────────────────┐
-│              PCI DSS Compliance Architecture                 │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Frontend (Out of Scope):                                   │
-│  ┌─────────────────────────────────────────┐               │
-│  │  Payment Form with iframe               │               │
-│  │  (Hosted by Payment Gateway)            │               │
-│  │                                          │               │
-│  │  ┌───────────────────────────────┐     │               │
-│  │  │  Card Number: ****           │     │               │
-│  │  │  Expiry: **/**               │     │               │
-│  │  │  CVV: ***                    │     │               │
-│  │  └───────────────────────────────┘     │               │
-│  │       ↓ Token only (no card data)       │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-│  Backend (PCI SAQ-A):                                       │
-│  ┌─────────────────────────────────────────┐               │
-│  │  - Never touches card data              │               │
-│  │  - Only receives payment tokens         │               │
-│  │  - Tokens stored encrypted (AES-256)    │               │
-│  │  - Audit logs for all payment actions   │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-│  Payment Gateway (PCI Level 1):                             │
-│  ┌─────────────────────────────────────────┐               │
-│  │  Razorpay / Stripe / PayU               │               │
-│  │  - Handles actual card processing       │               │
-│  │  - Stores encrypted card data           │               │
-│  │  - Returns token/reference              │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
 
+```
 Key Requirements:
 □ No card data in our systems (tokenization)
 □ HTTPS everywhere (TLS 1.2+)
@@ -4461,33 +4247,18 @@ function useOfflineTickets() {
 
 ### 17.1 WebSocket Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│              WebSocket Architecture                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Client                   Server                   Redis     │
-│    │                        │                        │       │
-│    │ Connect WS             │                        │       │
-│    │───────────────────────>│                        │       │
-│    │                        │                        │       │
-│    │ Subscribe: show:123    │                        │       │
-│    │───────────────────────>│  SUBSCRIBE show:123   │       │
-│    │                        │───────────────────────>│       │
-│    │                        │                        │       │
-│    │                        │  PUBLISH show:123     │       │
-│    │                        │<───────────────────────│       │
-│    │ Message: seat_locked   │                        │       │
-│    │<───────────────────────│                        │       │
-│    │                        │                        │       │
-│    │ Heartbeat (30s)        │                        │       │
-│    │<──────────────────────>│                        │       │
-│    │                        │                        │       │
-│    │ Disconnect             │  UNSUBSCRIBE         │       │
-│    │───────────────────────>│───────────────────────>│       │
-│    │                        │                        │       │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "WebSocket Architecture"
+        Client -->|"Connect WS"| Server
+        Client -->|"Subscribe: show:123"| Server
+        Server -->|"SUBSCRIBE show:123"| Redis
+        Redis -->|"PUBLISH show:123"| Server
+        Server -->|"Message: seat_locked"| Client
+        Client ---|"Heartbeat (30s)"| Server
+        Client -->|"Disconnect"| Server
+        Server -->|"UNSUBSCRIBE"| Redis
+    end
 ```
 
 ### 17.2 WebSocket Server Implementation
@@ -4829,44 +4600,12 @@ function useSeatUpdatesWithFallback(showId) {
 
 ### 18.1 Queue System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│              Virtual Waiting Room Architecture               │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  High Traffic Event (100K users, 200 seats)                 │
-│                                                              │
-│  ┌─────────────────────────────────────────┐               │
-│  │           Queue Landing Page             │               │
-│  │                                          │               │
-│  │  "You are in the queue"                 │               │
-│  │  Position: 45,234                        │               │
-│  │  Estimated wait: ~15 minutes            │               │
-│  │                                          │               │
-│  │  [=========>          ] 45%             │               │
-│  │                                          │               │
-│  │  Don't close this page!                 │               │
-│  └─────────────────────────────────────────┘               │
-│                     │                                        │
-│                     ▼                                        │
-│  ┌─────────────────────────────────────────┐               │
-│  │         Queue Management Service         │               │
-│  │                                          │               │
-│  │  - Redis Sorted Set (position)          │               │
-│  │  - Token generation                      │               │
-│  │  - Rate: 500 users/minute               │               │
-│  │  - Fair queuing (FIFO)                  │               │
-│  └─────────────────────────────────────────┘               │
-│                     │                                        │
-│                     ▼                                        │
-│  ┌─────────────────────────────────────────┐               │
-│  │          Seat Selection (Allowed)        │               │
-│  │                                          │               │
-│  │  Token validated → Access granted       │               │
-│  │  5 minute session limit                 │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Note["High Traffic Event (100K users, 200 seats)"]
+    Note --> Landing["Queue Landing Page - 'You are in the queue', Position: 45,234, Estimated wait: ~15 minutes, Progress: 45%, Don't close this page!"]
+    Landing --> QMS["Queue Management Service - Redis Sorted Set (position), Token generation, Rate: 500 users/minute, Fair queuing (FIFO)"]
+    QMS --> Seat["Seat Selection (Allowed) - Token validated -> Access granted, 5 minute session limit"]
 ```
 
 ### 18.2 Queue Implementation
@@ -5226,68 +4965,44 @@ class BookingAnalytics {
 
 ### 19.2 Metrics Dashboard
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Booking Analytics Dashboard                        │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Real-time Metrics (Last 1 Hour)                                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
-│  │ Bookings    │ │ Revenue     │ │ Conversion  │ │ Avg. Time   │   │
-│  │    1,234    │ │  $45,678    │ │   12.5%     │ │   4m 32s    │   │
-│  │  ↑ 15%      │ │  ↑ 22%      │ │  ↓ 2.1%     │ │  ↓ 0:45     │   │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │
-│                                                                      │
-│  Booking Funnel (Today)                                             │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ Show Views      ████████████████████████████████ 50,000     │   │
-│  │ Seat Selection  ████████████████████ 25,000 (50%)           │   │
-│  │ Lock Acquired   ████████████ 12,500 (50%)                   │   │
-│  │ Payment Started █████████ 10,000 (80%)                       │   │
-│  │ Confirmed       ███████ 6,250 (62.5%)                        │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Abandonment Analysis                                               │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                                                              │   │
-│  │  Seat Selection: 50%  ████████████████████                  │   │
-│  │    - No seats available: 30%                                │   │
-│  │    - Left page: 15%                                         │   │
-│  │    - Error: 5%                                              │   │
-│  │                                                              │   │
-│  │  Lock Stage: 20%  ████████                                   │   │
-│  │    - Lock expired: 60%                                      │   │
-│  │    - User cancelled: 35%                                    │   │
-│  │    - Error: 5%                                              │   │
-│  │                                                              │   │
-│  │  Payment: 37.5%  ███████████████                             │   │
-│  │    - Payment failed: 45%                                    │   │
-│  │    - User cancelled: 40%                                    │   │
-│  │    - Timeout: 15%                                           │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Seat Popularity Heatmap                                            │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │     1   2   3   4   5   6   7   8   9  10                   │   │
-│  │ A  [░][░][▒][▓][█][█][▓][▒][░][░]  SCREEN                   │   │
-│  │ B  [░][▒][▓][█][█][█][█][▓][▒][░]                           │   │
-│  │ C  [░][▒][▓][█][█][█][█][▓][▒][░]                           │   │
-│  │ D  [░][░][▒][▓][▓][▓][▓][▒][░][░]                           │   │
-│  │ E  [░][░][░][▒][▒][▒][▒][░][░][░]                           │   │
-│  │                                                              │   │
-│  │  ░ Low  ▒ Medium  ▓ High  █ Very High                       │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Top Performing Shows (Today)                                       │
-│  ┌────────────────────────────────────┬───────┬─────────┬───────┐ │
-│  │ Movie                               │ Seats │ Revenue │ Conv% │ │
-│  ├────────────────────────────────────┼───────┼─────────┼───────┤ │
-│  │ Avengers: Secret Wars              │ 5,234 │ $78,510 │ 18.5% │ │
-│  │ Avatar 4                           │ 3,456 │ $51,840 │ 15.2% │ │
-│  │ The Matrix 5                       │ 2,345 │ $35,175 │ 12.8% │ │
-│  └────────────────────────────────────┴───────┴─────────┴───────┘ │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Booking Analytics Dashboard"
+        subgraph "Real-time Metrics (Last 1 Hour)"
+            M1["Bookings: 1,234 (up 15%)"]
+            M2["Revenue: $45,678 (up 22%)"]
+            M3["Conversion: 12.5% (down 2.1%)"]
+            M4["Avg. Time: 4m 32s (down 0:45)"]
+        end
+
+        subgraph "Booking Funnel (Today)"
+            F1["Show Views: 50,000"] --> F2["Seat Selection: 25,000 (50%)"]
+            F2 --> F3["Lock Acquired: 12,500 (50%)"]
+            F3 --> F4["Payment Started: 10,000 (80%)"]
+            F4 --> F5["Confirmed: 6,250 (62.5%)"]
+        end
+
+        subgraph "Abandonment Analysis"
+            A1["Seat Selection: 50% - No seats available: 30%, Left page: 15%, Error: 5%"]
+            A2["Lock Stage: 20% - Lock expired: 60%, User cancelled: 35%, Error: 5%"]
+            A3["Payment: 37.5% - Payment failed: 45%, User cancelled: 40%, Timeout: 15%"]
+        end
+
+        subgraph "Seat Popularity Heatmap (columns 1-10, SCREEN at row A)"
+            H1["Row A: Low, Low, Medium, High, VeryHigh, VeryHigh, High, Medium, Low, Low"]
+            H2["Row B: Low, Medium, High, VeryHigh, VeryHigh, VeryHigh, VeryHigh, High, Medium, Low"]
+            H3["Row C: Low, Medium, High, VeryHigh, VeryHigh, VeryHigh, VeryHigh, High, Medium, Low"]
+            H4["Row D: Low, Low, Medium, High, High, High, High, Medium, Low, Low"]
+            H5["Row E: Low, Low, Low, Medium, Medium, Medium, Medium, Low, Low, Low"]
+            Legend["Legend: Low, Medium, High, Very High"]
+        end
+
+        subgraph "Top Performing Shows (Today)"
+            T1["Avengers: Secret Wars - Seats: 5,234, Revenue: $78,510, Conv: 18.5%"]
+            T2["Avatar 4 - Seats: 3,456, Revenue: $51,840, Conv: 15.2%"]
+            T3["The Matrix 5 - Seats: 2,345, Revenue: $35,175, Conv: 12.8%"]
+        end
+    end
 ```
 
 ### 19.3 SQL Queries for Analytics
@@ -5529,41 +5244,31 @@ function isRTL(locale) {
 
 ### 21.1 Multi-Region Architecture
 
+```mermaid
+graph LR
+    subgraph "Primary Region (US-East-1)"
+        AppP["App Servers (Active)"]
+        DBP["PostgreSQL (Primary)"]
+        RedisP["Redis Cluster (Primary)"]
+    end
+    subgraph "Secondary Region (US-West-2)"
+        AppS["App Servers (Standby)"]
+        DBS["PostgreSQL (Replica)"]
+        RedisS["Redis Cluster (Replica)"]
+    end
+    AppP --> AppS
+    DBP --> DBS
+    RedisP --> RedisS
 ```
-┌─────────────────────────────────────────────────────────────┐
-│              Multi-Region Disaster Recovery                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────────────┐    ┌─────────────────────┐        │
-│  │   Primary Region    │    │   Secondary Region   │        │
-│  │   (US-East-1)       │    │   (US-West-2)        │        │
-│  │                     │    │                      │        │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │        │
-│  │  │ App Servers   │  │    │  │ App Servers   │  │        │
-│  │  │ (Active)      │──┼────┼─>│ (Standby)     │  │        │
-│  │  └───────────────┘  │    │  └───────────────┘  │        │
-│  │         │           │    │         │           │        │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │        │
-│  │  │ PostgreSQL    │  │    │  │ PostgreSQL    │  │        │
-│  │  │ (Primary)     │──┼────┼─>│ (Replica)     │  │        │
-│  │  └───────────────┘  │    │  └───────────────┘  │        │
-│  │         │           │    │         │           │        │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │        │
-│  │  │ Redis Cluster │  │    │  │ Redis Cluster │  │        │
-│  │  │ (Primary)     │──┼────┼─>│ (Replica)     │  │        │
-│  │  └───────────────┘  │    │  └───────────────┘  │        │
-│  │                     │    │                      │        │
-│  └─────────────────────┘    └─────────────────────┘        │
-│                                                              │
-│  RTO (Recovery Time Objective): < 5 minutes                 │
-│  RPO (Recovery Point Objective): < 1 minute                 │
-│                                                              │
-│  Replication:                                               │
-│  - PostgreSQL: Streaming replication (sync)                 │
-│  - Redis: Active-Active geo-replication                     │
-│  - Files/Tickets: S3 cross-region replication               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+
+```
+RTO (Recovery Time Objective): < 5 minutes
+RPO (Recovery Point Objective): < 1 minute
+
+Replication:
+- PostgreSQL: Streaming replication (sync)
+- Redis: Active-Active geo-replication
+- Files/Tickets: S3 cross-region replication
 ```
 
 ### 21.2 Failover Procedures
