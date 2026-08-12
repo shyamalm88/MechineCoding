@@ -133,21 +133,16 @@ Remember Priya's request and Arjun's acceptance from the story above — here's 
 
 Uber is two concurrent real-time systems: **location tracking** and **driver matching**. Every 1–5 seconds, millions of drivers push their GPS coordinates into a geo-indexed in-memory store. When a rider requests a trip, the system finds the closest available driver by ETA (not distance), atomically assigns them via a state transition, and keeps both maps in sync — all under 300ms. The hardest problems are concurrency (preventing double-booking) and geospatial search at scale.
 
-```
-                ┌──────────────────────────────────────────────────────────────┐
-                │                     FAST PATH                                 │
- ┌──────────┐  │  ┌───────────────┐  GEORADIUS   ┌──────────────┐             │
- │  Driver  │──►  │ Location Svc  │ ───────────► │ Match Engine │ ──► Driver  │
- │  App     │  │  │ (Redis Geo)   │              │ (top K score)│    notified  │
- └──────────┘  │  └───────────────┘              └──────┬───────┘             │
-  every 1-5s   │                                        │ WATCH/MULTI/EXEC    │
-               └────────────────────────────────────────┼─────────────────────┘
-                                                         │
-               ┌─────────────────────────────────────────▼────────────────────┐
-               │                    RELIABLE PATH                               │
-               │  Trip event ──► Kafka ──► Trip DB (PostgreSQL)                │
-               │  (start, end, fare, route) — durable, for billing + history   │
-               └──────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Fast Path"
+        Driver["Driver App - every 1-5s"] -->|GEORADIUS| LS["Location Svc (Redis Geo)"]
+        LS --> ME["Match Engine (top K score)"]
+        ME -->|WATCH/MULTI/EXEC| DN["Driver notified"]
+    end
+    subgraph "Reliable Path"
+        TE["Trip event"] --> K["Kafka"] --> TDB["Trip DB (PostgreSQL) - start, end, fare, route - durable, for billing + history"]
+    end
 ```
 
 ### Core Design Principles

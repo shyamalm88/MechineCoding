@@ -105,23 +105,19 @@ Remember Meera hitting Submit on Two Sum, and watching her name climb the leader
 
 LeetCode is a code execution pipeline wrapped around a problem catalog. Three flows define the system: users browse problems (simple read-heavy), submit code for judging (async queue + isolated container), and compete with a live leaderboard (Redis sorted set updated via CDC). The hardest part is not storing problems — it is safely running untrusted code at scale and serving an aggregated leaderboard to 33K concurrent readers without touching the database on every request.
 
-```
-                   ┌──────────────────────────────────────────────────────────────┐
-                   │                      FAST PATH (Submit)                       │
- ┌────────┐ POST  │  ┌────────┐  enqueue  ┌────────┐  dispatch  ┌─────────────┐ │
- │ Client │──────►│  │  API   │──────────►│  SQS   │───────────►│ Worker +    │ │
- │(Monaco)│       │  │ Server │           │ Queue  │            │ Docker      │ │
- └────┬───┘       │  └────────┘           └────────┘            │ Container   │ │
-      │  GET/poll │                                              └──────┬──────┘ │
-      │◄──────────│────────────────────────────────────────────────────│        │
-      │           │                                               write │ result │
-      │           └────────────────────────────────────────────────────┼────────┘
-      │                                                                 │
-      │           ┌─────────────────────────────────────────────────────▼────────┐
-      │           │                  RELIABLE PATH (Leaderboard)                  │
-      │           │  DB write → CDC → Kafka → Worker → Redis ZADD                │
-      │           │  GET /leaderboard → API → Redis ZRANGE → done                │
-      └───────────└──────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph "Fast Path (Submit)"
+        Client["Client (Monaco)"] -->|POST| API["API Server"]
+        API -->|enqueue| SQS["SQS Queue"]
+        SQS -->|dispatch| Worker["Worker + Docker Container"]
+        Worker -->|write result| Client
+        Client -.->|GET/poll| API
+    end
+    subgraph "Reliable Path (Leaderboard)"
+        Worker --> DBW["DB write"] --> CDC["CDC"] --> Kafka["Kafka"] --> LBWorker["Worker"] --> ZADD["Redis ZADD"]
+        GL["GET /leaderboard"] --> API2["API"] --> ZRANGE["Redis ZRANGE"] --> Done["done"]
+    end
 ```
 
 ### Core Design Principles

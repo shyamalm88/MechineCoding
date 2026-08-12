@@ -125,40 +125,21 @@ Remember Maya's click on Send, and Raj's phone buzzing a few seconds later — h
 
 Email delivery breaks into four flows worth knowing cold: **registration** (claiming a globally unique address), **compose and send** (drafting, then handing the finished email off for delivery), **internal delivery** (both sides are Gmail, so the message never has to leave the platform), and **external delivery** (the recipient is on Outlook or Yahoo, so the message has to cross into infrastructure Gmail doesn't control). Registration needs a single, globally consistent write. Everything downstream of "click Send" needs to survive a crash at any point without ever silently losing the message — and that single requirement, more than any other, shapes the rest of this design.
 
-```
- User Composes Email
-        │
-        ▼
-  Draft DB + S3 (attachments)
-        │
-   User clicks Send
-        │
-        ▼
-  Mail Send Service
-  (fetch from draft DB)
-        │
-        ▼
-  Outbox Table (persisted first — never lose)
-        │
-  CDC / Outbox Consumer
-        │
-        ▼
-     Kafka Broker
-        │
-  Delivery Orchestrator
-  (spam + malware + policy — async parallel)
-        │
-   ┌────┴────────────┐
-   ▼                 ▼
-Inbound Topic    Outbound Topic
-(Gmail→Gmail)    (Gmail→Outlook/Yahoo)
-   │                 │
-   ▼                 ▼
-Delivery         SMTP Relay Worker
-Consumer         (DNS/MX → TCP → handshake)
-   │                 │
-   ▼                 ▼
-Mailbox DB      Recipient SMTP Server
+```mermaid
+graph TD
+    A["User Composes Email"] --> B["Draft DB + S3 (attachments)"]
+    B --> C["User clicks Send"]
+    C --> D["Mail Send Service (fetch from draft DB)"]
+    D --> E["Outbox Table (persisted first — never lose)"]
+    E --> F["CDC / Outbox Consumer"]
+    F --> G["Kafka Broker"]
+    G --> H["Delivery Orchestrator (spam + malware + policy — async parallel)"]
+    H --> I["Inbound Topic (Gmail→Gmail)"]
+    H --> J["Outbound Topic (Gmail→Outlook/Yahoo)"]
+    I --> K["Delivery Consumer"]
+    J --> L["SMTP Relay Worker (DNS/MX → TCP → handshake)"]
+    K --> M["Mailbox DB"]
+    L --> N["Recipient SMTP Server"]
 ```
 
 ### Core Design Principles
@@ -703,24 +684,24 @@ This design treats email as two problems layered on top of each other: never sil
 
 ### Fast Path vs Reliable Path
 
-```
-FAST PATH (optimized for perceived send latency)
-  User clicks Send
-      │
-      ▼
-  Mail Send Service writes to Outbox Table (DB write = durable)
-      │
-  UI immediately shows "Message Sent" ← user feedback is instant
-      │
-  Outbox Consumer detects CDC event → Kafka (async, non-blocking)
-
-
-RELIABLE PATH (optimized for zero email loss)
-  If Kafka publish fails → Outbox Consumer retries from DB
-  If Delivery Orchestrator crashes → resumes from Kafka offset
-  If Validation service down → email moves to Delay Queue, retried on recovery
-  If SMTP handshake fails → exponential backoff, try next MX record, retry up to 4 days
-  Final state: email always reaches DELIVERED or BOUNCED — never silently lost
+```mermaid
+graph TD
+    subgraph "Fast Path (optimized for perceived send latency)"
+        A["User clicks Send"] --> B["Mail Send Service writes to Outbox Table (DB write = durable)"]
+        B --> C["UI immediately shows 'Message Sent' — user feedback is instant"]
+        B --> D["Outbox Consumer detects CDC event → Kafka (async, non-blocking)"]
+    end
+    subgraph "Reliable Path (optimized for zero email loss)"
+        E["If Kafka publish fails → Outbox Consumer retries from DB"]
+        F["If Delivery Orchestrator crashes → resumes from Kafka offset"]
+        G["If Validation service down → email moves to Delay Queue, retried on recovery"]
+        H["If SMTP handshake fails → exponential backoff, try next MX record, retry up to 4 days"]
+        I["Final state: email always reaches DELIVERED or BOUNCED — never silently lost"]
+        E --> I
+        F --> I
+        G --> I
+        H --> I
+    end
 ```
 
 ### Key Insights Checklist

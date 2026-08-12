@@ -111,31 +111,22 @@ Remember Ananya dragging her Design Review block into existence, and Rohit's scr
 
 Google Calendar Day View is really three flows sharing the same underlying data. The **load flow** runs once, when a user opens a date: the client fetches that day's events, and a client-side layout engine works out overlaps, column positions, and widths before anything gets drawn. The **edit flow** runs every time a user drags, resizes, or clicks: the change is applied to the screen immediately, and only afterward does an API call go out to actually persist it. The **real-time flow** is what makes Rohit's screen move without him doing anything: once a collaborator's edit is durably saved, it gets published to every other client watching that same calendar over an open WebSocket connection.
 
-```
-User navigates to Day View
-         │
-         ▼
-   Fetch /events?date=X
-         │
-    ┌────┴────────────────────────────┐
-    │  LAYOUT ENGINE (client-side)    │
-    │  1. Sort events by start time   │
-    │  2. Detect overlapping groups   │
-    │  3. Assign columns + widths     │
-    └────┬────────────────────────────┘
-         │
-         ▼
-   Render 24h grid with positioned events
-         │
-    User drags event
-         │
-    ┌────┴──────────────────────────────┐
-    │  DRAG ENGINE                      │
-    │  1. Snap to 15-min increments     │
-    │  2. Optimistic update (local)     │
-    │  3. PATCH /events/:id on drop     │
-    │  4. WS broadcast to collaborators │
-    └───────────────────────────────────┘
+```mermaid
+graph TD
+    A["User navigates to Day View"] --> B["Fetch /events?date=X"]
+    B --> C
+    subgraph C ["LAYOUT ENGINE (client-side)"]
+        C1["1. Sort events by start time"] --> C2["2. Detect overlapping groups"]
+        C2 --> C3["3. Assign columns + widths"]
+    end
+    C --> D["Render 24h grid with positioned events"]
+    D --> E["User drags event"]
+    E --> F
+    subgraph F ["DRAG ENGINE"]
+        F1["1. Snap to 15-min increments"] --> F2["2. Optimistic update (local)"]
+        F2 --> F3["3. PATCH /events/:id on drop"]
+        F3 --> F4["4. WS broadcast to collaborators"]
+    end
 ```
 
 | Path | Optimized For | Mechanism |
@@ -562,24 +553,20 @@ This design treats the Day View as two things happening at once behind one grid:
 
 ### Fast Path vs. Reliable Path
 
-```
-FAST PATH (optimized for perceived latency)
-  User drags event
-      │
-      ▼
-  DOM translate (60fps, no React re-render)
-      │
-  User drops
-      │
-      ▼
-  React state update → event renders at new time immediately
-      │
-  PATCH /events/:id fires async (non-blocking)
-
-
-RELIABLE PATH (optimized for correctness)
-  If PATCH succeeds → collaborators receive WS push → re-render
-  If PATCH fails   → revert React state → event snaps back → error toast
+```mermaid
+graph TD
+    subgraph "Fast Path (optimized for perceived latency)"
+        A["User drags event"] --> B["DOM translate (60fps, no React re-render)"]
+        B --> C["User drops"]
+        C --> D["React state update → event renders at new time immediately"]
+        D --> E["PATCH /events/:id fires async (non-blocking)"]
+    end
+    subgraph "Reliable Path (optimized for correctness)"
+        F["If PATCH succeeds → collaborators receive WS push → re-render"]
+        G["If PATCH fails → revert React state → event snaps back → error toast"]
+    end
+    E --> F
+    E --> G
 ```
 
 ### Key Insights Checklist

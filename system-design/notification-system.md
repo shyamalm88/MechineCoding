@@ -129,36 +129,32 @@ That guarantee is also where a decision has to get made early: how strong a deli
 
 Every request funnels through one Notification Service, but from there it splits onto one of two paths, decided purely by priority at the moment the request comes in:
 
-```
-Client (Amazon/Uber) → Notification Service
-                            |
-           ┌────────────────┴─────────────────┐
-     OTP / Critical                    Standard / Promo
-     (fast path)                       (reliable path)
-           |                                   |
-     Kafka directly                    DB Write (Outbox + Notification)
-     (at-least-once)                       |
-           |                           CDC Pipeline → Kafka
-           └──────────────┬────────────────────┘
-                    9 Kafka Topics
-               (3 priorities × 3 channels)
-                          |
-              ┌───────────┼───────────┐
-         Email Provider  SMS Provider  InApp Provider
-              |               |              |
-         SendGrid/SES     Twilio/MSG91   FCM / APNs
-              |               |              |
-              └───────────────┴──────────────┘
-                    Webhook delivery receipts
-                          |
-                 Delivery Status Kafka
-                          |
-                  Delivery Consumer
-                    |           |
-             Notification DB   BigQuery
-             (final status)    (event log)
-                          |
-                  Reporting Service → Client Dashboard
+```mermaid
+graph TD
+    Client["Client (Amazon/Uber)"] --> NS["Notification Service"]
+    NS --> OTP["OTP / Critical (fast path)"]
+    NS --> STD["Standard / Promo (reliable path)"]
+    OTP --> KD["Kafka directly (at-least-once)"]
+    STD --> DBW["DB Write (Outbox + Notification)"]
+    DBW --> CDC["CDC Pipeline → Kafka"]
+    KD --> TOPICS["9 Kafka Topics (3 priorities × 3 channels)"]
+    CDC --> TOPICS
+    TOPICS --> EP["Email Provider"]
+    TOPICS --> SP["SMS Provider"]
+    TOPICS --> IP["InApp Provider"]
+    EP --> SES["SendGrid/SES"]
+    SP --> TW["Twilio/MSG91"]
+    IP --> FCM["FCM / APNs"]
+    SES --> WH["Webhook delivery receipts"]
+    TW --> WH
+    FCM --> WH
+    WH --> DSK["Delivery Status Kafka"]
+    DSK --> DC["Delivery Consumer"]
+    DC --> NDB["Notification DB (final status)"]
+    DC --> BQ["BigQuery (event log)"]
+    NDB --> RS["Reporting Service"]
+    BQ --> RS
+    RS --> CD["Client Dashboard"]
 ```
 
 | Fast Path (OTP/Critical) | Reliable Path (Standard/Promo) |

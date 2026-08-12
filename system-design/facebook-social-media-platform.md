@@ -149,19 +149,22 @@ Underneath Maya tapping "Post" and Diego seeing it appear, Facebook is fundament
 2. **Read path** — User opens app → Feed Cache hit (Redis, pre-computed) → instant response; backfill kicks in before the user scrolls to the bottom
 3. **Engagement path** — Like/comment → Kafka buffer → Engagement consumer → Cassandra (comments) + PostgreSQL (likes)
 
-```
-                     WRITE PATH                                 READ PATH
- User ──POST /post──▶ Content Svc ──▶ Kafka(raw-post) ──▶ Moderator
-                                                              │
-                                             ┌──── filtered-post ────┐
-                                             ▼                       ▼
-                                       Post Consumer           Fan-out Svc
-                                       (Cassandra+S3)          │
-                                                               ▼
-                                                     Kafka(fanout-tasks)
-                                                               │
-                                                               ▼
- User ──GET /feed──▶ Feed Svc ──▶ Redis(feed-cache) ◀── Fan-out Consumer
+```mermaid
+graph LR
+    subgraph "Write Path"
+        U1["User"] -->|POST /post| CS["Content Svc"]
+        CS --> K1["Kafka(raw-post)"]
+        K1 --> MOD["Moderator"]
+        MOD -->|filtered-post| PC["Post Consumer (Cassandra+S3)"]
+    end
+    subgraph "Read Path"
+        MOD -->|filtered-post| FS["Fan-out Svc"]
+        FS --> K2["Kafka(fanout-tasks)"]
+        K2 --> FC["Fan-out Consumer"]
+        U2["User"] -->|GET /feed| FeedSvc["Feed Svc"]
+        FeedSvc --> RC["Redis(feed-cache)"]
+        FC --> RC
+    end
 ```
 
 Each of those three flows is optimised for a different thing, because they have different jobs: the fast path (a feed read) is optimised purely for latency, so it skips the database entirely and serves from a pre-computed Redis cache; the reliable path (a post write) is optimised for durability and moderation, so it goes through a Kafka buffer and only commits once it's guaranteed; and there's a third, narrower path just for celebrities, optimised purely for write efficiency — it skips push fan-out altogether and lets followers pull a celebrity's posts on demand from a materialisation cache instead of paying the fan-out cost up front.
@@ -536,23 +539,13 @@ Stage two runs an ML model over those 200 survivors, predicting, for each one, t
 
 Fitting this into the request path end to end:
 
-```
-Fan-out Consumer writes post_ids to Redis Feed Cache (500 candidates, unranked)
-                              │
-                              ▼
-                   GET /feed request arrives
-                              │
-                              ▼
-             Candidate Generator → 200 candidates
-                              │
-                              ▼
-         Feature Extractor fetches signals (Redis Signal Store)
-                              │
-                              ▼
-               ML Ranking Model scores each candidate
-                              │
-                              ▼
-              Top 50 returned to client (ranked, not chronological)
+```mermaid
+graph TD
+    A["Fan-out Consumer writes post_ids to Redis Feed Cache (500 candidates, unranked)"] --> B["GET /feed request arrives"]
+    B --> C["Candidate Generator → 200 candidates"]
+    C --> D["Feature Extractor fetches signals (Redis Signal Store)"]
+    D --> E["ML Ranking Model scores each candidate"]
+    E --> F["Top 50 returned to client (ranked, not chronological)"]
 ```
 
 None of those signals are computed live. User behaviour events — likes, comments, shares, dwell time — stream into the Kafka `analytics-events` topic, and a signal aggregator continuously writes pre-computed user-author interaction scores into a Redis Signal Store. By the time a ranking request arrives, the Feature Extractor is doing plain O(1) Redis lookups, not database queries — because the alternative doesn't scale: 29,000 feed requests/sec × 200 candidates × 10 signals per candidate works out to 58 million database lookups per second if computed live, which is simply impossible without pre-computing the signals ahead of time.
@@ -664,16 +657,15 @@ The frontend of a social feed is a performance engineering problem. The challeng
 
 The feed scrolls indefinitely, and neither of the two obvious approaches survives that for long: loading every post the user might ever reach up front means unbounded memory growth, and polling on a timer for new posts wastes requests whether or not anything actually changed.
 
-```
-                    viewport
-                   ┌─────────┐
-  posts above  ─── │ post 3  │ ← rendered (visible)
-  viewport are     │ post 4  │ ← rendered (visible)
-  unmounted  ───── │ post 5  │ ← rendered (near viewport)
-                   └─────────┘
-  posts below  ─── [sentinel div] ← IntersectionObserver watches this
-  viewport are
-  not yet fetched
+```mermaid
+graph TD
+    A["Posts above viewport are unmounted"] --> V
+    subgraph V ["viewport"]
+        P3["post 3 — rendered (visible)"] --> P4["post 4 — rendered (visible)"]
+        P4 --> P5["post 5 — rendered (near viewport)"]
+    end
+    V --> S["[sentinel div] — IntersectionObserver watches this"]
+    S --> B["Posts below viewport are not yet fetched"]
 ```
 
 The fix has four pieces working together. Pagination is cursor-based — `GET /feed?cursor={lastPostId}&limit=50` — for the same reason the backend chose it in §6: offset pagination re-scans from page one on every request, while a cursor resumes in O(1) from the last post actually seen. An `IntersectionObserver` watches a sentinel element placed a few posts from the bottom of the loaded list, firing `GET /feed?cursor=` for the next page once the user is three posts from running out. That next page is pre-fetched while the user is still reading the current one, so there's no spinner and no blank gap when they reach the bottom. And new posts are appended to the feed array rather than triggering a full re-render — the list only ever grows, it's never replaced.
