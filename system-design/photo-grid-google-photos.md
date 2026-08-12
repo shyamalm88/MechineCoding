@@ -71,68 +71,39 @@ Bandwidth:
 
 ## 2. High-Level Architecture
 
-```
-                                    ┌─────────────────────────────────┐
-                                    │   CDN (CloudFront/Cloudflare)   │
-                                    │   - Image delivery              │
-                                    │   - Thumbnail caching           │
-                                    └──────────────┬──────────────────┘
-                                                   │
-                                                   │
-┌─────────────────┐                ┌──────────────▼──────────────────┐
-│                 │                │      Load Balancer (L7)         │
-│  Mobile Apps    │◄───────────────┤      - SSL Termination          │
-│  (iOS/Android)  │                │      - Rate limiting            │
-│                 │                └──────────────┬──────────────────┘
-└─────────────────┘                               │
-                                                   │
-┌─────────────────┐                ┌──────────────▼──────────────────┐
-│                 │                │      API Gateway                │
-│  Web Client     │◄───────────────┤      - Auth validation          │
-│  (React/SPA)    │                │      - Request routing          │
-│                 │                │      - API composition          │
-└─────────────────┘                └──────────────┬──────────────────┘
-                                                   │
-                        ┌──────────────────────────┼──────────────────────────┐
-                        │                          │                          │
-                        │                          │                          │
-              ┌─────────▼─────────┐    ┌──────────▼──────────┐   ┌──────────▼─────────┐
-              │  Upload Service   │    │   Gallery Service   │   │   Search Service   │
-              │  - Resumable      │    │   - Photo listing   │   │   - Metadata search│
-              │  - Chunked upload │    │   - Timeline view   │   │   - ML-based search│
-              │  - Validation     │    │   - Album mgmt      │   │   - Face search    │
-              └─────────┬─────────┘    └──────────┬──────────┘   └──────────┬─────────┘
-                        │                         │                          │
-                        │                         │                          │
-              ┌─────────▼─────────┐    ┌──────────▼──────────┐   ┌──────────▼─────────┐
-              │ Image Processing  │    │   Metadata Service  │   │   ML/AI Service    │
-              │ - Thumbnail gen   │    │   - EXIF extract    │   │   - Face detection │
-              │ - Format convert  │    │   - Geo tagging     │   │   - Object detect  │
-              │ - Compression     │    │   - Deduplication   │   │   - Scene recog    │
-              └─────────┬─────────┘    └──────────┬──────────┘   └──────────┬─────────┘
-                        │                         │                          │
-                        │                         │                          │
-        ┌───────────────┴───────────┐  ┌──────────▼──────────┐   ┌──────────▼─────────┐
-        │                           │  │   PostgreSQL        │   │   Elasticsearch    │
-        │   Object Storage (S3)     │  │   - User data       │   │   - Search index   │
-        │   - Original photos       │  │   - Photo metadata  │   │   - Content tags   │
-        │   - Thumbnails (multi)    │  │   - Albums/shares   │   │   - Face vectors   │
-        │   - Encrypted at rest     │  │   - Permissions     │   │                    │
-        │                           │  └──────────┬──────────┘   └────────────────────┘
-        └───────────────────────────┘             │
-                                       ┌──────────▼──────────┐
-                                       │   Redis Cluster     │
-                                       │   - Session cache   │
-                                       │   - Metadata cache  │
-                                       │   - Rate limit      │
-                                       └─────────────────────┘
+```mermaid
+graph TD
+    CDN["CDN (CloudFront/Cloudflare) - Image delivery, Thumbnail caching"]
+    LB["Load Balancer (L7) - SSL Termination, Rate limiting"]
+    MobileApps["Mobile Apps (iOS/Android)"]
+    APIGateway["API Gateway - Auth validation, Request routing, API composition"]
+    WebClient["Web Client (React/SPA)"]
+    UploadService["Upload Service - Resumable, Chunked upload, Validation"]
+    GalleryService["Gallery Service - Photo listing, Timeline view, Album mgmt"]
+    SearchService["Search Service - Metadata search, ML-based search, Face search"]
+    ImageProcessing["Image Processing - Thumbnail gen, Format convert, Compression"]
+    MetadataService["Metadata Service - EXIF extract, Geo tagging, Deduplication"]
+    MLAIService["ML/AI Service - Face detection, Object detect, Scene recog"]
+    ObjectStorage["Object Storage (S3) - Original photos, Thumbnails (multi), Encrypted at rest"]
+    PostgreSQL["PostgreSQL - User data, Photo metadata, Albums/shares, Permissions"]
+    Elasticsearch["Elasticsearch - Search index, Content tags, Face vectors"]
+    RedisCluster["Redis Cluster - Session cache, Metadata cache, Rate limit"]
+    MessageQueue["Message Queue (Kafka/SQS) - Async processing tasks, ML pipeline events, Thumbnail generation jobs"]
 
-                        ┌────────────────────────────────────┐
-                        │   Message Queue (Kafka/SQS)        │
-                        │   - Async processing tasks         │
-                        │   - ML pipeline events             │
-                        │   - Thumbnail generation jobs      │
-                        └────────────────────────────────────┘
+    CDN --> LB
+    LB <--> MobileApps
+    LB --> APIGateway
+    APIGateway <--> WebClient
+    APIGateway --> UploadService
+    APIGateway --> GalleryService
+    APIGateway --> SearchService
+    UploadService --> ImageProcessing
+    GalleryService --> MetadataService
+    SearchService --> MLAIService
+    ImageProcessing --> ObjectStorage
+    MetadataService --> PostgreSQL
+    MLAIService --> Elasticsearch
+    PostgreSQL --> RedisCluster
 ```
 
 ### 2.1 Architecture Rationale
@@ -155,57 +126,55 @@ Bandwidth:
 
 ### 3.1 Component Hierarchy
 
-```
-App
-│
-├── AuthProvider (Context)
-│   └── User session, tokens
-│
-├── Router
-│   │
-│   ├── PhotoGridView
-│   │   ├── VirtualizedGrid (react-window/react-virtuoso)
-│   │   │   ├── PhotoTile
-│   │   │   │   ├── LazyImage
-│   │   │   │   ├── SelectionOverlay
-│   │   │   │   └── PhotoActions
-│   │   │   └── DateSeparator
-│   │   │
-│   │   ├── GridControls
-│   │   │   ├── ViewToggle (grid/list/map)
-│   │   │   ├── SortOptions
-│   │   │   └── FilterPanel
-│   │   │
-│   │   ├── InfiniteScrollTrigger
-│   │   └── UploadDropzone
-│   │
-│   ├── AlbumView
-│   │   ├── AlbumHeader
-│   │   ├── PhotoGridView (reused)
-│   │   └── SharingSettings
-│   │
-│   ├── SearchView
-│   │   ├── SearchBar
-│   │   │   ├── Autocomplete
-│   │   │   └── FilterChips
-│   │   ├── SearchResults (PhotoGridView)
-│   │   └── SuggestedSearches
-│   │
-│   ├── PhotoDetailView (Modal/Route)
-│   │   ├── FullResolutionImage
-│   │   ├── MetadataPanel
-│   │   ├── NavigationControls (prev/next)
-│   │   └── ActionBar (share/delete/edit)
-│   │
-│   └── UploadManager
-│       ├── UploadQueue
-│       ├── UploadProgress
-│       └── RetryManager
-│
-└── GlobalComponents
-    ├── Notification/Toast
-    ├── ErrorBoundary
-    └── NetworkStatusIndicator
+```mermaid
+graph TD
+    App --> AuthProvider["AuthProvider (Context)"]
+    AuthProvider --> AuthDetail["User session, tokens"]
+
+    App --> Router
+    Router --> PhotoGridView
+    PhotoGridView --> VirtualizedGrid["VirtualizedGrid (react-window/react-virtuoso)"]
+    VirtualizedGrid --> PhotoTile
+    PhotoTile --> LazyImage
+    PhotoTile --> SelectionOverlay
+    PhotoTile --> PhotoActions
+    VirtualizedGrid --> DateSeparator
+
+    PhotoGridView --> GridControls
+    GridControls --> ViewToggle["ViewToggle (grid/list/map)"]
+    GridControls --> SortOptions
+    GridControls --> FilterPanel
+
+    PhotoGridView --> InfiniteScrollTrigger
+    PhotoGridView --> UploadDropzone
+
+    Router --> AlbumView
+    AlbumView --> AlbumHeader
+    AlbumView --> PhotoGridViewReused["PhotoGridView (reused)"]
+    AlbumView --> SharingSettings
+
+    Router --> SearchView
+    SearchView --> SearchBar
+    SearchBar --> Autocomplete
+    SearchBar --> FilterChips
+    SearchView --> SearchResults["SearchResults (PhotoGridView)"]
+    SearchView --> SuggestedSearches
+
+    Router --> PhotoDetailView["PhotoDetailView (Modal/Route)"]
+    PhotoDetailView --> FullResolutionImage
+    PhotoDetailView --> MetadataPanel
+    PhotoDetailView --> NavigationControls["NavigationControls (prev/next)"]
+    PhotoDetailView --> ActionBar["ActionBar (share/delete/edit)"]
+
+    Router --> UploadManager
+    UploadManager --> UploadQueue
+    UploadManager --> UploadProgress
+    UploadManager --> RetryManager
+
+    App --> GlobalComponents
+    GlobalComponents --> NotificationToast["Notification/Toast"]
+    GlobalComponents --> ErrorBoundary
+    GlobalComponents --> NetworkStatusIndicator
 ```
 
 ### 3.2 Key Frontend Components
@@ -242,68 +211,25 @@ App
 
 ### 4.1 Upload Flow
 
-```
-┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Request upload session
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Upload Service    │
-     │                          └────────┬───────────┘
-     │                                   │
-     │ 2. Return signed URL              │
-     │    + upload session ID            │
-     │◄──────────────────────────────────┤
-     │                                   │
-     │ 3. Upload chunks directly         │
-     │   (multipart upload)              │
-     ├───────────────────────────────────┼──────────┐
-     │                                   │          ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │    S3    │
-     │                                   │    └──────┬───┘
-     │ 4. Chunk uploaded ACK             │           │
-     │◄──────────────────────────────────┼───────────┘
-     │                                   │
-     │ 5. Complete upload (all chunks)   │
-     ├──────────────────────────────────►│
-     │                                   │
-     │                                   │ 6. Merge chunks
-     │                                   │    Extract EXIF
-     │                                   │    Save metadata
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  PostgreSQL  │
-     │                                   │  └──────────────┘
-     │                                   │
-     │                                   │ 7. Queue processing
-     │                                   │    jobs
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Kafka     │
-     │                                   │  └──────┬───────┘
-     │ 8. Upload complete                │         │
-     │    Return photo ID                │         │
-     │◄──────────────────────────────────┤         │
-     │                                   │         │
-     │                                             │
-     │                              ┌──────────────┘
-     │                              ▼
-     │                     ┌──────────────────┐
-     │                     │ Async Workers    │
-     │                     │ - Thumbnails     │
-     │                     │ - Face detection │
-     │                     │ - Object tagging │
-     │                     └──────────────────┘
-     │
-     │ 9. WebSocket/SSE: Processing complete
-     │◄─────────────────────────────────────────
-     │
+```mermaid
+graph TD
+    Client(["Client"])
+    UploadService["Upload Service"]
+    S3[("S3")]
+    PostgreSQL[("PostgreSQL")]
+    Kafka["Kafka"]
+    AsyncWorkers["Async Workers - Thumbnails, Face detection, Object tagging"]
+
+    Client -->|"1. Request upload session"| UploadService
+    UploadService -->|"2. Return signed URL + upload session ID"| Client
+    Client -->|"3. Upload chunks directly (multipart upload)"| S3
+    S3 -->|"4. Chunk uploaded ACK"| Client
+    Client -->|"5. Complete upload (all chunks)"| UploadService
+    UploadService -->|"6. Merge chunks, Extract EXIF, Save metadata"| PostgreSQL
+    UploadService -->|"7. Queue processing jobs"| Kafka
+    UploadService -->|"8. Upload complete, Return photo ID"| Client
+    Kafka --> AsyncWorkers
+    AsyncWorkers -->|"9. WebSocket/SSE: Processing complete"| Client
 ```
 
 **Upload Implementation Details:**
@@ -329,80 +255,27 @@ App
 
 ### 4.2 Photo Grid View Flow
 
-```
-┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Request photos (page=1, limit=50)
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Gallery Service   │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 2. Check cache
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │  (metadata)  │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 3. Cache miss
-     │                                   │◄────────┘
-     │                                   │
-     │                                   │ 4. Query DB
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │ PostgreSQL   │
-     │                                   │  │ SELECT *     │
-     │                                   │  │ FROM photos  │
-     │                                   │  │ WHERE ...    │
-     │                                   │  │ ORDER BY     │
-     │                                   │  │   created    │
-     │                                   │  │ LIMIT 50     │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 5. Results
-     │                                   │◄────────┘
-     │                                   │
-     │                                   │ 6. Cache results
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │   (1 hour)   │
-     │                                   │  └──────────────┘
-     │                                   │
-     │ 7. Return photo metadata          │
-     │    + CDN URLs (thumbnails)        │
-     │◄──────────────────────────────────┤
-     │                                   │
-     │ 8. Browser requests thumbnails    │
-     │    (parallel, HTTP/2)             │
-     ├───────────────────────────────────┼──────────┐
-     │                                   │          ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │   CDN    │
-     │                                   │    └──────┬───┘
-     │                                   │           │
-     │                                   │           │ Cache
-     │                                   │           │ miss?
-     │                                   │           │
-     │                                   │           ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │    S3    │
-     │                                   │    └──────┬───┘
-     │ 9. Images delivered               │           │
-     │◄──────────────────────────────────┼───────────┘
-     │                                   │
-     │ 10. User scrolls near end         │
-     │     Trigger next page load        │
-     ├──────────────────────────────────►│
-     │     (page=2, limit=50)            │
-     │                                   │
+```mermaid
+graph TD
+    Client(["Client"])
+    GalleryService["Gallery Service"]
+    RedisMeta[("Redis (metadata)")]
+    PostgreSQL[("PostgreSQL - SELECT * FROM photos WHERE ... ORDER BY created LIMIT 50")]
+    RedisCache[("Redis (1 hour)")]
+    CDN["CDN"]
+    S3[("S3")]
+
+    Client -->|"1. Request photos (page=1, limit=50)"| GalleryService
+    GalleryService -->|"2. Check cache"| RedisMeta
+    RedisMeta -->|"3. Cache miss"| GalleryService
+    GalleryService -->|"4. Query DB"| PostgreSQL
+    PostgreSQL -->|"5. Results"| GalleryService
+    GalleryService -->|"6. Cache results"| RedisCache
+    GalleryService -->|"7. Return photo metadata + CDN URLs (thumbnails)"| Client
+    Client -->|"8. Browser requests thumbnails (parallel, HTTP/2)"| CDN
+    CDN -->|"Cache miss?"| S3
+    S3 -->|"9. Images delivered"| Client
+    Client -->|"10. User scrolls near end - Trigger next page load (page=2, limit=50)"| GalleryService
 ```
 
 **View Optimization:**
@@ -414,48 +287,19 @@ App
 
 ### 4.3 Search Flow
 
-```
-┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Search query: "beach sunset"
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Search Service    │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 2. Parse query
-     │                                   │    + apply filters
-     │                                   │
-     │                                   │ 3. Query ES index
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────────┐
-     │                                   │  │ Elasticsearch    │
-     │                                   │  │ - Text search    │
-     │                                   │  │ - Vector search  │
-     │                                   │  │ - Filters (date) │
-     │                                   │  │ - Aggregations   │
-     │                                   │  └──────┬───────────┘
-     │                                   │         │
-     │                                   │ 4. Photo IDs + score
-     │                                   │◄────────┘
-     │                                   │
-     │                                   │ 5. Enrich metadata
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │ PostgreSQL   │
-     │                                   │  │ + Redis      │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │◄────────┘
-     │                                   │
-     │ 6. Return ranked results          │
-     │◄──────────────────────────────────┤
-     │                                   │
+```mermaid
+graph TD
+    Client(["Client"])
+    SearchService["Search Service - 2. Parse query + apply filters"]
+    Elasticsearch[("Elasticsearch - Text search, Vector search, Filters (date), Aggregations")]
+    PostgresRedis[("PostgreSQL + Redis")]
+
+    Client -->|"1. Search query: 'beach sunset'"| SearchService
+    SearchService -->|"3. Query ES index"| Elasticsearch
+    Elasticsearch -->|"4. Photo IDs + score"| SearchService
+    SearchService -->|"5. Enrich metadata"| PostgresRedis
+    PostgresRedis --> SearchService
+    SearchService -->|"6. Return ranked results"| Client
 ```
 
 **Search Capabilities:**
@@ -875,39 +719,14 @@ hash(user_id) % 64 → shard_id
 
 ### 7.1 Caching Layers
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Browser Cache                        │
-│  - Thumbnails (7 days)                                  │
-│  - Full images (1 day)                                  │
-│  - Cache-Control: public, max-age=604800               │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    CDN Cache (CloudFront)               │
-│  - Thumbnails (30 days)                                 │
-│  - Original images (7 days)                             │
-│  - 95%+ cache hit rate for images                       │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                 Redis Cache (Metadata)                  │
-│  Layer 1: Hot data (1 hour TTL)                         │
-│    - User's recent photos list                          │
-│    - Album metadata                                     │
-│  Layer 2: Warm data (24 hour TTL)                       │
-│    - User preferences                                   │
-│    - Share settings                                     │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│              Application Memory Cache                   │
-│  - User session data                                    │
-│  - Frequently accessed metadata (LRU, 100MB limit)      │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    BrowserCache["Browser Cache - Thumbnails (7 days), Full images (1 day), Cache-Control: public, max-age=604800"]
+    CDNCache["CDN Cache (CloudFront) - Thumbnails (30 days), Original images (7 days), 95%+ cache hit rate for images"]
+    RedisCache["Redis Cache (Metadata) - Layer 1: Hot data (1 hour TTL): User's recent photos list, Album metadata - Layer 2: Warm data (24 hour TTL): User preferences, Share settings"]
+    AppMemCache["Application Memory Cache - User session data, Frequently accessed metadata (LRU, 100MB limit)"]
+
+    BrowserCache --> CDNCache --> RedisCache --> AppMemCache
 ```
 
 ### 7.2 Redis Caching Patterns
@@ -1050,40 +869,20 @@ https://cdn.example.com/thumbnails/{userId}/{photoId}_400x300.webp?v={version}
 
 ### 8.1 State Architecture
 
-```
-┌────────────────────────────────────────────────────────┐
-│                  Global State (Redux/Zustand)          │
-├────────────────────────────────────────────────────────┤
-│  - Auth state (user, token)                            │
-│  - Photo collection state                              │
-│  - Upload queue state                                  │
-│  - UI state (selected photos, view mode)               │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              Server State (React Query/SWR)            │
-├────────────────────────────────────────────────────────┤
-│  - Photo data (cached, auto-refetch)                   │
-│  - Album data                                          │
-│  - Search results                                      │
-│  - User preferences                                    │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              Local State (useState/useReducer)         │
-├────────────────────────────────────────────────────────┤
-│  - Component-specific UI (modals, dropdowns)           │
-│  - Form inputs                                         │
-│  - Temporary selections                                │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              URL State (React Router)                  │
-├────────────────────────────────────────────────────────┤
-│  - Current route (grid/album/search)                   │
-│  - Query params (filters, sort, cursor)                │
-│  - Share-able links                                    │
-└────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph GlobalState["Global State (Redux/Zustand)"]
+        GS["Auth state (user, token) - Photo collection state - Upload queue state - UI state (selected photos, view mode)"]
+    end
+    subgraph ServerState["Server State (React Query/SWR)"]
+        SS["Photo data (cached, auto-refetch) - Album data - Search results - User preferences"]
+    end
+    subgraph LocalState["Local State (useState/useReducer)"]
+        LS["Component-specific UI (modals, dropdowns) - Form inputs - Temporary selections"]
+    end
+    subgraph URLState["URL State (React Router)"]
+        US["Current route (grid/album/search) - Query params (filters, sort, cursor) - Share-able links"]
+    end
 ```
 
 ### 8.2 State Management Implementation
@@ -1364,26 +1163,20 @@ const srcSet = [
 ```
 
 **Thumbnail Generation Pipeline:**
+```mermaid
+graph TD
+    Upload["Original Upload (5MB JPEG)"] --> Processor["Image Processor (Sharp/ImageMagick)"]
+    Processor --> T150["Thumbnail 150x150 (WebP, AVIF, JPEG) - 5KB"]
+    Processor --> T400["Thumbnail 400x400 (WebP, AVIF, JPEG) - 20KB"]
+    Processor --> T800["Thumbnail 800x800 (WebP, AVIF, JPEG) - 60KB"]
+    Processor --> FHD["Full HD 1920x1080 (WebP, JPEG) - 200KB"]
+    Processor --> Orig["Original (preserved) - 5MB"]
 ```
-Original Upload (5MB JPEG)
-        │
-        ▼
-┌───────────────────┐
-│ Image Processor   │
-│ (Sharp/ImageMagick│
-└────────┬──────────┘
-         │
-         ├─► Thumbnail 150x150 (WebP, AVIF, JPEG) → 5KB
-         ├─► Thumbnail 400x400 (WebP, AVIF, JPEG) → 20KB
-         ├─► Thumbnail 800x800 (WebP, AVIF, JPEG) → 60KB
-         ├─► Full HD 1920x1080 (WebP, JPEG) → 200KB
-         └─► Original (preserved) → 5MB
 
 Quality settings:
 - WebP: quality 80
 - AVIF: quality 75 (equivalent to JPEG 85)
 - JPEG: quality 85
-```
 
 **Blur Hash for Progressive Loading:**
 ```javascript
@@ -1840,38 +1633,12 @@ This leverages each database's strengths.
 **A:**
 
 **Pipeline:**
-```
-Photo Upload
-    │
-    ▼
-┌─────────────────┐
-│ Face Detection  │ (ML Model: MTCNN or RetinaFace)
-│ - Detect faces  │
-│ - Extract bbox  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Face Embeddings │ (FaceNet or ArcFace)
-│ - Generate 512  │
-│   dim vectors   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Face Clustering │ (DBSCAN or HDBSCAN)
-│ - Group similar │
-│   faces         │
-│ - Create person │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Store in DB     │
-│ - person_id     │
-│ - embeddings    │
-│ - confidence    │
-└─────────────────┘
+```mermaid
+graph TD
+    Upload["Photo Upload"] --> FaceDetection["Face Detection (ML Model: MTCNN or RetinaFace) - Detect faces, Extract bbox"]
+    FaceDetection --> FaceEmbeddings["Face Embeddings (FaceNet or ArcFace) - Generate 512 dim vectors"]
+    FaceEmbeddings --> FaceClustering["Face Clustering (DBSCAN or HDBSCAN) - Group similar faces, Create person"]
+    FaceClustering --> StoreDB["Store in DB - person_id, embeddings, confidence"]
 ```
 
 **Database schema:**
@@ -1953,39 +1720,12 @@ LIMIT 50;
 **A:**
 
 **ML Pipeline:**
-```
-Photo Upload
-    │
-    ▼
-┌──────────────────┐
-│ Image Embedding  │ (CLIP or ResNet50)
-│ - Generate 512   │
-│   dim vector     │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Object Detection │ (YOLO or Faster R-CNN)
-│ - Detect objects │
-│ - Tags: "beach", │
-│   "ocean", "sky" │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Scene Recognition│ (Places365)
-│ - Classify scene │
-│ - "outdoor",     │
-│   "natural"      │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Store in ES      │
-│ - Text tags      │
-│ - Image vector   │
-│ - Scene labels   │
-└──────────────────┘
+```mermaid
+graph TD
+    Upload["Photo Upload"] --> ImageEmbedding["Image Embedding (CLIP or ResNet50) - Generate 512 dim vector"]
+    ImageEmbedding --> ObjectDetection["Object Detection (YOLO or Faster R-CNN) - Detect objects, Tags: 'beach', 'ocean', 'sky'"]
+    ObjectDetection --> SceneRecognition["Scene Recognition (Places365) - Classify scene, 'outdoor', 'natural'"]
+    SceneRecognition --> StoreES["Store in ES - Text tags, Image vector, Scene labels"]
 ```
 
 **Elasticsearch index:**
@@ -2205,21 +1945,17 @@ hasPermission(userPerms, PERMISSIONS.DELETE); // false
 ```
 
 **Access flow:**
-```
-User visits: /share/abc123
-    │
-    ▼
-Check share validity
-    ├─ Expired? → 403
-    ├─ Password required? → Prompt
-    ├─ Private? → Check recipient
-    └─ Valid → Grant access
-            │
-            ▼
-        Apply permissions
-            ├─ Can view? → Show photos
-            ├─ Can download? → Enable download button
-            └─ Can add? → Show upload UI
+```mermaid
+graph TD
+    Visit["User visits: /share/abc123"] --> Check["Check share validity"]
+    Check -->|"Expired?"| Err403["403"]
+    Check -->|"Password required?"| Prompt["Prompt"]
+    Check -->|"Private?"| CheckRecipient["Check recipient"]
+    Check -->|"Valid"| Grant["Grant access"]
+    Grant --> Apply["Apply permissions"]
+    Apply -->|"Can view?"| ShowPhotos["Show photos"]
+    Apply -->|"Can download?"| EnableDownload["Enable download button"]
+    Apply -->|"Can add?"| ShowUpload["Show upload UI"]
 ```
 
 ---

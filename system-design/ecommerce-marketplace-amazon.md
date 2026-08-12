@@ -55,24 +55,32 @@
 
 ## 2. High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Ecommerce Application                        │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────────┐  ┌─────────────────────────┐   │
-│  │  Header  │  │   Product    │  │      Sidebar            │   │
-│  │  Search  │  │   Grid/List  │  │      Filters            │   │
-│  │  Cart    │  │              │  │      Categories         │   │
-│  └──────────┘  └──────────────┘  └─────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│                      State Management (Zustand)                  │
-├─────────────────────────────────────────────────────────────────┤
-│  Cart Store  │  User Store  │  Search Store  │  Filter Store   │
-├─────────────────────────────────────────────────────────────────┤
-│                    Data Layer (TanStack Query)                   │
-├─────────────────────────────────────────────────────────────────┤
-│  Products API  │  Cart API  │  Orders API  │  Search API       │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph EA["Ecommerce Application"]
+        direction TB
+        subgraph UI[" "]
+            direction LR
+            Header["Header - Search, Cart"]
+            ProductGrid["Product Grid/List"]
+            Sidebar["Sidebar - Filters, Categories"]
+        end
+        subgraph State["State Management (Zustand)"]
+            direction LR
+            CartStore["Cart Store"]
+            UserStore["User Store"]
+            SearchStore["Search Store"]
+            FilterStore["Filter Store"]
+        end
+        subgraph Data["Data Layer (TanStack Query)"]
+            direction LR
+            ProductsAPI["Products API"]
+            CartAPI["Cart API"]
+            OrdersAPI["Orders API"]
+            SearchAPI["Search API"]
+        end
+        UI --> State --> Data
+    end
 ```
 
 ---
