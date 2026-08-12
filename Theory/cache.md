@@ -67,16 +67,9 @@ This is where you manage the **"Thundering Herd"** problem and geographical late
 
 ### The Caching Hierarchy
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Browser Cache                                              │
-│  └─▶ Service Worker Cache                                   │
-│      └─▶ Forward Proxy (ISP/Corporate)                      │
-│          └─▶ CDN Edge (Cloudflare, Akamai)                  │
-│              └─▶ Reverse Proxy (Nginx/Varnish)              │
-│                  └─▶ Application Cache (Redis)              │
-│                      └─▶ Database                           │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A["Browser Cache"] --> B["Service Worker Cache"] --> C["Forward Proxy (ISP/Corporate)"] --> D["CDN Edge (Cloudflare, Akamai)"] --> E["Reverse Proxy (Nginx/Varnish)"] --> F["Application Cache (Redis)"] --> G["Database"]
 ```
 
 ### Forward Proxy Cache (ISP/Corporate Layer)

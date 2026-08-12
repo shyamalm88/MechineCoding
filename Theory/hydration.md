@@ -205,20 +205,14 @@ sequenceDiagram
 
 > **The idea:** Most of a page is static content. Only isolated "islands" need JavaScript and interactivity. Hydrate only the islands, not the entire page.
 
-```
-+------------------------------------------+
-|  STATIC HEADER (no JS needed)            |
-+------------------------------------------+
-|  STATIC ARTICLE BODY (no JS needed)      |
-|                                          |
-|  ┌──────────────────┐   ┌────────────┐  |
-|  │  🏝 ISLAND       │   │ 🏝 ISLAND  │  |
-|  │  Comment Form    │   │ Like Btn   │  |
-|  │  (JS hydrated)   │   │ (hydrated) │  |
-|  └──────────────────┘   └────────────┘  |
-+------------------------------------------+
-|  STATIC FOOTER (no JS needed)            |
-+------------------------------------------+
+```mermaid
+graph TD
+    H["Static Header (no JS needed)"] --> AB
+    subgraph AB["Static Article Body (no JS needed)"]
+        I1["Island: Comment Form (JS hydrated)"]
+        I2["Island: Like Btn (hydrated)"]
+    end
+    AB --> F["Static Footer (no JS needed)"]
 ```
 
 **Frameworks implementing this:**

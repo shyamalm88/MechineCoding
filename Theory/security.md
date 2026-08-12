@@ -197,31 +197,17 @@ One of the most common senior-level mistakes is storing sensitive data insecurel
 
 ### The Secure Token Pattern
 
-```
-┌──────────┐                              ┌──────────┐
-│  Client  │                              │  Server  │
-└────┬─────┘                              └────┬─────┘
-     │                                         │
-     │  Login: username/password               │
-     │────────────────────────────────────────▶│
-     │                                         │
-     │  Access Token (15min) in JSON body      │
-     │  Refresh Token in HttpOnly cookie       │
-     │◀────────────────────────────────────────│
-     │                                         │
-     │  Store access token IN MEMORY ONLY      │
-     │                                         │
-     │  API calls with: Authorization: Bearer  │
-     │────────────────────────────────────────▶│
-     │                                         │
-     │  Access token expired (401)             │
-     │◀────────────────────────────────────────│
-     │                                         │
-     │  POST /refresh (HttpOnly cookie sent)   │
-     │────────────────────────────────────────▶│
-     │                                         │
-     │  New access token in response body      │
-     │◀────────────────────────────────────────│
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: Login: username/password
+    Server-->>Client: Access Token (15min) in JSON body + Refresh Token in HttpOnly cookie
+    Note over Client: Store access token IN MEMORY ONLY
+    Client->>Server: API call with Authorization: Bearer
+    Server-->>Client: Access token expired (401)
+    Client->>Server: POST /refresh (HttpOnly cookie sent)
+    Server-->>Client: New access token in response body
 ```
 
 **Why this pattern?**

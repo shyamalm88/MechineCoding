@@ -15,18 +15,15 @@ started rendering an update, it ran to completion on the main thread,
 uninterruptible, even for a slow tree. A large re-render could block user
 input for hundreds of milliseconds.
 
-```
-Legacy (React ≤17) — synchronous, blocking:
-┌──────────────────────────────────────────────┐
-│  render(update) ───────────────────────────▶  │  commit
-│  Main thread blocked the whole time.          │  (user input queued, laggy)
-└──────────────────────────────────────────────┘
-
-Concurrent (React 18+) — interruptible, prioritized:
-┌───────┐  ┌───────┐  ┌───────┐         ┌───────┐
-│ chunk │  │ chunk │  │ URGENT│ ◀── interrupts low-priority work
-└───────┘  └───────┘  │ update│         └───────┘
-                       └───────┘
+```mermaid
+graph TD
+    subgraph "Legacy (React <=17) - synchronous, blocking"
+        L1["render(update)"] -->|"Main thread blocked the whole time"| L2["commit (user input queued, laggy)"]
+    end
+    subgraph "Concurrent (React 18+) - interruptible, prioritized"
+        Ch1["chunk"] --> Ch2["chunk"] --> Ch3["chunk"]
+        Urgent["URGENT update"] -.->|interrupts low-priority work| Ch2
+    end
 ```
 
 **Concurrent rendering doesn't mean multi-threaded.** JavaScript is still
@@ -286,14 +283,11 @@ too) — the one exception is passing a Server Component in as `children`/props
 from above, since it's already been rendered to a serialized description by
 the time the client sees it.
 
-```
-┌───────────────────────────────────────────────┐
-│ Server Component tree (runs on server only)    │
-│   ┌─────────────────────────────────────────┐ │
-│   │ Client Component boundary ("use client") │ │
-│   │   — ships JS, hydrates, can use hooks    │ │
-│   └─────────────────────────────────────────┘ │
-└───────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Server Component tree (runs on server only)"
+        CB["Client Component boundary (use client) - ships JS, hydrates, can use hooks"]
+    end
 ```
 
 Why it matters: no `useState`/`useEffect`/event handlers means smaller

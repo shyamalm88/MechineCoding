@@ -1114,37 +1114,37 @@ curl -X POST "https://api.cloudflare.com/purge" -d '{"tags":["static-assets"]}'
 
 ### 16.3 Quick Reference
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     ASSET LOADING BIBLE                         │
-├─────────────────────────────────────────────────────────────────┤
-│ SCRIPTS                                                         │
-│   • App code → defer                                            │
-│   • Analytics → async + delay                                   │
-│   • Critical → inline or preload                                │
-├─────────────────────────────────────────────────────────────────┤
-│ STYLES                                                          │
-│   • Above-fold → inline                                         │
-│   • Rest → preload + media swap                                 │
-│   • Third-party → preconnect                                    │
-├─────────────────────────────────────────────────────────────────┤
-│ FONTS                                                           │
-│   • Critical → preload + swap                                   │
-│   • Secondary → swap or optional                                │
-│   • Always → WOFF2 + crossorigin                                │
-├─────────────────────────────────────────────────────────────────┤
-│ IMAGES                                                          │
-│   • LCP → preload + eager + fetchpriority="high"               │
-│   • Below-fold → loading="lazy"                                 │
-│   • Format → AVIF > WebP > JPEG                                 │
-│   • Always → width/height for CLS                               │
-├─────────────────────────────────────────────────────────────────┤
-│ RESOURCE HINTS                                                  │
-│   • Critical API → preconnect (max 2-3)                         │
-│   • Third-party → dns-prefetch                                  │
-│   • Current page → preload                                      │
-│   • Next page → prefetch                                        │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Asset Loading Bible"
+        subgraph "Scripts"
+            S1["App code"] --> S2["defer"]
+            S3["Analytics"] --> S4["async + delay"]
+            S5["Critical"] --> S6["inline or preload"]
+        end
+        subgraph "Styles"
+            ST1["Above-fold"] --> ST2["inline"]
+            ST3["Rest"] --> ST4["preload + media swap"]
+            ST5["Third-party"] --> ST6["preconnect"]
+        end
+        subgraph "Fonts"
+            F1["Critical"] --> F2["preload + swap"]
+            F3["Secondary"] --> F4["swap or optional"]
+            F5["Always"] --> F6["WOFF2 + crossorigin"]
+        end
+        subgraph "Images"
+            I1["LCP"] --> I2["preload + eager + fetchpriority=high"]
+            I3["Below-fold"] --> I4["loading=lazy"]
+            I5["Format"] --> I6["AVIF greater than WebP greater than JPEG"]
+            I7["Always"] --> I8["width/height for CLS"]
+        end
+        subgraph "Resource Hints"
+            R1["Critical API"] --> R2["preconnect (max 2-3)"]
+            R3["Third-party"] --> R4["dns-prefetch"]
+            R5["Current page"] --> R6["preload"]
+            R7["Next page"] --> R8["prefetch"]
+        end
+    end
 ```
 
 ---
@@ -1717,42 +1717,16 @@ module.exports = {
 
 ### 17.10 Above-the-Fold Optimization Checklist
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              ABOVE-THE-FOLD SPEED CHECKLIST                     │
-├─────────────────────────────────────────────────────────────────┤
-│ CSS                                                             │
-│   □ Critical CSS inlined (<14KB)                                │
-│   □ Non-critical CSS deferred with media="print" trick          │
-│   □ Critters/Critical configured in build                       │
-│   □ Unused CSS removed (PurgeCSS)                               │
-├─────────────────────────────────────────────────────────────────┤
-│ JAVASCRIPT                                                      │
-│   □ Critical JS < 50KB (compressed)                             │
-│   □ Main bundle uses defer                                      │
-│   □ Route-based code splitting                                  │
-│   □ Heavy libs lazy loaded (charts, editors)                    │
-│   □ webpackPrefetch for likely next pages                       │
-├─────────────────────────────────────────────────────────────────┤
-│ IMAGES                                                          │
-│   □ LCP image preloaded with fetchpriority="high"               │
-│   □ Hero image in modern format (WebP/AVIF)                     │
-│   □ Responsive srcset configured                                │
-│   □ Width/height attributes set                                 │
-├─────────────────────────────────────────────────────────────────┤
-│ FONTS                                                           │
-│   □ Critical font preloaded                                     │
-│   □ font-display: swap                                          │
-│   □ Subset to required characters                               │
-│   □ WOFF2 format                                                │
-├─────────────────────────────────────────────────────────────────┤
-│ BUILD OUTPUT                                                    │
-│   □ Initial JS < 150KB (compressed)                             │
-│   □ Initial CSS < 50KB (compressed)                             │
-│   □ All assets Brotli compressed                                │
-│   □ Content hashes for caching                                  │
-│   □ Performance budgets enforced                                │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Above-the-Fold Speed Checklist"
+        CSS["<b>CSS</b><br/>Critical CSS inlined (less than 14KB)<br/>Non-critical CSS deferred with media=print trick<br/>Critters/Critical configured in build<br/>Unused CSS removed (PurgeCSS)"]
+        JS["<b>JavaScript</b><br/>Critical JS less than 50KB (compressed)<br/>Main bundle uses defer<br/>Route-based code splitting<br/>Heavy libs lazy loaded (charts, editors)<br/>webpackPrefetch for likely next pages"]
+        IMG["<b>Images</b><br/>LCP image preloaded with fetchpriority=high<br/>Hero image in modern format (WebP/AVIF)<br/>Responsive srcset configured<br/>Width/height attributes set"]
+        FONT["<b>Fonts</b><br/>Critical font preloaded<br/>font-display: swap<br/>Subset to required characters<br/>WOFF2 format"]
+        BUILD["<b>Build Output</b><br/>Initial JS less than 150KB (compressed)<br/>Initial CSS less than 50KB (compressed)<br/>All assets Brotli compressed<br/>Content hashes for caching<br/>Performance budgets enforced"]
+        CSS --> JS --> IMG --> FONT --> BUILD
+    end
 ```
 
 ---
