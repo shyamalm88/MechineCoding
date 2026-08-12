@@ -6,20 +6,13 @@ You can't improve what you can't measure. Observability is how you understand yo
 
 ## 1. The Three Pillars of Observability
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    OBSERVABILITY                                 │
-├──────────────────┬──────────────────┬───────────────────────────┤
-│      LOGS        │     METRICS      │         TRACES            │
-│                  │                  │                           │
-│ What happened?   │ How much/often?  │ How long did it take?     │
-│                  │                  │                           │
-│ - Error messages │ - Page views     │ - Request duration        │
-│ - User actions   │ - Error rates    │ - Component render time   │
-│ - API responses  │ - Core Web Vitals│ - API call waterfall      │
-│                  │                  │                           │
-│ Sentry, LogRocket│ DataDog, Grafana │ OpenTelemetry, Jaeger     │
-└──────────────────┴──────────────────┴───────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Observability"
+        Logs["LOGS - What happened?<br/>Error messages<br/>User actions<br/>API responses<br/>Tools: Sentry, LogRocket"]
+        Metrics["METRICS - How much/often?<br/>Page views<br/>Error rates<br/>Core Web Vitals<br/>Tools: DataDog, Grafana"]
+        Traces["TRACES - How long did it take?<br/>Request duration<br/>Component render time<br/>API call waterfall<br/>Tools: OpenTelemetry, Jaeger"]
+    end
 ```
 
 ---
@@ -181,89 +174,60 @@ onTTFB(sendToAnalytics);
 
 #### LCP (Largest Contentful Paint)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Timeline                                                        │
-│  0ms ──────────────────────────────────────────────────▶ 2500ms │
-│       │                    │                                     │
-│       │                    └── LCP: Hero image fully rendered    │
-│       │                                                          │
-│       └── First byte received                                    │
-│                                                                  │
-│  What counts as LCP:                                             │
-│  - <img> elements                                                │
-│  - <image> inside <svg>                                          │
-│  - <video> poster image                                          │
-│  - Background image via CSS                                      │
-│  - Block-level text elements                                     │
-└─────────────────────────────────────────────────────────────────┘
-
-Optimization:
-- Preload LCP image: <link rel="preload" as="image" href="hero.jpg">
-- Use CDN for faster delivery
-- Optimize image size and format (WebP/AVIF)
-- Remove render-blocking resources
+```mermaid
+graph LR
+    subgraph "Timeline: 0ms to 2500ms"
+        Start["0ms"] --> TTFB["First byte received"] --> LCPEvent["LCP: Hero image fully rendered"] --> End["2500ms"]
+    end
+    subgraph "What counts as LCP"
+        L1["img elements"]
+        L2["image inside svg"]
+        L3["video poster image"]
+        L4["Background image via CSS"]
+        L5["Block-level text elements"]
+    end
+    subgraph "Optimization"
+        O1["Preload LCP image"]
+        O2["Use CDN for faster delivery"]
+        O3["Optimize image size and format (WebP/AVIF)"]
+        O4["Remove render-blocking resources"]
+    end
 ```
 
 #### INP (Interaction to Next Paint)
 
-```
-User clicks button
-       │
-       ▼
-┌──────────────────┐
-│  Input Delay     │  ← JS blocking main thread
-│  (event queued)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Processing Time │  ← Event handler execution
-│  (handler runs)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Presentation    │  ← Browser paints the update
-│  Delay           │
-└────────┬─────────┘
-         │
-         ▼
-    Next Paint
-
-Total INP = Input Delay + Processing + Presentation
-
-Optimization:
-- Break up long tasks (yield to main thread)
-- Use requestIdleCallback for non-critical work
-- Debounce/throttle expensive handlers
-- Move heavy work to Web Workers
+```mermaid
+graph TD
+    Click["User clicks button"] --> InputDelay["Input Delay (event queued) - JS blocking main thread"]
+    InputDelay --> Processing["Processing Time (handler runs) - event handler execution"]
+    Processing --> Presentation["Presentation Delay - browser paints the update"]
+    Presentation --> NextPaint["Next Paint"]
+    NextPaint -.-> Formula["Total INP = Input Delay + Processing + Presentation"]
+    subgraph "Optimization"
+        O1["Break up long tasks (yield to main thread)"]
+        O2["Use requestIdleCallback for non-critical work"]
+        O3["Debounce/throttle expensive handlers"]
+        O4["Move heavy work to Web Workers"]
+    end
 ```
 
 #### CLS (Cumulative Layout Shift)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Before Ad Loads              After Ad Loads                     │
-│  ┌────────────────┐           ┌────────────────┐                │
-│  │    Header      │           │    Header      │                │
-│  ├────────────────┤           ├────────────────┤                │
-│  │    Article     │           │      AD        │ ← Inserted!    │
-│  │    Content     │           ├────────────────┤                │
-│  │                │           │    Article     │ ← Shifted!     │
-│  │   [Button]     │           │    Content     │                │
-│  └────────────────┘           │                │                │
-│                               │   [Button]     │ ← User clicks  │
-│                               └────────────────┘    wrong thing │
-│                                                                  │
-│  CLS Score = (Impact Fraction) × (Distance Fraction)            │
-└─────────────────────────────────────────────────────────────────┘
-
-Optimization:
-- Reserve space for dynamic content (aspect-ratio, min-height)
-- Don't insert content above existing content
-- Use transform for animations instead of top/left
-- Preload fonts to avoid FOUT
+```mermaid
+graph TD
+    subgraph "Before Ad Loads"
+        B1["Header"] --> B2["Article Content"] --> B3["Button"]
+    end
+    subgraph "After Ad Loads"
+        A1["Header"] --> A2["AD (Inserted!)"] --> A3["Article Content (Shifted!)"] --> A4["Button (User clicks wrong thing)"]
+    end
+    Formula["CLS Score = Impact Fraction x Distance Fraction"]
+    subgraph "Optimization"
+        O1["Reserve space for dynamic content (aspect-ratio, min-height)"]
+        O2["Don't insert content above existing content"]
+        O3["Use transform for animations instead of top/left"]
+        O4["Preload fonts to avoid FOUT"]
+    end
 ```
 
 ---

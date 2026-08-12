@@ -8,21 +8,19 @@ A comprehensive guide to Cross-Origin Resource Sharing for system design intervi
 
 CORS (Cross-Origin Resource Sharing) is a **browser security mechanism** that controls how web pages can request resources from different origins.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  SAME-ORIGIN POLICY                                          │
-│                                                              │
-│  An origin is defined by:                                    │
-│  ├── Protocol (https://)                                     │
-│  ├── Host (example.com)                                      │
-│  └── Port (:443)                                             │
-│                                                              │
-│  Examples:                                                   │
-│  https://app.com     vs  https://api.com      → Different   │
-│  https://app.com     vs  http://app.com       → Different   │
-│  https://app.com     vs  https://app.com:8080 → Different   │
-│  https://app.com/a   vs  https://app.com/b    → SAME        │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Same-Origin Policy"
+        Def["An origin is defined by:"] --> Proto["Protocol (https://)"]
+        Def --> Host["Host (example.com)"]
+        Def --> Port["Port (:443)"]
+    end
+    subgraph "Examples"
+        C1A["https://app.com"] -->|Different| C1B["https://api.com"]
+        C2A["https://app.com"] -->|Different| C2B["http://app.com"]
+        C3A["https://app.com"] -->|Different| C3B["https://app.com:8080"]
+        C4A["https://app.com/a"] -->|SAME| C4B["https://app.com/b"]
+    end
 ```
 
 ### Why It Exists
@@ -52,73 +50,33 @@ With CORS:
 
 ### Simple Requests (No Preflight)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  SIMPLE REQUEST (No Preflight)                               │
-│                                                              │
-│  Conditions:                                                 │
-│  ├── Method: GET, HEAD, or POST                              │
-│  ├── Headers: Only safe headers                              │
-│  │   └── Accept, Accept-Language, Content-Language          │
-│  │   └── Content-Type (only certain values)                 │
-│  └── Content-Type: text/plain, multipart/form-data,         │
-│                    application/x-www-form-urlencoded        │
-│                                                              │
-│  Browser ──────────────────────────────────────────▶ Server │
-│           GET /api/data                                      │
-│           Origin: https://app.com                            │
-│                                                              │
-│  Browser ◀────────────────────────────────────────── Server │
-│           200 OK                                             │
-│           Access-Control-Allow-Origin: https://app.com       │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Simple Request (No Preflight)"
+        Cond["Conditions: Method GET, HEAD, or POST<br/>Headers: only safe headers (Accept, Accept-Language, Content-Language, limited Content-Type)<br/>Content-Type: text/plain, multipart/form-data, or application/x-www-form-urlencoded"]
+        Browser1["Browser"] -->|"GET /api/data, Origin: https://app.com"| Server1["Server"]
+        Server1 -->|"200 OK, Access-Control-Allow-Origin: https://app.com"| Browser1
+    end
 ```
 
 ### Preflighted Requests
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  PREFLIGHT REQUIRED                                          │
-│                                                              │
-│  Triggers:                                                   │
-│  ├── Methods: PUT, DELETE, PATCH, CONNECT, OPTIONS, TRACE   │
-│  ├── Custom headers (Authorization, X-Custom-Header)         │
-│  ├── Content-Type: application/json                         │
-│  └── Readable streams in request body                       │
-└─────────────────────────────────────────────────────────────┘
-
-Step 1: Preflight (OPTIONS)
-───────────────────────────
-
-Browser ──────────────────────────────────────────────▶ Server
-         OPTIONS /api/users
-         Origin: https://app.com
-         Access-Control-Request-Method: POST
-         Access-Control-Request-Headers: Content-Type, Authorization
-
-Browser ◀────────────────────────────────────────────── Server
-         204 No Content
-         Access-Control-Allow-Origin: https://app.com
-         Access-Control-Allow-Methods: GET, POST, PUT, DELETE
-         Access-Control-Allow-Headers: Content-Type, Authorization
-         Access-Control-Max-Age: 86400
-
-Step 2: Actual Request
-──────────────────────
-
-Browser ──────────────────────────────────────────────▶ Server
-         POST /api/users
-         Origin: https://app.com
-         Content-Type: application/json
-         Authorization: Bearer token123
-
-         {"name": "John"}
-
-Browser ◀────────────────────────────────────────────── Server
-         201 Created
-         Access-Control-Allow-Origin: https://app.com
-
-         {"id": 1, "name": "John"}
+```mermaid
+graph TD
+    subgraph "Preflight Required - Triggers"
+        T1["Methods: PUT, DELETE, PATCH, CONNECT, OPTIONS, TRACE"]
+        T2["Custom headers (Authorization, X-Custom-Header)"]
+        T3["Content-Type: application/json"]
+        T4["Readable streams in request body"]
+    end
+    subgraph "Step 1: Preflight (OPTIONS)"
+        Browser1["Browser"] -->|"OPTIONS /api/users, Origin, Access-Control-Request-Method: POST, Access-Control-Request-Headers: Content-Type, Authorization"| Server1["Server"]
+        Server1 -->|"204 No Content, Allow-Origin, Allow-Methods: GET/POST/PUT/DELETE, Allow-Headers, Max-Age: 86400"| Browser1
+    end
+    subgraph "Step 2: Actual Request"
+        Browser2["Browser"] -->|"POST /api/users, Origin, Content-Type: application/json, Authorization: Bearer token123, body: name=John"| Server2["Server"]
+        Server2 -->|"201 Created, Allow-Origin, body: id=1 name=John"| Browser2
+    end
 ```
 
 ---
@@ -231,19 +189,15 @@ app.use(cors({
 
 ## 5. The Credentials Trap
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  THE CREDENTIALS RULE                                        │
-│                                                              │
-│  When credentials: 'include' is used:                        │
-│                                                              │
-│  ❌ CANNOT use Access-Control-Allow-Origin: *                │
-│  ❌ CANNOT use Access-Control-Allow-Headers: *               │
-│  ❌ CANNOT use Access-Control-Allow-Methods: *               │
-│                                                              │
-│  ✅ MUST specify exact origin                                │
-│  ✅ MUST set Access-Control-Allow-Credentials: true          │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "The Credentials Rule - when credentials: 'include' is used"
+        Cannot1["CANNOT use Access-Control-Allow-Origin: *"]
+        Cannot2["CANNOT use Access-Control-Allow-Headers: *"]
+        Cannot3["CANNOT use Access-Control-Allow-Methods: *"]
+        Must1["MUST specify exact origin"]
+        Must2["MUST set Access-Control-Allow-Credentials: true"]
+    end
 ```
 
 ```js
@@ -296,23 +250,23 @@ app.options('*', (req, res) => {
 
 ## 7. CORS vs CSRF
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  CORS ≠ CSRF PROTECTION                                      │
-│                                                              │
-│  CORS:                                                       │
-│  └── Protects reading response (browser blocks it)          │
-│  └── Does NOT prevent the request from being sent!          │
-│                                                              │
-│  CSRF Attack:                                                │
-│  └── Attacker doesn't need to read response                 │
-│  └── Just needs to trigger the action (transfer money)      │
-│                                                              │
-│  You still need:                                             │
-│  ├── CSRF tokens                                             │
-│  ├── SameSite cookies                                        │
-│  └── Origin header validation                                │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "CORS != CSRF Protection"
+        subgraph "CORS"
+            C1["Protects reading response (browser blocks it)"]
+            C2["Does NOT prevent the request from being sent!"]
+        end
+        subgraph "CSRF Attack"
+            A1["Attacker doesn't need to read response"]
+            A2["Just needs to trigger the action (transfer money)"]
+        end
+        subgraph "You still need"
+            N1["CSRF tokens"]
+            N2["SameSite cookies"]
+            N3["Origin header validation"]
+        end
+    end
 ```
 
 ### Proper CSRF Protection

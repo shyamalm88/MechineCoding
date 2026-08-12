@@ -8,25 +8,23 @@ A comprehensive guide to optimizing React applications for system design intervi
 
 Before optimizing, you must understand **why** React re-renders.
 
-```
-Component Re-renders When:
-├── Props change (shallow comparison)
-├── State changes (useState, useReducer)
-├── Context value changes
-└── Parent re-renders (even if props haven't changed!)
+```mermaid
+graph TD
+    Root["Component Re-renders When:"] --> P["Props change (shallow comparison)"]
+    Root --> S["State changes (useState, useReducer)"]
+    Root --> C["Context value changes"]
+    Root --> Par["Parent re-renders (even if props haven't changed!)"]
 ```
 
 ### The Re-render Cascade
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  <App>                           ← State changes here       │
-│    ├── <Header />                ← Re-renders (child)       │
-│    ├── <Sidebar />               ← Re-renders (child)       │
-│    └── <MainContent>             ← Re-renders (child)       │
-│          ├── <ProductList />     ← Re-renders (grandchild)  │
-│          └── <ProductItem /> x100← ALL 100 re-render!       │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    App["&lt;App&gt; - State changes here"] --> Header["&lt;Header /&gt; - Re-renders (child)"]
+    App --> Sidebar["&lt;Sidebar /&gt; - Re-renders (child)"]
+    App --> MainContent["&lt;MainContent&gt; - Re-renders (child)"]
+    MainContent --> ProductList["&lt;ProductList /&gt; - Re-renders (grandchild)"]
+    MainContent --> ProductItem["&lt;ProductItem /&gt; x100 - ALL 100 re-render!"]
 ```
 
 **The Problem:** By default, when a parent re-renders, ALL children re-render regardless of whether their props changed.
@@ -88,19 +86,15 @@ function ProductList({ products, filter }) {
 
 ### The Memoization Decision Framework
 
-```
-Should I memoize?
-│
-├─▶ Is the component expensive to render?
-│   └─▶ YES → Use React.memo
-│
-├─▶ Is the calculation expensive (>1ms)?
-│   └─▶ YES → Use useMemo
-│
-├─▶ Is this function passed to a memoized child?
-│   └─▶ YES → Use useCallback
-│
-└─▶ Otherwise → Don't memoize (adds overhead)
+```mermaid
+graph TD
+    Root["Should I memoize?"] --> Q1["Is the component expensive to render?"]
+    Q1 -->|YES| A1["Use React.memo"]
+    Root --> Q2["Is the calculation expensive (&gt;1ms)?"]
+    Q2 -->|YES| A2["Use useMemo"]
+    Root --> Q3["Is this function passed to a memoized child?"]
+    Q3 -->|YES| A3["Use useCallback"]
+    Root -->|Otherwise| A4["Don't memoize (adds overhead)"]
 ```
 
 ---
@@ -284,20 +278,13 @@ Render only what's visible in the viewport.
 
 ### The Problem
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  10,000 items rendered                                       │
-│                                                              │
-│  ┌─────────────────┐  ← Visible (10 items)                  │
-│  │ Item 1          │                                         │
-│  │ Item 2          │                                         │
-│  │ ...             │                                         │
-│  │ Item 10         │                                         │
-│  └─────────────────┘                                         │
-│                                                              │
-│  Items 11-10,000 are in DOM but INVISIBLE                    │
-│  → Wasted memory, slow initial render                        │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "10,000 items rendered"
+        Visible["Visible (10 items): Item 1, Item 2, ..., Item 10"]
+        Invisible["Items 11-10,000: in DOM but INVISIBLE"]
+    end
+    Invisible --> Cost["Wasted memory, slow initial render"]
 ```
 
 ### The Solution: Windowing

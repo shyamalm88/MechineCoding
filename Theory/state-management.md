@@ -8,19 +8,14 @@ Understanding when and how to manage state is crucial for building scalable fron
 
 Not all state is equal. Understanding the different types helps you choose the right tool.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        STATE SPECTRUM                                │
-├──────────────┬──────────────┬──────────────┬───────────────────────┤
-│   UI State   │  Form State  │ Server State │   Global App State    │
-│              │              │              │                       │
-│ - Modal open │ - Input vals │ - API data   │ - User session        │
-│ - Dropdown   │ - Validation │ - Cache      │ - Theme               │
-│ - Hover      │ - Dirty/clean│ - Loading    │ - Feature flags       │
-│              │              │              │                       │
-│  useState()  │  React Hook  │ React Query  │  Zustand/Redux        │
-│              │    Form      │  SWR         │  Context              │
-└──────────────┴──────────────┴──────────────┴───────────────────────┘
+```mermaid
+graph TD
+    subgraph "State Spectrum"
+        UI["UI State<br/>Modal open<br/>Dropdown<br/>Hover<br/>Tools: useState()"]
+        Form["Form State<br/>Input vals<br/>Validation<br/>Dirty/clean<br/>Tools: React Hook Form"]
+        Server["Server State<br/>API data<br/>Cache<br/>Loading<br/>Tools: React Query, SWR"]
+        Global["Global App State<br/>User session<br/>Theme<br/>Feature flags<br/>Tools: Zustand/Redux, Context"]
+    end
 ```
 
 ### The Golden Rule
@@ -219,23 +214,20 @@ function UpdateUser({ userId }) {
 
 ### React Query: Under the Hood
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    React Query Cache                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ['users']          → { data: [...], updatedAt: 1234567890 }    │
-│  ['user', 1]        → { data: {...}, updatedAt: 1234567891 }    │
-│  ['user', 2]        → { data: {...}, updatedAt: 1234567892 }    │
-│  ['posts', {page:1}]→ { data: [...], updatedAt: 1234567893 }    │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-
-Automatic behaviors:
-1. Deduplication: 10 components request ['user', 1] → 1 network call
-2. Background refetch: When tab regains focus
-3. Stale-while-revalidate: Show cached, fetch fresh in background
-4. Garbage collection: Remove unused queries after 5 minutes
+```mermaid
+graph TD
+    subgraph "React Query Cache"
+        K1["['users']"] --> V1["data: [...], updatedAt: 1234567890"]
+        K2["['user', 1]"] --> V2["data: {...}, updatedAt: 1234567891"]
+        K3["['user', 2]"] --> V3["data: {...}, updatedAt: 1234567892"]
+        K4["['posts', {page:1}]"] --> V4["data: [...], updatedAt: 1234567893"]
+    end
+    subgraph "Automatic behaviors"
+        B1["1. Deduplication: 10 components request ['user', 1] -> 1 network call"]
+        B2["2. Background refetch: when tab regains focus"]
+        B3["3. Stale-while-revalidate: show cached, fetch fresh in background"]
+        B4["4. Garbage collection: remove unused queries after 5 minutes"]
+    end
 ```
 
 ### React Query vs SWR
@@ -472,33 +464,19 @@ function Form() {
 
 ## 8. Decision Framework
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    STATE DECISION TREE                           │
-└─────────────────────────────────────────────────────────────────┘
-
-Is it SERVER data (from API)?
-├── YES → React Query / SWR
-│         (caching, background refetch, deduplication)
-│
-└── NO → Is it used by MULTIPLE components?
-         ├── NO → useState / useReducer
-         │        (keep it local)
-         │
-         └── YES → How many components? How often does it change?
-                   │
-                   ├── Few components, low frequency
-                   │   → Context (simple, built-in)
-                   │
-                   ├── Many components, medium frequency
-                   │   → Zustand (simple, performant)
-                   │
-                   └── Enterprise, strict patterns, large team
-                       → Redux Toolkit (conventions, ecosystem)
-
-Is it FORM data?
-└── YES → React Hook Form / Formik
-          (validation, performance, submission handling)
+```mermaid
+graph TD
+    Title["State Decision Tree"]
+    Server{"Is it SERVER data (from API)?"}
+    Server -->|YES| RQ["React Query / SWR - caching, background refetch, deduplication"]
+    Server -->|NO| Multi{"Is it used by MULTIPLE components?"}
+    Multi -->|NO| Local["useState / useReducer (keep it local)"]
+    Multi -->|YES| Freq{"How many components? How often does it change?"}
+    Freq -->|"Few components, low frequency"| Ctx["Context (simple, built-in)"]
+    Freq -->|"Many components, medium frequency"| Zus["Zustand (simple, performant)"]
+    Freq -->|"Enterprise, strict patterns, large team"| Redux["Redux Toolkit (conventions, ecosystem)"]
+    Form{"Is it FORM data?"}
+    Form -->|YES| RHF["React Hook Form / Formik - validation, performance, submission handling"]
 ```
 
 ---

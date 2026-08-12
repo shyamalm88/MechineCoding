@@ -8,17 +8,13 @@ A comprehensive guide to measuring and optimizing Core Web Vitals for system des
 
 Core Web Vitals are Google's standardized metrics for measuring user experience. They directly impact **SEO rankings**.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    CORE WEB VITALS                          │
-├──────────────────┬──────────────────┬──────────────────────┤
-│       LCP        │       INP        │        CLS           │
-│    Loading       │  Interactivity   │   Visual Stability   │
-│                  │                  │                      │
-│  < 2.5s GOOD     │  < 200ms GOOD    │   < 0.1 GOOD        │
-│  2.5-4s NEEDS    │  200-500ms NEEDS │   0.1-0.25 NEEDS    │
-│  > 4s POOR       │  > 500ms POOR    │   > 0.25 POOR       │
-└──────────────────┴──────────────────┴──────────────────────┘
+```mermaid
+graph TD
+    subgraph "Core Web Vitals"
+        LCP["LCP - Loading<br/>&lt; 2.5s GOOD<br/>2.5-4s NEEDS WORK<br/>&gt; 4s POOR"]
+        INP["INP - Interactivity<br/>&lt; 200ms GOOD<br/>200-500ms NEEDS WORK<br/>&gt; 500ms POOR"]
+        CLS["CLS - Visual Stability<br/>&lt; 0.1 GOOD<br/>0.1-0.25 NEEDS WORK<br/>&gt; 0.25 POOR"]
+    end
 ```
 
 ---
@@ -29,26 +25,18 @@ Core Web Vitals are Google's standardized metrics for measuring user experience.
 
 The time it takes for the **largest visible element** to render in the viewport.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Timeline                                                    │
-│                                                              │
-│  0ms ─────────────────────────────────────────────▶ 2500ms  │
-│       │              │              │                        │
-│       │              │              └── LCP: Hero image      │
-│       │              │                  fully painted        │
-│       │              │                                       │
-│       │              └── FCP: First text painted            │
-│       │                                                      │
-│       └── TTFB: First byte received                         │
-│                                                              │
-│  What counts as LCP element:                                 │
-│  ├── <img> elements                                         │
-│  ├── <image> inside <svg>                                   │
-│  ├── <video> poster image                                   │
-│  ├── Background image via CSS url()                         │
-│  └── Block-level text elements (<h1>, <p>, etc.)            │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph "Timeline: 0ms to 2500ms"
+        Start["0ms"] --> TTFB["TTFB: First byte received"] --> FCP["FCP: First text painted"] --> LCPEvent["LCP: Hero image fully painted"] --> End["2500ms"]
+    end
+    subgraph "What counts as LCP element"
+        L1["img elements"]
+        L2["image inside svg"]
+        L3["video poster image"]
+        L4["Background image via CSS url()"]
+        L5["Block-level text elements (h1, p, etc.)"]
+    end
 ```
 
 ### Measuring LCP
@@ -126,31 +114,13 @@ observer.observe({ type: 'largest-contentful-paint', buffered: true });
 
 INP measures the **latency of all user interactions** throughout the page lifecycle and reports the worst one (at the 98th percentile).
 
-```
-User clicks button
-       │
-       ▼
-┌──────────────────┐
-│  Input Delay     │  ← Time waiting in queue (main thread busy)
-│  (event queued)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Processing Time │  ← Event handler execution time
-│  (handler runs)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Presentation    │  ← Time for browser to paint the result
-│  Delay           │
-└────────┬─────────┘
-         │
-         ▼
-    Next Paint
-
-INP = Input Delay + Processing Time + Presentation Delay
+```mermaid
+graph TD
+    Click["User clicks button"] --> InputDelay["Input Delay (queued)"]
+    InputDelay -->|"main thread busy"| Processing["Processing Time (handler runs)"]
+    Processing -->|"handler execution"| Presentation["Presentation Delay"]
+    Presentation -->|"browser paints result"| NextPaint["Next Paint"]
+    NextPaint -.-> Formula["INP = Input Delay + Processing Time + Presentation Delay"]
 ```
 
 ### Why INP Replaced FID
@@ -271,24 +241,15 @@ function processInChunks(items, callback) {
 
 CLS quantifies how much visible elements **unexpectedly shift** during page load.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Before Ad Loads              After Ad Loads                 │
-│  ┌────────────────┐           ┌────────────────┐            │
-│  │    Header      │           │    Header      │            │
-│  ├────────────────┤           ├────────────────┤            │
-│  │    Article     │           │      AD        │ ← Inserted │
-│  │    Content     │           ├────────────────┤            │
-│  │                │           │    Article     │ ← Shifted! │
-│  │   [Button]     │           │    Content     │            │
-│  └────────────────┘           │   [Button]     │ ← Misclick!│
-│                               └────────────────┘            │
-│                                                              │
-│  CLS Score = Impact Fraction × Distance Fraction            │
-│                                                              │
-│  Impact: % of viewport affected                              │
-│  Distance: How far elements moved (as % of viewport)         │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Before Ad Loads"
+        B1["Header"] --> B2["Article Content"] --> B3["Button"]
+    end
+    subgraph "After Ad Loads"
+        A1["Header"] --> A2["AD (Inserted)"] --> A3["Article Content (Shifted!)"] --> A4["Button (Misclick!)"]
+    end
+    Formula["CLS Score = Impact Fraction x Distance Fraction<br/>Impact: % of viewport affected<br/>Distance: how far elements moved (as % of viewport)"]
 ```
 
 ### The CLS Formula
@@ -532,22 +493,21 @@ Chrome Extension: "Web Vitals"
 | **Lab** | Lighthouse, DevTools | Development, debugging |
 | **Field** | CrUX, RUM | Real user experience |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  WHY THEY DIFFER                                             │
-│                                                              │
-│  Lab Data:                                                   │
-│  - Simulated device/network                                  │
-│  - No real user interaction                                  │
-│  - Consistent, reproducible                                  │
-│                                                              │
-│  Field Data:                                                 │
-│  - Real devices (slow phones!)                              │
-│  - Real networks (3G in India!)                             │
-│  - Real user behavior                                        │
-│                                                              │
-│  Field data is what Google uses for rankings!                │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Why They Differ"
+        subgraph "Lab Data"
+            L1["Simulated device/network"]
+            L2["No real user interaction"]
+            L3["Consistent, reproducible"]
+        end
+        subgraph "Field Data"
+            F1["Real devices (slow phones!)"]
+            F2["Real networks (3G in India!)"]
+            F3["Real user behavior"]
+        end
+    end
+    Note["Field data is what Google uses for rankings!"]
 ```
 
 ### Chrome User Experience Report (CrUX)
