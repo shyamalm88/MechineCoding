@@ -168,12 +168,7 @@ query {
 <p>Since the connection is <strong>persistent</strong>, the server must keep a record of every connected client in memory.</p>
 <p><strong>Problem:</strong> Horizontal scaling is difficult.</p>
 <p><strong>Solution:</strong> Use a <strong>Pub/Sub layer</strong> (like Redis) to sync messages across multiple server instances.</p>
-<pre><code>┌──────────┐     ┌──────────┐     ┌──────────┐
-│ Server 1 │────▶│  Redis   │◀────│ Server 2 │
-│ (1000    │     │  Pub/Sub │     │ (1000    │
-│  clients)│     └──────────┘     │  clients)│
-└──────────┘                      └──────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/4e199f676e1a9095.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="4-sse-server-sent-events">4. SSE (Server-Sent Events)</h2>
 <p>SSE is a standard that allows servers to <strong>push data to web pages over HTTP</strong>.</p>
@@ -264,51 +259,35 @@ eventSource.onmessage = (event) =&gt; {
 </table>
 <hr />
 <h2 id="6-decision-framework-for-interviews">6. Decision Framework for Interviews</h2>
-<pre><code>Is the data...
-│
-├─▶ Static or changes infrequently?
-│   └─▶ REST (leverage HTTP caching)
-│
-├─▶ Complex with nested relationships?
-│   └─▶ GraphQL (avoid over/under-fetching)
-│
-├─▶ Real-time AND bidirectional?
-│   └─▶ WebSockets (chat, collaboration, games)
-│
-└─▶ Real-time BUT server-to-client only?
-    └─▶ SSE (notifications, feeds, tickers)
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/f621d91e6580dbc0.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="7-deep-dive-http2-and-http3">7. Deep Dive: HTTP/2 and HTTP/3</h2>
 <p>Understanding the transport layer is crucial for Senior-level discussions.</p>
 <h3 id="http11-limitations">HTTP/1.1 Limitations</h3>
-<pre><code>┌─────────────────────────────────────────────┐
-│  Browser (6 connection limit per domain)    │
-│                                             │
-│  Conn 1: GET /style.css ──────────────────▶ │
-│  Conn 2: GET /app.js ─────────────────────▶ │
-│  Conn 3: GET /image1.png ─────────────────▶ │
-│  Conn 4: GET /image2.png ─────────────────▶ │
-│  Conn 5: GET /image3.png ─────────────────▶ │
-│  Conn 6: GET /image4.png ─────────────────▶ │
-│                                             │
-│  image5.png WAITING... (blocked)            │
-└─────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Browser (6 connection limit per domain)&quot;
+        C1[&quot;Conn 1: GET /style.css&quot;] --&gt; Server[&quot;Server&quot;]
+        C2[&quot;Conn 2: GET /app.js&quot;] --&gt; Server
+        C3[&quot;Conn 3: GET /image1.png&quot;] --&gt; Server
+        C4[&quot;Conn 4: GET /image2.png&quot;] --&gt; Server
+        C5[&quot;Conn 5: GET /image3.png&quot;] --&gt; Server
+        C6[&quot;Conn 6: GET /image4.png&quot;] --&gt; Server
+        W[&quot;image5.png WAITING... (blocked)&quot;]
+    end
+</div>
 <p><strong>Head-of-Line Blocking:</strong> If <code>style.css</code> is slow, it blocks its connection.</p>
 <h3 id="http2-multiplexing">HTTP/2 Multiplexing</h3>
-<pre><code>┌─────────────────────────────────────────────┐
-│  Single TCP Connection                      │
-│                                             │
-│  Stream 1: GET /style.css ──┐               │
-│  Stream 2: GET /app.js ─────┼───▶ Server    │
-│  Stream 3: GET /image1.png ─┤               │
-│  Stream 4: GET /image2.png ─┤               │
-│  Stream 5: GET /image3.png ─┘               │
-│                                             │
-│  All requests sent simultaneously!          │
-└─────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Single TCP Connection - all streams sent simultaneously&quot;
+        S1[&quot;Stream 1: GET /style.css&quot;] --&gt; Server[&quot;Server&quot;]
+        S2[&quot;Stream 2: GET /app.js&quot;] --&gt; Server
+        S3[&quot;Stream 3: GET /image1.png&quot;] --&gt; Server
+        S4[&quot;Stream 4: GET /image2.png&quot;] --&gt; Server
+        S5[&quot;Stream 5: GET /image3.png&quot;] --&gt; Server
+    end
+</div>
 <p><strong>Key Features:</strong>
 - <strong>Binary Framing:</strong> Headers and body are split into frames
 - <strong>Header Compression (HPACK):</strong> Reduces header overhead by 85%
@@ -346,27 +325,14 @@ eventSource.onmessage = (event) =&gt; {
 <h2 id="8-cors-the-security-handshake">8. CORS: The Security Handshake</h2>
 <p>Cross-Origin Resource Sharing is the browser's security mechanism for cross-domain requests.</p>
 <h3 id="the-preflight-dance">The Preflight Dance</h3>
-<pre><code>┌──────────┐                           ┌──────────┐
-│  Browser │                           │  Server  │
-│(app.com) │                           │(api.com) │
-└────┬─────┘                           └────┬─────┘
-     │                                      │
-     │  OPTIONS /api/users                  │
-     │  Origin: https://app.com             │
-     │  Access-Control-Request-Method: POST │
-     │  Access-Control-Request-Headers:     │
-     │    Content-Type, Authorization       │
-     │─────────────────────────────────────▶│
-     │                                      │
-     │  204 No Content                      │
-     │  Access-Control-Allow-Origin: *      │
-     │  Access-Control-Allow-Methods: POST  │
-     │  Access-Control-Max-Age: 86400       │
-     │◀─────────────────────────────────────│
-     │                                      │
-     │  POST /api/users (actual request)    │
-     │─────────────────────────────────────▶│
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant Browser as Browser (app.com)
+    participant Server as Server (api.com)
+    Browser-&gt;&gt;Server: OPTIONS /api/users - Origin: https://app.com, Access-Control-Request-Method: POST, Access-Control-Request-Headers: Content-Type, Authorization
+    Server--&gt;&gt;Browser: 204 No Content - Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: POST, Access-Control-Max-Age: 86400
+    Browser-&gt;&gt;Server: POST /api/users (actual request)
+</div>
 <h3 id="when-preflight-is-triggered">When Preflight is Triggered</h3>
 <table>
 <thead>
@@ -425,30 +391,27 @@ fetch('https://api.com/data', {
 6. IP address returned and cached (TTL-based)
 </code></pre>
 <h3 id="tcp-connection-establishment-3-way-handshake">TCP Connection Establishment (3-Way Handshake)</h3>
-<pre><code>Client                    Server
-   │                         │
-   │─────── SYN ────────────▶│  &quot;I want to connect&quot;
-   │                         │
-   │◀────── SYN-ACK ─────────│  &quot;OK, I acknowledge&quot;
-   │                         │
-   │─────── ACK ────────────▶│  &quot;Great, connected!&quot;
-   │                         │
-   │      Connection Open    │
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant Server
+    Client-&gt;&gt;Server: SYN (&quot;I want to connect&quot;)
+    Server--&gt;&gt;Client: SYN-ACK (&quot;OK, I acknowledge&quot;)
+    Client-&gt;&gt;Server: ACK (&quot;Great, connected!&quot;)
+    Note over Client,Server: Connection Open
+</div>
 <p><strong>Time Cost:</strong> ~1 RTT (Round Trip Time)</p>
 <h3 id="tls-handshake-https">TLS Handshake (HTTPS)</h3>
-<pre><code>Client                           Server
-   │                               │
-   │─── ClientHello ──────────────▶│  Supported ciphers, random
-   │                               │
-   │◀── ServerHello + Certificate ─│  Chosen cipher, cert
-   │                               │
-   │─── Key Exchange + Finished ──▶│  Pre-master secret
-   │                               │
-   │◀── Finished ──────────────────│
-   │                               │
-   │     Encrypted Connection      │
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant Server
+    Client-&gt;&gt;Server: ClientHello (Supported ciphers, random)
+    Server--&gt;&gt;Client: ServerHello + Certificate (Chosen cipher, cert)
+    Client-&gt;&gt;Server: Key Exchange + Finished (Pre-master secret)
+    Server--&gt;&gt;Client: Finished
+    Note over Client,Server: Encrypted Connection
+</div>
 <p><strong>Time Cost:</strong> ~2 RTT (TLS 1.2) or ~1 RTT (TLS 1.3)</p>
 <p><strong>Total for new HTTPS connection:</strong> 3-4 RTT before first byte of data!</p>
 <hr />

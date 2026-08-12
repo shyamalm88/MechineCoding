@@ -36,16 +36,16 @@ document.addEventListener('DOMContentLoaded', function () {
 <p>A comprehensive guide to web performance strategies for system design interviews.</p>
 <hr />
 <h2 id="1-the-performance-mental-model">1. The Performance Mental Model</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                    USER PERCEPTION                          │
-├─────────────────────────────────────────────────────────────┤
-│  0-100ms   │ Instant - user feels in control               │
-│  100-300ms │ Slight delay - still acceptable               │
-│  300-1000ms│ Noticeable lag - user loses focus             │
-│  1000ms+   │ Mental context switch - user frustrated       │
-│  10000ms+  │ User abandons the task                        │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;User Perception&quot;
+        T1[&quot;0-100ms&quot;] --&gt;|Instant - user feels in control| T2[&quot;100-300ms&quot;]
+        T2 --&gt;|Slight delay - still acceptable| T3[&quot;300-1000ms&quot;]
+        T3 --&gt;|Noticeable lag - user loses focus| T4[&quot;1000ms+&quot;]
+        T4 --&gt;|Mental context switch - user frustrated| T5[&quot;10000ms+&quot;]
+        T5 --&gt;|User abandons the task| T6[&quot;Task Abandoned&quot;]
+    end
+</div>
 <h3 id="the-cost-of-slow">The Cost of Slow</h3>
 <table>
 <thead>
@@ -76,16 +76,19 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="2-critical-rendering-path-crp">2. Critical Rendering Path (CRP)</h2>
 <p>The sequence of steps the browser takes to convert HTML, CSS, and JS into pixels.</p>
-<pre><code>┌──────────────────────────────────────────────────────────────┐
-│                   CRITICAL RENDERING PATH                    │
-│                                                              │
-│  HTML ──▶ DOM ──┐                                            │
-│                 ├──▶ Render Tree ──▶ Layout ──▶ Paint        │
-│  CSS ──▶ CSSOM ─┘                                            │
-│                                                              │
-│  JavaScript can BLOCK both DOM and CSSOM construction!       │
-└──────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Critical Rendering Path&quot;
+        HTML[&quot;HTML&quot;] --&gt; DOM[&quot;DOM&quot;]
+        CSS[&quot;CSS&quot;] --&gt; CSSOM[&quot;CSSOM&quot;]
+        DOM --&gt; RT[&quot;Render Tree&quot;]
+        CSSOM --&gt; RT
+        RT --&gt; Layout[&quot;Layout&quot;]
+        Layout --&gt; Paint[&quot;Paint&quot;]
+        JS[&quot;JavaScript&quot;] -.-&gt;|can BLOCK| DOM
+        JS -.-&gt;|can BLOCK| CSSOM
+    end
+</div>
 <h3 id="optimizing-the-crp">Optimizing the CRP</h3>
 <table>
 <thead>
@@ -247,32 +250,29 @@ document.addEventListener('DOMContentLoaded', function () {
 &lt;img src=&quot;hero.jpg&quot; loading=&quot;eager&quot; alt=&quot;Hero&quot;&gt;
 </code></pre>
 <h3 id="placeholder-strategies">Placeholder Strategies</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  LQIP (Low Quality Image Placeholder)                       │
-│                                                              │
-│  1. Load tiny blurred version (~1KB)                        │
-│  2. Show with blur filter                                    │
-│  3. Fade in full image when loaded                          │
-│                                                              │
-│  BlurHash: Encode image as 20-30 character string           │
-│  Dominant Color: Simple colored rectangle                    │
-│  Skeleton: Gray placeholder matching layout                  │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;LQIP (Low Quality Image Placeholder)&quot;
+        L1[&quot;1. Load tiny blurred version (~1KB)&quot;] --&gt; L2[&quot;2. Show with blur filter&quot;] --&gt; L3[&quot;3. Fade in full image when loaded&quot;]
+    end
+    subgraph &quot;Other Placeholder Strategies&quot;
+        BH[&quot;BlurHash: Encode image as 20-30 character string&quot;]
+        DC[&quot;Dominant Color: Simple colored rectangle&quot;]
+        SK[&quot;Skeleton: Gray placeholder matching layout&quot;]
+    end
+</div>
 <hr />
 <h2 id="5-javascript-optimization">5. JavaScript Optimization</h2>
 <h3 id="bundle-size-reduction">Bundle Size Reduction</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  BUNDLE ANALYSIS                                             │
-│                                                              │
-│  1. npm install webpack-bundle-analyzer                      │
-│  2. Identify large dependencies                              │
-│  3. Consider alternatives:                                   │
-│     - moment.js (67KB) → date-fns (13KB tree-shaken)        │
-│     - lodash (72KB) → lodash-es (tree-shakeable)            │
-│     - axios (13KB) → fetch (native)                         │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Bundle Analysis&quot;
+        B1[&quot;1. npm install webpack-bundle-analyzer&quot;] --&gt; B2[&quot;2. Identify large dependencies&quot;] --&gt; B3[&quot;3. Consider alternatives&quot;]
+        B3 --&gt; M[&quot;moment.js (67KB)&quot;] --&gt;|replace with| M2[&quot;date-fns (13KB tree-shaken)&quot;]
+        B3 --&gt; LO[&quot;lodash (72KB)&quot;] --&gt;|replace with| LO2[&quot;lodash-es (tree-shakeable)&quot;]
+        B3 --&gt; AX[&quot;axios (13KB)&quot;] --&gt;|replace with| AX2[&quot;fetch (native)&quot;]
+    end
+</div>
 <h3 id="code-splitting">Code Splitting</h3>
 <pre><code class="language-js">// Route-based splitting
 const Dashboard = lazy(() =&gt; import('./Dashboard'));
@@ -361,21 +361,14 @@ plugins: [
 <hr />
 <h2 id="7-caching-strategy">7. Caching Strategy</h2>
 <h3 id="cache-headers">Cache Headers</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  CACHING STRATEGY                                            │
-│                                                              │
-│  Static Assets (JS, CSS, images with hash):                  │
-│  Cache-Control: public, max-age=31536000, immutable          │
-│                                                              │
-│  HTML files:                                                 │
-│  Cache-Control: no-cache                                     │
-│  (or max-age=0, must-revalidate)                            │
-│                                                              │
-│  API responses:                                              │
-│  Cache-Control: private, max-age=60                         │
-│  (with ETag for validation)                                 │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Caching Strategy&quot;
+        SA[&quot;Static Assets (JS, CSS, images with hash)&quot;] --&gt;|Cache-Control| SAV[&quot;public, max-age=31536000, immutable&quot;]
+        HT[&quot;HTML files&quot;] --&gt;|Cache-Control| HTV[&quot;no-cache (or max-age=0, must-revalidate)&quot;]
+        API[&quot;API responses&quot;] --&gt;|Cache-Control| APIV[&quot;private, max-age=60 (with ETag for validation)&quot;]
+    end
+</div>
 <h3 id="service-worker-caching">Service Worker Caching</h3>
 <pre><code class="language-js">// Stale-While-Revalidate pattern
 self.addEventListener('fetch', event =&gt; {
@@ -395,17 +388,20 @@ self.addEventListener('fetch', event =&gt; {
 <hr />
 <h2 id="8-network-optimization">8. Network Optimization</h2>
 <h3 id="http2-benefits">HTTP/2 Benefits</h3>
-<pre><code>HTTP/1.1:
-├── 6 connections per domain
-├── Head-of-line blocking
-└── Uncompressed headers
-
-HTTP/2:
-├── Single multiplexed connection
-├── Header compression (HPACK)
-├── Server push
-└── Stream prioritization
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;HTTP/1.1&quot;
+        H1A[&quot;6 connections per domain&quot;]
+        H1B[&quot;Head-of-line blocking&quot;]
+        H1C[&quot;Uncompressed headers&quot;]
+    end
+    subgraph &quot;HTTP/2&quot;
+        H2A[&quot;Single multiplexed connection&quot;]
+        H2B[&quot;Header compression (HPACK)&quot;]
+        H2C[&quot;Server push&quot;]
+        H2D[&quot;Stream prioritization&quot;]
+    end
+</div>
 <h3 id="reduce-round-trips">Reduce Round Trips</h3>
 <table>
 <thead>
@@ -434,15 +430,15 @@ HTTP/2:
 </tbody>
 </table>
 <h3 id="cdn-configuration">CDN Configuration</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  CDN EDGE CONFIGURATION                                      │
-│                                                              │
-│  Static assets:    TTL 1 year (immutable with hash)         │
-│  HTML pages:       TTL 60s (stale-while-revalidate)         │
-│  API responses:    TTL varies (use Surrogate-Key for purge) │
-│  Images:           TTL 30 days (purge on update)            │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;CDN Edge Configuration&quot;
+        SA[&quot;Static assets&quot;] --&gt;|TTL| SAV[&quot;1 year (immutable with hash)&quot;]
+        HT[&quot;HTML pages&quot;] --&gt;|TTL| HTV[&quot;60s (stale-while-revalidate)&quot;]
+        API[&quot;API responses&quot;] --&gt;|TTL| APIV[&quot;varies (use Surrogate-Key for purge)&quot;]
+        IMG[&quot;Images&quot;] --&gt;|TTL| IMGV[&quot;30 days (purge on update)&quot;]
+    end
+</div>
 <hr />
 <h2 id="9-rendering-optimization">9. Rendering Optimization</h2>
 <h3 id="avoid-layout-thrashing">Avoid Layout Thrashing</h3>
@@ -489,15 +485,15 @@ elements.forEach((el, i) =&gt; {
 <h2 id="10-third-party-scripts">10. Third-Party Scripts</h2>
 <p>Third-party scripts are often the biggest performance killers.</p>
 <h3 id="audit-prioritize">Audit &amp; Prioritize</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  THIRD-PARTY AUDIT                                           │
-│                                                              │
-│  Essential (sync):     Payment SDK, Auth                    │
-│  Important (async):    Analytics, Error tracking            │
-│  Nice-to-have (defer): Chat widgets, Ads                    │
-│  Remove:               Unused tracking, Legacy widgets      │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Third-Party Audit&quot;
+        E[&quot;Essential (sync)&quot;] --&gt; EV[&quot;Payment SDK, Auth&quot;]
+        I[&quot;Important (async)&quot;] --&gt; IV[&quot;Analytics, Error tracking&quot;]
+        N[&quot;Nice-to-have (defer)&quot;] --&gt; NV[&quot;Chat widgets, Ads&quot;]
+        R[&quot;Remove&quot;] --&gt; RV[&quot;Unused tracking, Legacy widgets&quot;]
+    end
+</div>
 <h3 id="loading-strategies">Loading Strategies</h3>
 <pre><code class="language-html">&lt;!-- Load after page is interactive --&gt;
 &lt;script&gt;
