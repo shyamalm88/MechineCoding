@@ -761,31 +761,21 @@ async function fetchChart(symbol, interval) {
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>PRICE FAST PATH (optimised for &lt; 50ms latency)
-  Exchange WS push
-      │
-  Exchange Gateway → Kafka (no DB write in hot path)
-      │
-  Price Injector → Redis pub/sub (in-memory, sub-ms)
-      │
-  Price Tracker → WebSocket → Client
-  (InfluxDB write is async, does not block the hot path)
-
-
-ORDER RELIABLE PATH (optimised for zero loss + consistency)
-  User places order
-      │
-  Order Service → Kafka raw-orders (durable before any processing)
-      │
-  Validator (KYC + funds) → Kafka verified-orders
-      │
-  Order Service → Exchange API (only validated orders touch exchange)
-      │
-  Exchange acknowledgement → Kafka order-status
-      │
-  Order Tracker → Order DB + Trade DB + Notification
-  (every state change is persisted before notifying user)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Price Fast Path (optimised for less than 50ms latency)&quot;
+        A1[&quot;Exchange WS push&quot;] --&gt; A2[&quot;Exchange Gateway - Kafka (no DB write in hot path)&quot;]
+        A2 --&gt; A3[&quot;Price Injector - Redis pub/sub (in-memory, sub-ms)&quot;]
+        A3 --&gt; A4[&quot;Price Tracker - WebSocket - Client (InfluxDB write is async, does not block the hot path)&quot;]
+    end
+    subgraph &quot;Order Reliable Path (optimised for zero loss + consistency)&quot;
+        B1[&quot;User places order&quot;] --&gt; B2[&quot;Order Service - Kafka raw-orders (durable before any processing)&quot;]
+        B2 --&gt; B3[&quot;Validator (KYC + funds) - Kafka verified-orders&quot;]
+        B3 --&gt; B4[&quot;Order Service - Exchange API (only validated orders touch exchange)&quot;]
+        B4 --&gt; B5[&quot;Exchange acknowledgement - Kafka order-status&quot;]
+        B5 --&gt; B6[&quot;Order Tracker - Order DB + Trade DB + Notification (every state change is persisted before notifying user)&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <ul>
 <li>"Broker ≠ Exchange. The exchange is a black box with paid APIs. The broker's job is validate, forward, track, display. Every unnecessary exchange call costs money — the Kafka buffer + Validator layer is a cost control mechanism, not just a scaling choice."</li>

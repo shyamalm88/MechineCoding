@@ -171,11 +171,7 @@ Other members watching a board:  avg 4
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Go back to Maya dragging that card in §2. Underneath the instant slide on her screen and the near-instant slide on Devon's, this system is doing something specific: <strong>it is not a task CRUD system, it's a real-time collaborative state-synchronization system.</strong> The kanban UI is just the surface; the actual engineering problem is keeping shared, constantly-mutating state consistent across everyone looking at it, in close to real time. That distinction matters because it rules out a design that treats every card edit as "write to the database, refetch on next load" — that model simply can't deliver Devon seeing Maya's drag a few hundred milliseconds later without him doing anything.</p>
 <p><strong>The board itself is a tree</strong>, and every mutation is an operation on some node of it:</p>
-<pre><code>Board
-  └── List[]  &lt;- ordered by position (float64)
-        └── Card[]  &lt;- ordered by position (float64) within list
-              └── Comment[], Attachment[], Checklist[], Activity[]
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8268ce578f8f18fb.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Every user action — a drag, a rename, a comment — becomes an event applied to this tree, and every one of those events has to clear three bars: it must be <strong>persisted</strong> (the database is the source of truth, not any one client's local state), it must be <strong>fanned out</strong> to every other board member currently watching, and it must be <strong>idempotent</strong> — safe for a reconnecting client to reapply without double-counting, since networks drop and clients retry.</p>
 <p>That's the whole shape of the system in one line: a user drags a card, the UI updates optimistically before the server has said anything, the mutation posts to the server, the server writes to the database, publishes the change, and every connected member's board updates. Two paths run through that sentence, and this system is deliberately built to never let them blur together:</p>
 <table>

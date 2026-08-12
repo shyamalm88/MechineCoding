@@ -201,32 +201,24 @@ Concurrent tracking sessions at lunch/dinner peak: 50,000
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Meera's order and Rakesh's pickup from the story above — here's what actually happens underneath.</p>
 <p>Every food delivery interview is really three sub-systems layered on top of each other, because the platform exists to coordinate three actors, each with a distinct flow and a distinct bottleneck:</p>
-<pre><code>┌───────────────────────────────────────────────────────────────────┐
-│  ACTOR            FLOW                         KEY CHALLENGE       │
-├───────────────────────────────────────────────────────────────────┤
-│  Customer         Browse → Cart → Order         Geo-search scale   │
-│  Restaurant       Accept → Prepare → Ready      Event-driven push  │
-│  Delivery Agent   Assign → Pickup → Deliver     100K GPS writes/s  │
-└───────────────────────────────────────────────────────────────────┘
+<div class="mermaid">
+graph LR
+    subgraph &quot;Customer&quot;
+        C1[&quot;Browse&quot;] --&gt; C2[&quot;Cart&quot;] --&gt; C3[&quot;Order&quot;]
+    end
+    C3 -.-&gt; CC[&quot;Key challenge: Geo-search scale&quot;]
 
-  Customer places order
-          │
-          ▼
-  [Order Service] ──kafka: order.placed──&gt; [Restaurant Service]
-                                                   │
-                                          kafka: order.confirmed
-                                                   │
-                                                   ▼
-                                         [Delivery Service]
-                                          assigns via Redis Geo
-                                                   │
-                                                   ▼
-                                         [Tracking Service]
-                                          GPS → Kafka → Redis Streams
-                                                   │
-                                                   ▼
-                                         [WebSocket Server] → Customer App
-</code></pre>
+    subgraph &quot;Restaurant&quot;
+        R1[&quot;Accept&quot;] --&gt; R2[&quot;Prepare&quot;] --&gt; R3[&quot;Ready&quot;]
+    end
+    R3 -.-&gt; RC[&quot;Key challenge: Event-driven push&quot;]
+
+    subgraph &quot;Delivery Agent&quot;
+        D1[&quot;Assign&quot;] --&gt; D2[&quot;Pickup&quot;] --&gt; D3[&quot;Deliver&quot;]
+    end
+    D3 -.-&gt; DC[&quot;Key challenge: 100K GPS writes/s&quot;]
+</div>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/36ba0cd2e8c5baf7.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>The key insight is that these three flows are <strong>decoupled by Kafka</strong>: the customer flow writes to <code>order.placed</code>, the restaurant flow consumes it and confirms, <code>order.confirmed</code> fires, and the delivery flow picks it up from there. No service ever calls another service directly — that's the architecture in one sentence, and it's worth pausing on why before looking at the diagrams.</p>
 <details>
 <summary><strong>Point to Ponder:</strong> Why doesn't the Order Service just call the Restaurant Service directly to notify it, instead of publishing to Kafka?</summary>
