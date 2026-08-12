@@ -651,7 +651,14 @@ flowchart TD
 <p>Stage one is a fast filter with no ML at all: starting from roughly 500 candidate <code>post_id</code>s already sitting in the Redis Feed Cache from fan-out, lightweight rules drop anything older than 7 days and weight up posts from users the viewer has actually interacted with in the last 30 days. That narrows 500 candidates down to around 200 — cheap, and enough to make the expensive stage tractable.</p>
 <p>Stage two runs an ML model over those 200 survivors, predicting, for each one, the probability the viewer will like it, comment on it, share it, or click it. The features feeding that prediction fall into four categories, and losing any one of them would blind the model to a real signal: post features (post age, media type — video, image, or text — like count, and comment velocity, meaning likes per minute since posting); author features (the poster's relationship to the viewer — close friend, page, or group — and the poster's own recent engagement rate); user behaviour signals (the viewer's past interactions with this specific poster, the content types the viewer historically engages with, and time of day — mobile mornings skew toward short text, evenings toward video); and contextual signals (device type, network speed — nobody wants a video ranked first on a slow connection — and how long the viewer's session has run so far). Each candidate gets a score between 0.0 and 1.0 representing predicted engagement probability, and the top 50 scores become the feed.</p>
 <p>Fitting this into the request path end to end:</p>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/95b19e0ba8ef2cc2.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    A[&quot;Fan-out Consumer writes post_ids to Redis Feed Cache (500 candidates, unranked)&quot;] --&gt; B[&quot;GET /feed request arrives&quot;]
+    B --&gt; C[&quot;Candidate Generator → 200 candidates&quot;]
+    C --&gt; D[&quot;Feature Extractor fetches signals (Redis Signal Store)&quot;]
+    D --&gt; E[&quot;ML Ranking Model scores each candidate&quot;]
+    E --&gt; F[&quot;Top 50 returned to client (ranked, not chronological)&quot;]
+</div>
 <p>None of those signals are computed live. User behaviour events — likes, comments, shares, dwell time — stream into the Kafka <code>analytics-events</code> topic, and a signal aggregator continuously writes pre-computed user-author interaction scores into a Redis Signal Store. By the time a ranking request arrives, the Feature Extractor is doing plain O(1) Redis lookups, not database queries — because the alternative doesn't scale: 29,000 feed requests/sec × 200 candidates × 10 signals per candidate works out to 58 million database lookups per second if computed live, which is simply impossible without pre-computing the signals ahead of time.</p>
 <p><strong>Trade-off accepted:</strong> ML ranking adds 20–50ms to feed load time compared to a pure Redis sorted-set read. That's an intentional cost — a relevant feed drives roughly 3× more engagement than a strictly chronological one, so the latency is worth paying.</p>
 <blockquote>

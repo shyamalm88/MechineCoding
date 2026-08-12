@@ -145,17 +145,32 @@ FLOWCHART_FIRST_LINE_RE = re.compile(r"^\s*(graph|flowchart)\b", re.I)
 # and visually check every edge label for overlapping/smashed-together
 # text before trusting the cache.
 #
-# These six hashes were found broken by that manual audit and don't match
-# any of the mechanical checks above (no subgraph, no literal self-loop,
-# no `\n`), so they're excluded explicitly. Without this, render_missing_
+# These hashes were found broken by manual audits and don't match any of
+# the mechanical checks above (no subgraph, no literal self-loop, no
+# `\n`), so they're excluded explicitly. Without this, render_missing_
 # diagrams() would treat a missing cache entry for one of these as "needs
 # re-rendering" and silently regenerate the same broken output:
-#   5ecc21985e70069f  ride-booking-uber-rapido.md    8.1 (D<->E mutual pair)
-#   8c52c30b04b3b887  google-docs.md                 two edges -> Redis, same label
-#   99ea2993a3e8dcb2  google-docs.md                 two convergent-edge collisions
-#   c5657fab65765a4c  leetcode-online-judge.md       API<->Containers mutual pair
-#   d2009a14bd841fd5  payment-gateway-stripe.md      APIGW<->FraudSvc mutual pair
-#   def9402170475b48  google-docs.md                 two adjacent edges near gateways
+#   5ecc21985e70069f  ride-booking-uber-rapido.md         8.1 (D<->E mutual pair)
+#   8c52c30b04b3b887  google-docs.md                      two edges -> Redis, same label
+#   99ea2993a3e8dcb2  google-docs.md                      two convergent-edge collisions
+#   c5657fab65765a4c  leetcode-online-judge.md            API<->Containers mutual pair
+#   d2009a14bd841fd5  payment-gateway-stripe.md           APIGW<->FraudSvc mutual pair
+#   def9402170475b48  google-docs.md                      two adjacent edges near gateways
+#   95b19e0ba8ef2cc2  facebook-social-media-platform.md   feed-ranking pipeline: every box
+#                                                          width clipped to a fixed ~280px
+#                                                          regardless of label length, so
+#                                                          every label overflows its box --
+#                                                          a distinct defect class from the
+#                                                          convergent-edge ones above, found
+#                                                          converting an ASCII diagram to
+#                                                          mermaid (graph TD, LR, with/without
+#                                                          unicode arrows/punctuation in
+#                                                          labels all tried, none fixed it)
+#   d9f70ade414f999f  photo-grid-google-photos.md         Upload Flow: 4 edges converge on
+#                                                          the Client<->UploadService pair,
+#                                                          same convergent-edge-collision
+#                                                          class as the google-docs/leetcode/
+#                                                          payment-gateway ones above
 KNOWN_BROKEN_HASHES = {
     "5ecc21985e70069f",
     "8c52c30b04b3b887",
@@ -163,6 +178,8 @@ KNOWN_BROKEN_HASHES = {
     "c5657fab65765a4c",
     "d2009a14bd841fd5",
     "def9402170475b48",
+    "95b19e0ba8ef2cc2",
+    "d9f70ade414f999f",
 }
 
 SUBGRAPH_RE = re.compile(r"^\s*subgraph\b", re.I | re.M)

@@ -137,7 +137,26 @@ Bandwidth:
 <hr />
 <h2 id="4-data-flow">4. Data Flow</h2>
 <h3 id="41-upload-flow">4.1 Upload Flow</h3>
-<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/d9f70ade414f999f.svg" alt="Architecture diagram" loading="lazy"></figure>
+<div class="mermaid">
+graph TD
+    Client([&quot;Client&quot;])
+    UploadService[&quot;Upload Service&quot;]
+    S3[(&quot;S3&quot;)]
+    PostgreSQL[(&quot;PostgreSQL&quot;)]
+    Kafka[&quot;Kafka&quot;]
+    AsyncWorkers[&quot;Async Workers - Thumbnails, Face detection, Object tagging&quot;]
+
+    Client --&gt;|&quot;1. Request upload session&quot;| UploadService
+    UploadService --&gt;|&quot;2. Return signed URL + upload session ID&quot;| Client
+    Client --&gt;|&quot;3. Upload chunks directly (multipart upload)&quot;| S3
+    S3 --&gt;|&quot;4. Chunk uploaded ACK&quot;| Client
+    Client --&gt;|&quot;5. Complete upload (all chunks)&quot;| UploadService
+    UploadService --&gt;|&quot;6. Merge chunks, Extract EXIF, Save metadata&quot;| PostgreSQL
+    UploadService --&gt;|&quot;7. Queue processing jobs&quot;| Kafka
+    UploadService --&gt;|&quot;8. Upload complete, Return photo ID&quot;| Client
+    Kafka --&gt; AsyncWorkers
+    AsyncWorkers --&gt;|&quot;9. WebSocket/SSE: Processing complete&quot;| Client
+</div>
 <p><strong>Upload Implementation Details:</strong></p>
 <ol>
 <li><strong>Chunked Upload (Resumable):</strong></li>
