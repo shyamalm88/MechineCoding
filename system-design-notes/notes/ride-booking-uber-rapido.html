@@ -189,21 +189,17 @@ At 1.67M updates/sec: WebSocket = 33 MB/s vs HTTP = 3.3 GB/s -&gt; WebSocket win
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Priya's request and Arjun's acceptance from the story above — here's what actually happens underneath.</p>
 <p>Uber is two concurrent real-time systems: <strong>location tracking</strong> and <strong>driver matching</strong>. Every 1–5 seconds, millions of drivers push their GPS coordinates into a geo-indexed in-memory store. When a rider requests a trip, the system finds the closest available driver by ETA (not distance), atomically assigns them via a state transition, and keeps both maps in sync — all under 300ms. The hardest problems are concurrency (preventing double-booking) and geospatial search at scale.</p>
-<pre><code>                ┌──────────────────────────────────────────────────────────────┐
-                │                     FAST PATH                                 │
- ┌──────────┐  │  ┌───────────────┐  GEORADIUS   ┌──────────────┐             │
- │  Driver  │──►  │ Location Svc  │ ───────────► │ Match Engine │ ──► Driver  │
- │  App     │  │  │ (Redis Geo)   │              │ (top K score)│    notified  │
- └──────────┘  │  └───────────────┘              └──────┬───────┘             │
-  every 1-5s   │                                        │ WATCH/MULTI/EXEC    │
-               └────────────────────────────────────────┼─────────────────────┘
-                                                         │
-               ┌─────────────────────────────────────────▼────────────────────┐
-               │                    RELIABLE PATH                               │
-               │  Trip event ──► Kafka ──► Trip DB (PostgreSQL)                │
-               │  (start, end, fare, route) — durable, for billing + history   │
-               └──────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path&quot;
+        Driver[&quot;Driver App - every 1-5s&quot;] --&gt;|GEORADIUS| LS[&quot;Location Svc (Redis Geo)&quot;]
+        LS --&gt; ME[&quot;Match Engine (top K score)&quot;]
+        ME --&gt;|WATCH/MULTI/EXEC| DN[&quot;Driver notified&quot;]
+    end
+    subgraph &quot;Reliable Path&quot;
+        TE[&quot;Trip event&quot;] --&gt; K[&quot;Kafka&quot;] --&gt; TDB[&quot;Trip DB (PostgreSQL) - start, end, fare, route - durable, for billing + history&quot;]
+    end
+</div>
 <h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>

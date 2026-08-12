@@ -194,36 +194,7 @@ It is about:
 </tbody>
 </table>
 <p>Every request funnels through one Notification Service, but from there it splits onto one of two paths, decided purely by priority at the moment the request comes in:</p>
-<pre><code>Client (Amazon/Uber) → Notification Service
-                            |
-           ┌────────────────┴─────────────────┐
-     OTP / Critical                    Standard / Promo
-     (fast path)                       (reliable path)
-           |                                   |
-     Kafka directly                    DB Write (Outbox + Notification)
-     (at-least-once)                       |
-           |                           CDC Pipeline → Kafka
-           └──────────────┬────────────────────┘
-                    9 Kafka Topics
-               (3 priorities × 3 channels)
-                          |
-              ┌───────────┼───────────┐
-         Email Provider  SMS Provider  InApp Provider
-              |               |              |
-         SendGrid/SES     Twilio/MSG91   FCM / APNs
-              |               |              |
-              └───────────────┴──────────────┘
-                    Webhook delivery receipts
-                          |
-                 Delivery Status Kafka
-                          |
-                  Delivery Consumer
-                    |           |
-             Notification DB   BigQuery
-             (final status)    (event log)
-                          |
-                  Reporting Service → Client Dashboard
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/9eb02e9be9b5208a.svg" alt="Architecture diagram" loading="lazy"></figure>
 <table>
 <thead>
 <tr>

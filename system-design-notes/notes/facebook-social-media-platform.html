@@ -191,19 +191,23 @@ Avg followers per user:          200
 <li><strong>Read path</strong> — User opens app → Feed Cache hit (Redis, pre-computed) → instant response; backfill kicks in before the user scrolls to the bottom</li>
 <li><strong>Engagement path</strong> — Like/comment → Kafka buffer → Engagement consumer → Cassandra (comments) + PostgreSQL (likes)</li>
 </ol>
-<pre><code>                     WRITE PATH                                 READ PATH
- User ──POST /post──▶ Content Svc ──▶ Kafka(raw-post) ──▶ Moderator
-                                                              │
-                                             ┌──── filtered-post ────┐
-                                             ▼                       ▼
-                                       Post Consumer           Fan-out Svc
-                                       (Cassandra+S3)          │
-                                                               ▼
-                                                     Kafka(fanout-tasks)
-                                                               │
-                                                               ▼
- User ──GET /feed──▶ Feed Svc ──▶ Redis(feed-cache) ◀── Fan-out Consumer
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Write Path&quot;
+        U1[&quot;User&quot;] --&gt;|POST /post| CS[&quot;Content Svc&quot;]
+        CS --&gt; K1[&quot;Kafka(raw-post)&quot;]
+        K1 --&gt; MOD[&quot;Moderator&quot;]
+        MOD --&gt;|filtered-post| PC[&quot;Post Consumer (Cassandra+S3)&quot;]
+    end
+    subgraph &quot;Read Path&quot;
+        MOD --&gt;|filtered-post| FS[&quot;Fan-out Svc&quot;]
+        FS --&gt; K2[&quot;Kafka(fanout-tasks)&quot;]
+        K2 --&gt; FC[&quot;Fan-out Consumer&quot;]
+        U2[&quot;User&quot;] --&gt;|GET /feed| FeedSvc[&quot;Feed Svc&quot;]
+        FeedSvc --&gt; RC[&quot;Redis(feed-cache)&quot;]
+        FC --&gt; RC
+    end
+</div>
 <p>Each of those three flows is optimised for a different thing, because they have different jobs: the fast path (a feed read) is optimised purely for latency, so it skips the database entirely and serves from a pre-computed Redis cache; the reliable path (a post write) is optimised for durability and moderation, so it goes through a Kafka buffer and only commits once it's guaranteed; and there's a third, narrower path just for celebrities, optimised purely for write efficiency — it skips push fan-out altogether and lets followers pull a celebrity's posts on demand from a materialisation cache instead of paying the fan-out cost up front.</p>
 <blockquote>
 <p>[!IMPORTANT]
@@ -647,23 +651,7 @@ flowchart TD
 <p>Stage one is a fast filter with no ML at all: starting from roughly 500 candidate <code>post_id</code>s already sitting in the Redis Feed Cache from fan-out, lightweight rules drop anything older than 7 days and weight up posts from users the viewer has actually interacted with in the last 30 days. That narrows 500 candidates down to around 200 — cheap, and enough to make the expensive stage tractable.</p>
 <p>Stage two runs an ML model over those 200 survivors, predicting, for each one, the probability the viewer will like it, comment on it, share it, or click it. The features feeding that prediction fall into four categories, and losing any one of them would blind the model to a real signal: post features (post age, media type — video, image, or text — like count, and comment velocity, meaning likes per minute since posting); author features (the poster's relationship to the viewer — close friend, page, or group — and the poster's own recent engagement rate); user behaviour signals (the viewer's past interactions with this specific poster, the content types the viewer historically engages with, and time of day — mobile mornings skew toward short text, evenings toward video); and contextual signals (device type, network speed — nobody wants a video ranked first on a slow connection — and how long the viewer's session has run so far). Each candidate gets a score between 0.0 and 1.0 representing predicted engagement probability, and the top 50 scores become the feed.</p>
 <p>Fitting this into the request path end to end:</p>
-<pre><code>Fan-out Consumer writes post_ids to Redis Feed Cache (500 candidates, unranked)
-                              │
-                              ▼
-                   GET /feed request arrives
-                              │
-                              ▼
-             Candidate Generator → 200 candidates
-                              │
-                              ▼
-         Feature Extractor fetches signals (Redis Signal Store)
-                              │
-                              ▼
-               ML Ranking Model scores each candidate
-                              │
-                              ▼
-              Top 50 returned to client (ranked, not chronological)
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/95b19e0ba8ef2cc2.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>None of those signals are computed live. User behaviour events — likes, comments, shares, dwell time — stream into the Kafka <code>analytics-events</code> topic, and a signal aggregator continuously writes pre-computed user-author interaction scores into a Redis Signal Store. By the time a ranking request arrives, the Feature Extractor is doing plain O(1) Redis lookups, not database queries — because the alternative doesn't scale: 29,000 feed requests/sec × 200 candidates × 10 signals per candidate works out to 58 million database lookups per second if computed live, which is simply impossible without pre-computing the signals ahead of time.</p>
 <p><strong>Trade-off accepted:</strong> ML ranking adds 20–50ms to feed load time compared to a pure Redis sorted-set read. That's an intentional cost — a relevant feed drives roughly 3× more engagement than a strictly chronological one, so the latency is worth paying.</p>
 <blockquote>
@@ -731,16 +719,16 @@ flowchart TD
 <p>The frontend of a social feed is a performance engineering problem. The challenge isn't rendering posts — it's rendering thousands of posts at 60fps without memory leaks, blank flashes, or layout shifts. This is where frontend candidates differentiate.</p>
 <h3 id="infinite-scroll-feed-pagination">Infinite Scroll + Feed Pagination</h3>
 <p>The feed scrolls indefinitely, and neither of the two obvious approaches survives that for long: loading every post the user might ever reach up front means unbounded memory growth, and polling on a timer for new posts wastes requests whether or not anything actually changed.</p>
-<pre><code>                    viewport
-                   ┌─────────┐
-  posts above  ─── │ post 3  │ ← rendered (visible)
-  viewport are     │ post 4  │ ← rendered (visible)
-  unmounted  ───── │ post 5  │ ← rendered (near viewport)
-                   └─────────┘
-  posts below  ─── [sentinel div] ← IntersectionObserver watches this
-  viewport are
-  not yet fetched
-</code></pre>
+<div class="mermaid">
+graph TD
+    A[&quot;Posts above viewport are unmounted&quot;] --&gt; V
+    subgraph V [&quot;viewport&quot;]
+        P3[&quot;post 3 — rendered (visible)&quot;] --&gt; P4[&quot;post 4 — rendered (visible)&quot;]
+        P4 --&gt; P5[&quot;post 5 — rendered (near viewport)&quot;]
+    end
+    V --&gt; S[&quot;[sentinel div] — IntersectionObserver watches this&quot;]
+    S --&gt; B[&quot;Posts below viewport are not yet fetched&quot;]
+</div>
 <p>The fix has four pieces working together. Pagination is cursor-based — <code>GET /feed?cursor={lastPostId}&amp;limit=50</code> — for the same reason the backend chose it in §6: offset pagination re-scans from page one on every request, while a cursor resumes in O(1) from the last post actually seen. An <code>IntersectionObserver</code> watches a sentinel element placed a few posts from the bottom of the loaded list, firing <code>GET /feed?cursor=</code> for the next page once the user is three posts from running out. That next page is pre-fetched while the user is still reading the current one, so there's no spinner and no blank gap when they reach the bottom. And new posts are appended to the feed array rather than triggering a full re-render — the list only ever grows, it's never replaced.</p>
 <h3 id="virtual-list-dom-virtualisation">Virtual List (DOM Virtualisation)</h3>
 <p>After ten minutes of scrolling, a user may have loaded 500 posts. At roughly 15 DOM elements per post, rendering all of them at once means 7,500 active DOM nodes — and frame rate drops, memory spikes, and the tab can crash outright on a mid-range mobile device.</p>

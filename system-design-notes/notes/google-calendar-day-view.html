@@ -161,31 +161,23 @@ WebSocket connections (shared):    ~5M concurrent
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Ananya dragging her Design Review block into existence, and Rohit's screen updating without him touching anything — here's what's actually running underneath both of those moments.</p>
 <p>Google Calendar Day View is really three flows sharing the same underlying data. The <strong>load flow</strong> runs once, when a user opens a date: the client fetches that day's events, and a client-side layout engine works out overlaps, column positions, and widths before anything gets drawn. The <strong>edit flow</strong> runs every time a user drags, resizes, or clicks: the change is applied to the screen immediately, and only afterward does an API call go out to actually persist it. The <strong>real-time flow</strong> is what makes Rohit's screen move without him doing anything: once a collaborator's edit is durably saved, it gets published to every other client watching that same calendar over an open WebSocket connection.</p>
-<pre><code>User navigates to Day View
-         │
-         ▼
-   Fetch /events?date=X
-         │
-    ┌────┴────────────────────────────┐
-    │  LAYOUT ENGINE (client-side)    │
-    │  1. Sort events by start time   │
-    │  2. Detect overlapping groups   │
-    │  3. Assign columns + widths     │
-    └────┬────────────────────────────┘
-         │
-         ▼
-   Render 24h grid with positioned events
-         │
-    User drags event
-         │
-    ┌────┴──────────────────────────────┐
-    │  DRAG ENGINE                      │
-    │  1. Snap to 15-min increments     │
-    │  2. Optimistic update (local)     │
-    │  3. PATCH /events/:id on drop     │
-    │  4. WS broadcast to collaborators │
-    └───────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    A[&quot;User navigates to Day View&quot;] --&gt; B[&quot;Fetch /events?date=X&quot;]
+    B --&gt; C
+    subgraph C [&quot;LAYOUT ENGINE (client-side)&quot;]
+        C1[&quot;1. Sort events by start time&quot;] --&gt; C2[&quot;2. Detect overlapping groups&quot;]
+        C2 --&gt; C3[&quot;3. Assign columns + widths&quot;]
+    end
+    C --&gt; D[&quot;Render 24h grid with positioned events&quot;]
+    D --&gt; E[&quot;User drags event&quot;]
+    E --&gt; F
+    subgraph F [&quot;DRAG ENGINE&quot;]
+        F1[&quot;1. Snap to 15-min increments&quot;] --&gt; F2[&quot;2. Optimistic update (local)&quot;]
+        F2 --&gt; F3[&quot;3. PATCH /events/:id on drop&quot;]
+        F3 --&gt; F4[&quot;4. WS broadcast to collaborators&quot;]
+    end
+</div>
 <table>
 <thead>
 <tr>
@@ -606,24 +598,21 @@ sequenceDiagram
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs. Reliable Path</h3>
-<pre><code>FAST PATH (optimized for perceived latency)
-  User drags event
-      │
-      ▼
-  DOM translate (60fps, no React re-render)
-      │
-  User drops
-      │
-      ▼
-  React state update → event renders at new time immediately
-      │
-  PATCH /events/:id fires async (non-blocking)
-
-
-RELIABLE PATH (optimized for correctness)
-  If PATCH succeeds → collaborators receive WS push → re-render
-  If PATCH fails   → revert React state → event snaps back → error toast
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (optimized for perceived latency)&quot;
+        A[&quot;User drags event&quot;] --&gt; B[&quot;DOM translate (60fps, no React re-render)&quot;]
+        B --&gt; C[&quot;User drops&quot;]
+        C --&gt; D[&quot;React state update → event renders at new time immediately&quot;]
+        D --&gt; E[&quot;PATCH /events/:id fires async (non-blocking)&quot;]
+    end
+    subgraph &quot;Reliable Path (optimized for correctness)&quot;
+        F[&quot;If PATCH succeeds → collaborators receive WS push → re-render&quot;]
+        G[&quot;If PATCH fails → revert React state → event snaps back → error toast&quot;]
+    end
+    E --&gt; F
+    E --&gt; G
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <ul>
 <li>"Drag at 60fps requires bypassing React. I mutate the DOM directly during drag, commit once on drop. DOM and React are briefly out of sync — that's acceptable because the window is bounded and intentional."</li>

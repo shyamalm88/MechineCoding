@@ -178,40 +178,7 @@ User DB lookup QPS:  ~50M/sec (autocomplete + auth)
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Maya's click on Send, and Raj's phone buzzing a few seconds later — here's what actually happens underneath both of those.</p>
 <p>Email delivery breaks into four flows worth knowing cold: <strong>registration</strong> (claiming a globally unique address), <strong>compose and send</strong> (drafting, then handing the finished email off for delivery), <strong>internal delivery</strong> (both sides are Gmail, so the message never has to leave the platform), and <strong>external delivery</strong> (the recipient is on Outlook or Yahoo, so the message has to cross into infrastructure Gmail doesn't control). Registration needs a single, globally consistent write. Everything downstream of "click Send" needs to survive a crash at any point without ever silently losing the message — and that single requirement, more than any other, shapes the rest of this design.</p>
-<pre><code> User Composes Email
-        │
-        ▼
-  Draft DB + S3 (attachments)
-        │
-   User clicks Send
-        │
-        ▼
-  Mail Send Service
-  (fetch from draft DB)
-        │
-        ▼
-  Outbox Table (persisted first — never lose)
-        │
-  CDC / Outbox Consumer
-        │
-        ▼
-     Kafka Broker
-        │
-  Delivery Orchestrator
-  (spam + malware + policy — async parallel)
-        │
-   ┌────┴────────────┐
-   ▼                 ▼
-Inbound Topic    Outbound Topic
-(Gmail→Gmail)    (Gmail→Outlook/Yahoo)
-   │                 │
-   ▼                 ▼
-Delivery         SMTP Relay Worker
-Consumer         (DNS/MX → TCP → handshake)
-   │                 │
-   ▼                 ▼
-Mailbox DB      Recipient SMTP Server
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/85c2168d76d55531.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
@@ -715,24 +682,25 @@ When the interviewer says "walk me through your Gmail design," hit these points 
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>FAST PATH (optimized for perceived send latency)
-  User clicks Send
-      │
-      ▼
-  Mail Send Service writes to Outbox Table (DB write = durable)
-      │
-  UI immediately shows &quot;Message Sent&quot; ← user feedback is instant
-      │
-  Outbox Consumer detects CDC event → Kafka (async, non-blocking)
-
-
-RELIABLE PATH (optimized for zero email loss)
-  If Kafka publish fails → Outbox Consumer retries from DB
-  If Delivery Orchestrator crashes → resumes from Kafka offset
-  If Validation service down → email moves to Delay Queue, retried on recovery
-  If SMTP handshake fails → exponential backoff, try next MX record, retry up to 4 days
-  Final state: email always reaches DELIVERED or BOUNCED — never silently lost
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (optimized for perceived send latency)&quot;
+        A[&quot;User clicks Send&quot;] --&gt; B[&quot;Mail Send Service writes to Outbox Table (DB write = durable)&quot;]
+        B --&gt; C[&quot;UI immediately shows 'Message Sent' — user feedback is instant&quot;]
+        B --&gt; D[&quot;Outbox Consumer detects CDC event → Kafka (async, non-blocking)&quot;]
+    end
+    subgraph &quot;Reliable Path (optimized for zero email loss)&quot;
+        E[&quot;If Kafka publish fails → Outbox Consumer retries from DB&quot;]
+        F[&quot;If Delivery Orchestrator crashes → resumes from Kafka offset&quot;]
+        G[&quot;If Validation service down → email moves to Delay Queue, retried on recovery&quot;]
+        H[&quot;If SMTP handshake fails → exponential backoff, try next MX record, retry up to 4 days&quot;]
+        I[&quot;Final state: email always reaches DELIVERED or BOUNCED — never silently lost&quot;]
+        E --&gt; I
+        F --&gt; I
+        G --&gt; I
+        H --&gt; I
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <ul>
 <li>"The Outbox Table makes DB write and Kafka publish effectively atomic. DB is the source of truth, not Kafka. Email is never lost because the persistent record exists before any async work begins."</li>

@@ -157,23 +157,20 @@ Competition size:       up to 100,000 participants, 90 minutes, 10 problems
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Meera hitting Submit on Two Sum, and watching her name climb the leaderboard mid-contest — here's what's actually running underneath both of those moments.</p>
 <p>LeetCode is a code execution pipeline wrapped around a problem catalog. Three flows define the system: users browse problems (simple read-heavy), submit code for judging (async queue + isolated container), and compete with a live leaderboard (Redis sorted set updated via CDC). The hardest part is not storing problems — it is safely running untrusted code at scale and serving an aggregated leaderboard to 33K concurrent readers without touching the database on every request.</p>
-<pre><code>                   ┌──────────────────────────────────────────────────────────────┐
-                   │                      FAST PATH (Submit)                       │
- ┌────────┐ POST  │  ┌────────┐  enqueue  ┌────────┐  dispatch  ┌─────────────┐ │
- │ Client │──────►│  │  API   │──────────►│  SQS   │───────────►│ Worker +    │ │
- │(Monaco)│       │  │ Server │           │ Queue  │            │ Docker      │ │
- └────┬───┘       │  └────────┘           └────────┘            │ Container   │ │
-      │  GET/poll │                                              └──────┬──────┘ │
-      │◄──────────│────────────────────────────────────────────────────│        │
-      │           │                                               write │ result │
-      │           └────────────────────────────────────────────────────┼────────┘
-      │                                                                 │
-      │           ┌─────────────────────────────────────────────────────▼────────┐
-      │           │                  RELIABLE PATH (Leaderboard)                  │
-      │           │  DB write → CDC → Kafka → Worker → Redis ZADD                │
-      │           │  GET /leaderboard → API → Redis ZRANGE → done                │
-      └───────────└──────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Fast Path (Submit)&quot;
+        Client[&quot;Client (Monaco)&quot;] --&gt;|POST| API[&quot;API Server&quot;]
+        API --&gt;|enqueue| SQS[&quot;SQS Queue&quot;]
+        SQS --&gt;|dispatch| Worker[&quot;Worker + Docker Container&quot;]
+        Worker --&gt;|write result| Client
+        Client -.-&gt;|GET/poll| API
+    end
+    subgraph &quot;Reliable Path (Leaderboard)&quot;
+        Worker --&gt; DBW[&quot;DB write&quot;] --&gt; CDC[&quot;CDC&quot;] --&gt; Kafka[&quot;Kafka&quot;] --&gt; LBWorker[&quot;Worker&quot;] --&gt; ZADD[&quot;Redis ZADD&quot;]
+        GL[&quot;GET /leaderboard&quot;] --&gt; API2[&quot;API&quot;] --&gt; ZRANGE[&quot;Redis ZRANGE&quot;] --&gt; Done[&quot;done&quot;]
+    end
+</div>
 <h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
