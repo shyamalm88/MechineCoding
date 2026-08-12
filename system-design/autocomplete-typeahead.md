@@ -200,22 +200,17 @@ On a cache miss, the request goes out — and for short prefixes (1–3 characte
 
 Only on a CDN miss does the request reach the Autocomplete Service — stateless and horizontally scaled behind a load balancer — which does two things in parallel: it looks up the precomputed top-K list for the prefix from the Redis trie (sharded by first character, an O(prefix-length) lookup with no traversal at request time), and it pulls the last 100 searches for this user from a small Redis sorted set. A score blender then combines the two — global score weighted 0.7, personal score weighted 0.3 — and returns the top-10, sorted, typically inside 1–2ms once the request reaches Redis at all.
 
-```
-User types "app"
-     |
-[Client LRU cache]  hit? → return immediately (0ms)
-     |miss
-[CDN edge cache]    hit? → return in ~10ms (short prefix = global result)
-     |miss
-[Autocomplete Service]
-     |
-  [Redis Trie]      O(prefix_len) lookup → topK list at trie node
-     |
-  [User History]    Redis: last 100 searches for this userId
-     |
-  [Score Blender]   global score × 0.7 + personal score × 0.3
-     |
-  Return top-10 JSON
+```mermaid
+graph TD
+    Type["User types 'app'"] --> ClientCache["Client LRU cache"]
+    ClientCache -->|hit| Immediate["Return immediately (0ms)"]
+    ClientCache -->|miss| CDNCache["CDN edge cache"]
+    CDNCache -->|hit| CDNReturn["Return in ~10ms - short prefix = global result"]
+    CDNCache -->|miss| AutocompleteSvc["Autocomplete Service"]
+    AutocompleteSvc --> RedisTrie["Redis Trie - O(prefix_len) lookup - topK list at trie node"]
+    RedisTrie --> UserHistory["User History - Redis: last 100 searches for this userId"]
+    UserHistory --> ScoreBlender["Score Blender - global score x 0.7 + personal score x 0.3"]
+    ScoreBlender --> Return["Return top-10 JSON"]
 ```
 
 ```mermaid

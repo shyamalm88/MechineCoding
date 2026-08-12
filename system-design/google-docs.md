@@ -125,22 +125,17 @@ Remember Maya and Devesh editing the same sentence a second apart from the story
 
 This is the insight that unlocks the entire design. When Devesh types "R" at position 29, his client does not send the document — it sends `{ type: "insert", pos: 29, char: "R", version: 42, client_id: "devesh" }`. The document itself is a *materialized view* of a sequence of operations, not the source of truth. The operations log is the source of truth. Two people editing the same position at the same millisecond will produce divergent documents unless something transforms one operation against the other before applying it — the entire architecture exists to make that transformation correct, fast, and durable, all at once.
 
-```
-                    +----------------------------------------------------------+
-                    |                      FAST PATH                            |
-  +--------+  op    |  +----------+  transform  +----------+  broadcast        |
-  | UserA  | ------>|  |OT Server | ----------->|OT Server | -------> peers    |
-  +--------+        |  +-----+----+             +----------+                   |
-   (optimistic      |        | concurrent ops                                  |
-    local apply)    +--------+-------------------------------------------------+
-                             | append (before broadcast, before client ACK)
-                    +--------v-------------------------------------------------+
-                    |                   RELIABLE PATH                           |
-                    |              +-----------------+                          |
-                    |              | Operations Log  |  <- every op stored     |
-                    |              |   (Cassandra)   |     before ACK sent     |
-                    |              +-----------------+                          |
-                    +----------------------------------------------------------+
+```mermaid
+graph TD
+    subgraph "Fast Path"
+        UserA["User A - optimistic local apply"] -->|op| OTServer1["OT Server"]
+        OTServer1 -->|transform| OTServer2["OT Server"]
+        OTServer2 -->|broadcast| Peers["peers"]
+    end
+    OTServer1 -->|append, before broadcast, before client ACK| OpsLog
+    subgraph "Reliable Path"
+        OpsLog[("Operations Log (Cassandra) - every op stored before ACK sent")]
+    end
 ```
 
 ### Core Design Principles
@@ -561,17 +556,19 @@ This design treats a document not as a block of text to be kept in sync, but as 
 
 ### Fast Path vs Reliable Path
 
-```
-FAST PATH (optimized for latency):
-  User types -> apply locally (0ms) -> WebSocket to OT Server (~20ms)
-  -> transform against concurrent ops -> broadcast to peers (~50ms)
-  -> peer applies -> end-to-end < 100ms
-
-RELIABLE PATH (optimized for durability):
-  OT Server receives op -> append to Cassandra ops log BEFORE broadcast
-  -> if server crashes after write, op is in log
-  -> on reconnect: client sends last_known_version -> server replays missed ops
-  -> document converges — zero data loss
+```mermaid
+graph TD
+    subgraph "Fast Path (optimized for latency)"
+        Type["User types"] -->|apply locally, 0ms| WS["WebSocket to OT Server (~20ms)"]
+        WS --> Transform["transform against concurrent ops"]
+        Transform -->|broadcast, ~50ms| PeerApply["peer applies - end-to-end under 100ms"]
+    end
+    subgraph "Reliable Path (optimized for durability)"
+        Receive["OT Server receives op"] -->|append BEFORE broadcast| CassandraLog["Cassandra ops log"]
+        CassandraLog -->|if server crashes after write, op is in log| Reconnect["On reconnect: client sends last_known_version"]
+        Reconnect --> Replay["Server replays missed ops"]
+        Replay --> Converge["Document converges - zero data loss"]
+    end
 ```
 
 ### Key Insights Checklist

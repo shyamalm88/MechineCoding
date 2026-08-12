@@ -48,23 +48,23 @@
 
 ## 2. High-Level Architecture
 
-```
-+------------------------------------------------------------------+
-|                     Video Conference App                          |
-+------------------------------------------------------------------+
-|  +------------------+  +-------------------+  +----------------+  |
-|  |   Video Grid     |  |   Controls Bar    |  |  Side Panels   |  |
-|  |   - Gallery      |  |   - Mute/Video    |  |  - Chat        |  |
-|  |   - Speaker      |  |   - Share Screen  |  |  - Participants|  |
-|  |   - Screen Share |  |   - Reactions     |  |  - Settings    |  |
-|  +------------------+  +-------------------+  +----------------+  |
-+------------------------------------------------------------------+
-|                     WebRTC Layer                                  |
-|  - PeerConnection   - MediaStream   - DataChannel                |
-+------------------------------------------------------------------+
-|                     Signaling (WebSocket)                         |
-|  - Join/Leave   - Offer/Answer   - ICE Candidates                |
-+------------------------------------------------------------------+
+```mermaid
+graph TD
+    subgraph "Video Conference App"
+        VideoGrid["Video Grid - Gallery, Speaker, Screen Share"]
+        ControlsBar["Controls Bar - Mute/Video, Share Screen, Reactions"]
+        SidePanels["Side Panels - Chat, Participants, Settings"]
+    end
+    VideoGrid --> WebRTC
+    ControlsBar --> WebRTC
+    SidePanels --> WebRTC
+    subgraph "WebRTC Layer"
+        WebRTC["PeerConnection, MediaStream, DataChannel"]
+    end
+    WebRTC --> Signaling
+    subgraph "Signaling (WebSocket)"
+        Signaling["Join/Leave, Offer/Answer, ICE Candidates"]
+    end
 ```
 
 ---

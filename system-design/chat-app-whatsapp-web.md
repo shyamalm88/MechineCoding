@@ -143,21 +143,18 @@ Remember Meera's message to Raj from the story above — here's what actually ha
 
 Chat systems run **two independent flows concurrently**: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to get Meera's message onto Raj's screen as quickly as possible. The reliable path (a Cassandra write) makes the message durable the instant it lands, regardless of whether the fast path succeeds, fails, or takes a detour through a push notification because Raj is on the subway. Production chat is the careful orchestration of both paths — never conflating them.
 
-```
-                        +-----------------------------------------------------+
-                        |                    FAST PATH                         |
-   +--------+  WS frame |  +------------+  Redis  +------+  Kafka  +--------+ |  WS push  +--------+
-   | User A | --------->|  | Chat Srvr1 | ------> |Redis | ------> | Kafka  | | --------->| User B |
-   +--------+           |  +-----+------+  lookup +------+         +----+---+ |           +--------+
-                        +--------|--------------------------------------------+
-                                 | concurrent write
-                        +--------v--------------------------------------------+
-                        |                  RELIABLE PATH                       |
-                        |              +-----------------+                     |
-                        |              |    Cassandra    |  <- message is safe |
-                        |              | (durable store) |    the moment this  |
-                        |              +-----------------+    write confirms   |
-                        +-----------------------------------------------------+
+```mermaid
+graph TD
+    subgraph "Fast Path"
+        UserA["User A"] -->|WS frame| ChatSrvr1["Chat Srvr1"]
+        ChatSrvr1 -->|Redis lookup| Redis[("Redis")]
+        Redis -->|Kafka| Kafka[["Kafka"]]
+        Kafka -->|WS push| UserB["User B"]
+    end
+    ChatSrvr1 -->|concurrent write| Cassandra
+    subgraph "Reliable Path"
+        Cassandra[("Cassandra - durable store - message is safe the moment this write confirms")]
+    end
 ```
 
 > [!IMPORTANT]

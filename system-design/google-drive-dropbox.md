@@ -146,19 +146,17 @@ A cloud storage system isn't really a file store in the way a hard drive is — 
 
 Google Drive is not a filesystem — it's a metadata store with a blob storage backend. A "folder" is not a directory on disk, it's a row in a database with `type = folder`. Moving a file doesn't move any bytes, it just changes a `parent_id` field on that row. The actual bytes live in an object store, addressed not by a path but by a content hash.
 
-```
-                    +-----------------------------------------------------+
-                    |                    FAST PATH                        |
-  +--------+  chunk |  +----------------+   pre-signed URL               |
-  | Client | ------>|  | Upload Service | ---------------------> S3/Blob |
-  |(Chunker|        |  +-------+--------+   client uploads directly      |
-  |+Watcher|        +----------|-----------------------------------------+
-  +--------+                   | metadata write (before ACK)
-                    +----------v-----------------------------------------+
-                    |                  RELIABLE PATH                      |
-                    |  Metadata DB (file record, hash, parent_id, quota)  |
-                    |  Notification Service --> sync other devices        |
-                    +-----------------------------------------------------+
+```mermaid
+graph TD
+    subgraph "Fast Path"
+        Client["Client (Chunker + Watcher)"] -->|chunk| UploadService["Upload Service"]
+        UploadService -->|pre-signed URL, client uploads directly| S3["S3/Blob"]
+    end
+    UploadService -->|metadata write, before ACK| MetadataDB
+    subgraph "Reliable Path"
+        MetadataDB[("Metadata DB - file record, hash, parent_id, quota")]
+        MetadataDB --> NotificationSvc["Notification Service - sync other devices"]
+    end
 ```
 
 ### Core Design Principles

@@ -115,38 +115,28 @@ Remember Maya's upload and Dev's watch from the story above — here's what's ac
 
 YouTube is really two completely different systems sharing a data store. The **Upload Path** is a reliable, async pipeline where correctness matters more than speed — Maya's video can take a few minutes to become watchable, but it must never be silently lost along the way. The **Watch Path** is a fast, read-heavy path where latency matters above everything else — Dev's video has to start in about two seconds, no matter how many other people are streaming at that exact moment. Every design decision in this system maps cleanly onto one of these two paths.
 
-```
-UPLOAD PATH (Write-heavy, async, correctness-first)
-================================================================
-Creator --> Chunked Upload --> Raw S3
-                                  |
-                            Transcoding Queue (Kafka)
-                                  |
-                     +-----------+-----------+
-                     |           |           |
-                   360p        720p       1080p/4K
-                     |           |           |
-                     +-----------+-----------+
-                                  |
-                         Transcoded S3 Buckets
-                                  |
-                         CDN Prefetch + DB Metadata
-                                  |
-                           Video Goes Live
+```mermaid
+graph TD
+    subgraph "Upload Path (Write-heavy, async, correctness-first)"
+        Creator --> ChunkedUpload["Chunked Upload"] --> RawS3["Raw S3"]
+        RawS3 --> TranscodeQueue["Transcoding Queue (Kafka)"]
+        TranscodeQueue --> P360["360p"]
+        TranscodeQueue --> P720["720p"]
+        TranscodeQueue --> P1080["1080p/4K"]
+        P360 --> TranscodedS3["Transcoded S3 Buckets"]
+        P720 --> TranscodedS3
+        P1080 --> TranscodedS3
+        TranscodedS3 --> CDNPrefetch["CDN Prefetch + DB Metadata"]
+        CDNPrefetch --> Live["Video Goes Live"]
+    end
 
-
-WATCH PATH (Read-heavy, latency-first, CDN-dominated)
-================================================================
-Viewer --> API Gateway --> Metadata Service --> Redis Cache
-                                                     |
-                                              Cassandra (miss)
-                                                     |
-                                          CDN Edge (m3u8 manifest)
-                                                     |
-                                        ABR Player picks quality tier
-                                                     |
-                                     CDN serves video segments (ts files)
-                                   (95%+ cache hit -- segments are immutable)
+    subgraph "Watch Path (Read-heavy, latency-first, CDN-dominated)"
+        Viewer --> APIGateway["API Gateway"] --> MetadataSvc["Metadata Service"] --> RedisCache["Redis Cache"]
+        RedisCache -->|miss| Cassandra
+        Cassandra --> CDNEdge["CDN Edge (m3u8 manifest)"]
+        CDNEdge --> ABRPlayer["ABR Player picks quality tier"]
+        ABRPlayer --> CDNSegments["CDN serves video segments (ts files) - 95%+ cache hit, segments are immutable"]
+    end
 ```
 
 ### Core Design Principles
