@@ -91,66 +91,47 @@ document.addEventListener('DOMContentLoaded', function () {
 </ul>
 <hr />
 <h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────────────────┐
-│                           CLIENT TIER                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                     │
-│  │   Web App   │  │  Mobile App │  │   Admin     │                     │
-│  │  (React)    │  │ (iOS/And.)  │  │   Portal    │                     │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                     │
-└─────────┼─────────────────┼─────────────────┼───────────────────────────┘
-          │                 │                 │
-          └─────────────────┼─────────────────┘
-                            │
-          ┌─────────────────▼─────────────────┐
-          │      API Gateway (Kong/NGINX)      │
-          │  - Rate Limiting                   │
-          │  - Load Balancing                  │
-          │  - Authentication                  │
-          └─────────────────┬─────────────────┘
-                            │
-    ┌───────────────────────┼───────────────────────┐
-    │                       │                       │
-┌───▼────────┐  ┌──────────▼────────┐  ┌──────────▼────────┐
-│  Catalog   │  │   Booking Service  │  │ Payment Service   │
-│  Service   │  │   (CRITICAL)       │  │                   │
-│            │  │  - Seat Locking    │  │  - Payment Gateway│
-│  - Movies  │  │  - Reservation     │  │  - Webhook Handler│
-│  - Theaters│  │  - Booking Mgmt    │  │  - Refunds        │
-│  - Shows   │  └──────────┬────────┘  └──────────┬────────┘
-└─────┬──────┘             │                      │
-      │                    │                      │
-      │    ┌───────────────▼──────────┐  ┌────────▼────────┐
-      │    │  Notification Service    │  │  User Service   │
-      │    │  - Email                 │  │  - Auth         │
-      │    │  - SMS                   │  │  - Profile      │
-      │    │  - Push Notifications    │  │  - History      │
-      │    └──────────────────────────┘  └─────────────────┘
-      │
-┌─────┴──────────────────────────────────────────────────────────────┐
-│                      DATA &amp; CACHE LAYER                             │
-│                                                                      │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────────┐ │
-│  │ PostgreSQL │  │   Redis    │  │ Elasticsearch│ │  S3/CDN     │ │
-│  │  (Primary) │  │ Distributed│  │   (Search)   │  │  (Assets)   │ │
-│  │            │  │   Cache +  │  │              │  │             │ │
-│  │  - Users   │  │Seat Locking│  │  - Movies    │  │  - Images   │ │
-│  │  - Bookings│  │            │  │  - Theaters  │  │  - Tickets  │ │
-│  │  - Seats   │  └────────────┘  └──────────────┘  └─────────────┘ │
-│  │  - Payments│                                                     │
-│  └────────────┘                                                     │
-│                                                                      │
-│  ┌────────────┐  ┌────────────┐                                    │
-│  │  Message   │  │   Event    │                                    │
-│  │   Queue    │  │   Store    │                                    │
-│  │  (Kafka)   │  │  (Events)  │                                    │
-│  └────────────┘  └────────────┘                                    │
-└──────────────────────────────────────────────────────────────────────┘
+<div class="mermaid">
+graph TD
+    subgraph &quot;Client Tier&quot;
+        WebApp[&quot;Web App (React)&quot;]
+        MobileApp[&quot;Mobile App (iOS/And.)&quot;]
+        AdminPortal[&quot;Admin Portal&quot;]
+    end
 
-┌──────────────────────────────────────────────────────────────────────┐
-│                    MONITORING &amp; OBSERVABILITY                         │
-│  - Prometheus/Grafana  - ELK Stack  - Distributed Tracing (Jaeger) │
-└──────────────────────────────────────────────────────────────────────┘
-</code></pre>
+    WebApp --&gt; Gateway
+    MobileApp --&gt; Gateway
+    AdminPortal --&gt; Gateway
+
+    Gateway[&quot;API Gateway (Kong/NGINX) - Rate Limiting, Load Balancing, Authentication&quot;]
+
+    Gateway --&gt; Catalog
+    Gateway --&gt; Booking
+    Gateway --&gt; Payment
+
+    Catalog[&quot;Catalog Service - Movies, Theaters, Shows&quot;]
+    Booking[&quot;Booking Service (CRITICAL) - Seat Locking, Reservation, Booking Mgmt&quot;]
+    Payment[&quot;Payment Service - Payment Gateway, Webhook Handler, Refunds&quot;]
+
+    Booking --&gt; Notification[&quot;Notification Service - Email, SMS, Push Notifications&quot;]
+    Payment --&gt; UserSvc[&quot;User Service - Auth, Profile, History&quot;]
+    Catalog --&gt; DataLayer
+
+    subgraph DataLayer [&quot;Data &amp; Cache Layer&quot;]
+        Postgres[&quot;PostgreSQL (Primary) - Users, Bookings, Seats, Payments&quot;]
+        Redis[&quot;Redis - Distributed Cache + Seat Locking&quot;]
+        Elastic[&quot;Elasticsearch (Search) - Movies, Theaters&quot;]
+        S3[&quot;S3/CDN (Assets) - Images, Tickets&quot;]
+        Kafka[&quot;Message Queue (Kafka)&quot;]
+        EventStore[&quot;Event Store (Events)&quot;]
+    end
+
+    subgraph Monitoring [&quot;Monitoring &amp; Observability&quot;]
+        Prom[&quot;Prometheus/Grafana&quot;]
+        ELK[&quot;ELK Stack&quot;]
+        Jaeger[&quot;Distributed Tracing (Jaeger)&quot;]
+    end
+</div>
 <h2 id="system-invariants">System Invariants</h2>
 <p>These are the non-negotiable rules the system must always satisfy.<br />
 Every service, cache, and database operation must preserve these invariants.</p>
@@ -261,55 +242,37 @@ Every service, cache, and database operation must preserve these invariants.</p>
 <h2 id="3-component-architecture">3. Component Architecture</h2>
 <h3 id="31-frontend-components">3.1 Frontend Components</h3>
 <h4 id="seat-selection-component">Seat Selection Component</h4>
-<pre><code>┌─────────────────────────────────────────────────────┐
-│          Seat Selection Interface                   │
-│                                                      │
-│  ┌────────────────────────────────────────────┐    │
-│  │            SCREEN THIS WAY                  │    │
-│  └────────────────────────────────────────────┘    │
-│                                                      │
-│  Legend: 🟩 Available  🟨 Selected  🟥 Booked      │
-│          ⏰ Locked (by others)                      │
-│                                                      │
-│  Row A:  [🟩][🟩][🟥][🟥][🟩][🟩][🟩][🟩]        │
-│  Row B:  [🟩][🟨][🟨][🟩][⏰][⏰][🟩][🟩]        │
-│  Row C:  [🟥][🟥][🟥][🟥][🟩][🟩][🟩][🟩]        │
-│                                                      │
-│  Selected: B2, B3 (2 seats)                         │
-│  Price: $30.00                                      │
-│  Time Remaining: 09:45                              │
-│                                                      │
-│  [Cancel]              [Proceed to Payment]         │
-└─────────────────────────────────────────────────────┘
-
-State Management:
+<div class="mermaid">
+graph TD
+    subgraph &quot;Seat Selection Interface&quot;
+        Screen[&quot;SCREEN THIS WAY&quot;]
+        Legend[&quot;Legend: Available (green) | Selected (yellow) | Booked (red) | Locked by others (clock)&quot;]
+        RowA[&quot;Row A: Available, Available, Booked, Booked, Available, Available, Available, Available&quot;]
+        RowB[&quot;Row B: Available, Selected, Selected, Available, Locked, Locked, Available, Available&quot;]
+        RowC[&quot;Row C: Booked, Booked, Booked, Booked, Available, Available, Available, Available&quot;]
+        Summary[&quot;Selected: B2, B3 (2 seats) - Price: $30.00 - Time Remaining: 09:45&quot;]
+        Actions[&quot;Cancel | Proceed to Payment&quot;]
+        Screen --&gt; Legend --&gt; RowA --&gt; RowB --&gt; RowC --&gt; Summary --&gt; Actions
+    end
+</div>
+<pre><code>State Management:
 - Local State: selectedSeats[], seatMap{}
 - WebSocket: Real-time seat availability updates (optional)
 - Polling: Refresh seat status every 5-10s
 - Optimistic Updates: Immediate UI feedback
 </code></pre>
 <h4 id="payment-component">Payment Component</h4>
-<pre><code>┌─────────────────────────────────────────────────────┐
-│          Payment Gateway                             │
-│                                                      │
-│  Booking Summary:                                   │
-│  Movie: Avengers Endgame                            │
-│  Theater: PVR Cinemas, Mall Road                    │
-│  Seats: B2, B3                                      │
-│  Amount: $30.00                                     │
-│                                                      │
-│  Payment Method:                                    │
-│  ( ) Credit/Debit Card                              │
-│  ( ) UPI                                            │
-│  ( ) Net Banking                                    │
-│  (•) Wallet                                         │
-│                                                      │
-│  Time Remaining: 04:45                              │
-│                                                      │
-│  [Pay Now]                                          │
-└─────────────────────────────────────────────────────┘
-
-Flow:
+<div class="mermaid">
+graph TD
+    subgraph &quot;Payment Gateway&quot;
+        Summary[&quot;Booking Summary: Movie: Avengers Endgame | Theater: PVR Cinemas, Mall Road | Seats: B2, B3 | Amount: $30.00&quot;]
+        Method[&quot;Payment Method: Credit/Debit Card, UPI, Net Banking, Wallet (selected)&quot;]
+        Timer[&quot;Time Remaining: 04:45&quot;]
+        PayNow[&quot;Pay Now&quot;]
+        Summary --&gt; Method --&gt; Timer --&gt; PayNow
+    end
+</div>
+<pre><code>Flow:
 1. Seats locked → Payment UI shown
 2. Payment initiated → Backend validation
 3. Payment processing → External gateway
@@ -318,182 +281,17 @@ Flow:
 </code></pre>
 <h3 id="32-backend-services-architecture">3.2 Backend Services Architecture</h3>
 <h4 id="booking-service-core-component">Booking Service (Core Component)</h4>
-<pre><code>┌───────────────────────────────────────────────────────┐
-│              BOOKING SERVICE                          │
-│                                                        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │        Seat Lock Manager (CRITICAL)           │   │
-│  │                                                │   │
-│  │  acquireLock(showId, seatIds[], userId)      │   │
-│  │  - Check availability                         │   │
-│  │  - Set Redis lock (10 min TTL)               │   │
-│  │  - Store in seat_locks table                 │   │
-│  │                                                │   │
-│  │  releaseLock(lockId)                          │   │
-│  │  - Remove Redis lock                          │   │
-│  │  - Update seat_locks status                   │   │
-│  │                                                │   │
-│  │  extendLock(lockId)                           │   │
-│  │  - Refresh Redis TTL                          │   │
-│  └──────────────────────────────────────────────┘   │
-│                                                        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │        Booking Manager                        │   │
-│  │                                                │   │
-│  │  createBooking(lockId, paymentDetails)       │   │
-│  │  - Validate lock ownership                    │   │
-│  │  - Create booking record                      │   │
-│  │  - Update seat status (BOOKED)               │   │
-│  │  - Trigger payment                            │   │
-│  │                                                │   │
-│  │  confirmBooking(bookingId, paymentId)        │   │
-│  │  - Mark booking CONFIRMED                     │   │
-│  │  - Release lock                               │   │
-│  │  - Generate e-ticket                          │   │
-│  │  - Send notification                          │   │
-│  └──────────────────────────────────────────────┘   │
-│                                                        │
-│  ┌──────────────────────────────────────────────┐   │
-│  │        Cancellation Manager                   │   │
-│  │                                                │   │
-│  │  cancelBooking(bookingId)                     │   │
-│  │  - Validate cancellation policy               │   │
-│  │  - Update seat status (AVAILABLE)            │   │
-│  │  - Initiate refund                            │   │
-│  │  - Update booking status                      │   │
-│  └──────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/6e2e755d3f631d12.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="4-data-flow">4. Data Flow</h2>
 <h3 id="41-browse-search-flow">4.1 Browse &amp; Search Flow</h3>
-<pre><code>User → API Gateway → Catalog Service → Cache/DB → Response
-                           │
-                           ├─→ Check Redis Cache (theaters, movies)
-                           │      └─→ Cache Hit → Return
-                           │
-                           └─→ Cache Miss → PostgreSQL
-                                  └─→ Update Cache → Return
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/19f2a0a9e37e2eee.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="42-seat-selection-locking-flow-critical">4.2 Seat Selection &amp; Locking Flow (CRITICAL)</h3>
-<pre><code>┌──────┐                                                    ┌─────────┐
-│ User │                                                    │ Backend │
-└───┬──┘                                                    └────┬────┘
-    │                                                            │
-    │ 1. GET /shows/{showId}/seats                              │
-    │────────────────────────────────────────────────────────&gt;  │
-    │                                                            │
-    │ 2. Return seat map (Available/Booked/Locked)             │
-    │ &lt;────────────────────────────────────────────────────────│
-    │   (Query Redis + DB for current status)                  │
-    │                                                            │
-    │ 3. User clicks seats B2, B3                               │
-    │                                                            │
-    │ 4. POST /bookings/lock                                    │
-    │    { showId, seatIds: [B2, B3], userId }                 │
-    │────────────────────────────────────────────────────────&gt;  │
-    │                                                            │
-    │              5. DISTRIBUTED LOCK ACQUISITION              │
-    │                                                            │
-    │              ┌─────────────────────────────┐             │
-    │              │ Redis Distributed Lock      │             │
-    │              │                              │             │
-    │              │ SETNX show:123:seat:B2      │             │
-    │              │ userId:456 EX 600           │             │
-    │              │                              │             │
-    │              │ If success → Lock acquired  │             │
-    │              │ If fail → Seat locked       │             │
-    │              └─────────────────────────────┘             │
-    │                                                            │
-    │              6. Update seat_locks table                   │
-    │              INSERT INTO seat_locks                       │
-    │              (show_id, seat_id, user_id,                 │
-    │               locked_at, expires_at)                      │
-    │                                                            │
-    │ 7. Response: { lockId, expiresAt, seats[] }              │
-    │ &lt;────────────────────────────────────────────────────────│
-    │                                                            │
-    │ 8. Timer starts: 10:00 countdown                          │
-    │                                                            │
-    │ 9. Periodic lock extension (every 2 mins)                │
-    │    PUT /bookings/lock/{lockId}/extend                     │
-    │────────────────────────────────────────────────────────&gt;  │
-    │ &lt;────────────────────────────────────────────────────────│
-    │                                                            │
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/10a17c7e09fc657b.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="43-booking-payment-flow">4.3 Booking &amp; Payment Flow</h3>
-<pre><code>┌──────┐      ┌─────────┐      ┌─────────┐      ┌──────────┐
-│ User │      │ Booking │      │ Payment │      │ Gateway  │
-└───┬──┘      └────┬────┘      └────┬────┘      └────┬─────┘
-    │              │                 │                │
-    │ 1. Pay Now   │                 │                │
-    │─────────────&gt;│                 │                │
-    │              │                 │                │
-    │              │ 2. Validate Lock│                │
-    │              │    ownership    │                │
-    │              │                 │                │
-    │              │ 3. Create Booking (PENDING)      │
-    │              │    └─&gt; DB Transaction           │
-    │              │                 │                │
-    │              │ 4. Initiate Payment              │
-    │              │────────────────&gt;│                │
-    │              │                 │                │
-    │              │                 │ 5. Process     │
-    │              │                 │───────────────&gt;│
-    │              │                 │                │
-    │              │                 │ 6. Response    │
-    │              │                 │&lt;───────────────│
-    │              │                 │                │
-    │              │ 7. Payment Success               │
-    │              │&lt;────────────────│                │
-    │              │                 │                │
-    │              │ 8. Confirm Booking               │
-    │              │    BEGIN TRANSACTION             │
-    │              │    - Update booking: CONFIRMED   │
-    │              │    - Update seats: BOOKED        │
-    │              │    - Release Redis lock          │
-    │              │    - Delete seat_locks record    │
-    │              │    COMMIT                        │
-    │              │                 │                │
-    │              │ 9. Generate E-ticket             │
-    │              │    Publish event → Notification  │
-    │              │                 │                │
-    │ 10. Confirmation                                │
-    │&lt;─────────────│                 │                │
-    │              │                 │                │
-    │              │                 │                │
-    ▼              ▼                 ▼                ▼
-
-FAILURE SCENARIO:
-    │              │                 │                │
-    │              │ Payment Failed  │                │
-    │              │&lt;────────────────│                │
-    │              │                 │                │
-    │              │ Update booking: FAILED           │
-    │              │ Release seat locks               │
-    │              │ Seats → AVAILABLE               │
-    │              │                 │                │
-    │ Retry/Cancel │                 │                │
-    │&lt;─────────────│                 │                │
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/3561f6aef6ca4704.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="44-lock-expiration-cleanup">4.4 Lock Expiration &amp; Cleanup</h3>
-<pre><code>┌─────────────────────────────────────────────────────────┐
-│          Background Job: Lock Cleanup                   │
-│                                                          │
-│  Runs every 1 minute                                    │
-│                                                          │
-│  1. Query seat_locks WHERE expires_at &lt; NOW()          │
-│                                                          │
-│  2. For each expired lock:                              │
-│     - Remove Redis lock                                 │
-│     - Update seat status → AVAILABLE                    │
-│     - Mark seat_lock → EXPIRED                          │
-│     - Publish event (seat available)                    │
-│                                                          │
-│  3. Clean up orphaned locks (Redis exists, DB missing) │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/fbea1009a6ad7fee.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="5-api-design-communication-protocols">5. API Design &amp; Communication Protocols</h2>
 <h3 id="51-core-apis">5.1 Core APIs</h3>
@@ -977,14 +775,8 @@ Invalidation Events:
 4. Movie updated → Invalidate movie:{id}
 
 Invalidation Flow:
-┌──────────┐      ┌──────────┐      ┌─────────┐
-│  Service │─────&gt;│ Database │─────&gt;│  Cache  │
-│          │      │  UPDATE  │      │ INVALID │
-└──────────┘      └──────────┘      └─────────┘
-     │                                     │
-     └─────&gt; Publish Event ────────────────┘
-             (Kafka: cache.invalidate)
 </code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8ce7b8b279a14889.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="73-cache-warming">7.3 Cache Warming</h3>
 <pre><code>Pre-populate cache before peak hours:
 
@@ -1209,14 +1001,8 @@ async function acquireMultipleSeats(showId, seatIds, userId) {
 </code></pre>
 <h3 id="93-scaling-strategies">9.3 Scaling Strategies</h3>
 <h4 id="horizontal-scaling">Horizontal Scaling</h4>
-<pre><code>Load Balancer
-    │
-    ├─── Booking Service (Instance 1)
-    ├─── Booking Service (Instance 2)
-    ├─── Booking Service (Instance 3)
-    └─── Booking Service (Instance 4)
-
-All instances are stateless
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/947149a4a3e0dc89.svg" alt="Architecture diagram" loading="lazy"></figure>
+<pre><code>All instances are stateless
 Shared Redis for locks
 Shared PostgreSQL (with read replicas)
 </code></pre>
@@ -1632,21 +1418,8 @@ async function acquireLock(showId, seatId, userId) {
    - Reduce DB queries by 95%
 
 Architecture:
-┌──────────────┐
-│ Queue System │ → Token → Seat Selection (500/min)
-│ (100K users) │                ↓
-└──────────────┘        ┌──────────────┐
-                        │ Load Balancer│
-                        └──────┬───────┘
-                    ┌──────────┼──────────┐
-                    ▼          ▼          ▼
-                [Server1]  [Server2]  [Server3]
-                    │          │          │
-                    └──────────┼──────────┘
-                               ▼
-                        [Redis Cluster]
-                        [DB + Replicas]
 </code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/088083e4c0c08525.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Q4: What if payment succeeds but the booking confirmation fails due to database error?</strong></p>
 <pre><code>Answer: This is a critical scenario requiring careful handling.
 
@@ -1804,21 +1577,8 @@ async function handlePaymentSuccess(paymentId, bookingId) {
    - Materialized views for reports
 
 Architecture:
-┌─────────────────────────────────────────────────┐
-│                Global CDN                        │
-│          (Static content, images)               │
-└────────────────┬────────────────────────────────┘
-                 │
-      ┌──────────┴──────────┐
-      │                     │
-┌─────▼──────┐       ┌──────▼─────┐
-│  US Region │       │ APAC Region│
-│            │       │            │
-│ App: 50    │       │ App: 50    │
-│ Redis: 3   │       │ Redis: 3   │
-│ DB: Primary│       │ DB: Replica│
-└────────────┘       └────────────┘
 </code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/e3ffc1681e3c091e.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="data-consistency">Data Consistency</h3>
 <p><strong>Q7: How do you ensure no double booking ever happens?</strong></p>
 <pre><code>Answer: Multi-layer defense strategy
@@ -2237,24 +1997,14 @@ async function processRefund(refundId) {
 <h2 id="12-accessibility-a11y">12. Accessibility (A11y)</h2>
 <h3 id="121-seat-map-accessibility">12.1 Seat Map Accessibility</h3>
 <p><strong>Challenge</strong>: Seat maps are inherently visual and grid-based, making them difficult for screen reader users.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│            Accessible Seat Selection Interface               │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Navigation Modes:                                           │
-│  1. Grid Navigation (Arrow keys)                            │
-│  2. Row Navigation (Jump between rows)                      │
-│  3. Search by Seat (Type &quot;A5&quot; to jump)                      │
-│  4. Filter by Type (Show only available/premium)            │
-│                                                              │
-│  Screen Reader Announcements:                               │
-│  &quot;Row A, Seat 1, Available, Regular, $200&quot;                  │
-│  &quot;Row A, Seat 2, Selected, Premium, $300&quot;                   │
-│  &quot;Row A, Seat 3, Booked, Not available&quot;                     │
-│  &quot;Row A, Seat 4, Locked by another user&quot;                    │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Accessible Seat Selection Interface&quot;
+        Nav[&quot;Navigation Modes: 1. Grid Navigation (Arrow keys) 2. Row Navigation (Jump between rows) 3. Search by Seat (Type 'A5' to jump) 4. Filter by Type (Show only available/premium)&quot;]
+        SR[&quot;Screen Reader Announcements: 'Row A, Seat 1, Available, Regular, $200' | 'Row A, Seat 2, Selected, Premium, $300' | 'Row A, Seat 3, Booked, Not available' | 'Row A, Seat 4, Locked by another user'&quot;]
+        Nav --&gt; SR
+    end
+</div>
 <p><strong>Accessible Seat Grid Implementation:</strong></p>
 <pre><code class="language-jsx">function AccessibleSeatMap({ seats, rows, cols, onSelect }) {
   const [focusedSeat, setFocusedSeat] = useState(null);
@@ -2635,43 +2385,15 @@ Mobile Accessibility:
 <hr />
 <h2 id="13-mobile-touch-considerations">13. Mobile &amp; Touch Considerations</h2>
 <h3 id="131-responsive-seat-map">13.1 Responsive Seat Map</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│              Mobile Seat Map Strategies                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Strategy 1: Horizontal Scroll                               │
-│  ┌─────────────────────────────────────────┐                │
-│  │ ←  [A1][A2][A3][A4][A5][A6][A7][A8]  → │                │
-│  │     [B1][B2][B3][B4][B5][B6][B7][B8]    │                │
-│  └─────────────────────────────────────────┘                │
-│  Pros: Natural scrolling, no zoom needed                    │
-│  Cons: Hard to see full layout                              │
-│                                                              │
-│  Strategy 2: Pinch-to-Zoom                                  │
-│  ┌─────────────────────────────────────────┐                │
-│  │        [Minimap in corner]              │                │
-│  │    ┌──────────────────────┐            │                │
-│  │    │ [A1][A2][A3][A4]     │            │                │
-│  │    │ [B1][B2][B3][B4]  👆  │            │                │
-│  │    └──────────────────────┘            │                │
-│  └─────────────────────────────────────────┘                │
-│  Pros: See detail and overview                              │
-│  Cons: More complex interaction                              │
-│                                                              │
-│  Strategy 3: Row-by-Row Selection (Recommended for mobile)  │
-│  ┌─────────────────────────────────────────┐                │
-│  │  Select Row:  [A] [B] [C] [D] [E] ...   │                │
-│  │                                          │                │
-│  │  Row B Seats:                           │                │
-│  │  [1✓] [2✓] [3] [4] [5×] [6] [7] [8]   │                │
-│  │                                          │                │
-│  │  Selected: B1, B2  |  $400             │                │
-│  └─────────────────────────────────────────┘                │
-│  Pros: Large touch targets, clear flow                      │
-│  Cons: Less visual context                                  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Mobile Seat Map Strategies&quot;
+        S1[&quot;Strategy 1: Horizontal Scroll - rows scroll left/right with arrow indicators (A1-A8, B1-B8). Pros: Natural scrolling, no zoom needed. Cons: Hard to see full layout&quot;]
+        S2[&quot;Strategy 2: Pinch-to-Zoom - minimap in corner shows overview while zoomed (A1-A4, B1-B4). Pros: See detail and overview. Cons: More complex interaction&quot;]
+        S3[&quot;Strategy 3: Row-by-Row Selection (Recommended for mobile) - select a row (A-E), then pick seats within that row, e.g. Selected: B1, B2 | $400. Pros: Large touch targets, clear flow. Cons: Less visual context&quot;]
+        S1 --&gt; S2 --&gt; S3
+    end
+</div>
 <h3 id="132-pinch-to-zoom-implementation">13.2 Pinch-to-Zoom Implementation</h3>
 <pre><code class="language-jsx">function ZoomableSeatMap({ children }) {
   const [scale, setScale] = useState(1);
@@ -2992,42 +2714,21 @@ async function saveTicketOffline(booking) {
 <hr />
 <h2 id="14-security-deep-dive">14. Security Deep Dive</h2>
 <h3 id="141-pci-dss-compliance">14.1 PCI DSS Compliance</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│              PCI DSS Compliance Architecture                 │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Frontend (Out of Scope):                                   │
-│  ┌─────────────────────────────────────────┐               │
-│  │  Payment Form with iframe               │               │
-│  │  (Hosted by Payment Gateway)            │               │
-│  │                                          │               │
-│  │  ┌───────────────────────────────┐     │               │
-│  │  │  Card Number: ****           │     │               │
-│  │  │  Expiry: **/**               │     │               │
-│  │  │  CVV: ***                    │     │               │
-│  │  └───────────────────────────────┘     │               │
-│  │       ↓ Token only (no card data)       │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-│  Backend (PCI SAQ-A):                                       │
-│  ┌─────────────────────────────────────────┐               │
-│  │  - Never touches card data              │               │
-│  │  - Only receives payment tokens         │               │
-│  │  - Tokens stored encrypted (AES-256)    │               │
-│  │  - Audit logs for all payment actions   │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-│  Payment Gateway (PCI Level 1):                             │
-│  ┌─────────────────────────────────────────┐               │
-│  │  Razorpay / Stripe / PayU               │               │
-│  │  - Handles actual card processing       │               │
-│  │  - Stores encrypted card data           │               │
-│  │  - Returns token/reference              │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-Key Requirements:
+<div class="mermaid">
+graph TD
+    subgraph &quot;Frontend (Out of Scope)&quot;
+        PF[&quot;Payment Form with iframe (Hosted by Payment Gateway) - Card Number: ****, Expiry: **/**, CVV: ***&quot;]
+    end
+    subgraph &quot;Backend (PCI SAQ-A)&quot;
+        BE[&quot;Never touches card data - Only receives payment tokens - Tokens stored encrypted (AES-256) - Audit logs for all payment actions&quot;]
+    end
+    subgraph &quot;Payment Gateway (PCI Level 1)&quot;
+        PG[&quot;Razorpay / Stripe / PayU - Handles actual card processing - Stores encrypted card data - Returns token/reference&quot;]
+    end
+    PF --&gt;|&quot;Token only (no card data)&quot;| BE
+    BE --&gt; PG
+</div>
+<pre><code>Key Requirements:
 □ No card data in our systems (tokenization)
 □ HTTPS everywhere (TLS 1.2+)
 □ Payment page served from gateway iframe
@@ -4194,33 +3895,19 @@ function useOfflineTickets() {
 <hr />
 <h2 id="17-real-time-implementation">17. Real-time Implementation</h2>
 <h3 id="171-websocket-architecture">17.1 WebSocket Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│              WebSocket Architecture                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Client                   Server                   Redis     │
-│    │                        │                        │       │
-│    │ Connect WS             │                        │       │
-│    │───────────────────────&gt;│                        │       │
-│    │                        │                        │       │
-│    │ Subscribe: show:123    │                        │       │
-│    │───────────────────────&gt;│  SUBSCRIBE show:123   │       │
-│    │                        │───────────────────────&gt;│       │
-│    │                        │                        │       │
-│    │                        │  PUBLISH show:123     │       │
-│    │                        │&lt;───────────────────────│       │
-│    │ Message: seat_locked   │                        │       │
-│    │&lt;───────────────────────│                        │       │
-│    │                        │                        │       │
-│    │ Heartbeat (30s)        │                        │       │
-│    │&lt;──────────────────────&gt;│                        │       │
-│    │                        │                        │       │
-│    │ Disconnect             │  UNSUBSCRIBE         │       │
-│    │───────────────────────&gt;│───────────────────────&gt;│       │
-│    │                        │                        │       │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;WebSocket Architecture&quot;
+        Client --&gt;|&quot;Connect WS&quot;| Server
+        Client --&gt;|&quot;Subscribe: show:123&quot;| Server
+        Server --&gt;|&quot;SUBSCRIBE show:123&quot;| Redis
+        Redis --&gt;|&quot;PUBLISH show:123&quot;| Server
+        Server --&gt;|&quot;Message: seat_locked&quot;| Client
+        Client ---|&quot;Heartbeat (30s)&quot;| Server
+        Client --&gt;|&quot;Disconnect&quot;| Server
+        Server --&gt;|&quot;UNSUBSCRIBE&quot;| Redis
+    end
+</div>
 <h3 id="172-websocket-server-implementation">17.2 WebSocket Server Implementation</h3>
 <pre><code class="language-javascript">// websocket-server.js
 const WebSocket = require(&quot;ws&quot;);
@@ -4551,44 +4238,7 @@ function useSeatUpdatesWithFallback(showId) {
 <hr />
 <h2 id="18-virtual-waiting-room">18. Virtual Waiting Room</h2>
 <h3 id="181-queue-system-architecture">18.1 Queue System Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│              Virtual Waiting Room Architecture               │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  High Traffic Event (100K users, 200 seats)                 │
-│                                                              │
-│  ┌─────────────────────────────────────────┐               │
-│  │           Queue Landing Page             │               │
-│  │                                          │               │
-│  │  &quot;You are in the queue&quot;                 │               │
-│  │  Position: 45,234                        │               │
-│  │  Estimated wait: ~15 minutes            │               │
-│  │                                          │               │
-│  │  [=========&gt;          ] 45%             │               │
-│  │                                          │               │
-│  │  Don't close this page!                 │               │
-│  └─────────────────────────────────────────┘               │
-│                     │                                        │
-│                     ▼                                        │
-│  ┌─────────────────────────────────────────┐               │
-│  │         Queue Management Service         │               │
-│  │                                          │               │
-│  │  - Redis Sorted Set (position)          │               │
-│  │  - Token generation                      │               │
-│  │  - Rate: 500 users/minute               │               │
-│  │  - Fair queuing (FIFO)                  │               │
-│  └─────────────────────────────────────────┘               │
-│                     │                                        │
-│                     ▼                                        │
-│  ┌─────────────────────────────────────────┐               │
-│  │          Seat Selection (Allowed)        │               │
-│  │                                          │               │
-│  │  Token validated → Access granted       │               │
-│  │  5 minute session limit                 │               │
-│  └─────────────────────────────────────────┘               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/badd4357f18a5c5b.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="182-queue-implementation">18.2 Queue Implementation</h3>
 <pre><code class="language-javascript">// queue-service.js
 class VirtualQueue {
@@ -4934,68 +4584,45 @@ class BookingAnalytics {
 }
 </code></pre>
 <h3 id="192-metrics-dashboard">19.2 Metrics Dashboard</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                   Booking Analytics Dashboard                        │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Real-time Metrics (Last 1 Hour)                                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │
-│  │ Bookings    │ │ Revenue     │ │ Conversion  │ │ Avg. Time   │   │
-│  │    1,234    │ │  $45,678    │ │   12.5%     │ │   4m 32s    │   │
-│  │  ↑ 15%      │ │  ↑ 22%      │ │  ↓ 2.1%     │ │  ↓ 0:45     │   │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   │
-│                                                                      │
-│  Booking Funnel (Today)                                             │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ Show Views      ████████████████████████████████ 50,000     │   │
-│  │ Seat Selection  ████████████████████ 25,000 (50%)           │   │
-│  │ Lock Acquired   ████████████ 12,500 (50%)                   │   │
-│  │ Payment Started █████████ 10,000 (80%)                       │   │
-│  │ Confirmed       ███████ 6,250 (62.5%)                        │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Abandonment Analysis                                               │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                                                              │   │
-│  │  Seat Selection: 50%  ████████████████████                  │   │
-│  │    - No seats available: 30%                                │   │
-│  │    - Left page: 15%                                         │   │
-│  │    - Error: 5%                                              │   │
-│  │                                                              │   │
-│  │  Lock Stage: 20%  ████████                                   │   │
-│  │    - Lock expired: 60%                                      │   │
-│  │    - User cancelled: 35%                                    │   │
-│  │    - Error: 5%                                              │   │
-│  │                                                              │   │
-│  │  Payment: 37.5%  ███████████████                             │   │
-│  │    - Payment failed: 45%                                    │   │
-│  │    - User cancelled: 40%                                    │   │
-│  │    - Timeout: 15%                                           │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Seat Popularity Heatmap                                            │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │     1   2   3   4   5   6   7   8   9  10                   │   │
-│  │ A  [░][░][▒][▓][█][█][▓][▒][░][░]  SCREEN                   │   │
-│  │ B  [░][▒][▓][█][█][█][█][▓][▒][░]                           │   │
-│  │ C  [░][▒][▓][█][█][█][█][▓][▒][░]                           │   │
-│  │ D  [░][░][▒][▓][▓][▓][▓][▒][░][░]                           │   │
-│  │ E  [░][░][░][▒][▒][▒][▒][░][░][░]                           │   │
-│  │                                                              │   │
-│  │  ░ Low  ▒ Medium  ▓ High  █ Very High                       │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Top Performing Shows (Today)                                       │
-│  ┌────────────────────────────────────┬───────┬─────────┬───────┐ │
-│  │ Movie                               │ Seats │ Revenue │ Conv% │ │
-│  ├────────────────────────────────────┼───────┼─────────┼───────┤ │
-│  │ Avengers: Secret Wars              │ 5,234 │ $78,510 │ 18.5% │ │
-│  │ Avatar 4                           │ 3,456 │ $51,840 │ 15.2% │ │
-│  │ The Matrix 5                       │ 2,345 │ $35,175 │ 12.8% │ │
-│  └────────────────────────────────────┴───────┴─────────┴───────┘ │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Booking Analytics Dashboard&quot;
+        subgraph &quot;Real-time Metrics (Last 1 Hour)&quot;
+            M1[&quot;Bookings: 1,234 (up 15%)&quot;]
+            M2[&quot;Revenue: $45,678 (up 22%)&quot;]
+            M3[&quot;Conversion: 12.5% (down 2.1%)&quot;]
+            M4[&quot;Avg. Time: 4m 32s (down 0:45)&quot;]
+        end
+
+        subgraph &quot;Booking Funnel (Today)&quot;
+            F1[&quot;Show Views: 50,000&quot;] --&gt; F2[&quot;Seat Selection: 25,000 (50%)&quot;]
+            F2 --&gt; F3[&quot;Lock Acquired: 12,500 (50%)&quot;]
+            F3 --&gt; F4[&quot;Payment Started: 10,000 (80%)&quot;]
+            F4 --&gt; F5[&quot;Confirmed: 6,250 (62.5%)&quot;]
+        end
+
+        subgraph &quot;Abandonment Analysis&quot;
+            A1[&quot;Seat Selection: 50% - No seats available: 30%, Left page: 15%, Error: 5%&quot;]
+            A2[&quot;Lock Stage: 20% - Lock expired: 60%, User cancelled: 35%, Error: 5%&quot;]
+            A3[&quot;Payment: 37.5% - Payment failed: 45%, User cancelled: 40%, Timeout: 15%&quot;]
+        end
+
+        subgraph &quot;Seat Popularity Heatmap (columns 1-10, SCREEN at row A)&quot;
+            H1[&quot;Row A: Low, Low, Medium, High, VeryHigh, VeryHigh, High, Medium, Low, Low&quot;]
+            H2[&quot;Row B: Low, Medium, High, VeryHigh, VeryHigh, VeryHigh, VeryHigh, High, Medium, Low&quot;]
+            H3[&quot;Row C: Low, Medium, High, VeryHigh, VeryHigh, VeryHigh, VeryHigh, High, Medium, Low&quot;]
+            H4[&quot;Row D: Low, Low, Medium, High, High, High, High, Medium, Low, Low&quot;]
+            H5[&quot;Row E: Low, Low, Low, Medium, Medium, Medium, Medium, Low, Low, Low&quot;]
+            Legend[&quot;Legend: Low, Medium, High, Very High&quot;]
+        end
+
+        subgraph &quot;Top Performing Shows (Today)&quot;
+            T1[&quot;Avengers: Secret Wars - Seats: 5,234, Revenue: $78,510, Conv: 18.5%&quot;]
+            T2[&quot;Avatar 4 - Seats: 3,456, Revenue: $51,840, Conv: 15.2%&quot;]
+            T3[&quot;The Matrix 5 - Seats: 2,345, Revenue: $35,175, Conv: 12.8%&quot;]
+        end
+    end
+</div>
 <h3 id="193-sql-queries-for-analytics">19.3 SQL Queries for Analytics</h3>
 <pre><code class="language-sql">-- Conversion funnel query
 WITH funnel AS (
@@ -5218,40 +4845,29 @@ function isRTL(locale) {
 <hr />
 <h2 id="21-disaster-recovery">21. Disaster Recovery</h2>
 <h3 id="211-multi-region-architecture">21.1 Multi-Region Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│              Multi-Region Disaster Recovery                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌─────────────────────┐    ┌─────────────────────┐        │
-│  │   Primary Region    │    │   Secondary Region   │        │
-│  │   (US-East-1)       │    │   (US-West-2)        │        │
-│  │                     │    │                      │        │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │        │
-│  │  │ App Servers   │  │    │  │ App Servers   │  │        │
-│  │  │ (Active)      │──┼────┼─&gt;│ (Standby)     │  │        │
-│  │  └───────────────┘  │    │  └───────────────┘  │        │
-│  │         │           │    │         │           │        │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │        │
-│  │  │ PostgreSQL    │  │    │  │ PostgreSQL    │  │        │
-│  │  │ (Primary)     │──┼────┼─&gt;│ (Replica)     │  │        │
-│  │  └───────────────┘  │    │  └───────────────┘  │        │
-│  │         │           │    │         │           │        │
-│  │  ┌───────────────┐  │    │  ┌───────────────┐  │        │
-│  │  │ Redis Cluster │  │    │  │ Redis Cluster │  │        │
-│  │  │ (Primary)     │──┼────┼─&gt;│ (Replica)     │  │        │
-│  │  └───────────────┘  │    │  └───────────────┘  │        │
-│  │                     │    │                      │        │
-│  └─────────────────────┘    └─────────────────────┘        │
-│                                                              │
-│  RTO (Recovery Time Objective): &lt; 5 minutes                 │
-│  RPO (Recovery Point Objective): &lt; 1 minute                 │
-│                                                              │
-│  Replication:                                               │
-│  - PostgreSQL: Streaming replication (sync)                 │
-│  - Redis: Active-Active geo-replication                     │
-│  - Files/Tickets: S3 cross-region replication               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+<div class="mermaid">
+graph LR
+    subgraph &quot;Primary Region (US-East-1)&quot;
+        AppP[&quot;App Servers (Active)&quot;]
+        DBP[&quot;PostgreSQL (Primary)&quot;]
+        RedisP[&quot;Redis Cluster (Primary)&quot;]
+    end
+    subgraph &quot;Secondary Region (US-West-2)&quot;
+        AppS[&quot;App Servers (Standby)&quot;]
+        DBS[&quot;PostgreSQL (Replica)&quot;]
+        RedisS[&quot;Redis Cluster (Replica)&quot;]
+    end
+    AppP --&gt; AppS
+    DBP --&gt; DBS
+    RedisP --&gt; RedisS
+</div>
+<pre><code>RTO (Recovery Time Objective): &lt; 5 minutes
+RPO (Recovery Point Objective): &lt; 1 minute
+
+Replication:
+- PostgreSQL: Streaming replication (sync)
+- Redis: Active-Active geo-replication
+- Files/Tickets: S3 cross-region replication
 </code></pre>
 <h3 id="212-failover-procedures">21.2 Failover Procedures</h3>
 <pre><code class="language-javascript">// health-check-service.js
