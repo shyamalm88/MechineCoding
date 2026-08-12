@@ -156,62 +156,7 @@ Average followers: varies (1 to 500M+)
 </ul>
 <hr />
 <h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
-<pre><code>                                    ┌─────────────────────────────────┐
-                                    │   CDN (CloudFront/Akamai)       │
-                                    │   - Media delivery              │
-                                    │   - Static assets               │
-                                    │   - Edge caching                │
-                                    └──────────────┬──────────────────┘
-                                                   │
-┌─────────────────┐                ┌──────────────▼──────────────────┐
-│  Mobile Apps    │                │      Load Balancer (L7)         │
-│  (iOS/Android)  │◄───────────────┤      - SSL Termination          │
-│                 │                │      - Rate limiting            │
-└─────────────────┘                │      - Geographic routing       │
-                                   └──────────────┬──────────────────┘
-┌─────────────────┐                               │
-│  Web Client     │                ┌──────────────▼──────────────────┐
-│  (React SPA)    │◄───────────────┤      API Gateway                │
-│                 │                │      - Auth validation          │
-└─────────────────┘                │      - Request routing          │
-                                   │      - Rate limiting            │
-                                   └──────────────┬──────────────────┘
-                                                  │
-        ┌──────────────┬──────────────┬──────────┼──────────┬──────────────┬──────────────┐
-        │              │              │          │          │              │              │
-        ▼              ▼              ▼          ▼          ▼              ▼              ▼
-┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐
-│    User      ││    Feed      ││    Post      ││   Story      ││  Engagement  ││   Search     │
-│   Service    ││   Service    ││   Service    ││   Service    ││   Service    ││   Service    │
-│              ││              ││              ││              ││              ││              │
-│ - Auth       ││ - Ranking    ││ - Upload     ││ - Create     ││ - Likes      ││ - Users      │
-│ - Profile    ││ - Timeline   ││ - Media      ││ - View       ││ - Comments   ││ - Hashtags   │
-│ - Follow     ││ - Personalize││ - Caption    ││ - Expire     ││ - Saves      ││ - Locations  │
-└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘
-       │               │               │               │               │               │
-       │               │               │               │               │               │
-       ▼               ▼               ▼               ▼               ▼               ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    Message Queue (Kafka)                                      │
-│   - Feed fanout events    - Notification events    - Analytics events    - ML pipeline       │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
-       │               │               │               │               │               │
-       ▼               ▼               ▼               ▼               ▼               ▼
-┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐
-│  PostgreSQL  ││    Redis     ││     S3       ││ Elasticsearch││   Cassandra  ││  ML/Ranking  │
-│              ││   Cluster    ││              ││              ││              ││   Service    │
-│ - Users      ││ - Sessions   ││ - Photos     ││ - Search     ││ - Feed store ││ - Feed rank  │
-│ - Posts      ││ - Feed cache ││ - Videos     ││ - Hashtags   ││ - Timelines  ││ - Explore    │
-│ - Follows    ││ - Counters   ││ - Stories    ││ - Users      ││ - Activities ││ - Recs       │
-└──────────────┘└──────────────┘└──────────────┘└──────────────┘└──────────────┘└──────────────┘
-
-                        ┌──────────────────────────────────────┐
-                        │   Real-time Infrastructure           │
-                        │   - WebSocket servers                │
-                        │   - Push notification service        │
-                        │   - Presence service                 │
-                        └──────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0273f477c6da9943.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="21-architecture-rationale">2.1 Architecture Rationale</h3>
 <p><strong>Microservices Approach:</strong>
 - <strong>User Service</strong>: Authentication, profiles, social graph (follow/unfollow)
@@ -227,24 +172,7 @@ Average followers: varies (1 to 500M+)
 4. <strong>Technology flexibility</strong>: Use best database for each use case</p>
 <h3 id="22-feed-generation-push-vs-pull-model">2.2 Feed Generation: Push vs Pull Model</h3>
 <p><strong>Instagram's Hybrid Approach:</strong></p>
-<pre><code>                    ┌─────────────────────────────────────────────┐
-                    │           Hybrid Feed Model                 │
-                    └─────────────────────────────────────────────┘
-                                         │
-                    ┌────────────────────┼────────────────────┐
-                    │                    │                    │
-                    ▼                    ▼                    ▼
-            ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-            │  Push Model  │     │  Pull Model  │     │   Hybrid     │
-            │  (Fanout)    │     │  (On-demand) │     │              │
-            └──────────────┘     └──────────────┘     └──────────────┘
-                    │                    │                    │
-                    ▼                    ▼                    ▼
-            Regular users         Celebrity posts      Combine both
-            (&lt; 10K followers)     (&gt; 1M followers)     for optimal
-            Posts pushed to       Pulled at read       performance
-            all follower feeds    time (lazy)
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/e9aedb267e25202f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Why Hybrid:</strong>
 - <strong>Pure Push (Fanout on Write)</strong>: Good for regular users, but expensive for celebrities (1 post → 500M writes)
 - <strong>Pure Pull (Fanout on Read)</strong>: Good for celebrities, but slow for users following many accounts
@@ -268,82 +196,7 @@ Average followers: varies (1 to 500M+)
 <hr />
 <h2 id="3-component-architecture-frontend">3. Component Architecture (Frontend)</h2>
 <h3 id="31-component-hierarchy">3.1 Component Hierarchy</h3>
-<pre><code>App
-│
-├── AuthProvider (Context)
-│   └── User session, tokens, permissions
-│
-├── ThemeProvider (Context)
-│   └── Dark/light mode, system preference
-│
-├── Router
-│   │
-│   ├── FeedView (/)
-│   │   ├── StoriesBar
-│   │   │   ├── StoryAvatar (multiple)
-│   │   │   └── AddStoryButton
-│   │   │
-│   │   ├── FeedList (Virtualized)
-│   │   │   ├── PostCard
-│   │   │   │   ├── PostHeader (avatar, username, menu)
-│   │   │   │   ├── PostMedia (image/carousel/video)
-│   │   │   │   ├── PostActions (like, comment, share, save)
-│   │   │   │   ├── LikeCount
-│   │   │   │   ├── Caption
-│   │   │   │   └── CommentPreview
-│   │   │   └── SuggestedUsers (inline)
-│   │   │
-│   │   └── InfiniteScrollTrigger
-│   │
-│   ├── ExploreView (/explore)
-│   │   ├── SearchBar
-│   │   ├── CategoryTabs
-│   │   └── MasonryGrid (posts)
-│   │
-│   ├── ReelsView (/reels)
-│   │   ├── ReelPlayer (full-screen video)
-│   │   ├── ReelActions (sidebar)
-│   │   └── ReelInfo (caption, audio)
-│   │
-│   ├── ProfileView (/:username)
-│   │   ├── ProfileHeader
-│   │   │   ├── Avatar
-│   │   │   ├── Stats (posts, followers, following)
-│   │   │   ├── Bio
-│   │   │   └── FollowButton
-│   │   │
-│   │   ├── ProfileTabs (posts, reels, tagged)
-│   │   └── PostGrid (3-column)
-│   │
-│   ├── PostDetailView (/p/:postId)
-│   │   ├── PostMedia
-│   │   ├── PostInfo
-│   │   └── CommentSection
-│   │
-│   ├── StoryViewer (modal)
-│   │   ├── StoryMedia
-│   │   ├── ProgressBar
-│   │   ├── StoryActions
-│   │   └── ReplyInput
-│   │
-│   ├── DirectMessages (/direct)
-│   │   ├── ConversationList
-│   │   ├── ChatView
-│   │   └── MessageComposer
-│   │
-│   └── CreatePost (modal)
-│       ├── MediaUpload
-│       ├── FilterEditor
-│       ├── CaptionEditor
-│       └── LocationPicker
-│
-└── GlobalComponents
-    ├── BottomNavigation (mobile)
-    ├── Sidebar (desktop)
-    ├── NotificationDropdown
-    ├── SearchModal
-    └── ErrorBoundary
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/b5c8e6a9dc3084ae.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="32-key-frontend-components">3.2 Key Frontend Components</h3>
 <p><strong>PostCard Component:</strong></p>
 <pre><code class="language-typescript">interface PostCardProps {
@@ -492,264 +345,79 @@ const FeedList: React.FC = () =&gt; {
 <hr />
 <h2 id="4-data-flow">4. Data Flow</h2>
 <h3 id="41-post-creation-flow">4.1 Post Creation Flow</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Select media (photo/video)
-     │    Apply filters, crop
-     │
-     │ 2. Request upload URL
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │   Post Service     │
-     │                          └────────┬───────────┘
-     │                                   │
-     │ 3. Return signed URL              │
-     │◄──────────────────────────────────┤
-     │                                   │
-     │ 4. Upload media directly          │
-     ├───────────────────────────────────┼──────────┐
-     │                                   │          ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │    S3    │
-     │                                   │    └──────┬───┘
-     │ 5. Upload complete                │           │
-     │◄──────────────────────────────────┼───────────┘
-     │                                   │
-     │ 6. Submit post                    │
-     │    (caption, location, tags)      │
-     ├──────────────────────────────────►│
-     │                                   │
-     │                                   │ 7. Process media
-     │                                   │    - Generate thumbnails
-     │                                   │    - Extract metadata
-     │                                   │    - Content moderation
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │ Media Worker │
-     │                                   │  └──────────────┘
-     │                                   │
-     │                                   │ 8. Save to database
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  PostgreSQL  │
-     │                                   │  └──────────────┘
-     │                                   │
-     │                                   │ 9. Fanout to followers
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Kafka     │
-     │                                   │  └──────┬───────┘
-     │ 10. Post created                  │         │
-     │◄──────────────────────────────────┤         │
-     │                                   │         │
-     │                                             │
-     │                              ┌──────────────┘
-     │                              ▼
-     │                     ┌──────────────────┐
-     │                     │ Fanout Workers   │
-     │                     │ - Update feeds   │
-     │                     │ - Send notifs    │
-     │                     │ - Index hashtags │
-     │                     └──────────────────┘
-     │
-</code></pre>
-<h3 id="42-feed-loading-flow">4.2 Feed Loading Flow</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Request feed
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │   Feed Service     │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 2. Check feed cache
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │ (pre-ranked) │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 3. Cache HIT
-     │                                   │◄────────┘
-     │                                   │
-     │                    ─ ─ OR (Cache MISS) ─ ─
-     │                                   │
-     │                                   │ 4. Get user's timeline
-     │                                   │    from Cassandra
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  Cassandra   │
-     │                                   │  │ (timeline)   │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 5. Get celebrity posts
-     │                                   │    (pull model)
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  PostgreSQL  │
-     │                                   │  │ (posts)      │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 6. Rank with ML model
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  ML Ranking  │
-     │                                   │  │  Service     │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 7. Cache ranked feed
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  └──────────────┘
-     │                                   │
-     │ 8. Return ranked feed             │
-     │    with post metadata             │
-     │◄──────────────────────────────────┤
-     │                                   │
-     │ 9. Load media from CDN            │
-     ├───────────────────────────────────┼──────────┐
-     │                                   │          ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │   CDN    │
-     │                                   │    └──────┬───┘
-     │ 10. Media delivered               │           │
-     │◄──────────────────────────────────┼───────────┘
-     │                                   │
-</code></pre>
-<h3 id="43-story-flow">4.3 Story Flow</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Create story
-     │    (photo/video + stickers)
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Story Service     │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 2. Save story
-     │                                   │    TTL: 24 hours
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │ (EXPIRE 24h) │
-     │                                   │  └──────────────┘
-     │                                   │
-     │                                   │ 3. Fanout to followers
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Kafka     │
-     │                                   │  └──────────────┘
-     │                                   │
-     │ 4. Story created                  │
-     │◄──────────────────────────────────┤
-     │                                   │
+<div class="mermaid">
+graph TD
+    subgraph &quot;Post Creation Flow&quot;
+    Client[&quot;Client&quot;]
+    PostService[&quot;Post Service&quot;]
+    S3[&quot;S3&quot;]
+    MediaWorker[&quot;Media Worker&quot;]
+    PostgreSQL[&quot;PostgreSQL&quot;]
+    Kafka[&quot;Kafka&quot;]
+    FanoutWorkers[&quot;Fanout Workers - Update feeds, Send notifs, Index hashtags&quot;]
 
-Viewing Story:
-     │
-     │ 5. User taps story avatar
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Story Service     │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 6. Get stories for user
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │ 7. Return story list              │         │
-     │◄──────────────────────────────────┤◄────────┘
-     │                                   │
-     │ 8. View story (mark as seen)      │
-     ├──────────────────────────────────►│
-     │                                   │
-     │                                   │ 9. Record view
-     │                                   │    (async)
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  Cassandra   │
-     │                                   │  │ (views log)  │
-     │                                   │  └──────────────┘
-     │                                   │
-</code></pre>
+    Client --&gt;|&quot;1. Select media (photo/video), apply filters, crop; 2. Request upload URL&quot;| PostService
+    PostService --&gt;|&quot;3. Return signed URL&quot;| Client
+    Client --&gt;|&quot;4. Upload media directly&quot;| S3
+    S3 --&gt;|&quot;5. Upload complete&quot;| Client
+    Client --&gt;|&quot;6. Submit post (caption, location, tags)&quot;| PostService
+    PostService --&gt;|&quot;7. Process media - Generate thumbnails, Extract metadata, Content moderation&quot;| MediaWorker
+    PostService --&gt;|&quot;8. Save to database&quot;| PostgreSQL
+    PostService --&gt;|&quot;9. Fanout to followers&quot;| Kafka
+    PostService --&gt;|&quot;10. Post created&quot;| Client
+    Kafka --&gt; FanoutWorkers
+    end
+</div>
+<h3 id="42-feed-loading-flow">4.2 Feed Loading Flow</h3>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Feed Loading Flow&quot;
+    Client[&quot;Client&quot;]
+    FeedService[&quot;Feed Service&quot;]
+    Redis1[&quot;Redis (pre-ranked)&quot;]
+    Cassandra[&quot;Cassandra (timeline)&quot;]
+    PostgreSQL[&quot;PostgreSQL (posts)&quot;]
+    MLRanking[&quot;ML Ranking Service&quot;]
+    Redis2[&quot;Redis&quot;]
+    CDN[&quot;CDN&quot;]
+
+    Client --&gt;|&quot;1. Request feed&quot;| FeedService
+    FeedService --&gt;|&quot;2. Check feed cache&quot;| Redis1
+    Redis1 --&gt;|&quot;3. Cache HIT&quot;| FeedService
+    FeedService -.-&gt;|&quot;OR (Cache MISS) 4. Get user's timeline from Cassandra&quot;| Cassandra
+    FeedService --&gt;|&quot;5. Get celebrity posts (pull model)&quot;| PostgreSQL
+    FeedService --&gt;|&quot;6. Rank with ML model&quot;| MLRanking
+    FeedService --&gt;|&quot;7. Cache ranked feed&quot;| Redis2
+    FeedService --&gt;|&quot;8. Return ranked feed with post metadata&quot;| Client
+    Client --&gt;|&quot;9. Load media from CDN&quot;| CDN
+    CDN --&gt;|&quot;10. Media delivered&quot;| Client
+    end
+</div>
+<h3 id="43-story-flow">4.3 Story Flow</h3>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Story Flow&quot;
+    Client[&quot;Client&quot;]
+    StoryService[&quot;Story Service&quot;]
+    Redis1[&quot;Redis (EXPIRE 24h)&quot;]
+    Kafka[&quot;Kafka&quot;]
+    Redis2[&quot;Redis&quot;]
+    Cassandra[&quot;Cassandra (views log)&quot;]
+
+    Client --&gt;|&quot;1. Create story (photo/video + stickers)&quot;| StoryService
+    StoryService --&gt;|&quot;2. Save story, TTL: 24 hours&quot;| Redis1
+    StoryService --&gt;|&quot;3. Fanout to followers&quot;| Kafka
+    StoryService --&gt;|&quot;4. Story created&quot;| Client
+
+    Client --&gt;|&quot;5. User taps story avatar (Viewing Story)&quot;| StoryService
+    StoryService --&gt;|&quot;6. Get stories for user&quot;| Redis2
+    Redis2 --&gt;|&quot;7. Return story list&quot;| Client
+    Client --&gt;|&quot;8. View story (mark as seen)&quot;| StoryService
+    StoryService --&gt;|&quot;9. Record view (async)&quot;| Cassandra
+    end
+</div>
 <h3 id="44-engagement-flow-like">4.4 Engagement Flow (Like)</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Double-tap/tap like
-     │    (Optimistic UI update)
-     │
-     │ 2. Send like request
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │ Engagement Service │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 3. Check if already liked
-     │                                   │    (idempotency)
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │ (like set)   │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 4. Add to like set
-     │                                   │    Increment counter
-     │                                   │    (atomic)
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │ SADD + INCR  │
-     │                                   │  └──────────────┘
-     │                                   │
-     │                                   │ 5. Async persist
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Kafka     │
-     │                                   │  └──────┬───────┘
-     │ 6. Like confirmed                 │         │
-     │◄──────────────────────────────────┤         │
-     │                                   │         │
-     │                              ┌────┘         │
-     │                              ▼              ▼
-     │                     ┌──────────────┐ ┌──────────────┐
-     │                     │  PostgreSQL  │ │ Notification │
-     │                     │  (persist)   │ │   Service    │
-     │                     └──────────────┘ └──────────────┘
-     │                                              │
-     │ 7. Push notification (if enabled)           │
-     │◄────────────────────────────────────────────┘
-     │
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/9e90b17a0ba541c0.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="5-api-design-communication-protocols">5. API Design &amp; Communication Protocols</h2>
 <h3 id="51-rest-vs-graphql-decision">5.1 REST vs GraphQL Decision</h3>
@@ -1249,51 +917,22 @@ Why:
 <hr />
 <h2 id="7-caching-strategy">7. Caching Strategy</h2>
 <h3 id="71-multi-layer-cache-architecture">7.1 Multi-Layer Cache Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────┐
-│                  Browser/App Cache                       │
-│  - Service Worker (PWA)                                  │
-│  - Media cached locally                                  │
-│  - Feed cached in IndexedDB                              │
-│  TTL: 24 hours for media, 5 min for feed                │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    CDN (Akamai/CloudFront)              │
-│  - All media (photos, videos, thumbnails)               │
-│  - Static assets (JS, CSS)                              │
-│  - Cache-Control: public, max-age=31536000, immutable   │
-│  Hit rate: 95%+                                         │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│              Redis Cluster (Application Cache)          │
-├─────────────────────────────────────────────────────────┤
-│  Layer 1: Hot Data (1 hour TTL)                         │
-│    - User feeds (ranked)                                │
-│    - Active stories                                     │
-│    - Like/save states for viewer                        │
-│                                                         │
-│  Layer 2: Warm Data (24 hour TTL)                       │
-│    - User profiles                                      │
-│    - Post metadata                                      │
-│    - Follower/following lists                           │
-│                                                         │
-│  Layer 3: Counters (no TTL, async persist)              │
-│    - Like counts                                        │
-│    - Comment counts                                     │
-│    - View counts                                        │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│              Application Memory (LRU Cache)             │
-│  - Frequently accessed user sessions                    │
-│  - Config/feature flags                                 │
-│  - Size limit: 500MB per instance                       │
-└─────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Multi-Layer Cache Architecture&quot;
+    Browser[&quot;Browser/App Cache (Service Worker/PWA)&quot;] --&gt; BrowserDetail[&quot;Media cached locally; Feed cached in IndexedDB; TTL: 24h media, 5min feed&quot;]
+    BrowserDetail --&gt; CDN[&quot;CDN (Akamai/CloudFront)&quot;]
+    CDN --&gt; CDNDetail[&quot;All media (photos, videos, thumbnails); Static assets (JS, CSS); Cache-Control: public, max-age=31536000, immutable; Hit rate: 95%+&quot;]
+    CDNDetail --&gt; Redis[&quot;Redis Cluster (Application Cache)&quot;]
+    Redis --&gt; RedisL1[&quot;Layer 1: Hot Data (1h TTL) - User feeds (ranked), Active stories, Like/save states&quot;]
+    Redis --&gt; RedisL2[&quot;Layer 2: Warm Data (24h TTL) - User profiles, Post metadata, Follower/following lists&quot;]
+    Redis --&gt; RedisL3[&quot;Layer 3: Counters (no TTL, async persist) - Like/Comment/View counts&quot;]
+    RedisL1 --&gt; AppMem[&quot;Application Memory (LRU Cache)&quot;]
+    RedisL2 --&gt; AppMem
+    RedisL3 --&gt; AppMem
+    AppMem --&gt; AppMemDetail[&quot;Frequently accessed user sessions; Config/feature flags; Size limit: 500MB per instance&quot;]
+    end
+</div>
 <h3 id="72-feed-caching-strategy">7.2 Feed Caching Strategy</h3>
 <pre><code class="language-javascript">async function getFeed(userId) {
   const cacheKey = `feed:${userId}`;
@@ -1418,40 +1057,31 @@ async function onFollow(followerId, followingId) {
 <hr />
 <h2 id="8-state-management-frontend">8. State Management (Frontend)</h2>
 <h3 id="81-state-architecture">8.1 State Architecture</h3>
-<pre><code>┌────────────────────────────────────────────────────────┐
-│              Global State (Zustand/Redux)              │
-├────────────────────────────────────────────────────────┤
-│  - Auth state (user, token, permissions)               │
-│  - UI state (modals, navigation, theme)                │
-│  - Real-time state (notifications, messages)           │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              Server State (React Query/SWR)            │
-├────────────────────────────────────────────────────────┤
-│  - Feed data (infinite, cached)                        │
-│  - Post details                                        │
-│  - User profiles                                       │
-│  - Comments, likes                                     │
-│  - Stories                                             │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              Local State (useState/useReducer)         │
-├────────────────────────────────────────────────────────┤
-│  - Form inputs                                         │
-│  - Component UI (dropdowns, tooltips)                  │
-│  - Temporary selections                                │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              URL State (React Router)                  │
-├────────────────────────────────────────────────────────┤
-│  - Current route                                       │
-│  - Query params (search, filters)                      │
-│  - Modal routes (/p/:postId)                          │
-└────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Global State (Zustand/Redux)&quot;
+        G1[&quot;Auth state (user, token, permissions)&quot;]
+        G2[&quot;UI state (modals, navigation, theme)&quot;]
+        G3[&quot;Real-time state (notifications, messages)&quot;]
+    end
+    subgraph &quot;Server State (React Query/SWR)&quot;
+        S1[&quot;Feed data (infinite, cached)&quot;]
+        S2[&quot;Post details&quot;]
+        S3[&quot;User profiles&quot;]
+        S4[&quot;Comments, likes&quot;]
+        S5[&quot;Stories&quot;]
+    end
+    subgraph &quot;Local State (useState/useReducer)&quot;
+        L1[&quot;Form inputs&quot;]
+        L2[&quot;Component UI (dropdowns, tooltips)&quot;]
+        L3[&quot;Temporary selections&quot;]
+    end
+    subgraph &quot;URL State (React Router)&quot;
+        U1[&quot;Current route&quot;]
+        U2[&quot;Query params (search, filters)&quot;]
+        U3[&quot;Modal routes (/p/:postId)&quot;]
+    end
+</div>
 <h3 id="82-feed-state-with-react-query">8.2 Feed State with React Query</h3>
 <pre><code class="language-typescript">// Feed hook with infinite scroll
 function useFeed() {
@@ -2355,28 +1985,22 @@ const PostMedia = ({ post }) =&gt; {
 <hr />
 <h2 id="13-accessibility-a11y-deep-dive">13. Accessibility (a11y) Deep Dive</h2>
 <h3 id="131-accessibility-architecture">13.1 Accessibility Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Accessibility Layer Architecture                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │   Screen    │  │  Keyboard   │  │   Focus     │  │   Motion    │ │
-│  │   Reader    │  │  Navigation │  │  Management │  │  Reduction  │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │
-│         │                │                │                │        │
-│         ▼                ▼                ▼                ▼        │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    ARIA Live Regions                         │   │
-│  │  • Feed updates    • Like confirmations    • Story progress  │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Semantic HTML Structure                    │   │
-│  │  &lt;main&gt; → &lt;article&gt; → &lt;section&gt; → Interactive elements       │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Accessibility Layer Architecture&quot;
+        SR[&quot;Screen Reader&quot;]
+        KN[&quot;Keyboard Navigation&quot;]
+        FM[&quot;Focus Management&quot;]
+        MR[&quot;Motion Reduction&quot;]
+        ARIA[&quot;ARIA Live Regions&lt;br/&gt;Feed updates, Like confirmations, Story progress&quot;]
+        SEM[&quot;Semantic HTML Structure&lt;br/&gt;&amp;lt;main&amp;gt; -&amp;gt; &amp;lt;article&amp;gt; -&amp;gt; &amp;lt;section&amp;gt; -&amp;gt; Interactive elements&quot;]
+
+        SR --&gt; ARIA
+        KN --&gt; ARIA
+        FM --&gt; ARIA
+        MR --&gt; ARIA
+    end
+</div>
 <h3 id="132-accessible-post-card">13.2 Accessible Post Card</h3>
 <pre><code class="language-typescript">interface AccessiblePostCardProps {
   post: Post;
@@ -2942,36 +2566,17 @@ const motionStyles = `
 <hr />
 <h2 id="14-security-implementation">14. Security Implementation</h2>
 <h3 id="141-security-architecture">14.1 Security Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Frontend Security Layers                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                Content Security Policy (CSP)                  │   │
-│  │  script-src 'self'; img-src 'self' cdn.instagram.com;        │   │
-│  │  connect-src 'self' api.instagram.com; frame-ancestors 'none'│   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    XSS Prevention                             │   │
-│  │  • DOMPurify for user content    • React auto-escaping       │   │
-│  │  • CSP nonce for inline scripts  • Trusted Types             │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Authentication                             │   │
-│  │  • JWT access tokens (15min)     • Refresh tokens (7 days)   │   │
-│  │  • Secure HttpOnly cookies       • Token rotation             │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Input Validation                           │   │
-│  │  • Zod schema validation         • File type verification    │   │
-│  │  • Size limits enforcement       • Rate limiting              │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Frontend Security Layers&quot;
+        CSP[&quot;Content Security Policy (CSP)&lt;br/&gt;script-src 'self'; img-src 'self' cdn.instagram.com;&lt;br/&gt;connect-src 'self' api.instagram.com; frame-ancestors 'none'&quot;]
+        XSS[&quot;XSS Prevention&lt;br/&gt;- DOMPurify for user content - React auto-escaping&lt;br/&gt;- CSP nonce for inline scripts - Trusted Types&quot;]
+        Auth[&quot;Authentication&lt;br/&gt;- JWT access tokens (15min) - Refresh tokens (7 days)&lt;br/&gt;- Secure HttpOnly cookies - Token rotation&quot;]
+        Input[&quot;Input Validation&lt;br/&gt;- Zod schema validation - File type verification&lt;br/&gt;- Size limits enforcement - Rate limiting&quot;]
+
+        CSP --&gt; XSS --&gt; Auth --&gt; Input
+    end
+</div>
 <h3 id="142-authentication-token-management">14.2 Authentication &amp; Token Management</h3>
 <pre><code class="language-typescript">// Secure token storage and management
 class AuthTokenManager {
@@ -3503,30 +3108,23 @@ api.interceptors.response.use(
 <hr />
 <h2 id="15-mobile-touch-interactions">15. Mobile &amp; Touch Interactions</h2>
 <h3 id="151-touch-interaction-architecture">15.1 Touch Interaction Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Mobile Touch Layer                                │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │  Tap/Click  │  │   Swipe     │  │  Long Press │  │   Pinch     │ │
-│  │  Detection  │  │  Gestures   │  │   Handler   │  │   Zoom      │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │
-│         │                │                │                │        │
-│         ▼                ▼                ▼                ▼        │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Gesture Recognizer                        │   │
-│  │  • Velocity tracking    • Direction detection               │   │
-│  │  • Multi-touch support  • Conflict resolution               │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Haptic Feedback                            │   │
-│  │  • Like confirmation    • Pull-to-refresh trigger            │   │
-│  │  • Long press activated • Error feedback                     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Mobile Touch Layer&quot;
+        Tap[&quot;Tap/Click Detection&quot;]
+        Swipe[&quot;Swipe Gestures&quot;]
+        LongPress[&quot;Long Press Handler&quot;]
+        Pinch[&quot;Pinch Zoom&quot;]
+        GR[&quot;Gesture Recognizer&lt;br/&gt;- Velocity tracking - Direction detection&lt;br/&gt;- Multi-touch support - Conflict resolution&quot;]
+        Haptic[&quot;Haptic Feedback&lt;br/&gt;- Like confirmation - Pull-to-refresh trigger&lt;br/&gt;- Long press activated - Error feedback&quot;]
+
+        Tap --&gt; GR
+        Swipe --&gt; GR
+        LongPress --&gt; GR
+        Pinch --&gt; GR
+        GR --&gt; Haptic
+    end
+</div>
 <h3 id="152-double-tap-to-like">15.2 Double-Tap to Like</h3>
 <pre><code class="language-typescript">interface DoubleTapConfig {
   delay?: number;
@@ -4092,21 +3690,13 @@ const BottomNavigation: React.FC = () =&gt; {
 <hr />
 <h2 id="16-testing-strategy">16. Testing Strategy</h2>
 <h3 id="161-testing-pyramid">16.1 Testing Pyramid</h3>
-<pre><code>                    ┌─────────────┐
-                    │     E2E     │  10%
-                    │  (Playwright)│  ~50 tests
-                    └──────┬──────┘
-                           │
-                ┌──────────┴──────────┐
-                │    Integration      │  20%
-                │  (React Testing Lib) │  ~200 tests
-                └──────────┬──────────┘
-                           │
-        ┌──────────────────┴──────────────────┐
-        │              Unit Tests              │  70%
-        │         (Vitest / Jest)              │  ~1000 tests
-        └──────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Testing Pyramid&quot;
+    E2E[&quot;E2E (Playwright) - 10%, ~50 tests&quot;] --&gt; Integration[&quot;Integration (React Testing Lib) - 20%, ~200 tests&quot;]
+    Integration --&gt; Unit[&quot;Unit Tests (Vitest / Jest) - 70%, ~1000 tests&quot;]
+    end
+</div>
 <h3 id="162-unit-testing">16.2 Unit Testing</h3>
 <pre><code class="language-typescript">// Testing custom hooks
 import { renderHook, act } from '@testing-library/react';
@@ -4545,32 +4135,17 @@ test.describe('Visual Regression', () =&gt; {
 <hr />
 <h2 id="17-offlinepwa-capabilities">17. Offline/PWA Capabilities</h2>
 <h3 id="171-service-worker-architecture">17.1 Service Worker Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Service Worker Caching Strategy                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────┐                                                │
-│  │  App Shell      │  Cache First                                   │
-│  │  (HTML, JS, CSS)│  → Instant load                                │
-│  └────────┬────────┘                                                │
-│           │                                                          │
-│  ┌────────▼────────┐                                                │
-│  │  Feed API       │  Network First (5s timeout)                    │
-│  │  (/api/feed)    │  → Fresh data, fallback to cache              │
-│  └────────┬────────┘                                                │
-│           │                                                          │
-│  ┌────────▼────────┐                                                │
-│  │  Media          │  Cache First                                   │
-│  │  (images/videos)│  → CDN cached, local fallback                 │
-│  └────────┬────────┘                                                │
-│           │                                                          │
-│  ┌────────▼────────┐                                                │
-│  │  User Actions   │  Background Sync                               │
-│  │  (likes, posts) │  → Queue offline, sync when online            │
-│  └─────────────────┘                                                │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Service Worker Caching Strategy&quot;
+        AppShell[&quot;App Shell (HTML, JS, CSS)&lt;br/&gt;Cache First -&gt; Instant load&quot;]
+        FeedAPI[&quot;Feed API (/api/feed)&lt;br/&gt;Network First (5s timeout) -&gt; Fresh data, fallback to cache&quot;]
+        Media[&quot;Media (images/videos)&lt;br/&gt;Cache First -&gt; CDN cached, local fallback&quot;]
+        UserActions[&quot;User Actions (likes, posts)&lt;br/&gt;Background Sync -&gt; Queue offline, sync when online&quot;]
+
+        AppShell --&gt; FeedAPI --&gt; Media --&gt; UserActions
+    end
+</div>
 <h3 id="172-workbox-service-worker">17.2 Workbox Service Worker</h3>
 <pre><code class="language-typescript">// sw.ts - Service Worker with Workbox
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
@@ -5085,30 +4660,16 @@ const InstallBanner: React.FC = () =&gt; {
 <hr />
 <h2 id="18-internationalization-i18n">18. Internationalization (i18n)</h2>
 <h3 id="181-i18n-architecture">18.1 i18n Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Internationalization Stack                        │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    i18next + React-i18next                    │   │
-│  │  • Translation management  • Namespace loading               │   │
-│  │  • Interpolation          • Pluralization                    │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Intl API (Native)                          │   │
-│  │  • Number formatting      • Date/Time formatting             │   │
-│  │  • Currency formatting    • Relative time                    │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    RTL Support                                │   │
-│  │  • CSS logical properties • dir=&quot;rtl&quot; attribute              │   │
-│  │  • Mirrored layouts       • Bidirectional text               │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Internationalization Stack&quot;
+        I18next[&quot;i18next + React-i18next&lt;br/&gt;- Translation management - Namespace loading&lt;br/&gt;- Interpolation - Pluralization&quot;]
+        Intl[&quot;Intl API (Native)&lt;br/&gt;- Number formatting - Date/Time formatting&lt;br/&gt;- Currency formatting - Relative time&quot;]
+        RTL[&quot;RTL Support&lt;br/&gt;- CSS logical properties - dir='rtl' attribute&lt;br/&gt;- Mirrored layouts - Bidirectional text&quot;]
+
+        I18next --&gt; Intl --&gt; RTL
+    end
+</div>
 <h3 id="182-i18next-configuration">18.2 i18next Configuration</h3>
 <pre><code class="language-typescript">import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -5485,32 +5046,17 @@ const BidiText: React.FC&lt;{ children: string }&gt; = ({ children }) =&gt; {
 <hr />
 <h2 id="19-analytics-monitoring">19. Analytics &amp; Monitoring</h2>
 <h3 id="191-analytics-architecture">19.1 Analytics Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Analytics &amp; Monitoring Stack                      │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Event Tracking                             │   │
-│  │  • User interactions    • Page views    • Feature usage      │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Performance Monitoring                     │   │
-│  │  • Core Web Vitals    • API latency    • Error rates         │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Error Tracking                             │   │
-│  │  • JavaScript errors    • Network errors   • User reports    │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    A/B Testing                                │   │
-│  │  • Feature flags    • Experiment tracking    • Conversion    │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Analytics &amp; Monitoring Stack&quot;
+        Event[&quot;Event Tracking&lt;br/&gt;- User interactions - Page views - Feature usage&quot;]
+        Perf[&quot;Performance Monitoring&lt;br/&gt;- Core Web Vitals - API latency - Error rates&quot;]
+        Error[&quot;Error Tracking&lt;br/&gt;- JavaScript errors - Network errors - User reports&quot;]
+        AB[&quot;A/B Testing&lt;br/&gt;- Feature flags - Experiment tracking - Conversion&quot;]
+
+        Event --&gt; Perf --&gt; Error --&gt; AB
+    end
+</div>
 <h3 id="192-event-tracking-system">19.2 Event Tracking System</h3>
 <pre><code class="language-typescript">// Analytics event types
 type AnalyticsEvent =
@@ -5964,30 +5510,16 @@ function useFeatureFlag(flag: keyof FeatureFlags): boolean {
 <hr />
 <h2 id="20-reelsshort-video-deep-dive">20. Reels/Short Video Deep Dive</h2>
 <h3 id="201-reels-architecture">20.1 Reels Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Reels Video Player Architecture                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Video Preloading                           │   │
-│  │  • Next 2 videos buffered    • Adaptive bitrate (ABR)        │   │
-│  │  • Background download       • Memory management              │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Playback Control                           │   │
-│  │  • Auto-play on focus    • Pause on scroll away              │   │
-│  │  • Loop playback         • Volume/mute state                 │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Gesture Handling                           │   │
-│  │  • Vertical swipe nav    • Long press pause                  │   │
-│  │  • Double-tap like       • Tap to pause/play                 │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Reels Video Player Architecture&quot;
+        Preload[&quot;Video Preloading&lt;br/&gt;- Next 2 videos buffered - Adaptive bitrate (ABR)&lt;br/&gt;- Background download - Memory management&quot;]
+        Playback[&quot;Playback Control&lt;br/&gt;- Auto-play on focus - Pause on scroll away&lt;br/&gt;- Loop playback - Volume/mute state&quot;]
+        Gesture[&quot;Gesture Handling&lt;br/&gt;- Vertical swipe nav - Long press pause&lt;br/&gt;- Double-tap like - Tap to pause/play&quot;]
+
+        Preload --&gt; Playback --&gt; Gesture
+    end
+</div>
 <h3 id="202-reels-player-component">20.2 Reels Player Component</h3>
 <pre><code class="language-typescript">interface Reel {
   id: string;
@@ -6322,30 +5854,16 @@ function useVideoPreload(urls: string[]) {
 <hr />
 <h2 id="21-direct-messaging-deep-dive">21. Direct Messaging Deep Dive</h2>
 <h3 id="211-dm-architecture">21.1 DM Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Direct Messaging Architecture                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    WebSocket Connection                       │   │
-│  │  • Real-time messages    • Typing indicators                 │   │
-│  │  • Online presence       • Read receipts                     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Message Queue                              │   │
-│  │  • Offline queue        • Retry logic                        │   │
-│  │  • Optimistic send      • Delivery confirmation              │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Media Handling                             │   │
-│  │  • Image/video upload   • Voice messages                     │   │
-│  │  • Disappearing media   • Reactions                          │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Direct Messaging Architecture&quot;
+        WS[&quot;WebSocket Connection&lt;br/&gt;- Real-time messages - Typing indicators&lt;br/&gt;- Online presence - Read receipts&quot;]
+        MQ[&quot;Message Queue&lt;br/&gt;- Offline queue - Retry logic&lt;br/&gt;- Optimistic send - Delivery confirmation&quot;]
+        Media[&quot;Media Handling&lt;br/&gt;- Image/video upload - Voice messages&lt;br/&gt;- Disappearing media - Reactions&quot;]
+
+        WS --&gt; MQ --&gt; Media
+    end
+</div>
 <h3 id="212-websocket-message-handler">21.2 WebSocket Message Handler</h3>
 <pre><code class="language-typescript">interface WSMessage {
   type: 'message' | 'typing' | 'read' | 'presence' | 'reaction';
@@ -6673,27 +6191,16 @@ export const dmSocket = new DMWebSocket();
 <hr />
 <h2 id="22-design-system-theming">22. Design System &amp; Theming</h2>
 <h3 id="221-design-token-architecture">22.1 Design Token Architecture</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                    Design Token Hierarchy                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Primitive Tokens                           │   │
-│  │  colors.blue.500, spacing.4, fontSize.md                     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Semantic Tokens                            │   │
-│  │  color.primary, color.background, text.body                  │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Component Tokens                           │   │
-│  │  button.primary.bg, card.border, input.focus.ring            │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Design Token Hierarchy&quot;
+        Primitive[&quot;Primitive Tokens&lt;br/&gt;colors.blue.500, spacing.4, fontSize.md&quot;]
+        Semantic[&quot;Semantic Tokens&lt;br/&gt;color.primary, color.background, text.body&quot;]
+        Component[&quot;Component Tokens&lt;br/&gt;button.primary.bg, card.border, input.focus.ring&quot;]
+
+        Primitive --&gt; Semantic --&gt; Component
+    end
+</div>
 <h3 id="222-design-tokens-definition">22.2 Design Tokens Definition</h3>
 <pre><code class="language-typescript">// tokens.ts
 export const primitiveTokens = {
