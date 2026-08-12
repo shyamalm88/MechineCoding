@@ -8,18 +8,12 @@ Understanding how the browser works under the hood is essential for performance 
 
 Modern browsers have a multi-process architecture:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Browser Process                          │
-│  (UI, bookmarks, network, storage)                          │
-└─────────────────────────────────────────────────────────────┘
-         │              │              │              │
-         ▼              ▼              ▼              ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│  Renderer   │ │  Renderer   │ │  Renderer   │ │    GPU      │
-│  Process    │ │  Process    │ │  Process    │ │  Process    │
-│  (Tab 1)    │ │  (Tab 2)    │ │  (Tab 3)    │ │             │
-└─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
+```mermaid
+graph TD
+    BP["Browser Process (UI, bookmarks, network, storage)"] --> R1["Renderer Process (Tab 1)"]
+    BP --> R2["Renderer Process (Tab 2)"]
+    BP --> R3["Renderer Process (Tab 3)"]
+    BP --> GPU["GPU Process"]
 ```
 
 ### Why Multiple Processes?
@@ -36,17 +30,11 @@ Modern browsers have a multi-process architecture:
 
 This is **the most important concept** for frontend performance.
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│   HTML   │───▶│   DOM    │───▶│  Render  │───▶│  Layout  │───▶│  Paint   │
-│  Parse   │    │   Tree   │    │   Tree   │    │          │    │          │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
-                     │                │
-                     │                │
-               ┌─────▼─────┐          │
-               │   CSSOM   │──────────┘
-               │   Tree    │
-               └───────────┘
+```mermaid
+graph LR
+    A["HTML Parse"] --> B["DOM Tree"] --> C["Render Tree"] --> D["Layout"] --> E["Paint"]
+    B --> F["CSSOM Tree"]
+    F --> C
 ```
 
 ### Step-by-Step Breakdown
@@ -63,18 +51,9 @@ This is **the most important concept** for frontend performance.
 </html>
 ```
 
-```
-        document
-            │
-          html
-            │
-          body
-            │
-        div#app
-            │
-           p
-            │
-        "Hello"
+```mermaid
+graph TD
+    A["document"] --> B["html"] --> C["body"] --> D["div#app"] --> E["p"] --> F["Hello (text node)"]
 ```
 
 **Key Point:** Parser is **synchronous**. When it hits `<script>`, it STOPS.
@@ -87,15 +66,11 @@ body { font-size: 16px; }
 p { margin: 10px; }
 ```
 
-```
-        CSSOM
-          │
-     ┌────┴────┐
-   body      #app
-(font:16)   (color:blue)
-     │
-     p
- (margin:10)
+```mermaid
+graph TD
+    CSSOM --> Body["body (font: 16px)"]
+    CSSOM --> App["#app (color: blue)"]
+    Body --> P["p (margin: 10px)"]
 ```
 
 **Key Point:** CSSOM construction **blocks rendering**. This is why we inline critical CSS.
@@ -104,33 +79,27 @@ p { margin: 10px; }
 
 Only **visible** elements are included:
 
+```mermaid
+graph TD
+    Body["body (font: 16px)"] --> App["div#app (color: blue)"] --> P["p (margin: 10px)"] --> Text["Hello (text node)"]
 ```
-Render Tree:
-  body (font: 16px)
-    └─ div#app (color: blue)
-         └─ p (margin: 10px)
-              └─ "Hello"
 
 NOT included:
-  - <head> and its children
-  - Elements with display: none
-  - <script>, <meta>, <link>
-```
+  - `<head>` and its children
+  - Elements with `display: none`
+  - `<script>`, `<meta>`, `<link>`
 
 #### 4. Layout (Reflow)
 
 Calculates the **exact position and size** of each element:
 
-```
-┌────────────────────────────────────────┐
-│ body: 0,0 - 1920x1080                  │
-│  ┌──────────────────────────────────┐  │
-│  │ div#app: 8,8 - 1904x500          │  │
-│  │  ┌────────────────────────────┐  │  │
-│  │  │ p: 8,18 - 1904x20          │  │  │
-│  │  └────────────────────────────┘  │  │
-│  └──────────────────────────────────┘  │
-└────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Body["body: 0,0 - 1920x1080"]
+        subgraph App["div#app: 8,8 - 1904x500"]
+            P["p: 8,18 - 1904x20"]
+        end
+    end
 ```
 
 **Expensive Operation:** Changing width, height, position triggers reflow of all descendants.
@@ -158,27 +127,17 @@ JavaScript is **single-threaded**. The Event Loop is how it handles async operat
 
 ### The Mental Model
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         HEAP                                 │
-│                   (Object Storage)                           │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────┐     ┌─────────────────────────────────────────┐
-│   CALL      │     │              WEB APIs                    │
-│   STACK     │     │  (setTimeout, fetch, DOM events, etc.)  │
-│             │     └──────────────────┬──────────────────────┘
-│  function() │                        │
-│  function() │                        ▼
-│  main()     │     ┌─────────────────────────────────────────┐
-└─────────────┘     │           CALLBACK QUEUES                │
-       ▲            │  ┌─────────────────────────────────────┐ │
-       │            │  │ Microtask Queue (Promises, queueMT) │ │
-       │            │  └─────────────────────────────────────┘ │
-       │            │  ┌─────────────────────────────────────┐ │
-       └────────────│  │ Macrotask Queue (setTimeout, I/O)   │ │
-     Event Loop     │  └─────────────────────────────────────┘ │
-     picks next     └─────────────────────────────────────────┘
+```mermaid
+graph TD
+    HEAP["HEAP (Object Storage)"]
+    CS["CALL STACK - function(), function(), main()"]
+    WA["WEB APIs (setTimeout, fetch, DOM events, etc.)"]
+    subgraph CQ["CALLBACK QUEUES"]
+        MIQ["Microtask Queue (Promises, queueMicrotask)"]
+        MAQ["Macrotask Queue (setTimeout, I/O)"]
+    end
+    WA --> CQ
+    CQ -->|Event Loop picks next| CS
 ```
 
 ### Execution Order
@@ -369,13 +328,12 @@ requestAnimationFrame(animate);
 
 ### When rAF Fires
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                    One Frame (~16.67ms)                     │
-├──────────┬──────────┬──────────┬──────────┬───────────────┤
-│   JS     │   rAF    │  Style   │  Layout  │     Paint     │
-│ (events) │callbacks │  Calc    │          │   Composite   │
-└──────────┴──────────┴──────────┴──────────┴───────────────┘
+```mermaid
+graph LR
+    subgraph "One Frame (~16.67ms)"
+        direction LR
+        A["JS (events)"] --> B["rAF callbacks"] --> C["Style Calc"] --> D["Layout"] --> E["Paint / Composite"]
+    end
 ```
 
 ---
