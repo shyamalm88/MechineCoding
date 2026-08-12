@@ -37,18 +37,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="1-the-browser-architecture">1. The Browser Architecture</h2>
 <p>Modern browsers have a multi-process architecture:</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                     Browser Process                          │
-│  (UI, bookmarks, network, storage)                          │
-└─────────────────────────────────────────────────────────────┘
-         │              │              │              │
-         ▼              ▼              ▼              ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│  Renderer   │ │  Renderer   │ │  Renderer   │ │    GPU      │
-│  Process    │ │  Process    │ │  Process    │ │  Process    │
-│  (Tab 1)    │ │  (Tab 2)    │ │  (Tab 3)    │ │             │
-└─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/27e34f558d815235.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="why-multiple-processes">Why Multiple Processes?</h3>
 <table>
 <thead>
@@ -75,17 +64,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="2-the-rendering-pipeline-critical-rendering-path">2. The Rendering Pipeline (Critical Rendering Path)</h2>
 <p>This is <strong>the most important concept</strong> for frontend performance.</p>
-<pre><code>┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│   HTML   │───▶│   DOM    │───▶│  Render  │───▶│  Layout  │───▶│  Paint   │
-│  Parse   │    │   Tree   │    │   Tree   │    │          │    │          │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
-                     │                │
-                     │                │
-               ┌─────▼─────┐          │
-               │   CSSOM   │──────────┘
-               │   Tree    │
-               └───────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/d737a245448901d4.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="step-by-step-breakdown">Step-by-Step Breakdown</h3>
 <h4 id="1-html-parsing-dom-tree">1. HTML Parsing → DOM Tree</h4>
 <pre><code class="language-html">&lt;html&gt;
@@ -96,59 +75,32 @@ document.addEventListener('DOMContentLoaded', function () {
   &lt;/body&gt;
 &lt;/html&gt;
 </code></pre>
-<pre><code>        document
-            │
-          html
-            │
-          body
-            │
-        div#app
-            │
-           p
-            │
-        &quot;Hello&quot;
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/146dff2404445b28.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Key Point:</strong> Parser is <strong>synchronous</strong>. When it hits <code>&lt;script&gt;</code>, it STOPS.</p>
 <h4 id="2-css-parsing-cssom-tree">2. CSS Parsing → CSSOM Tree</h4>
 <pre><code class="language-css">body { font-size: 16px; }
 #app { color: blue; }
 p { margin: 10px; }
 </code></pre>
-<pre><code>        CSSOM
-          │
-     ┌────┴────┐
-   body      #app
-(font:16)   (color:blue)
-     │
-     p
- (margin:10)
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/bef50b94727019e3.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Key Point:</strong> CSSOM construction <strong>blocks rendering</strong>. This is why we inline critical CSS.</p>
 <h4 id="3-render-tree-dom-cssom">3. Render Tree (DOM + CSSOM)</h4>
 <p>Only <strong>visible</strong> elements are included:</p>
-<pre><code>Render Tree:
-  body (font: 16px)
-    └─ div#app (color: blue)
-         └─ p (margin: 10px)
-              └─ &quot;Hello&quot;
-
-NOT included:
-  - &lt;head&gt; and its children
-  - Elements with display: none
-  - &lt;script&gt;, &lt;meta&gt;, &lt;link&gt;
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/6916cdb0ea322f4f.svg" alt="Architecture diagram" loading="lazy"></figure>
+<p>NOT included:
+  - <code>&lt;head&gt;</code> and its children
+  - Elements with <code>display: none</code>
+  - <code>&lt;script&gt;</code>, <code>&lt;meta&gt;</code>, <code>&lt;link&gt;</code></p>
 <h4 id="4-layout-reflow">4. Layout (Reflow)</h4>
 <p>Calculates the <strong>exact position and size</strong> of each element:</p>
-<pre><code>┌────────────────────────────────────────┐
-│ body: 0,0 - 1920x1080                  │
-│  ┌──────────────────────────────────┐  │
-│  │ div#app: 8,8 - 1904x500          │  │
-│  │  ┌────────────────────────────┐  │  │
-│  │  │ p: 8,18 - 1904x20          │  │  │
-│  │  └────────────────────────────┘  │  │
-│  └──────────────────────────────────┘  │
-└────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph Body[&quot;body: 0,0 - 1920x1080&quot;]
+        subgraph App[&quot;div#app: 8,8 - 1904x500&quot;]
+            P[&quot;p: 8,18 - 1904x20&quot;]
+        end
+    end
+</div>
 <p><strong>Expensive Operation:</strong> Changing width, height, position triggers reflow of all descendants.</p>
 <h4 id="5-paint">5. Paint</h4>
 <p>Fills in pixels: colors, borders, shadows, text.</p>
@@ -164,27 +116,18 @@ NOT included:
 <h2 id="3-the-event-loop-javascripts-heartbeat">3. The Event Loop: JavaScript's Heartbeat</h2>
 <p>JavaScript is <strong>single-threaded</strong>. The Event Loop is how it handles async operations.</p>
 <h3 id="the-mental-model">The Mental Model</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                         HEAP                                 │
-│                   (Object Storage)                           │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────┐     ┌─────────────────────────────────────────┐
-│   CALL      │     │              WEB APIs                    │
-│   STACK     │     │  (setTimeout, fetch, DOM events, etc.)  │
-│             │     └──────────────────┬──────────────────────┘
-│  function() │                        │
-│  function() │                        ▼
-│  main()     │     ┌─────────────────────────────────────────┐
-└─────────────┘     │           CALLBACK QUEUES                │
-       ▲            │  ┌─────────────────────────────────────┐ │
-       │            │  │ Microtask Queue (Promises, queueMT) │ │
-       │            │  └─────────────────────────────────────┘ │
-       │            │  ┌─────────────────────────────────────┐ │
-       └────────────│  │ Macrotask Queue (setTimeout, I/O)   │ │
-     Event Loop     │  └─────────────────────────────────────┘ │
-     picks next     └─────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    HEAP[&quot;HEAP (Object Storage)&quot;]
+    CS[&quot;CALL STACK - function(), function(), main()&quot;]
+    WA[&quot;WEB APIs (setTimeout, fetch, DOM events, etc.)&quot;]
+    subgraph CQ[&quot;CALLBACK QUEUES&quot;]
+        MIQ[&quot;Microtask Queue (Promises, queueMicrotask)&quot;]
+        MAQ[&quot;Macrotask Queue (setTimeout, I/O)&quot;]
+    end
+    WA --&gt; CQ
+    CQ --&gt;|Event Loop picks next| CS
+</div>
 <h3 id="execution-order">Execution Order</h3>
 <pre><code class="language-js">console.log('1');  // Sync
 
@@ -349,13 +292,13 @@ function animate() {
 requestAnimationFrame(animate);
 </code></pre>
 <h3 id="when-raf-fires">When rAF Fires</h3>
-<pre><code>┌────────────────────────────────────────────────────────────┐
-│                    One Frame (~16.67ms)                     │
-├──────────┬──────────┬──────────┬──────────┬───────────────┤
-│   JS     │   rAF    │  Style   │  Layout  │     Paint     │
-│ (events) │callbacks │  Calc    │          │   Composite   │
-└──────────┴──────────┴──────────┴──────────┴───────────────┘
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;One Frame (~16.67ms)&quot;
+        direction LR
+        A[&quot;JS (events)&quot;] --&gt; B[&quot;rAF callbacks&quot;] --&gt; C[&quot;Style Calc&quot;] --&gt; D[&quot;Layout&quot;] --&gt; E[&quot;Paint / Composite&quot;]
+    end
+</div>
 <hr />
 <h2 id="7-web-workers-true-parallelism">7. Web Workers: True Parallelism</h2>
 <p>For heavy computation that would block the main thread:</p>
