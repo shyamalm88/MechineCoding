@@ -125,32 +125,31 @@ Remember Meera's order and Rakesh's pickup from the story above — here's what 
 
 Every food delivery interview is really three sub-systems layered on top of each other, because the platform exists to coordinate three actors, each with a distinct flow and a distinct bottleneck:
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│  ACTOR            FLOW                         KEY CHALLENGE       │
-├───────────────────────────────────────────────────────────────────┤
-│  Customer         Browse → Cart → Order         Geo-search scale   │
-│  Restaurant       Accept → Prepare → Ready      Event-driven push  │
-│  Delivery Agent   Assign → Pickup → Deliver     100K GPS writes/s  │
-└───────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph "Customer"
+        C1["Browse"] --> C2["Cart"] --> C3["Order"]
+    end
+    C3 -.-> CC["Key challenge: Geo-search scale"]
 
-  Customer places order
-          │
-          ▼
-  [Order Service] ──kafka: order.placed──> [Restaurant Service]
-                                                   │
-                                          kafka: order.confirmed
-                                                   │
-                                                   ▼
-                                         [Delivery Service]
-                                          assigns via Redis Geo
-                                                   │
-                                                   ▼
-                                         [Tracking Service]
-                                          GPS → Kafka → Redis Streams
-                                                   │
-                                                   ▼
-                                         [WebSocket Server] → Customer App
+    subgraph "Restaurant"
+        R1["Accept"] --> R2["Prepare"] --> R3["Ready"]
+    end
+    R3 -.-> RC["Key challenge: Event-driven push"]
+
+    subgraph "Delivery Agent"
+        D1["Assign"] --> D2["Pickup"] --> D3["Deliver"]
+    end
+    D3 -.-> DC["Key challenge: 100K GPS writes/s"]
+```
+
+```mermaid
+graph TD
+    CO["Customer places order"] --> OS["Order Service"]
+    OS -->|"kafka: order.placed"| RS["Restaurant Service"]
+    RS -->|"kafka: order.confirmed"| DS["Delivery Service - assigns via Redis Geo"]
+    DS --> TS["Tracking Service - GPS -> Kafka -> Redis Streams"]
+    TS --> WS["WebSocket Server"] --> CA["Customer App"]
 ```
 
 The key insight is that these three flows are **decoupled by Kafka**: the customer flow writes to `order.placed`, the restaurant flow consumes it and confirms, `order.confirmed` fires, and the delivery flow picks it up from there. No service ever calls another service directly — that's the architecture in one sentence, and it's worth pausing on why before looking at the diagrams.

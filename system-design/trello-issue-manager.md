@@ -123,11 +123,14 @@ These numbers are what drive every major decision ahead: WebSocket servers behin
 Go back to Maya dragging that card in §2. Underneath the instant slide on her screen and the near-instant slide on Devon's, this system is doing something specific: **it is not a task CRUD system, it's a real-time collaborative state-synchronization system.** The kanban UI is just the surface; the actual engineering problem is keeping shared, constantly-mutating state consistent across everyone looking at it, in close to real time. That distinction matters because it rules out a design that treats every card edit as "write to the database, refetch on next load" — that model simply can't deliver Devon seeing Maya's drag a few hundred milliseconds later without him doing anything.
 
 **The board itself is a tree**, and every mutation is an operation on some node of it:
-```
-Board
-  └── List[]  <- ordered by position (float64)
-        └── Card[]  <- ordered by position (float64) within list
-              └── Comment[], Attachment[], Checklist[], Activity[]
+```mermaid
+graph TD
+    Board --> ListArr["List[] - ordered by position (float64)"]
+    ListArr --> CardArr["Card[] - ordered by position (float64) within list"]
+    CardArr --> Comment["Comment[]"]
+    CardArr --> Attachment["Attachment[]"]
+    CardArr --> Checklist["Checklist[]"]
+    CardArr --> Activity["Activity[]"]
 ```
 Every user action — a drag, a rename, a comment — becomes an event applied to this tree, and every one of those events has to clear three bars: it must be **persisted** (the database is the source of truth, not any one client's local state), it must be **fanned out** to every other board member currently watching, and it must be **idempotent** — safe for a reconnecting client to reapply without double-counting, since networks drop and clients retry.
 

@@ -372,11 +372,14 @@ The pieces that make this possible are simple by design: a single **master manif
 
 The workflow that ties those pieces together is what runs on every single playback session: the player fetches the master manifest first, picks an initial quality tier based on whatever bandwidth estimate it can make before playback even starts, and begins downloading segments in that tier. From there, it continuously measures how fast each segment download completed and how full its buffer is, and if bandwidth drops or rises, it switches to a different quality tier — but only at the next segment boundary, never mid-segment, which is what makes the switch invisible instead of a visible stutter.
 
-```
-master.m3u8
-  ├── 360p/playlist.m3u8   -> segment_0001.ts, segment_0002.ts ...
-  ├── 720p/playlist.m3u8   -> segment_0001.ts, segment_0002.ts ...
-  └── 1080p/playlist.m3u8  -> segment_0001.ts, segment_0002.ts ...
+```mermaid
+graph TD
+    M["master.m3u8"] --> P360["360p/playlist.m3u8"]
+    M --> P720["720p/playlist.m3u8"]
+    M --> P1080["1080p/playlist.m3u8"]
+    P360 --> S360["segment_0001.ts, segment_0002.ts ..."]
+    P720 --> S720["segment_0001.ts, segment_0002.ts ..."]
+    P1080 --> S1080["segment_0001.ts, segment_0002.ts ..."]
 ```
 
 Segment length itself is a real trade-off, not an arbitrary constant. Short, 2-second chunks let a stream start fast and let the player react to a bandwidth change almost immediately — but that fine-grained switching comes at the cost of a very high object count, since every couple of seconds of every quality tier is its own file to store and cache. Long, 10-second chunks flip every one of those properties: startup is slower because the player needs at least two chunks buffered before it can safely begin, quality switches lag behind real bandwidth changes since the player is committed to a tier for the whole 10 seconds, but the object count driving storage and cache overhead drops accordingly. YouTube settles on roughly 2-second segments as its balance point; Netflix, weighing the trade differently, uses 4 seconds.

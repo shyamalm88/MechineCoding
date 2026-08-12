@@ -701,31 +701,20 @@ This design treats a stock broker as three concurrent flows layered in front of 
 
 ### Fast Path vs Reliable Path
 
-```
-PRICE FAST PATH (optimised for < 50ms latency)
-  Exchange WS push
-      │
-  Exchange Gateway → Kafka (no DB write in hot path)
-      │
-  Price Injector → Redis pub/sub (in-memory, sub-ms)
-      │
-  Price Tracker → WebSocket → Client
-  (InfluxDB write is async, does not block the hot path)
-
-
-ORDER RELIABLE PATH (optimised for zero loss + consistency)
-  User places order
-      │
-  Order Service → Kafka raw-orders (durable before any processing)
-      │
-  Validator (KYC + funds) → Kafka verified-orders
-      │
-  Order Service → Exchange API (only validated orders touch exchange)
-      │
-  Exchange acknowledgement → Kafka order-status
-      │
-  Order Tracker → Order DB + Trade DB + Notification
-  (every state change is persisted before notifying user)
+```mermaid
+graph TD
+    subgraph "Price Fast Path (optimised for less than 50ms latency)"
+        A1["Exchange WS push"] --> A2["Exchange Gateway - Kafka (no DB write in hot path)"]
+        A2 --> A3["Price Injector - Redis pub/sub (in-memory, sub-ms)"]
+        A3 --> A4["Price Tracker - WebSocket - Client (InfluxDB write is async, does not block the hot path)"]
+    end
+    subgraph "Order Reliable Path (optimised for zero loss + consistency)"
+        B1["User places order"] --> B2["Order Service - Kafka raw-orders (durable before any processing)"]
+        B2 --> B3["Validator (KYC + funds) - Kafka verified-orders"]
+        B3 --> B4["Order Service - Exchange API (only validated orders touch exchange)"]
+        B4 --> B5["Exchange acknowledgement - Kafka order-status"]
+        B5 --> B6["Order Tracker - Order DB + Trade DB + Notification (every state change is persisted before notifying user)"]
+    end
 ```
 
 ### Key Insights Checklist
