@@ -6,18 +6,14 @@ A comprehensive guide to browser document execution for system design interviews
 
 ## 1. The Complete Journey: URL to Pixels
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    URL TO PIXELS                             │
-│                                                              │
-│  1. Navigation ──▶ DNS ──▶ TCP ──▶ TLS ──▶ HTTP Request     │
-│                                                              │
-│  2. Response ──▶ Parsing ──▶ DOM/CSSOM Construction         │
-│                                                              │
-│  3. Render Tree ──▶ Layout ──▶ Paint ──▶ Composite          │
-│                                                              │
-│  4. JavaScript Execution (can interrupt at multiple points) │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "URL to Pixels"
+        A1["1. Navigation"] --> A2["DNS"] --> A3["TCP"] --> A4["TLS"] --> A5["HTTP Request"]
+        B1["2. Response"] --> B2["Parsing"] --> B3["DOM/CSSOM Construction"]
+        C1["3. Render Tree"] --> C2["Layout"] --> C3["Paint"] --> C4["Composite"]
+        D1["4. JavaScript Execution (can interrupt at multiple points)"]
+    end
 ```
 
 ---
@@ -26,59 +22,38 @@ A comprehensive guide to browser document execution for system design interviews
 
 ### DNS Resolution
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  DNS LOOKUP (typically 20-120ms)                             │
-│                                                              │
-│  1. Browser DNS cache                                        │
-│  2. OS DNS cache                                             │
-│  3. Router cache                                             │
-│  4. ISP DNS resolver                                         │
-│  5. Root nameserver → TLD → Authoritative                    │
-│                                                              │
-│  Result: example.com → 93.184.216.34                         │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "DNS Lookup (typically 20-120ms)"
+        A["1. Browser DNS cache"] --> B["2. OS DNS cache"] --> C["3. Router cache"] --> D["4. ISP DNS resolver"] --> E["5. Root nameserver"] --> F["TLD"] --> G["Authoritative"]
+        G --> R["Result: example.com to 93.184.216.34"]
+    end
 ```
 
 ### TCP Connection (3-Way Handshake)
 
-```
-Client                         Server
-   │                              │
-   │──────── SYN ────────────────▶│  Seq=100
-   │                              │
-   │◀─────── SYN-ACK ─────────────│  Seq=300, Ack=101
-   │                              │
-   │──────── ACK ────────────────▶│  Seq=101, Ack=301
-   │                              │
-   │       Connection Open        │
-
-Time: ~1 RTT (Round Trip Time)
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: SYN (Seq=100)
+    Server->>Client: SYN-ACK (Seq=300, Ack=101)
+    Client->>Server: ACK (Seq=101, Ack=301)
+    Note over Client,Server: Connection Open (~1 RTT)
 ```
 
 ### TLS Handshake (HTTPS)
 
-```
-Client                           Server
-   │                               │
-   │─── ClientHello ──────────────▶│
-   │    (supported ciphers,        │
-   │     random number)            │
-   │                               │
-   │◀── ServerHello + Cert ────────│
-   │    (chosen cipher, cert,      │
-   │     random number)            │
-   │                               │
-   │    [Client verifies cert]     │
-   │                               │
-   │─── Key Exchange + Finished ──▶│
-   │    (pre-master secret)        │
-   │                               │
-   │◀── Finished ──────────────────│
-   │                               │
-   │    Encrypted Connection       │
-
-Time: ~2 RTT (TLS 1.2) or ~1 RTT (TLS 1.3)
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: ClientHello (supported ciphers, random number)
+    Server->>Client: ServerHello + Cert (chosen cipher, cert, random number)
+    Note over Client: Client verifies cert
+    Client->>Server: Key Exchange + Finished (pre-master secret)
+    Server->>Client: Finished
+    Note over Client,Server: Encrypted Connection (~2 RTT TLS 1.2, ~1 RTT TLS 1.3)
 ```
 
 ### HTTP Request/Response
@@ -109,114 +84,66 @@ Content-Length: 12345
 
 The browser converts HTML bytes into a **DOM tree**.
 
-```
-Bytes ──▶ Characters ──▶ Tokens ──▶ Nodes ──▶ DOM
+```mermaid
+graph TD
+    Bytes --> Characters --> Tokens --> Nodes --> DOM
 
-HTML:
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Page</title>
-  </head>
-  <body>
-    <h1>Hello</h1>
-    <p>World</p>
-  </body>
-</html>
-
-DOM Tree:
-Document
-└── html
-    ├── head
-    │   └── title
-    │       └── "Page"
-    └── body
-        ├── h1
-        │   └── "Hello"
-        └── p
-            └── "World"
+    subgraph "Sample HTML to DOM Tree"
+        Document --> html
+        html --> head
+        head --> title
+        title --> PageText["'Page'"]
+        html --> body
+        body --> h1
+        h1 --> HelloText["'Hello'"]
+        body --> p
+        p --> WorldText["'World'"]
+    end
 ```
 
 ### The Preload Scanner
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  PRELOAD SCANNER (Speculative Parser)                        │
-│                                                              │
-│  While main parser is blocked by JavaScript:                 │
-│                                                              │
-│  1. Scans ahead in HTML                                      │
-│  2. Finds <link>, <script src>, <img>                        │
-│  3. Starts downloading them in parallel                      │
-│                                                              │
-│  This is why resources start loading before parser           │
-│  reaches them!                                               │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Preload Scanner (Speculative Parser)"
+        A["While main parser is blocked by JavaScript"] --> B["1. Scans ahead in HTML"] --> C["2. Finds link, script src, img tags"] --> D["3. Starts downloading them in parallel"]
+        D --> E["This is why resources start loading before parser reaches them"]
+    end
 ```
 
 ### CSS Parsing (CSSOM)
 
-```
-CSS:
-body { margin: 0; }
-h1 { color: blue; font-size: 24px; }
-p { color: gray; }
-
-CSSOM Tree:
-StyleSheet
-├── Rule: body
-│   └── margin: 0
-├── Rule: h1
-│   ├── color: blue
-│   └── font-size: 24px
-└── Rule: p
-    └── color: gray
+```mermaid
+graph TD
+    StyleSheet --> RuleBody["Rule: body"]
+    RuleBody --> BodyMargin["margin: 0"]
+    StyleSheet --> RuleH1["Rule: h1"]
+    RuleH1 --> H1Color["color: blue"]
+    RuleH1 --> H1Size["font-size: 24px"]
+    StyleSheet --> RuleP["Rule: p"]
+    RuleP --> PColor["color: gray"]
 ```
 
 ### Parser Blocking
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  PARSER BLOCKING BEHAVIOR                                    │
-│                                                              │
-│  CSS:                                                        │
-│  └── Blocks rendering (not parsing)                         │
-│  └── Must complete before JS can execute                    │
-│                                                              │
-│  JavaScript (no async/defer):                                │
-│  └── Blocks parsing completely                              │
-│  └── Waits for CSSOM to complete first                      │
-│                                                              │
-│  JavaScript (async):                                         │
-│  └── Downloads parallel                                      │
-│  └── Executes immediately when ready (blocks briefly)       │
-│                                                              │
-│  JavaScript (defer):                                         │
-│  └── Downloads parallel                                      │
-│  └── Executes after DOM complete, in order                  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Parser Blocking Behavior"
+        CSS["CSS"] --> C1["Blocks rendering (not parsing)"] --> C2["Must complete before JS can execute"]
+        JSNone["JavaScript (no async/defer)"] --> J1["Blocks parsing completely"] --> J2["Waits for CSSOM to complete first"]
+        JSAsync["JavaScript (async)"] --> A1["Downloads parallel"] --> A2["Executes immediately when ready (blocks briefly)"]
+        JSDefer["JavaScript (defer)"] --> D1["Downloads parallel"] --> D2["Executes after DOM complete, in order"]
+    end
 ```
 
-```
-Timeline Example:
-
-     HTML Parsing
-     ├────────────────────────────────────────────────────▶
-
-     CSS Download/Parse
-     ├───────────┤
-
-     JS Download (async)
-     ├─────────────────┤
-                       ↓
-                 JS Executes (blocks briefly)
-                       ├──┤
-
-     JS Download (defer)
-     ├─────────────────────────────┤
-                                          ↓
-                                    JS Executes (after DOM)
-                                          ├──────┤
+```mermaid
+graph LR
+    subgraph "Timeline Example"
+        HP["HTML Parsing (continues throughout)"]
+        CD["CSS Download/Parse"]
+        JAD["JS Download (async)"] --> JAE["JS Executes (blocks briefly)"]
+        JDD["JS Download (defer)"] --> JDE["JS Executes (after DOM complete)"]
+    end
 ```
 
 ---
@@ -225,19 +152,29 @@ Timeline Example:
 
 ### Step 1: Render Tree Construction
 
-```
-DOM + CSSOM = Render Tree
-
-DOM:                    CSSOM:                 Render Tree:
-├── html                ├── html {...}         ├── html
-│   ├── head            │   ├── head           │   └── body
-│   │   └── title       │   │   └── title      │       ├── h1 (visible)
-│   └── body            │   └── body           │       │   └── "Hello"
-│       ├── h1          │       ├── h1 {...}   │       └── p (visible)
-│       │   └── "Hello" │       └── p {...}    │           └── "World"
-│       └── p           │
-│           └── "World" │
-│       └── script      │   (head, script, display:none excluded)
+```mermaid
+graph LR
+    subgraph DOM_G["DOM"]
+        D_html["html"] --> D_head["head"] --> D_title["title"]
+        D_html --> D_body["body"]
+        D_body --> D_h1["h1"] --> D_h1t["'Hello'"]
+        D_body --> D_p["p"] --> D_pt["'World'"]
+        D_body --> D_script["script"]
+    end
+    subgraph CSSOM_G["CSSOM"]
+        C_html["html styles"] --> C_head["head"]
+        C_html --> C_body["body"]
+        C_body --> C_h1["h1 styles"]
+        C_body --> C_p["p styles"]
+    end
+    subgraph RT_G["Render Tree"]
+        R_html["html"] --> R_body["body"]
+        R_body --> R_h1["h1 (visible)"] --> R_h1t["'Hello'"]
+        R_body --> R_p["p (visible)"] --> R_pt["'World'"]
+        R_note["head, script, display:none excluded"]
+    end
+    DOM_G --> RT_G
+    CSSOM_G --> RT_G
 ```
 
 **Excluded from Render Tree:**
@@ -247,75 +184,45 @@ DOM:                    CSSOM:                 Render Tree:
 
 ### Step 2: Layout (Reflow)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  LAYOUT CALCULATION                                          │
-│                                                              │
-│  For each node in Render Tree:                               │
-│  1. Calculate computed styles                                │
-│  2. Determine box model (width, height, margin, padding)     │
-│  3. Calculate position (x, y coordinates)                    │
-│  4. Handle overflow, floats, positioning                     │
-│                                                              │
-│  Result: Box tree with exact pixel positions                 │
-│                                                              │
-│  ┌─────────────────────────────────────────┐                │
-│  │ body (0, 0) 1200×800                    │                │
-│  │  ┌─────────────────────────────────────┐│                │
-│  │  │ h1 (0, 0) 1200×32                   ││                │
-│  │  └─────────────────────────────────────┘│                │
-│  │  ┌─────────────────────────────────────┐│                │
-│  │  │ p (0, 40) 1200×24                   ││                │
-│  │  └─────────────────────────────────────┘│                │
-│  └─────────────────────────────────────────┘                │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Layout Calculation"
+        S1["For each node in Render Tree"] --> S2["1. Calculate computed styles"] --> S3["2. Determine box model (width, height, margin, padding)"] --> S4["3. Calculate position (x, y coordinates)"] --> S5["4. Handle overflow, floats, positioning"]
+        S5 --> R["Result: Box tree with exact pixel positions"]
+        subgraph "Box Tree"
+            Body["body (0,0) 1200x800"] --> H1["h1 (0,0) 1200x32"]
+            Body --> P["p (0,40) 1200x24"]
+        end
+        R --> Body
+    end
 ```
 
 ### Step 3: Paint
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  PAINT OPERATIONS                                            │
-│                                                              │
-│  Convert layout boxes into actual pixels:                    │
-│                                                              │
-│  1. Background colors                                        │
-│  2. Background images                                        │
-│  3. Borders                                                  │
-│  4. Text                                                     │
-│  5. Shadows                                                  │
-│  6. Outlines                                                 │
-│                                                              │
-│  Result: Paint records (list of draw commands)               │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Paint Operations"
+        A["Convert layout boxes into actual pixels"] --> B["1. Background colors"] --> C["2. Background images"] --> D["3. Borders"] --> E["4. Text"] --> F["5. Shadows"] --> G["6. Outlines"]
+        G --> R["Result: Paint records (list of draw commands)"]
+    end
 ```
 
 ### Step 4: Composite
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  COMPOSITING LAYERS                                          │
-│                                                              │
-│  Elements promoted to own layer:                             │
-│  ├── position: fixed/sticky                                  │
-│  ├── transform (3D)                                          │
-│  ├── opacity < 1                                             │
-│  ├── will-change: transform                                  │
-│  ├── <video>, <canvas>                                       │
-│  └── CSS filters                                             │
-│                                                              │
-│  ┌─────────────────────────────────────────┐                │
-│  │            Layer 3 (fixed nav)          │                │
-│  │  ┌──────────────────────────────────┐   │                │
-│  │  │        Layer 2 (modal)           │   │                │
-│  │  │  ┌───────────────────────────┐   │   │                │
-│  │  │  │    Layer 1 (main content) │   │   │                │
-│  │  │  └───────────────────────────┘   │   │                │
-│  │  └──────────────────────────────────┘   │                │
-│  └─────────────────────────────────────────┘                │
-│                                                              │
-│  GPU composites layers together                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Compositing Layers"
+        T["Elements promoted to own layer"] --> E1["position: fixed/sticky"]
+        T --> E2["transform (3D)"]
+        T --> E3["opacity less than 1"]
+        T --> E4["will-change: transform"]
+        T --> E5["video, canvas elements"]
+        T --> E6["CSS filters"]
+        subgraph "Layer Stack"
+            L3["Layer 3 (fixed nav)"] --> L2["Layer 2 (modal)"] --> L1["Layer 1 (main content)"]
+        end
+        L1 --> GPU["GPU composites layers together"]
+    end
 ```
 
 ---
@@ -324,47 +231,33 @@ DOM:                    CSSOM:                 Render Tree:
 
 ### What Triggers Each
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  REFLOW (Layout)                                             │
-│  Changes that affect geometry                                │
-│                                                              │
-│  Triggers:                                                   │
-│  ├── width, height, padding, margin, border                  │
-│  ├── position, top, left, right, bottom                     │
-│  ├── display, float, clear                                   │
-│  ├── font-size, font-family, font-weight                     │
-│  ├── Adding/removing DOM elements                            │
-│  ├── Resizing window                                         │
-│  └── Reading layout properties (offsetWidth, etc.)           │
-│                                                              │
-│  Cost: HIGH (recalculates entire tree or subtree)            │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Reflow (Layout) - Changes that affect geometry"
+        RF["Triggers"] --> RF1["width, height, padding, margin, border"]
+        RF --> RF2["position, top, left, right, bottom"]
+        RF --> RF3["display, float, clear"]
+        RF --> RF4["font-size, font-family, font-weight"]
+        RF --> RF5["Adding/removing DOM elements"]
+        RF --> RF6["Resizing window"]
+        RF --> RF7["Reading layout properties (offsetWidth, etc.)"]
+        RF7 --> RFC["Cost: HIGH (recalculates entire tree or subtree)"]
+    end
 
-┌─────────────────────────────────────────────────────────────┐
-│  REPAINT                                                     │
-│  Changes that affect appearance only                         │
-│                                                              │
-│  Triggers:                                                   │
-│  ├── color, background-color                                 │
-│  ├── visibility                                              │
-│  ├── box-shadow                                              │
-│  └── outline                                                 │
-│                                                              │
-│  Cost: MEDIUM (redraw affected pixels)                       │
-└─────────────────────────────────────────────────────────────┘
+    subgraph "Repaint - Changes that affect appearance only"
+        RP["Triggers"] --> RP1["color, background-color"]
+        RP --> RP2["visibility"]
+        RP --> RP3["box-shadow"]
+        RP --> RP4["outline"]
+        RP4 --> RPC["Cost: MEDIUM (redraw affected pixels)"]
+    end
 
-┌─────────────────────────────────────────────────────────────┐
-│  COMPOSITE ONLY                                              │
-│  Changes handled by GPU                                      │
-│                                                              │
-│  Properties:                                                 │
-│  ├── transform                                               │
-│  ├── opacity                                                 │
-│  └── filter (with GPU acceleration)                          │
-│                                                              │
-│  Cost: LOW (GPU handles it, no main thread work)             │
-└─────────────────────────────────────────────────────────────┘
+    subgraph "Composite Only - Changes handled by GPU"
+        CO["Properties"] --> CO1["transform"]
+        CO --> CO2["opacity"]
+        CO --> CO3["filter (with GPU acceleration)"]
+        CO3 --> COC["Cost: LOW (GPU handles it, no main thread work)"]
+    end
 ```
 
 ### Layout Thrashing
@@ -405,34 +298,19 @@ function animate() {
 
 ### The Event Loop
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      EVENT LOOP                              │
-│                                                              │
-│  ┌──────────────────┐      ┌──────────────────────────────┐ │
-│  │   Call Stack     │      │      Task Queue (Macro)       │ │
-│  │                  │      │  setTimeout, setInterval      │ │
-│  │  main()          │      │  I/O, UI rendering            │ │
-│  │  fn1()           │      │  requestAnimationFrame        │ │
-│  │  fn2()           │      └──────────────────────────────┘ │
-│  └────────┬─────────┘                                       │
-│           │                ┌──────────────────────────────┐ │
-│           │                │   Microtask Queue             │ │
-│           ▼                │  Promise.then                 │ │
-│      Stack empty?          │  queueMicrotask               │ │
-│           │                │  MutationObserver             │ │
-│           │                └──────────────────────────────┘ │
-│           ▼                                                  │
-│    Process ALL microtasks                                   │
-│           │                                                  │
-│           ▼                                                  │
-│    Render if needed (16.6ms has passed)                     │
-│           │                                                  │
-│           ▼                                                  │
-│    Process ONE macro task                                   │
-│           │                                                  │
-│           └───────── Loop ─────────────────▶                │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Event Loop"
+        CS["Call Stack: main(), fn1(), fn2()"] --> SE{"Stack empty?"}
+        TQ["Task Queue (Macro): setTimeout, setInterval, I/O, UI rendering, requestAnimationFrame"]
+        MQ["Microtask Queue: Promise.then, queueMicrotask, MutationObserver"]
+        SE --> AM["Process ALL microtasks"]
+        MQ -.-> AM
+        AM --> RN["Render if needed (16.6ms has passed)"]
+        RN --> PM["Process ONE macro task"]
+        TQ -.-> PM
+        PM --> SE
+    end
 ```
 
 ### Execution Order Example
@@ -451,24 +329,16 @@ console.log('4');  // Sync
 
 ### Long Tasks
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  LONG TASK (>50ms)                                           │
-│                                                              │
-│  Problem:                                                    │
-│  ├── Blocks main thread                                      │
-│  ├── Prevents rendering                                      │
-│  ├── Makes page unresponsive                                 │
-│  └── Hurts INP metric                                        │
-│                                                              │
-│  Timeline:                                                   │
-│  ─────────────────────────────────────────────────────────  │
-│  │ Long Task (200ms) █████████████████████████             │
-│  │                   │                                      │
-│  │                   └── User clicks button here            │
-│  │                       but can't respond until task ends  │
-│  ─────────────────────────────────────────────────────────  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Long Task (greater than 50ms)"
+        P["Problem"] --> P1["Blocks main thread"]
+        P --> P2["Prevents rendering"]
+        P --> P3["Makes page unresponsive"]
+        P --> P4["Hurts INP metric"]
+        T["Timeline: Long Task (200ms)"] --> C["User clicks button here"]
+        C --> D["Can't respond until task ends"]
+    end
 ```
 
 ### Breaking Up Long Tasks
@@ -514,29 +384,18 @@ function processItems(items) {
 
 ## 7. Document Lifecycle Events
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  DOCUMENT LIFECYCLE                                          │
-│                                                              │
-│  Parsing ──────────────────────────────────────▶            │
-│                                                              │
-│  DOMContentLoaded: DOM tree complete                         │
-│       │            (doesn't wait for images, stylesheets)    │
-│       ▼                                                      │
-│  document.readyState = "interactive"                         │
-│                                                              │
-│  Resources loading ────────────────────────────▶            │
-│                                                              │
-│  load: Everything loaded (images, styles, iframes)          │
-│       │                                                      │
-│       ▼                                                      │
-│  document.readyState = "complete"                            │
-│                                                              │
-│  User navigates away ──────────────────────────▶            │
-│                                                              │
-│  beforeunload: Chance to confirm leaving                     │
-│  unload: Cleanup                                             │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Document Lifecycle"
+        A["Parsing"] --> B["DOMContentLoaded: DOM tree complete (doesn't wait for images, stylesheets)"]
+        B --> C["document.readyState = interactive"]
+        C --> D["Resources loading"]
+        D --> E["load: Everything loaded (images, styles, iframes)"]
+        E --> F["document.readyState = complete"]
+        F --> G["User navigates away"]
+        G --> H["beforeunload: Chance to confirm leaving"]
+        H --> I["unload: Cleanup"]
+    end
 ```
 
 ```js
@@ -565,28 +424,18 @@ if (document.readyState === 'loading') {
 
 ## 8. Frame Budget
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  60 FPS = 16.67ms per frame                                  │
-│                                                              │
-│  ┌───────────────────────────────────────────────────┐      │
-│  │ 16.67ms                                           │      │
-│  │                                                   │      │
-│  │ JS ████     Style ██   Layout ██  Paint █  Comp █ │      │
-│  │ (10ms)      (2ms)      (2ms)      (1ms)   (1ms)  │      │
-│  │                                                   │      │
-│  │              ✓ Under budget - smooth!             │      │
-│  └───────────────────────────────────────────────────┘      │
-│                                                              │
-│  ┌───────────────────────────────────────────────────┐      │
-│  │ 16.67ms                               ▼ Overrun   │      │
-│  │                                                   │      │
-│  │ JS ████████████████  Style ███  Layout ███  ▓▓▓▓ │      │
-│  │ (25ms)                                     Jank! │      │
-│  │                                                   │      │
-│  │              ✗ Over budget - frame dropped!       │      │
-│  └───────────────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "60 FPS = 16.67ms per frame"
+        subgraph "Frame 1 (16.67ms budget)"
+            J1["JS (10ms)"] --> S1["Style (2ms)"] --> L1["Layout (2ms)"] --> P1["Paint (1ms)"] --> C1["Composite (1ms)"]
+            C1 --> OK["Under budget - smooth"]
+        end
+        subgraph "Frame 2 (16.67ms budget, overrun)"
+            J2["JS (25ms)"] --> S2["Style"] --> L2["Layout"] --> Jank["Jank"]
+            Jank --> BAD["Over budget - frame dropped"]
+        end
+    end
 ```
 
 ---
