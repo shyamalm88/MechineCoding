@@ -36,68 +36,47 @@ document.addEventListener('DOMContentLoaded', function () {
 <p>A comprehensive guide to browser document execution for system design interviews.</p>
 <hr />
 <h2 id="1-the-complete-journey-url-to-pixels">1. The Complete Journey: URL to Pixels</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                    URL TO PIXELS                             │
-│                                                              │
-│  1. Navigation ──▶ DNS ──▶ TCP ──▶ TLS ──▶ HTTP Request     │
-│                                                              │
-│  2. Response ──▶ Parsing ──▶ DOM/CSSOM Construction         │
-│                                                              │
-│  3. Render Tree ──▶ Layout ──▶ Paint ──▶ Composite          │
-│                                                              │
-│  4. JavaScript Execution (can interrupt at multiple points) │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;URL to Pixels&quot;
+        A1[&quot;1. Navigation&quot;] --&gt; A2[&quot;DNS&quot;] --&gt; A3[&quot;TCP&quot;] --&gt; A4[&quot;TLS&quot;] --&gt; A5[&quot;HTTP Request&quot;]
+        B1[&quot;2. Response&quot;] --&gt; B2[&quot;Parsing&quot;] --&gt; B3[&quot;DOM/CSSOM Construction&quot;]
+        C1[&quot;3. Render Tree&quot;] --&gt; C2[&quot;Layout&quot;] --&gt; C3[&quot;Paint&quot;] --&gt; C4[&quot;Composite&quot;]
+        D1[&quot;4. JavaScript Execution (can interrupt at multiple points)&quot;]
+    end
+</div>
 <hr />
 <h2 id="2-phase-1-navigation-network">2. Phase 1: Navigation &amp; Network</h2>
 <h3 id="dns-resolution">DNS Resolution</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  DNS LOOKUP (typically 20-120ms)                             │
-│                                                              │
-│  1. Browser DNS cache                                        │
-│  2. OS DNS cache                                             │
-│  3. Router cache                                             │
-│  4. ISP DNS resolver                                         │
-│  5. Root nameserver → TLD → Authoritative                    │
-│                                                              │
-│  Result: example.com → 93.184.216.34                         │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;DNS Lookup (typically 20-120ms)&quot;
+        A[&quot;1. Browser DNS cache&quot;] --&gt; B[&quot;2. OS DNS cache&quot;] --&gt; C[&quot;3. Router cache&quot;] --&gt; D[&quot;4. ISP DNS resolver&quot;] --&gt; E[&quot;5. Root nameserver&quot;] --&gt; F[&quot;TLD&quot;] --&gt; G[&quot;Authoritative&quot;]
+        G --&gt; R[&quot;Result: example.com to 93.184.216.34&quot;]
+    end
+</div>
 <h3 id="tcp-connection-3-way-handshake">TCP Connection (3-Way Handshake)</h3>
-<pre><code>Client                         Server
-   │                              │
-   │──────── SYN ────────────────▶│  Seq=100
-   │                              │
-   │◀─────── SYN-ACK ─────────────│  Seq=300, Ack=101
-   │                              │
-   │──────── ACK ────────────────▶│  Seq=101, Ack=301
-   │                              │
-   │       Connection Open        │
-
-Time: ~1 RTT (Round Trip Time)
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant Server
+    Client-&gt;&gt;Server: SYN (Seq=100)
+    Server-&gt;&gt;Client: SYN-ACK (Seq=300, Ack=101)
+    Client-&gt;&gt;Server: ACK (Seq=101, Ack=301)
+    Note over Client,Server: Connection Open (~1 RTT)
+</div>
 <h3 id="tls-handshake-https">TLS Handshake (HTTPS)</h3>
-<pre><code>Client                           Server
-   │                               │
-   │─── ClientHello ──────────────▶│
-   │    (supported ciphers,        │
-   │     random number)            │
-   │                               │
-   │◀── ServerHello + Cert ────────│
-   │    (chosen cipher, cert,      │
-   │     random number)            │
-   │                               │
-   │    [Client verifies cert]     │
-   │                               │
-   │─── Key Exchange + Finished ──▶│
-   │    (pre-master secret)        │
-   │                               │
-   │◀── Finished ──────────────────│
-   │                               │
-   │    Encrypted Connection       │
-
-Time: ~2 RTT (TLS 1.2) or ~1 RTT (TLS 1.3)
-</code></pre>
+<div class="mermaid">
+sequenceDiagram
+    participant Client
+    participant Server
+    Client-&gt;&gt;Server: ClientHello (supported ciphers, random number)
+    Server-&gt;&gt;Client: ServerHello + Cert (chosen cipher, cert, random number)
+    Note over Client: Client verifies cert
+    Client-&gt;&gt;Server: Key Exchange + Finished (pre-master secret)
+    Server-&gt;&gt;Client: Finished
+    Note over Client,Server: Encrypted Connection (~2 RTT TLS 1.2, ~1 RTT TLS 1.3)
+</div>
 <h3 id="http-requestresponse">HTTP Request/Response</h3>
 <pre><code>GET /index.html HTTP/1.1
 Host: example.com
@@ -119,231 +98,150 @@ Content-Length: 12345
 <h2 id="3-phase-2-parsing-tree-construction">3. Phase 2: Parsing &amp; Tree Construction</h2>
 <h3 id="html-parsing">HTML Parsing</h3>
 <p>The browser converts HTML bytes into a <strong>DOM tree</strong>.</p>
-<pre><code>Bytes ──▶ Characters ──▶ Tokens ──▶ Nodes ──▶ DOM
+<div class="mermaid">
+graph TD
+    Bytes --&gt; Characters --&gt; Tokens --&gt; Nodes --&gt; DOM
 
-HTML:
-&lt;!DOCTYPE html&gt;
-&lt;html&gt;
-  &lt;head&gt;
-    &lt;title&gt;Page&lt;/title&gt;
-  &lt;/head&gt;
-  &lt;body&gt;
-    &lt;h1&gt;Hello&lt;/h1&gt;
-    &lt;p&gt;World&lt;/p&gt;
-  &lt;/body&gt;
-&lt;/html&gt;
-
-DOM Tree:
-Document
-└── html
-    ├── head
-    │   └── title
-    │       └── &quot;Page&quot;
-    └── body
-        ├── h1
-        │   └── &quot;Hello&quot;
-        └── p
-            └── &quot;World&quot;
-</code></pre>
+    subgraph &quot;Sample HTML to DOM Tree&quot;
+        Document --&gt; html
+        html --&gt; head
+        head --&gt; title
+        title --&gt; PageText[&quot;'Page'&quot;]
+        html --&gt; body
+        body --&gt; h1
+        h1 --&gt; HelloText[&quot;'Hello'&quot;]
+        body --&gt; p
+        p --&gt; WorldText[&quot;'World'&quot;]
+    end
+</div>
 <h3 id="the-preload-scanner">The Preload Scanner</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  PRELOAD SCANNER (Speculative Parser)                        │
-│                                                              │
-│  While main parser is blocked by JavaScript:                 │
-│                                                              │
-│  1. Scans ahead in HTML                                      │
-│  2. Finds &lt;link&gt;, &lt;script src&gt;, &lt;img&gt;                        │
-│  3. Starts downloading them in parallel                      │
-│                                                              │
-│  This is why resources start loading before parser           │
-│  reaches them!                                               │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Preload Scanner (Speculative Parser)&quot;
+        A[&quot;While main parser is blocked by JavaScript&quot;] --&gt; B[&quot;1. Scans ahead in HTML&quot;] --&gt; C[&quot;2. Finds link, script src, img tags&quot;] --&gt; D[&quot;3. Starts downloading them in parallel&quot;]
+        D --&gt; E[&quot;This is why resources start loading before parser reaches them&quot;]
+    end
+</div>
 <h3 id="css-parsing-cssom">CSS Parsing (CSSOM)</h3>
-<pre><code>CSS:
-body { margin: 0; }
-h1 { color: blue; font-size: 24px; }
-p { color: gray; }
-
-CSSOM Tree:
-StyleSheet
-├── Rule: body
-│   └── margin: 0
-├── Rule: h1
-│   ├── color: blue
-│   └── font-size: 24px
-└── Rule: p
-    └── color: gray
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/32d52e2cbb7cfdf1.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="parser-blocking">Parser Blocking</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  PARSER BLOCKING BEHAVIOR                                    │
-│                                                              │
-│  CSS:                                                        │
-│  └── Blocks rendering (not parsing)                         │
-│  └── Must complete before JS can execute                    │
-│                                                              │
-│  JavaScript (no async/defer):                                │
-│  └── Blocks parsing completely                              │
-│  └── Waits for CSSOM to complete first                      │
-│                                                              │
-│  JavaScript (async):                                         │
-│  └── Downloads parallel                                      │
-│  └── Executes immediately when ready (blocks briefly)       │
-│                                                              │
-│  JavaScript (defer):                                         │
-│  └── Downloads parallel                                      │
-│  └── Executes after DOM complete, in order                  │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
-<pre><code>Timeline Example:
-
-     HTML Parsing
-     ├────────────────────────────────────────────────────▶
-
-     CSS Download/Parse
-     ├───────────┤
-
-     JS Download (async)
-     ├─────────────────┤
-                       ↓
-                 JS Executes (blocks briefly)
-                       ├──┤
-
-     JS Download (defer)
-     ├─────────────────────────────┤
-                                          ↓
-                                    JS Executes (after DOM)
-                                          ├──────┤
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Parser Blocking Behavior&quot;
+        CSS[&quot;CSS&quot;] --&gt; C1[&quot;Blocks rendering (not parsing)&quot;] --&gt; C2[&quot;Must complete before JS can execute&quot;]
+        JSNone[&quot;JavaScript (no async/defer)&quot;] --&gt; J1[&quot;Blocks parsing completely&quot;] --&gt; J2[&quot;Waits for CSSOM to complete first&quot;]
+        JSAsync[&quot;JavaScript (async)&quot;] --&gt; A1[&quot;Downloads parallel&quot;] --&gt; A2[&quot;Executes immediately when ready (blocks briefly)&quot;]
+        JSDefer[&quot;JavaScript (defer)&quot;] --&gt; D1[&quot;Downloads parallel&quot;] --&gt; D2[&quot;Executes after DOM complete, in order&quot;]
+    end
+</div>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Timeline Example&quot;
+        HP[&quot;HTML Parsing (continues throughout)&quot;]
+        CD[&quot;CSS Download/Parse&quot;]
+        JAD[&quot;JS Download (async)&quot;] --&gt; JAE[&quot;JS Executes (blocks briefly)&quot;]
+        JDD[&quot;JS Download (defer)&quot;] --&gt; JDE[&quot;JS Executes (after DOM complete)&quot;]
+    end
+</div>
 <hr />
 <h2 id="4-phase-3-rendering-pipeline">4. Phase 3: Rendering Pipeline</h2>
 <h3 id="step-1-render-tree-construction">Step 1: Render Tree Construction</h3>
-<pre><code>DOM + CSSOM = Render Tree
-
-DOM:                    CSSOM:                 Render Tree:
-├── html                ├── html {...}         ├── html
-│   ├── head            │   ├── head           │   └── body
-│   │   └── title       │   │   └── title      │       ├── h1 (visible)
-│   └── body            │   └── body           │       │   └── &quot;Hello&quot;
-│       ├── h1          │       ├── h1 {...}   │       └── p (visible)
-│       │   └── &quot;Hello&quot; │       └── p {...}    │           └── &quot;World&quot;
-│       └── p           │
-│           └── &quot;World&quot; │
-│       └── script      │   (head, script, display:none excluded)
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph DOM_G[&quot;DOM&quot;]
+        D_html[&quot;html&quot;] --&gt; D_head[&quot;head&quot;] --&gt; D_title[&quot;title&quot;]
+        D_html --&gt; D_body[&quot;body&quot;]
+        D_body --&gt; D_h1[&quot;h1&quot;] --&gt; D_h1t[&quot;'Hello'&quot;]
+        D_body --&gt; D_p[&quot;p&quot;] --&gt; D_pt[&quot;'World'&quot;]
+        D_body --&gt; D_script[&quot;script&quot;]
+    end
+    subgraph CSSOM_G[&quot;CSSOM&quot;]
+        C_html[&quot;html styles&quot;] --&gt; C_head[&quot;head&quot;]
+        C_html --&gt; C_body[&quot;body&quot;]
+        C_body --&gt; C_h1[&quot;h1 styles&quot;]
+        C_body --&gt; C_p[&quot;p styles&quot;]
+    end
+    subgraph RT_G[&quot;Render Tree&quot;]
+        R_html[&quot;html&quot;] --&gt; R_body[&quot;body&quot;]
+        R_body --&gt; R_h1[&quot;h1 (visible)&quot;] --&gt; R_h1t[&quot;'Hello'&quot;]
+        R_body --&gt; R_p[&quot;p (visible)&quot;] --&gt; R_pt[&quot;'World'&quot;]
+        R_note[&quot;head, script, display:none excluded&quot;]
+    end
+    DOM_G --&gt; RT_G
+    CSSOM_G --&gt; RT_G
+</div>
 <p><strong>Excluded from Render Tree:</strong>
 - <code>&lt;head&gt;</code>, <code>&lt;script&gt;</code>, <code>&lt;meta&gt;</code> (non-visual)
 - Elements with <code>display: none</code>
 - Elements with <code>visibility: hidden</code> ARE included (they affect layout)</p>
 <h3 id="step-2-layout-reflow">Step 2: Layout (Reflow)</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  LAYOUT CALCULATION                                          │
-│                                                              │
-│  For each node in Render Tree:                               │
-│  1. Calculate computed styles                                │
-│  2. Determine box model (width, height, margin, padding)     │
-│  3. Calculate position (x, y coordinates)                    │
-│  4. Handle overflow, floats, positioning                     │
-│                                                              │
-│  Result: Box tree with exact pixel positions                 │
-│                                                              │
-│  ┌─────────────────────────────────────────┐                │
-│  │ body (0, 0) 1200×800                    │                │
-│  │  ┌─────────────────────────────────────┐│                │
-│  │  │ h1 (0, 0) 1200×32                   ││                │
-│  │  └─────────────────────────────────────┘│                │
-│  │  ┌─────────────────────────────────────┐│                │
-│  │  │ p (0, 40) 1200×24                   ││                │
-│  │  └─────────────────────────────────────┘│                │
-│  └─────────────────────────────────────────┘                │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Layout Calculation&quot;
+        S1[&quot;For each node in Render Tree&quot;] --&gt; S2[&quot;1. Calculate computed styles&quot;] --&gt; S3[&quot;2. Determine box model (width, height, margin, padding)&quot;] --&gt; S4[&quot;3. Calculate position (x, y coordinates)&quot;] --&gt; S5[&quot;4. Handle overflow, floats, positioning&quot;]
+        S5 --&gt; R[&quot;Result: Box tree with exact pixel positions&quot;]
+        subgraph &quot;Box Tree&quot;
+            Body[&quot;body (0,0) 1200x800&quot;] --&gt; H1[&quot;h1 (0,0) 1200x32&quot;]
+            Body --&gt; P[&quot;p (0,40) 1200x24&quot;]
+        end
+        R --&gt; Body
+    end
+</div>
 <h3 id="step-3-paint">Step 3: Paint</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  PAINT OPERATIONS                                            │
-│                                                              │
-│  Convert layout boxes into actual pixels:                    │
-│                                                              │
-│  1. Background colors                                        │
-│  2. Background images                                        │
-│  3. Borders                                                  │
-│  4. Text                                                     │
-│  5. Shadows                                                  │
-│  6. Outlines                                                 │
-│                                                              │
-│  Result: Paint records (list of draw commands)               │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Paint Operations&quot;
+        A[&quot;Convert layout boxes into actual pixels&quot;] --&gt; B[&quot;1. Background colors&quot;] --&gt; C[&quot;2. Background images&quot;] --&gt; D[&quot;3. Borders&quot;] --&gt; E[&quot;4. Text&quot;] --&gt; F[&quot;5. Shadows&quot;] --&gt; G[&quot;6. Outlines&quot;]
+        G --&gt; R[&quot;Result: Paint records (list of draw commands)&quot;]
+    end
+</div>
 <h3 id="step-4-composite">Step 4: Composite</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  COMPOSITING LAYERS                                          │
-│                                                              │
-│  Elements promoted to own layer:                             │
-│  ├── position: fixed/sticky                                  │
-│  ├── transform (3D)                                          │
-│  ├── opacity &lt; 1                                             │
-│  ├── will-change: transform                                  │
-│  ├── &lt;video&gt;, &lt;canvas&gt;                                       │
-│  └── CSS filters                                             │
-│                                                              │
-│  ┌─────────────────────────────────────────┐                │
-│  │            Layer 3 (fixed nav)          │                │
-│  │  ┌──────────────────────────────────┐   │                │
-│  │  │        Layer 2 (modal)           │   │                │
-│  │  │  ┌───────────────────────────┐   │   │                │
-│  │  │  │    Layer 1 (main content) │   │   │                │
-│  │  │  └───────────────────────────┘   │   │                │
-│  │  └──────────────────────────────────┘   │                │
-│  └─────────────────────────────────────────┘                │
-│                                                              │
-│  GPU composites layers together                              │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Compositing Layers&quot;
+        T[&quot;Elements promoted to own layer&quot;] --&gt; E1[&quot;position: fixed/sticky&quot;]
+        T --&gt; E2[&quot;transform (3D)&quot;]
+        T --&gt; E3[&quot;opacity less than 1&quot;]
+        T --&gt; E4[&quot;will-change: transform&quot;]
+        T --&gt; E5[&quot;video, canvas elements&quot;]
+        T --&gt; E6[&quot;CSS filters&quot;]
+        subgraph &quot;Layer Stack&quot;
+            L3[&quot;Layer 3 (fixed nav)&quot;] --&gt; L2[&quot;Layer 2 (modal)&quot;] --&gt; L1[&quot;Layer 1 (main content)&quot;]
+        end
+        L1 --&gt; GPU[&quot;GPU composites layers together&quot;]
+    end
+</div>
 <hr />
 <h2 id="5-reflow-vs-repaint">5. Reflow vs Repaint</h2>
 <h3 id="what-triggers-each">What Triggers Each</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  REFLOW (Layout)                                             │
-│  Changes that affect geometry                                │
-│                                                              │
-│  Triggers:                                                   │
-│  ├── width, height, padding, margin, border                  │
-│  ├── position, top, left, right, bottom                     │
-│  ├── display, float, clear                                   │
-│  ├── font-size, font-family, font-weight                     │
-│  ├── Adding/removing DOM elements                            │
-│  ├── Resizing window                                         │
-│  └── Reading layout properties (offsetWidth, etc.)           │
-│                                                              │
-│  Cost: HIGH (recalculates entire tree or subtree)            │
-└─────────────────────────────────────────────────────────────┘
+<div class="mermaid">
+graph TD
+    subgraph &quot;Reflow (Layout) - Changes that affect geometry&quot;
+        RF[&quot;Triggers&quot;] --&gt; RF1[&quot;width, height, padding, margin, border&quot;]
+        RF --&gt; RF2[&quot;position, top, left, right, bottom&quot;]
+        RF --&gt; RF3[&quot;display, float, clear&quot;]
+        RF --&gt; RF4[&quot;font-size, font-family, font-weight&quot;]
+        RF --&gt; RF5[&quot;Adding/removing DOM elements&quot;]
+        RF --&gt; RF6[&quot;Resizing window&quot;]
+        RF --&gt; RF7[&quot;Reading layout properties (offsetWidth, etc.)&quot;]
+        RF7 --&gt; RFC[&quot;Cost: HIGH (recalculates entire tree or subtree)&quot;]
+    end
 
-┌─────────────────────────────────────────────────────────────┐
-│  REPAINT                                                     │
-│  Changes that affect appearance only                         │
-│                                                              │
-│  Triggers:                                                   │
-│  ├── color, background-color                                 │
-│  ├── visibility                                              │
-│  ├── box-shadow                                              │
-│  └── outline                                                 │
-│                                                              │
-│  Cost: MEDIUM (redraw affected pixels)                       │
-└─────────────────────────────────────────────────────────────┘
+    subgraph &quot;Repaint - Changes that affect appearance only&quot;
+        RP[&quot;Triggers&quot;] --&gt; RP1[&quot;color, background-color&quot;]
+        RP --&gt; RP2[&quot;visibility&quot;]
+        RP --&gt; RP3[&quot;box-shadow&quot;]
+        RP --&gt; RP4[&quot;outline&quot;]
+        RP4 --&gt; RPC[&quot;Cost: MEDIUM (redraw affected pixels)&quot;]
+    end
 
-┌─────────────────────────────────────────────────────────────┐
-│  COMPOSITE ONLY                                              │
-│  Changes handled by GPU                                      │
-│                                                              │
-│  Properties:                                                 │
-│  ├── transform                                               │
-│  ├── opacity                                                 │
-│  └── filter (with GPU acceleration)                          │
-│                                                              │
-│  Cost: LOW (GPU handles it, no main thread work)             │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+    subgraph &quot;Composite Only - Changes handled by GPU&quot;
+        CO[&quot;Properties&quot;] --&gt; CO1[&quot;transform&quot;]
+        CO --&gt; CO2[&quot;opacity&quot;]
+        CO --&gt; CO3[&quot;filter (with GPU acceleration)&quot;]
+        CO3 --&gt; COC[&quot;Cost: LOW (GPU handles it, no main thread work)&quot;]
+    end
+</div>
 <h3 id="layout-thrashing">Layout Thrashing</h3>
 <pre><code class="language-js">// ❌ BAD - Forces synchronous layout on each iteration
 elements.forEach(el =&gt; {
@@ -374,34 +272,20 @@ function animate() {
 <hr />
 <h2 id="6-javascript-execution">6. JavaScript Execution</h2>
 <h3 id="the-event-loop">The Event Loop</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                      EVENT LOOP                              │
-│                                                              │
-│  ┌──────────────────┐      ┌──────────────────────────────┐ │
-│  │   Call Stack     │      │      Task Queue (Macro)       │ │
-│  │                  │      │  setTimeout, setInterval      │ │
-│  │  main()          │      │  I/O, UI rendering            │ │
-│  │  fn1()           │      │  requestAnimationFrame        │ │
-│  │  fn2()           │      └──────────────────────────────┘ │
-│  └────────┬─────────┘                                       │
-│           │                ┌──────────────────────────────┐ │
-│           │                │   Microtask Queue             │ │
-│           ▼                │  Promise.then                 │ │
-│      Stack empty?          │  queueMicrotask               │ │
-│           │                │  MutationObserver             │ │
-│           │                └──────────────────────────────┘ │
-│           ▼                                                  │
-│    Process ALL microtasks                                   │
-│           │                                                  │
-│           ▼                                                  │
-│    Render if needed (16.6ms has passed)                     │
-│           │                                                  │
-│           ▼                                                  │
-│    Process ONE macro task                                   │
-│           │                                                  │
-│           └───────── Loop ─────────────────▶                │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Event Loop&quot;
+        CS[&quot;Call Stack: main(), fn1(), fn2()&quot;] --&gt; SE{&quot;Stack empty?&quot;}
+        TQ[&quot;Task Queue (Macro): setTimeout, setInterval, I/O, UI rendering, requestAnimationFrame&quot;]
+        MQ[&quot;Microtask Queue: Promise.then, queueMicrotask, MutationObserver&quot;]
+        SE --&gt; AM[&quot;Process ALL microtasks&quot;]
+        MQ -.-&gt; AM
+        AM --&gt; RN[&quot;Render if needed (16.6ms has passed)&quot;]
+        RN --&gt; PM[&quot;Process ONE macro task&quot;]
+        TQ -.-&gt; PM
+        PM --&gt; SE
+    end
+</div>
 <h3 id="execution-order-example">Execution Order Example</h3>
 <pre><code class="language-js">console.log('1');  // Sync
 
@@ -414,24 +298,17 @@ console.log('4');  // Sync
 // Output: 1, 4, 3, 2
 </code></pre>
 <h3 id="long-tasks">Long Tasks</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  LONG TASK (&gt;50ms)                                           │
-│                                                              │
-│  Problem:                                                    │
-│  ├── Blocks main thread                                      │
-│  ├── Prevents rendering                                      │
-│  ├── Makes page unresponsive                                 │
-│  └── Hurts INP metric                                        │
-│                                                              │
-│  Timeline:                                                   │
-│  ─────────────────────────────────────────────────────────  │
-│  │ Long Task (200ms) █████████████████████████             │
-│  │                   │                                      │
-│  │                   └── User clicks button here            │
-│  │                       but can't respond until task ends  │
-│  ─────────────────────────────────────────────────────────  │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Long Task (greater than 50ms)&quot;
+        P[&quot;Problem&quot;] --&gt; P1[&quot;Blocks main thread&quot;]
+        P --&gt; P2[&quot;Prevents rendering&quot;]
+        P --&gt; P3[&quot;Makes page unresponsive&quot;]
+        P --&gt; P4[&quot;Hurts INP metric&quot;]
+        T[&quot;Timeline: Long Task (200ms)&quot;] --&gt; C[&quot;User clicks button here&quot;]
+        C --&gt; D[&quot;Can't respond until task ends&quot;]
+    end
+</div>
 <h3 id="breaking-up-long-tasks">Breaking Up Long Tasks</h3>
 <pre><code class="language-js">// ❌ BAD - Single long task
 function processItems(items) {
@@ -470,29 +347,19 @@ function processItems(items) {
 </code></pre>
 <hr />
 <h2 id="7-document-lifecycle-events">7. Document Lifecycle Events</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  DOCUMENT LIFECYCLE                                          │
-│                                                              │
-│  Parsing ──────────────────────────────────────▶            │
-│                                                              │
-│  DOMContentLoaded: DOM tree complete                         │
-│       │            (doesn't wait for images, stylesheets)    │
-│       ▼                                                      │
-│  document.readyState = &quot;interactive&quot;                         │
-│                                                              │
-│  Resources loading ────────────────────────────▶            │
-│                                                              │
-│  load: Everything loaded (images, styles, iframes)          │
-│       │                                                      │
-│       ▼                                                      │
-│  document.readyState = &quot;complete&quot;                            │
-│                                                              │
-│  User navigates away ──────────────────────────▶            │
-│                                                              │
-│  beforeunload: Chance to confirm leaving                     │
-│  unload: Cleanup                                             │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Document Lifecycle&quot;
+        A[&quot;Parsing&quot;] --&gt; B[&quot;DOMContentLoaded: DOM tree complete (doesn't wait for images, stylesheets)&quot;]
+        B --&gt; C[&quot;document.readyState = interactive&quot;]
+        C --&gt; D[&quot;Resources loading&quot;]
+        D --&gt; E[&quot;load: Everything loaded (images, styles, iframes)&quot;]
+        E --&gt; F[&quot;document.readyState = complete&quot;]
+        F --&gt; G[&quot;User navigates away&quot;]
+        G --&gt; H[&quot;beforeunload: Chance to confirm leaving&quot;]
+        H --&gt; I[&quot;unload: Cleanup&quot;]
+    end
+</div>
 <pre><code class="language-js">// DOMContentLoaded - DOM ready, safe to query
 document.addEventListener('DOMContentLoaded', () =&gt; {
   const button = document.querySelector('#myButton');
@@ -515,28 +382,19 @@ if (document.readyState === 'loading') {
 </code></pre>
 <hr />
 <h2 id="8-frame-budget">8. Frame Budget</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  60 FPS = 16.67ms per frame                                  │
-│                                                              │
-│  ┌───────────────────────────────────────────────────┐      │
-│  │ 16.67ms                                           │      │
-│  │                                                   │      │
-│  │ JS ████     Style ██   Layout ██  Paint █  Comp █ │      │
-│  │ (10ms)      (2ms)      (2ms)      (1ms)   (1ms)  │      │
-│  │                                                   │      │
-│  │              ✓ Under budget - smooth!             │      │
-│  └───────────────────────────────────────────────────┘      │
-│                                                              │
-│  ┌───────────────────────────────────────────────────┐      │
-│  │ 16.67ms                               ▼ Overrun   │      │
-│  │                                                   │      │
-│  │ JS ████████████████  Style ███  Layout ███  ▓▓▓▓ │      │
-│  │ (25ms)                                     Jank! │      │
-│  │                                                   │      │
-│  │              ✗ Over budget - frame dropped!       │      │
-│  └───────────────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;60 FPS = 16.67ms per frame&quot;
+        subgraph &quot;Frame 1 (16.67ms budget)&quot;
+            J1[&quot;JS (10ms)&quot;] --&gt; S1[&quot;Style (2ms)&quot;] --&gt; L1[&quot;Layout (2ms)&quot;] --&gt; P1[&quot;Paint (1ms)&quot;] --&gt; C1[&quot;Composite (1ms)&quot;]
+            C1 --&gt; OK[&quot;Under budget - smooth&quot;]
+        end
+        subgraph &quot;Frame 2 (16.67ms budget, overrun)&quot;
+            J2[&quot;JS (25ms)&quot;] --&gt; S2[&quot;Style&quot;] --&gt; L2[&quot;Layout&quot;] --&gt; Jank[&quot;Jank&quot;]
+            Jank --&gt; BAD[&quot;Over budget - frame dropped&quot;]
+        end
+    end
+</div>
 <hr />
 <h2 id="9-optimization-summary">9. Optimization Summary</h2>
 <table>
