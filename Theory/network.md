@@ -135,12 +135,10 @@ Since the connection is **persistent**, the server must keep a record of every c
 
 **Solution:** Use a **Pub/Sub layer** (like Redis) to sync messages across multiple server instances.
 
-```
-┌──────────┐     ┌──────────┐     ┌──────────┐
-│ Server 1 │────▶│  Redis   │◀────│ Server 2 │
-│ (1000    │     │  Pub/Sub │     │ (1000    │
-│  clients)│     └──────────┘     │  clients)│
-└──────────┘                      └──────────┘
+```mermaid
+graph LR
+    S1["Server 1 (1000 clients)"] --> Redis["Redis Pub/Sub"]
+    S2["Server 2 (1000 clients)"] --> Redis
 ```
 
 ---
@@ -198,20 +196,17 @@ SSE is the **"goldilocks" protocol** for:
 
 ## 6. Decision Framework for Interviews
 
-```
-Is the data...
-│
-├─▶ Static or changes infrequently?
-│   └─▶ REST (leverage HTTP caching)
-│
-├─▶ Complex with nested relationships?
-│   └─▶ GraphQL (avoid over/under-fetching)
-│
-├─▶ Real-time AND bidirectional?
-│   └─▶ WebSockets (chat, collaboration, games)
-│
-└─▶ Real-time BUT server-to-client only?
-    └─▶ SSE (notifications, feeds, tickers)
+```mermaid
+graph TD
+    Q["Is the data...?"]
+    Q --> Q1["Static or rarely changes?"]
+    Q1 --> A1["REST (HTTP caching)"]
+    Q --> Q2["Complex nested data?"]
+    Q2 --> A2["GraphQL (avoids over/under-fetch)"]
+    Q --> Q3["Real-time + bidirectional?"]
+    Q3 --> A3["WebSockets (chat, games)"]
+    Q --> Q4["Real-time, server-to-client only?"]
+    Q4 --> A4["SSE (notifications, feeds)"]
 ```
 
 ---
@@ -222,37 +217,32 @@ Understanding the transport layer is crucial for Senior-level discussions.
 
 ### HTTP/1.1 Limitations
 
-```
-┌─────────────────────────────────────────────┐
-│  Browser (6 connection limit per domain)    │
-│                                             │
-│  Conn 1: GET /style.css ──────────────────▶ │
-│  Conn 2: GET /app.js ─────────────────────▶ │
-│  Conn 3: GET /image1.png ─────────────────▶ │
-│  Conn 4: GET /image2.png ─────────────────▶ │
-│  Conn 5: GET /image3.png ─────────────────▶ │
-│  Conn 6: GET /image4.png ─────────────────▶ │
-│                                             │
-│  image5.png WAITING... (blocked)            │
-└─────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph "Browser (6 connection limit per domain)"
+        C1["Conn 1: GET /style.css"] --> Server["Server"]
+        C2["Conn 2: GET /app.js"] --> Server
+        C3["Conn 3: GET /image1.png"] --> Server
+        C4["Conn 4: GET /image2.png"] --> Server
+        C5["Conn 5: GET /image3.png"] --> Server
+        C6["Conn 6: GET /image4.png"] --> Server
+        W["image5.png WAITING... (blocked)"]
+    end
 ```
 
 **Head-of-Line Blocking:** If `style.css` is slow, it blocks its connection.
 
 ### HTTP/2 Multiplexing
 
-```
-┌─────────────────────────────────────────────┐
-│  Single TCP Connection                      │
-│                                             │
-│  Stream 1: GET /style.css ──┐               │
-│  Stream 2: GET /app.js ─────┼───▶ Server    │
-│  Stream 3: GET /image1.png ─┤               │
-│  Stream 4: GET /image2.png ─┤               │
-│  Stream 5: GET /image3.png ─┘               │
-│                                             │
-│  All requests sent simultaneously!          │
-└─────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph "Single TCP Connection - all streams sent simultaneously"
+        S1["Stream 1: GET /style.css"] --> Server["Server"]
+        S2["Stream 2: GET /app.js"] --> Server
+        S3["Stream 3: GET /image1.png"] --> Server
+        S4["Stream 4: GET /image2.png"] --> Server
+        S5["Stream 5: GET /image3.png"] --> Server
+    end
 ```
 
 **Key Features:**
@@ -280,27 +270,13 @@ Cross-Origin Resource Sharing is the browser's security mechanism for cross-doma
 
 ### The Preflight Dance
 
-```
-┌──────────┐                           ┌──────────┐
-│  Browser │                           │  Server  │
-│(app.com) │                           │(api.com) │
-└────┬─────┘                           └────┬─────┘
-     │                                      │
-     │  OPTIONS /api/users                  │
-     │  Origin: https://app.com             │
-     │  Access-Control-Request-Method: POST │
-     │  Access-Control-Request-Headers:     │
-     │    Content-Type, Authorization       │
-     │─────────────────────────────────────▶│
-     │                                      │
-     │  204 No Content                      │
-     │  Access-Control-Allow-Origin: *      │
-     │  Access-Control-Allow-Methods: POST  │
-     │  Access-Control-Max-Age: 86400       │
-     │◀─────────────────────────────────────│
-     │                                      │
-     │  POST /api/users (actual request)    │
-     │─────────────────────────────────────▶│
+```mermaid
+sequenceDiagram
+    participant Browser as Browser (app.com)
+    participant Server as Server (api.com)
+    Browser->>Server: OPTIONS /api/users - Origin: https://app.com, Access-Control-Request-Method: POST, Access-Control-Request-Headers: Content-Type, Authorization
+    Server-->>Browser: 204 No Content - Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: POST, Access-Control-Max-Age: 86400
+    Browser->>Server: POST /api/users (actual request)
 ```
 
 ### When Preflight is Triggered
@@ -356,34 +332,29 @@ fetch('https://api.com/data', {
 
 ### TCP Connection Establishment (3-Way Handshake)
 
-```
-Client                    Server
-   │                         │
-   │─────── SYN ────────────▶│  "I want to connect"
-   │                         │
-   │◀────── SYN-ACK ─────────│  "OK, I acknowledge"
-   │                         │
-   │─────── ACK ────────────▶│  "Great, connected!"
-   │                         │
-   │      Connection Open    │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: SYN ("I want to connect")
+    Server-->>Client: SYN-ACK ("OK, I acknowledge")
+    Client->>Server: ACK ("Great, connected!")
+    Note over Client,Server: Connection Open
 ```
 
 **Time Cost:** ~1 RTT (Round Trip Time)
 
 ### TLS Handshake (HTTPS)
 
-```
-Client                           Server
-   │                               │
-   │─── ClientHello ──────────────▶│  Supported ciphers, random
-   │                               │
-   │◀── ServerHello + Certificate ─│  Chosen cipher, cert
-   │                               │
-   │─── Key Exchange + Finished ──▶│  Pre-master secret
-   │                               │
-   │◀── Finished ──────────────────│
-   │                               │
-   │     Encrypted Connection      │
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: ClientHello (Supported ciphers, random)
+    Server-->>Client: ServerHello + Certificate (Chosen cipher, cert)
+    Client->>Server: Key Exchange + Finished (Pre-master secret)
+    Server-->>Client: Finished
+    Note over Client,Server: Encrypted Connection
 ```
 
 **Time Cost:** ~2 RTT (TLS 1.2) or ~1 RTT (TLS 1.3)

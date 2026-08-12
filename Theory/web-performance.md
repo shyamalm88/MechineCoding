@@ -6,16 +6,15 @@ A comprehensive guide to web performance strategies for system design interviews
 
 ## 1. The Performance Mental Model
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    USER PERCEPTION                          │
-├─────────────────────────────────────────────────────────────┤
-│  0-100ms   │ Instant - user feels in control               │
-│  100-300ms │ Slight delay - still acceptable               │
-│  300-1000ms│ Noticeable lag - user loses focus             │
-│  1000ms+   │ Mental context switch - user frustrated       │
-│  10000ms+  │ User abandons the task                        │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "User Perception"
+        T1["0-100ms"] -->|Instant - user feels in control| T2["100-300ms"]
+        T2 -->|Slight delay - still acceptable| T3["300-1000ms"]
+        T3 -->|Noticeable lag - user loses focus| T4["1000ms+"]
+        T4 -->|Mental context switch - user frustrated| T5["10000ms+"]
+        T5 -->|User abandons the task| T6["Task Abandoned"]
+    end
 ```
 
 ### The Cost of Slow
@@ -33,16 +32,18 @@ A comprehensive guide to web performance strategies for system design interviews
 
 The sequence of steps the browser takes to convert HTML, CSS, and JS into pixels.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                   CRITICAL RENDERING PATH                    │
-│                                                              │
-│  HTML ──▶ DOM ──┐                                            │
-│                 ├──▶ Render Tree ──▶ Layout ──▶ Paint        │
-│  CSS ──▶ CSSOM ─┘                                            │
-│                                                              │
-│  JavaScript can BLOCK both DOM and CSSOM construction!       │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph "Critical Rendering Path"
+        HTML["HTML"] --> DOM["DOM"]
+        CSS["CSS"] --> CSSOM["CSSOM"]
+        DOM --> RT["Render Tree"]
+        CSSOM --> RT
+        RT --> Layout["Layout"]
+        Layout --> Paint["Paint"]
+        JS["JavaScript"] -.->|can BLOCK| DOM
+        JS -.->|can BLOCK| CSSOM
+    end
 ```
 
 ### Optimizing the CRP
@@ -172,18 +173,16 @@ Images account for ~50% of page weight on average.
 
 ### Placeholder Strategies
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  LQIP (Low Quality Image Placeholder)                       │
-│                                                              │
-│  1. Load tiny blurred version (~1KB)                        │
-│  2. Show with blur filter                                    │
-│  3. Fade in full image when loaded                          │
-│                                                              │
-│  BlurHash: Encode image as 20-30 character string           │
-│  Dominant Color: Simple colored rectangle                    │
-│  Skeleton: Gray placeholder matching layout                  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "LQIP (Low Quality Image Placeholder)"
+        L1["1. Load tiny blurred version (~1KB)"] --> L2["2. Show with blur filter"] --> L3["3. Fade in full image when loaded"]
+    end
+    subgraph "Other Placeholder Strategies"
+        BH["BlurHash: Encode image as 20-30 character string"]
+        DC["Dominant Color: Simple colored rectangle"]
+        SK["Skeleton: Gray placeholder matching layout"]
+    end
 ```
 
 ---
@@ -192,17 +191,14 @@ Images account for ~50% of page weight on average.
 
 ### Bundle Size Reduction
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  BUNDLE ANALYSIS                                             │
-│                                                              │
-│  1. npm install webpack-bundle-analyzer                      │
-│  2. Identify large dependencies                              │
-│  3. Consider alternatives:                                   │
-│     - moment.js (67KB) → date-fns (13KB tree-shaken)        │
-│     - lodash (72KB) → lodash-es (tree-shakeable)            │
-│     - axios (13KB) → fetch (native)                         │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Bundle Analysis"
+        B1["1. npm install webpack-bundle-analyzer"] --> B2["2. Identify large dependencies"] --> B3["3. Consider alternatives"]
+        B3 --> M["moment.js (67KB)"] -->|replace with| M2["date-fns (13KB tree-shaken)"]
+        B3 --> LO["lodash (72KB)"] -->|replace with| LO2["lodash-es (tree-shakeable)"]
+        B3 --> AX["axios (13KB)"] -->|replace with| AX2["fetch (native)"]
+    end
 ```
 
 ### Code Splitting
@@ -297,21 +293,13 @@ plugins: [
 
 ### Cache Headers
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  CACHING STRATEGY                                            │
-│                                                              │
-│  Static Assets (JS, CSS, images with hash):                  │
-│  Cache-Control: public, max-age=31536000, immutable          │
-│                                                              │
-│  HTML files:                                                 │
-│  Cache-Control: no-cache                                     │
-│  (or max-age=0, must-revalidate)                            │
-│                                                              │
-│  API responses:                                              │
-│  Cache-Control: private, max-age=60                         │
-│  (with ETag for validation)                                 │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Caching Strategy"
+        SA["Static Assets (JS, CSS, images with hash)"] -->|Cache-Control| SAV["public, max-age=31536000, immutable"]
+        HT["HTML files"] -->|Cache-Control| HTV["no-cache (or max-age=0, must-revalidate)"]
+        API["API responses"] -->|Cache-Control| APIV["private, max-age=60 (with ETag for validation)"]
+    end
 ```
 
 ### Service Worker Caching
@@ -339,17 +327,19 @@ self.addEventListener('fetch', event => {
 
 ### HTTP/2 Benefits
 
-```
-HTTP/1.1:
-├── 6 connections per domain
-├── Head-of-line blocking
-└── Uncompressed headers
-
-HTTP/2:
-├── Single multiplexed connection
-├── Header compression (HPACK)
-├── Server push
-└── Stream prioritization
+```mermaid
+graph TD
+    subgraph "HTTP/1.1"
+        H1A["6 connections per domain"]
+        H1B["Head-of-line blocking"]
+        H1C["Uncompressed headers"]
+    end
+    subgraph "HTTP/2"
+        H2A["Single multiplexed connection"]
+        H2B["Header compression (HPACK)"]
+        H2C["Server push"]
+        H2D["Stream prioritization"]
+    end
 ```
 
 ### Reduce Round Trips
@@ -363,15 +353,14 @@ HTTP/2:
 
 ### CDN Configuration
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  CDN EDGE CONFIGURATION                                      │
-│                                                              │
-│  Static assets:    TTL 1 year (immutable with hash)         │
-│  HTML pages:       TTL 60s (stale-while-revalidate)         │
-│  API responses:    TTL varies (use Surrogate-Key for purge) │
-│  Images:           TTL 30 days (purge on update)            │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "CDN Edge Configuration"
+        SA["Static assets"] -->|TTL| SAV["1 year (immutable with hash)"]
+        HT["HTML pages"] -->|TTL| HTV["60s (stale-while-revalidate)"]
+        API["API responses"] -->|TTL| APIV["varies (use Surrogate-Key for purge)"]
+        IMG["Images"] -->|TTL| IMGV["30 days (purge on update)"]
+    end
 ```
 
 ---
@@ -435,15 +424,14 @@ Third-party scripts are often the biggest performance killers.
 
 ### Audit & Prioritize
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  THIRD-PARTY AUDIT                                           │
-│                                                              │
-│  Essential (sync):     Payment SDK, Auth                    │
-│  Important (async):    Analytics, Error tracking            │
-│  Nice-to-have (defer): Chat widgets, Ads                    │
-│  Remove:               Unused tracking, Legacy widgets      │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Third-Party Audit"
+        E["Essential (sync)"] --> EV["Payment SDK, Auth"]
+        I["Important (async)"] --> IV["Analytics, Error tracking"]
+        N["Nice-to-have (defer)"] --> NV["Chat widgets, Ads"]
+        R["Remove"] --> RV["Unused tracking, Legacy widgets"]
+    end
 ```
 
 ### Loading Strategies
