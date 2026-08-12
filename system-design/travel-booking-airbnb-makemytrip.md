@@ -28,36 +28,20 @@ A **travel booking platform** that allows users to search, discover, compare, an
 
 ### Core User Journeys
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         TRAVEL BOOKING USER JOURNEYS                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. DISCOVERY JOURNEY                                                       │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │  Landing │───▶│  Search  │───▶│  Browse  │───▶│  Filter  │              │
-│  │   Page   │    │  Query   │    │ Listings │    │  Refine  │              │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘              │
-│                                                                             │
-│  2. BOOKING JOURNEY                                                         │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │ Property │───▶│  Select  │───▶│  Guest   │───▶│ Payment  │              │
-│  │  Detail  │    │  Dates   │    │  Details │    │ Checkout │              │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘              │
-│                                                                             │
-│  3. HOST JOURNEY (Airbnb-style)                                             │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │  Create  │───▶│  Upload  │───▶│   Set    │───▶│ Publish  │              │
-│  │ Listing  │    │  Photos  │    │ Pricing  │    │ & Manage │              │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘              │
-│                                                                             │
-│  4. TRIP MANAGEMENT                                                         │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │  View    │───▶│  Check   │───▶│  Host    │───▶│  Leave   │              │
-│  │ Bookings │    │   In     │    │  Chat    │    │  Review  │              │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘              │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "1. Discovery Journey"
+        D1["Landing Page"] --> D2["Search Query"] --> D3["Browse Listings"] --> D4["Filter / Refine"]
+    end
+    subgraph "2. Booking Journey"
+        B1["Property Detail"] --> B2["Select Dates"] --> B3["Guest Details"] --> B4["Payment Checkout"]
+    end
+    subgraph "3. Host Journey (Airbnb-style)"
+        H1["Create Listing"] --> H2["Upload Photos"] --> H3["Set Pricing"] --> H4["Publish & Manage"]
+    end
+    subgraph "4. Trip Management"
+        T1["View Bookings"] --> T2["Check In"] --> T3["Host Chat"] --> T4["Leave Review"]
+    end
 ```
 
 ### Platform Comparison
@@ -76,62 +60,14 @@ A **travel booking platform** that allows users to search, discover, compare, an
 
 ### Key Frontend Challenges
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        FRONTEND ENGINEERING CHALLENGES                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  1. COMPLEX SEARCH & FILTERING                                       │   │
-│  │  ─────────────────────────────────                                   │   │
-│  │  • Location autocomplete with Google Places API                      │   │
-│  │  • Date range selection with availability checking                   │   │
-│  │  • Dynamic filters (price, amenities, property type, etc.)           │   │
-│  │  • Real-time search results with map synchronization                 │   │
-│  │  • URL state management for shareable search results                 │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  2. MAP-LIST SYNCHRONIZATION                                         │   │
-│  │  ─────────────────────────────                                       │   │
-│  │  • Bi-directional sync between map markers and list items            │   │
-│  │  • Clustering for dense areas                                        │   │
-│  │  • Viewport-based loading (load listings in visible map area)        │   │
-│  │  • Price labels on map markers                                       │   │
-│  │  • Hover state coordination                                          │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  3. CALENDAR & AVAILABILITY                                          │   │
-│  │  ─────────────────────────────                                       │   │
-│  │  • Dual-month calendar with date range selection                     │   │
-│  │  • Blocked dates visualization                                       │   │
-│  │  • Dynamic pricing display (different rates per night)               │   │
-│  │  • Minimum stay requirements                                         │   │
-│  │  • Check-in/check-out time restrictions                              │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  4. BOOKING & PAYMENT FLOW                                           │   │
-│  │  ─────────────────────────────                                       │   │
-│  │  • Multi-step checkout with state persistence                        │   │
-│  │  • Price breakdown with taxes, fees, discounts                       │   │
-│  │  • Payment gateway integration (Stripe, PayPal, local methods)       │   │
-│  │  • Guest count validation                                            │   │
-│  │  • Cancellation policy display                                       │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  5. IMAGE-HEAVY EXPERIENCE                                           │   │
-│  │  ─────────────────────────────                                       │   │
-│  │  • Photo galleries with lightbox                                     │   │
-│  │  • Virtual tours / 360° views                                        │   │
-│  │  • Lazy loading with blur placeholders                               │   │
-│  │  • Responsive images for different devices                           │   │
-│  │  • Image zoom and pan                                                │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Title["FRONTEND ENGINEERING CHALLENGES"]
+    Title --> C1["1. Complex Search & Filtering\n- Location autocomplete with Google Places API\n- Date range selection with availability checking\n- Dynamic filters (price, amenities, property type, etc.)\n- Real-time search results with map synchronization\n- URL state management for shareable search results"]
+    Title --> C2["2. Map-List Synchronization\n- Bi-directional sync between map markers and list items\n- Clustering for dense areas\n- Viewport-based loading (load listings in visible map area)\n- Price labels on map markers\n- Hover state coordination"]
+    Title --> C3["3. Calendar & Availability\n- Dual-month calendar with date range selection\n- Blocked dates visualization\n- Dynamic pricing display (different rates per night)\n- Minimum stay requirements\n- Check-in/check-out time restrictions"]
+    Title --> C4["4. Booking & Payment Flow\n- Multi-step checkout with state persistence\n- Price breakdown with taxes, fees, discounts\n- Payment gateway integration (Stripe, PayPal, local methods)\n- Guest count validation\n- Cancellation policy display"]
+    Title --> C5["5. Image-Heavy Experience\n- Photo galleries with lightbox\n- Virtual tours / 360 degree views\n- Lazy loading with blur placeholders\n- Responsive images for different devices\n- Image zoom and pan"]
 ```
 
 ### Functional Requirements
@@ -203,30 +139,26 @@ A **travel booking platform** that allows users to search, discover, compare, an
 
 ### Scale Considerations
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           SCALE PARAMETERS                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Users & Traffic                                                            │
-│  ├── Daily Active Users: 10M+                                               │
-│  ├── Peak Concurrent Users: 500K                                            │
-│  ├── Searches per Second: 50K                                               │
-│  └── Bookings per Day: 1M+                                                  │
-│                                                                             │
-│  Content                                                                    │
-│  ├── Active Listings: 7M+ (Airbnb scale)                                    │
-│  ├── Photos per Listing: 15-30                                              │
-│  ├── Reviews: 500M+                                                         │
-│  └── Locations: 220+ countries                                              │
-│                                                                             │
-│  Frontend Considerations                                                    │
-│  ├── Search Results per Page: 20-50 listings                                │
-│  ├── Map Markers Visible: 50-200 at a time                                  │
-│  ├── Filters Applied: 5-10 simultaneously                                   │
-│  └── Calendar Range: 12-24 months                                           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Title["SCALE PARAMETERS"]
+    Title --> UT["Users & Traffic"]
+    UT --> UT1["Daily Active Users: 10M+"]
+    UT --> UT2["Peak Concurrent Users: 500K"]
+    UT --> UT3["Searches per Second: 50K"]
+    UT --> UT4["Bookings per Day: 1M+"]
+
+    Title --> CT["Content"]
+    CT --> CT1["Active Listings: 7M+ (Airbnb scale)"]
+    CT --> CT2["Photos per Listing: 15-30"]
+    CT --> CT3["Reviews: 500M+"]
+    CT --> CT4["Locations: 220+ countries"]
+
+    Title --> FC["Frontend Considerations"]
+    FC --> FC1["Search Results per Page: 20-50 listings"]
+    FC --> FC2["Map Markers Visible: 50-200 at a time"]
+    FC --> FC3["Filters Applied: 5-10 simultaneously"]
+    FC --> FC4["Calendar Range: 12-24 months"]
 ```
 
 ### Success Metrics (Frontend Focused)
@@ -248,103 +180,91 @@ A **travel booking platform** that allows users to search, discover, compare, an
 
 ### System Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      TRAVEL BOOKING FRONTEND ARCHITECTURE                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                         CLIENT LAYER                                 │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │   │
-│  │  │   React     │  │   Next.js   │  │   React    │  │   PWA      │  │   │
-│  │  │   Native    │  │     Web     │  │   Native   │  │   Shell    │  │   │
-│  │  │   (iOS)     │  │     App     │  │ (Android)  │  │            │  │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └────────────┘  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      SHARED SERVICES LAYER                           │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────┐  │   │
-│  │  │  Search  │  │   Map    │  │ Calendar │  │ Booking  │  │ Auth  │  │   │
-│  │  │  Engine  │  │ Service  │  │ Service  │  │  Flow    │  │       │  │   │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └───────┘  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        STATE LAYER                                   │   │
-│  │  ┌────────────────┐  ┌─────────────────┐  ┌──────────────────────┐  │   │
-│  │  │  React Query   │  │     Zustand     │  │   URL State (nuqs)   │  │   │
-│  │  │  Server State  │  │  Global UI State │  │  Search Params      │  │   │
-│  │  └────────────────┘  └─────────────────┘  └──────────────────────┘  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        API LAYER                                     │   │
-│  │  ┌────────────────────────────────────────────────────────────────┐ │   │
-│  │  │                    API Gateway / BFF                            │ │   │
-│  │  └────────────────────────────────────────────────────────────────┘ │   │
-│  │         │              │              │              │               │   │
-│  │  ┌──────┴───┐   ┌──────┴───┐   ┌──────┴───┐   ┌──────┴───┐         │   │
-│  │  │ Search   │   │ Listings │   │ Bookings │   │ Payments │         │   │
-│  │  │ Service  │   │ Service  │   │ Service  │   │ Service  │         │   │
-│  │  └──────────┘   └──────────┘   └──────────┘   └──────────┘         │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    EXTERNAL SERVICES                                 │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────┐  │   │
-│  │  │  Google  │  │  Stripe  │  │ Twilio   │  │ Firebase │  │ CDN   │  │   │
-│  │  │  Maps    │  │ Payments │  │   SMS    │  │   Auth   │  │Images │  │   │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └───────┘  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Client["CLIENT LAYER"]
+        RN["React Native (iOS)"]
+        NW["Next.js Web App"]
+        RNA["React Native (Android)"]
+        PWA["PWA Shell"]
+    end
+
+    subgraph Shared["SHARED SERVICES LAYER"]
+        SE["Search Engine"]
+        MS["Map Service"]
+        CS["Calendar Service"]
+        BF["Booking Flow"]
+        AU["Auth"]
+    end
+
+    subgraph State["STATE LAYER"]
+        RQ["React Query (Server State)"]
+        ZU["Zustand (Global UI State)"]
+        US["URL State - nuqs (Search Params)"]
+    end
+
+    subgraph API["API LAYER"]
+        GW["API Gateway / BFF"]
+        SVC1["Search Service"]
+        SVC2["Listings Service"]
+        SVC3["Bookings Service"]
+        SVC4["Payments Service"]
+        GW --> SVC1
+        GW --> SVC2
+        GW --> SVC3
+        GW --> SVC4
+    end
+
+    subgraph External["EXTERNAL SERVICES"]
+        GM["Google Maps"]
+        ST["Stripe Payments"]
+        TW["Twilio SMS"]
+        FA["Firebase Auth"]
+        CDN["CDN Images"]
+    end
+
+    Client --> Shared --> State --> API --> External
 ```
 
 ### Page Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           PAGE STRUCTURE                                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  /                          Landing/Home Page                               │
-│  ├── Hero with Search Bar                                                   │
-│  ├── Trending Destinations                                                  │
-│  ├── Categories (Beach, Mountain, City, etc.)                               │
-│  └── Personalized Recommendations                                           │
-│                                                                             │
-│  /search                    Search Results Page                             │
-│  ├── Search Bar (sticky)                                                    │
-│  ├── Filter Panel (collapsible)                                             │
-│  ├── Results List/Grid                                                      │
-│  └── Map View (split or overlay)                                            │
-│                                                                             │
-│  /listing/:id               Property Detail Page                            │
-│  ├── Photo Gallery                                                          │
-│  ├── Property Info & Amenities                                              │
-│  ├── Booking Widget (sticky)                                                │
-│  ├── Reviews Section                                                        │
-│  ├── Location & Map                                                         │
-│  └── Similar Listings                                                       │
-│                                                                             │
-│  /book/:listingId           Booking Flow                                    │
-│  ├── /book/:id/details      Guest Details                                   │
-│  ├── /book/:id/payment      Payment                                         │
-│  └── /book/:id/confirm      Confirmation                                    │
-│                                                                             │
-│  /trips                     My Trips                                        │
-│  ├── Upcoming                                                               │
-│  ├── Past                                                                   │
-│  └── Cancelled                                                              │
-│                                                                             │
-│  /hosting                   Host Dashboard (Airbnb-style)                   │
-│  ├── /hosting/listings      My Listings                                     │
-│  ├── /hosting/calendar      Availability Calendar                           │
-│  ├── /hosting/reservations  Booking Requests                                │
-│  └── /hosting/earnings      Earnings & Payouts                              │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Root["/ - Landing/Home Page"]
+    Root --> R1["Hero with Search Bar"]
+    Root --> R2["Trending Destinations"]
+    Root --> R3["Categories (Beach, Mountain, City, etc.)"]
+    Root --> R4["Personalized Recommendations"]
+
+    Search["/search - Search Results Page"]
+    Search --> S1["Search Bar (sticky)"]
+    Search --> S2["Filter Panel (collapsible)"]
+    Search --> S3["Results List/Grid"]
+    Search --> S4["Map View (split or overlay)"]
+
+    Listing["/listing/:id - Property Detail Page"]
+    Listing --> L1["Photo Gallery"]
+    Listing --> L2["Property Info & Amenities"]
+    Listing --> L3["Booking Widget (sticky)"]
+    Listing --> L4["Reviews Section"]
+    Listing --> L5["Location & Map"]
+    Listing --> L6["Similar Listings"]
+
+    Book["/book/:listingId - Booking Flow"]
+    Book --> B1["/book/:id/details - Guest Details"]
+    Book --> B2["/book/:id/payment - Payment"]
+    Book --> B3["/book/:id/confirm - Confirmation"]
+
+    Trips["/trips - My Trips"]
+    Trips --> T1["Upcoming"]
+    Trips --> T2["Past"]
+    Trips --> T3["Cancelled"]
+
+    Hosting["/hosting - Host Dashboard (Airbnb-style)"]
+    Hosting --> H1["/hosting/listings - My Listings"]
+    Hosting --> H2["/hosting/calendar - Availability Calendar"]
+    Hosting --> H3["/hosting/reservations - Booking Requests"]
+    Hosting --> H4["/hosting/earnings - Earnings & Payouts"]
 ```
 
 ### Technology Stack
@@ -390,215 +310,189 @@ const styling = {
 
 ### Module Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         MODULE DEPENDENCY GRAPH                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│                              ┌──────────────┐                               │
-│                              │     App      │                               │
-│                              │    Shell     │                               │
-│                              └──────┬───────┘                               │
-│                                     │                                       │
-│           ┌─────────────┬───────────┼───────────┬─────────────┐             │
-│           ▼             ▼           ▼           ▼             ▼             │
-│    ┌────────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
-│    │   Search   │ │ Listings │ │ Booking  │ │   User   │ │   Host   │      │
-│    │   Module   │ │  Module  │ │  Module  │ │  Module  │ │  Module  │      │
-│    └─────┬──────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘      │
-│          │             │            │            │            │             │
-│          └─────────────┴────────────┴────────────┴────────────┘             │
-│                                     │                                       │
-│                              ┌──────┴───────┐                               │
-│                              │    Shared    │                               │
-│                              │  Components  │                               │
-│                              └──────┬───────┘                               │
-│                                     │                                       │
-│           ┌─────────────┬───────────┼───────────┬─────────────┐             │
-│           ▼             ▼           ▼           ▼             ▼             │
-│    ┌────────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
-│    │    Map     │ │ Calendar │ │  Forms   │ │  Media   │ │    UI    │      │
-│    │ Components │ │Components│ │   Kit    │ │ Gallery  │ │Primitives│      │
-│    └────────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    App["App Shell"]
+    App --> Search["Search Module"]
+    App --> Listings["Listings Module"]
+    App --> Booking["Booking Module"]
+    App --> User["User Module"]
+    App --> Host["Host Module"]
+
+    Search --> Shared["Shared Components"]
+    Listings --> Shared
+    Booking --> Shared
+    User --> Shared
+    Host --> Shared
+
+    Shared --> Map["Map Components"]
+    Shared --> Calendar["Calendar Components"]
+    Shared --> Forms["Forms Kit"]
+    Shared --> Media["Media Gallery"]
+    Shared --> UI["UI Primitives"]
 ```
 
 ### Folder Structure
 
-```
-src/
-├── app/                          # Next.js App Router
-│   ├── (main)/                   # Main layout group
-│   │   ├── page.tsx              # Home page
-│   │   ├── search/
-│   │   │   └── page.tsx          # Search results
-│   │   ├── listing/
-│   │   │   └── [id]/
-│   │   │       └── page.tsx      # Property detail
-│   │   └── trips/
-│   │       └── page.tsx          # My trips
-│   ├── (booking)/                # Booking layout group
-│   │   └── book/
-│   │       └── [listingId]/
-│   │           ├── page.tsx      # Booking start
-│   │           ├── details/
-│   │           ├── payment/
-│   │           └── confirm/
-│   ├── (hosting)/                # Host dashboard group
-│   │   └── hosting/
-│   │       ├── page.tsx
-│   │       ├── listings/
-│   │       ├── calendar/
-│   │       └── reservations/
-│   ├── api/                      # API routes (BFF)
-│   └── layout.tsx
-│
-├── modules/                      # Feature modules
-│   ├── search/
-│   │   ├── components/
-│   │   │   ├── SearchBar/
-│   │   │   ├── FilterPanel/
-│   │   │   ├── SearchResults/
-│   │   │   └── MapView/
-│   │   ├── hooks/
-│   │   │   ├── useSearch.ts
-│   │   │   ├── useFilters.ts
-│   │   │   └── useMapListSync.ts
-│   │   ├── services/
-│   │   ├── types/
-│   │   └── index.ts
-│   │
-│   ├── listings/
-│   │   ├── components/
-│   │   │   ├── ListingCard/
-│   │   │   ├── ListingDetail/
-│   │   │   ├── PhotoGallery/
-│   │   │   └── AmenitiesList/
-│   │   ├── hooks/
-│   │   └── services/
-│   │
-│   ├── booking/
-│   │   ├── components/
-│   │   │   ├── BookingWidget/
-│   │   │   ├── DateRangePicker/
-│   │   │   ├── GuestSelector/
-│   │   │   ├── PriceBreakdown/
-│   │   │   └── CheckoutForm/
-│   │   ├── hooks/
-│   │   │   ├── useBooking.ts
-│   │   │   ├── useAvailability.ts
-│   │   │   └── usePricing.ts
-│   │   └── services/
-│   │
-│   ├── calendar/
-│   │   ├── components/
-│   │   │   ├── Calendar/
-│   │   │   ├── DateRangePicker/
-│   │   │   └── AvailabilityCalendar/
-│   │   └── hooks/
-│   │
-│   └── map/
-│       ├── components/
-│       │   ├── MapContainer/
-│       │   ├── ListingMarker/
-│       │   ├── MarkerCluster/
-│       │   └── MapControls/
-│       └── hooks/
-│
-├── shared/
-│   ├── components/
-│   │   ├── ui/                   # Primitives (Button, Input, Modal)
-│   │   ├── layout/               # Header, Footer, Navigation
-│   │   └── feedback/             # Toast, Loading, Error
-│   ├── hooks/
-│   ├── utils/
-│   ├── types/
-│   └── constants/
-│
-├── lib/
-│   ├── api/                      # API client
-│   ├── maps/                     # Map utilities
-│   └── payments/                 # Payment integration
-│
-└── styles/
-    ├── globals.css
-    └── tokens/
+```mermaid
+graph TD
+    SRC["src/"]
+
+    SRC --> APP["app/ (Next.js App Router)"]
+    APP --> MAIN["(main)/ - Main layout group"]
+    MAIN --> MAIN_PAGE["page.tsx - Home page"]
+    MAIN --> MAIN_SEARCH["search/"]
+    MAIN_SEARCH --> MAIN_SEARCH_PAGE["page.tsx - Search results"]
+    MAIN --> MAIN_LISTING["listing/"]
+    MAIN_LISTING --> MAIN_LISTING_ID["[id]/"]
+    MAIN_LISTING_ID --> MAIN_LISTING_PAGE["page.tsx - Property detail"]
+    MAIN --> MAIN_TRIPS["trips/"]
+    MAIN_TRIPS --> MAIN_TRIPS_PAGE["page.tsx - My trips"]
+
+    APP --> BOOKING_GROUP["(booking)/ - Booking layout group"]
+    BOOKING_GROUP --> BOOK["book/"]
+    BOOK --> BOOK_ID["[listingId]/"]
+    BOOK_ID --> BOOK_PAGE["page.tsx - Booking start"]
+    BOOK_ID --> BOOK_DETAILS["details/"]
+    BOOK_ID --> BOOK_PAYMENT["payment/"]
+    BOOK_ID --> BOOK_CONFIRM["confirm/"]
+
+    APP --> HOSTING_GROUP["(hosting)/ - Host dashboard group"]
+    HOSTING_GROUP --> HOSTING["hosting/"]
+    HOSTING --> HOSTING_PAGE["page.tsx"]
+    HOSTING --> HOSTING_LISTINGS["listings/"]
+    HOSTING --> HOSTING_CALENDAR["calendar/"]
+    HOSTING --> HOSTING_RESERVATIONS["reservations/"]
+
+    APP --> APP_API["api/ - API routes (BFF)"]
+    APP --> APP_LAYOUT["layout.tsx"]
+
+    SRC --> MODULES["modules/ - Feature modules"]
+
+    MODULES --> MOD_SEARCH["search/"]
+    MOD_SEARCH --> MS_COMP["components/"]
+    MS_COMP --> MS_COMP1["SearchBar/"]
+    MS_COMP --> MS_COMP2["FilterPanel/"]
+    MS_COMP --> MS_COMP3["SearchResults/"]
+    MS_COMP --> MS_COMP4["MapView/"]
+    MOD_SEARCH --> MS_HOOKS["hooks/"]
+    MS_HOOKS --> MS_HOOK1["useSearch.ts"]
+    MS_HOOKS --> MS_HOOK2["useFilters.ts"]
+    MS_HOOKS --> MS_HOOK3["useMapListSync.ts"]
+    MOD_SEARCH --> MS_SERVICES["services/"]
+    MOD_SEARCH --> MS_TYPES["types/"]
+    MOD_SEARCH --> MS_INDEX["index.ts"]
+
+    MODULES --> MOD_LISTINGS["listings/"]
+    MOD_LISTINGS --> ML_COMP["components/"]
+    ML_COMP --> ML_COMP1["ListingCard/"]
+    ML_COMP --> ML_COMP2["ListingDetail/"]
+    ML_COMP --> ML_COMP3["PhotoGallery/"]
+    ML_COMP --> ML_COMP4["AmenitiesList/"]
+    MOD_LISTINGS --> ML_HOOKS["hooks/"]
+    MOD_LISTINGS --> ML_SERVICES["services/"]
+
+    MODULES --> MOD_BOOKING["booking/"]
+    MOD_BOOKING --> MB_COMP["components/"]
+    MB_COMP --> MB_COMP1["BookingWidget/"]
+    MB_COMP --> MB_COMP2["DateRangePicker/"]
+    MB_COMP --> MB_COMP3["GuestSelector/"]
+    MB_COMP --> MB_COMP4["PriceBreakdown/"]
+    MB_COMP --> MB_COMP5["CheckoutForm/"]
+    MOD_BOOKING --> MB_HOOKS["hooks/"]
+    MB_HOOKS --> MB_HOOK1["useBooking.ts"]
+    MB_HOOKS --> MB_HOOK2["useAvailability.ts"]
+    MB_HOOKS --> MB_HOOK3["usePricing.ts"]
+    MOD_BOOKING --> MB_SERVICES["services/"]
+
+    MODULES --> MOD_CALENDAR["calendar/"]
+    MOD_CALENDAR --> MC_COMP["components/"]
+    MC_COMP --> MC_COMP1["Calendar/"]
+    MC_COMP --> MC_COMP2["DateRangePicker/"]
+    MC_COMP --> MC_COMP3["AvailabilityCalendar/"]
+    MOD_CALENDAR --> MC_HOOKS["hooks/"]
+
+    MODULES --> MOD_MAP["map/"]
+    MOD_MAP --> MM_COMP["components/"]
+    MM_COMP --> MM_COMP1["MapContainer/"]
+    MM_COMP --> MM_COMP2["ListingMarker/"]
+    MM_COMP --> MM_COMP3["MarkerCluster/"]
+    MM_COMP --> MM_COMP4["MapControls/"]
+    MOD_MAP --> MM_HOOKS["hooks/"]
+
+    SRC --> SHARED["shared/"]
+    SHARED --> SH_COMP["components/"]
+    SH_COMP --> SH_UI["ui/ - Primitives (Button, Input, Modal)"]
+    SH_COMP --> SH_LAYOUT["layout/ - Header, Footer, Navigation"]
+    SH_COMP --> SH_FEEDBACK["feedback/ - Toast, Loading, Error"]
+    SHARED --> SH_HOOKS["hooks/"]
+    SHARED --> SH_UTILS["utils/"]
+    SHARED --> SH_TYPES["types/"]
+    SHARED --> SH_CONST["constants/"]
+
+    SRC --> LIB["lib/"]
+    LIB --> LIB_API["api/ - API client"]
+    LIB --> LIB_MAPS["maps/ - Map utilities"]
+    LIB --> LIB_PAYMENTS["payments/ - Payment integration"]
+
+    SRC --> STYLES["styles/"]
+    STYLES --> STYLES_GLOBAL["globals.css"]
+    STYLES --> STYLES_TOKENS["tokens/"]
 ```
 
 ### Rendering Strategy
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         RENDERING STRATEGY BY PAGE                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Page                    Strategy         Reason                            │
-│  ─────────────────────────────────────────────────────────                  │
-│  Home                    SSG + ISR        Static content, trending updates  │
-│  Search Results          SSR + CSR        SEO + dynamic filtering           │
-│  Property Detail         SSR + CSR        SEO critical, availability CSR    │
-│  Booking Flow            CSR              Private, no SEO needed            │
-│  My Trips                CSR              Private, authenticated            │
-│  Host Dashboard          CSR              Private, real-time data           │
-│                                                                             │
-│  Component-Level Strategies:                                                │
-│  ─────────────────────────────────────────────────────────                  │
-│  • Static content (descriptions, amenities) → Server Components            │
-│  • Interactive elements (calendar, map) → Client Components                 │
-│  • Real-time data (availability, price) → Client with React Query          │
-│  • Forms → Client Components with React Hook Form                           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Title["RENDERING STRATEGY BY PAGE"]
+
+    Title --> P1["Home"]
+    P1 --> P1S["Strategy: SSG + ISR"]
+    P1 --> P1R["Reason: Static content, trending updates"]
+
+    Title --> P2["Search Results"]
+    P2 --> P2S["Strategy: SSR + CSR"]
+    P2 --> P2R["Reason: SEO + dynamic filtering"]
+
+    Title --> P3["Property Detail"]
+    P3 --> P3S["Strategy: SSR + CSR"]
+    P3 --> P3R["Reason: SEO critical, availability CSR"]
+
+    Title --> P4["Booking Flow"]
+    P4 --> P4S["Strategy: CSR"]
+    P4 --> P4R["Reason: Private, no SEO needed"]
+
+    Title --> P5["My Trips"]
+    P5 --> P5S["Strategy: CSR"]
+    P5 --> P5R["Reason: Private, authenticated"]
+
+    Title --> P6["Host Dashboard"]
+    P6 --> P6S["Strategy: CSR"]
+    P6 --> P6R["Reason: Private, real-time data"]
+
+    Title --> CLS["Component-Level Strategies"]
+    CLS --> CLS1["Static content (descriptions, amenities) -> Server Components"]
+    CLS --> CLS2["Interactive elements (calendar, map) -> Client Components"]
+    CLS --> CLS3["Real-time data (availability, price) -> Client with React Query"]
+    CLS --> CLS4["Forms -> Client Components with React Hook Form"]
 ```
 
 ### Data Flow Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      SEARCH FLOW DATA ARCHITECTURE                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐                                                            │
-│  │    User     │                                                            │
-│  │   Action    │                                                            │
-│  └──────┬──────┘                                                            │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                         URL STATE (nuqs)                             │   │
-│  │  ?location=paris&checkin=2024-06-01&checkout=2024-06-05&guests=2    │   │
-│  │  &minPrice=50&maxPrice=200&type=apartment&amenities=wifi,kitchen    │   │
-│  └──────┬──────────────────────────────────────────────────────────────┘   │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    REACT QUERY (Server State)                        │   │
-│  │  useQuery(['search', searchParams], fetchListings)                   │   │
-│  │  ├── Automatic caching                                               │   │
-│  │  ├── Background refetching                                           │   │
-│  │  └── Pagination support                                              │   │
-│  └──────┬──────────────────────────────────────────────────────────────┘   │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌────────────────────────┬────────────────────────────────────────────┐   │
-│  │     LISTING LIST       │              MAP VIEW                       │   │
-│  │  ┌─────────────────┐   │   ┌────────────────────────────────────┐   │   │
-│  │  │  ListingCard    │   │   │  ┌──┐  ┌──┐        ┌──┐            │   │   │
-│  │  │  ListingCard    │◄──┼───│  │$85│  │$120│      │$95│           │   │   │
-│  │  │  ListingCard    │   │   │  └──┘  └──┘        └──┘            │   │   │
-│  │  │  ListingCard    │───┼──▶│         ┌──┐                       │   │   │
-│  │  └─────────────────┘   │   │         │$150│                      │   │   │
-│  │                        │   │         └──┘                       │   │   │
-│  └────────────────────────┴────────────────────────────────────────────┘   │
-│                                                                             │
-│  Synchronization:                                                           │
-│  • Hover on card → Highlight marker                                         │
-│  • Click marker → Scroll to card                                            │
-│  • Pan map → Update visible listings                                        │
-│  • Zoom → Cluster/uncluster markers                                         │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    UA["User Action"] --> URL["URL STATE (nuqs)\n?location=paris&amp;checkin=2024-06-01&amp;checkout=2024-06-05&amp;guests=2\n&amp;minPrice=50&amp;maxPrice=200&amp;type=apartment&amp;amenities=wifi,kitchen"]
+    URL --> RQ["REACT QUERY (Server State)\nuseQuery(['search', searchParams], fetchListings)\n- Automatic caching\n- Background refetching\n- Pagination support"]
+    RQ --> LL["LISTING LIST\nListingCard, ListingCard, ListingCard, ListingCard"]
+    RQ --> MV["MAP VIEW\nMarkers: $85, $120, $95, $150"]
+    LL <-->|"Hover on card <-> Highlight marker"| MV
+
+    subgraph Sync["Synchronization"]
+        SY1["Hover on card -> Highlight marker"]
+        SY2["Click marker -> Scroll to card"]
+        SY3["Pan map -> Update visible listings"]
+        SY4["Zoom -> Cluster/uncluster markers"]
+    end
 ```
 
 ---
@@ -607,46 +501,41 @@ src/
 
 ### Component Hierarchy Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SEARCH RESULTS PAGE COMPONENT TREE                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  SearchPage                                                                 │
-│  ├── Header                                                                 │
-│  │   └── SearchBar (compact mode)                                           │
-│  │       ├── LocationInput                                                  │
-│  │       ├── DateRangePicker                                                │
-│  │       └── GuestSelector                                                  │
-│  │                                                                          │
-│  ├── FilterBar                                                              │
-│  │   ├── FilterChips (quick filters)                                        │
-│  │   └── FilterButton → FilterModal                                         │
-│  │       ├── PriceRangeFilter                                               │
-│  │       ├── PropertyTypeFilter                                             │
-│  │       ├── RoomsFilter                                                    │
-│  │       ├── AmenitiesFilter                                                │
-│  │       └── MoreFilters                                                    │
-│  │                                                                          │
-│  └── SearchContent                                                          │
-│      ├── ResultsPanel                                                       │
-│      │   ├── ResultsHeader (count, sort)                                    │
-│      │   ├── ListingGrid / ListingList                                      │
-│      │   │   └── ListingCard (multiple)                                     │
-│      │   │       ├── ImageCarousel                                          │
-│      │   │       ├── ListingInfo                                            │
-│      │   │       ├── PriceDisplay                                           │
-│      │   │       └── WishlistButton                                         │
-│      │   └── Pagination / InfiniteScroll                                    │
-│      │                                                                      │
-│      └── MapPanel                                                           │
-│          ├── MapContainer                                                   │
-│          │   ├── ListingMarkers                                             │
-│          │   └── MarkerClusters                                             │
-│          ├── MapControls                                                    │
-│          └── MapListingPopup                                                │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    SearchPage --> Header
+    Header --> SearchBar["SearchBar (compact mode)"]
+    SearchBar --> LocationInput
+    SearchBar --> DateRangePicker
+    SearchBar --> GuestSelector
+
+    SearchPage --> FilterBar
+    FilterBar --> FilterChips["FilterChips (quick filters)"]
+    FilterBar --> FilterButton
+    FilterButton --> FilterModal
+    FilterModal --> PriceRangeFilter
+    FilterModal --> PropertyTypeFilter
+    FilterModal --> RoomsFilter
+    FilterModal --> AmenitiesFilter
+    FilterModal --> MoreFilters
+
+    SearchPage --> SearchContent
+    SearchContent --> ResultsPanel
+    ResultsPanel --> ResultsHeader["ResultsHeader (count, sort)"]
+    ResultsPanel --> ListingGrid["ListingGrid / ListingList"]
+    ListingGrid --> ListingCard["ListingCard (multiple)"]
+    ListingCard --> ImageCarousel
+    ListingCard --> ListingInfo
+    ListingCard --> PriceDisplay
+    ListingCard --> WishlistButton
+    ResultsPanel --> Pagination["Pagination / InfiniteScroll"]
+
+    SearchContent --> MapPanel
+    MapPanel --> MapContainer
+    MapContainer --> ListingMarkers
+    MapContainer --> MarkerClusters
+    MapPanel --> MapControls
+    MapPanel --> MapListingPopup
 ```
 
 ### Core Component Implementations
@@ -1745,57 +1634,12 @@ export function useSearchState() {
 
 ### State Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         STATE MANAGEMENT LAYERS                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        URL STATE (nuqs)                              │   │
-│  │  ─────────────────────────────────────────                           │   │
-│  │  Purpose: Shareable, bookmarkable, SEO-friendly                      │   │
-│  │  Examples: Search filters, pagination, selected dates                 │   │
-│  │  Persistence: Browser URL, survives refresh                          │   │
-│  │                                                                       │   │
-│  │  ?location=paris&checkIn=2024-06-01&checkout=2024-06-05              │   │
-│  │  &guests=2&minPrice=50&maxPrice=200&propertyTypes=apartment,house    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                   SERVER STATE (TanStack Query)                      │   │
-│  │  ─────────────────────────────────────────                           │   │
-│  │  Purpose: Cached API data with automatic refetching                  │   │
-│  │  Examples: Listings, availability, reviews, user data                │   │
-│  │  Features: Caching, deduplication, background updates                │   │
-│  │                                                                       │   │
-│  │  useQuery(['listings', searchParams]) → { data, isLoading, error }   │   │
-│  │  useQuery(['availability', listingId]) → availability calendar       │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    GLOBAL UI STATE (Zustand)                         │   │
-│  │  ─────────────────────────────────────────                           │   │
-│  │  Purpose: Cross-component UI state                                   │   │
-│  │  Examples: Map/list sync, modals, wishlist, auth state               │   │
-│  │  Features: Simple API, minimal boilerplate, devtools                 │   │
-│  │                                                                       │   │
-│  │  useUIStore() → { hoveredListingId, isMapExpanded, currency }        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                       LOCAL STATE (React)                            │   │
-│  │  ─────────────────────────────────────────                           │   │
-│  │  Purpose: Component-specific ephemeral state                         │   │
-│  │  Examples: Form inputs, dropdown open/close, carousel index          │   │
-│  │  APIs: useState, useReducer                                          │   │
-│  │                                                                       │   │
-│  │  const [isOpen, setIsOpen] = useState(false);                        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    URL["URL STATE (nuqs)\nPurpose: Shareable, bookmarkable, SEO-friendly\nExamples: Search filters, pagination, selected dates\nPersistence: Browser URL, survives refresh\n?location=paris&amp;checkIn=2024-06-01&amp;checkout=2024-06-05&amp;guests=2&amp;minPrice=50&amp;maxPrice=200&amp;propertyTypes=apartment,house"]
+    URL --> SERVER["SERVER STATE (TanStack Query)\nPurpose: Cached API data with automatic refetching\nExamples: Listings, availability, reviews, user data\nFeatures: Caching, deduplication, background updates\nuseQuery(['listings', searchParams]) -&gt; data, isLoading, error\nuseQuery(['availability', listingId]) -&gt; availability calendar"]
+    SERVER --> GLOBAL["GLOBAL UI STATE (Zustand)\nPurpose: Cross-component UI state\nExamples: Map/list sync, modals, wishlist, auth state\nFeatures: Simple API, minimal boilerplate, devtools\nuseUIStore() -&gt; hoveredListingId, isMapExpanded, currency"]
+    GLOBAL --> LOCAL["LOCAL STATE (React)\nPurpose: Component-specific ephemeral state\nExamples: Form inputs, dropdown open/close, carousel index\nAPIs: useState, useReducer\nconst [isOpen, setIsOpen] = useState(false)"]
 ```
 
 ### URL State Management with nuqs
@@ -2486,52 +2330,26 @@ export function GuestInfoForm({ onSubmit }: { onSubmit: (data: GuestInfoFormData
 
 ### Data Flow Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SEARCH RESULTS PAGE DATA FLOW                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  User Actions                                                               │
-│  ────────────                                                               │
-│       │                                                                     │
-│       ▼                                                                     │
-│  ┌─────────────────┐                                                        │
-│  │   URL Update    │ ◄──────────────────────────────────────────────────┐  │
-│  │   (nuqs)        │                                                     │  │
-│  └────────┬────────┘                                                     │  │
-│           │                                                              │  │
-│           │ triggers                                                     │  │
-│           ▼                                                              │  │
-│  ┌─────────────────┐      ┌─────────────────┐                           │  │
-│  │  React Query    │─────▶│   API Call      │                           │  │
-│  │  useQuery       │      │   /api/search   │                           │  │
-│  └────────┬────────┘      └────────┬────────┘                           │  │
-│           │                        │                                     │  │
-│           │ caches                 │ returns                             │  │
-│           ▼                        ▼                                     │  │
-│  ┌─────────────────┐      ┌─────────────────┐                           │  │
-│  │  Query Cache    │◄─────│   Listings      │                           │  │
-│  │                 │      │   Data          │                           │  │
-│  └────────┬────────┘      └─────────────────┘                           │  │
-│           │                                                              │  │
-│           │ renders                                                      │  │
-│           ▼                                                              │  │
-│  ┌─────────────────────────────────────────────────────────────────┐    │  │
-│  │                       COMPONENTS                                 │    │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │    │  │
-│  │  │   FilterPanel   │  │   ListingGrid   │  │    MapView      │  │    │  │
-│  │  │                 │  │                 │  │                 │  │    │  │
-│  │  │  • Reads URL    │  │  • Reads Query  │  │  • Reads Query  │  │    │  │
-│  │  │  • Updates URL  │──│  • Zustand sync │──│  • Zustand sync │  │    │  │
-│  │  │                 │  │                 │  │  • Updates URL  │──┼────┘  │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  │       │
-│  │                              ▲                    ▲              │       │
-│  │                              │                    │              │       │
-│  │                              └────────────────────┘              │       │
-│  │                            Zustand (hover sync)                  │       │
-│  └─────────────────────────────────────────────────────────────────┘       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    UA["User Actions"] --> URLUPD["URL Update (nuqs)"]
+    URLUPD -->|triggers| RQ["React Query useQuery"]
+    RQ -->|caches| QC["Query Cache"]
+    RQ --> API["API Call /api/search"]
+    API -->|returns| LD["Listings Data"]
+    LD --> QC
+    QC -->|renders| COMP
+
+    subgraph COMP["COMPONENTS"]
+        FP["FilterPanel\n- Reads URL\n- Updates URL"]
+        LG["ListingGrid\n- Reads Query\n- Zustand sync"]
+        MV["MapView\n- Reads Query\n- Zustand sync\n- Updates URL"]
+        FP --> LG
+        LG --> MV
+        LG <-->|"Zustand (hover sync)"| MV
+    end
+
+    MV -->|Updates URL| URLUPD
 ```
 
 ---
@@ -2540,44 +2358,25 @@ export function GuestInfoForm({ onSubmit }: { onSubmit: (data: GuestInfoFormData
 
 ### API Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND API ARCHITECTURE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      NEXT.JS FRONTEND                                │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │   │
-│  │  │                    API CLIENT LAYER                          │    │   │
-│  │  │  • Type-safe API calls                                       │    │   │
-│  │  │  • Request/Response interceptors                             │    │   │
-│  │  │  • Error transformation                                      │    │   │
-│  │  │  • Auth token management                                     │    │   │
-│  │  └─────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     BFF (Backend for Frontend)                       │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │   │
-│  │  │                   Next.js API Routes                         │    │   │
-│  │  │  /api/search      → Aggregate search + map data              │    │   │
-│  │  │  /api/listings/*  → Listing details, availability            │    │   │
-│  │  │  /api/bookings/*  → Booking flow, payments                   │    │   │
-│  │  │  /api/user/*      → Auth, wishlists, trips                   │    │   │
-│  │  └─────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      BACKEND MICROSERVICES                           │   │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐   │   │
-│  │  │ Search  │  │Listings │  │Bookings │  │ Users   │  │Payments │   │   │
-│  │  │ Service │  │ Service │  │ Service │  │ Service │  │ Service │   │   │
-│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph NextJS["NEXT.JS FRONTEND"]
+        ACL["API CLIENT LAYER\n- Type-safe API calls\n- Request/Response interceptors\n- Error transformation\n- Auth token management"]
+    end
+
+    subgraph BFFGroup["BFF (Backend for Frontend)"]
+        Routes["Next.js API Routes\n/api/search -> Aggregate search + map data\n/api/listings/* -> Listing details, availability\n/api/bookings/* -> Booking flow, payments\n/api/user/* -> Auth, wishlists, trips"]
+    end
+
+    subgraph Micro["BACKEND MICROSERVICES"]
+        SS["Search Service"]
+        LS["Listings Service"]
+        BS["Bookings Service"]
+        US["Users Service"]
+        PS["Payments Service"]
+    end
+
+    NextJS --> BFFGroup --> Micro
 ```
 
 ### Type-Safe API Client
@@ -3432,48 +3231,21 @@ export function useRealtimeAvailability(listingId: string) {
 
 ### Search Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SEARCH SYSTEM ARCHITECTURE                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  User Input                                                                 │
-│  ──────────                                                                 │
-│       │                                                                     │
-│       ▼                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      LOCATION AUTOCOMPLETE                           │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐      │   │
-│  │  │  Google Places  │  │  Mapbox Search  │  │  Custom Index   │      │   │
-│  │  │    API          │  │    API          │  │  (Popular dest) │      │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘      │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     URL STATE SYNC (nuqs)                            │   │
-│  │  ?location=paris&placeId=xxx&checkIn=2024-06-01&guests=2            │   │
-│  │  &minPrice=50&maxPrice=200&amenities=wifi,pool                       │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    DEBOUNCED API REQUEST                             │   │
-│  │  • Debounce 300ms for filter changes                                 │   │
-│  │  • Immediate for explicit search actions                             │   │
-│  │  • Request deduplication via React Query                             │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌────────────────────────┬────────────────────────────────────────────┐   │
-│  │   RESULTS RENDERING    │           MAP SYNCHRONIZATION               │   │
-│  │  ┌──────────────────┐  │  ┌────────────────────────────────────┐    │   │
-│  │  │ Virtualized List │◄─┼──│ Marker Clustering + Price Labels   │    │   │
-│  │  │ + Infinite Scroll│  │  │ Viewport-based loading             │    │   │
-│  │  └──────────────────┘  │  └────────────────────────────────────┘    │   │
-│  └────────────────────────┴────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    UI["User Input"] --> LA["LOCATION AUTOCOMPLETE"]
+
+    subgraph LA["LOCATION AUTOCOMPLETE"]
+        GP["Google Places API"]
+        MB["Mapbox Search API"]
+        CI["Custom Index (Popular dest)"]
+    end
+
+    LA --> URL["URL STATE SYNC (nuqs)\n?location=paris&amp;placeId=xxx&amp;checkIn=2024-06-01&amp;guests=2\n&amp;minPrice=50&amp;maxPrice=200&amp;amenities=wifi,pool"]
+    URL --> DAR["DEBOUNCED API REQUEST\n- Debounce 300ms for filter changes\n- Immediate for explicit search actions\n- Request deduplication via React Query"]
+    DAR --> RR["RESULTS RENDERING\nVirtualized List + Infinite Scroll"]
+    DAR --> MS["MAP SYNCHRONIZATION\nMarker Clustering + Price Labels\nViewport-based loading"]
+    MS --> RR
 ```
 
 ### Location Autocomplete with Google Places
@@ -4372,43 +4144,18 @@ export function ActiveFilters() {
 
 ### Booking Flow Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BOOKING FLOW ARCHITECTURE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐ │
-│  │  Select  │──▶│  Guest   │──▶│  Guest   │──▶│ Payment  │──▶│ Confirm  │ │
-│  │  Dates   │   │  Count   │   │  Details │   │          │   │ -ation   │ │
-│  └──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘ │
-│       │              │              │              │              │         │
-│       ▼              ▼              ▼              ▼              ▼         │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        STATE PERSISTENCE                             │   │
-│  │  • Zustand store for booking state                                   │   │
-│  │  • Session storage for recovery                                      │   │
-│  │  • URL params for deep linking                                       │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        REAL-TIME VALIDATION                          │   │
-│  │  • Availability check on mount                                       │   │
-│  │  • Price recalculation on date change                                │   │
-│  │  • Coupon validation                                                 │   │
-│  │  • Guest count validation                                            │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        PAYMENT PROCESSING                            │   │
-│  │  • Stripe Payment Intent creation                                    │   │
-│  │  • 3D Secure authentication                                          │   │
-│  │  • Payment confirmation                                              │   │
-│  │  • Booking creation                                                  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    SD["Select Dates"] --> GC["Guest Count"] --> GD["Guest Details"] --> PAY["Payment"] --> CONF["Confirmation"]
+
+    SD --> SP["STATE PERSISTENCE\n- Zustand store for booking state\n- Session storage for recovery\n- URL params for deep linking"]
+    GC --> SP
+    GD --> SP
+    PAY --> SP
+    CONF --> SP
+
+    SP --> RV["REAL-TIME VALIDATION\n- Availability check on mount\n- Price recalculation on date change\n- Coupon validation\n- Guest count validation"]
+    RV --> PP["PAYMENT PROCESSING\n- Stripe Payment Intent creation\n- 3D Secure authentication\n- Payment confirmation\n- Booking creation"]
 ```
 
 ### Multi-Step Checkout Component
@@ -5294,33 +5041,24 @@ export function BookingRecoveryModal({
 
 ### Map Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          MAP INTEGRATION ARCHITECTURE                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     MAP PROVIDER OPTIONS                             │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐      │   │
-│  │  │  Google Maps    │  │    Mapbox GL    │  │    Leaflet +    │      │   │
-│  │  │  (Airbnb-style) │  │  (Performance)  │  │   OpenStreetMap │      │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘      │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                      │
-│                                      ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      MAP FEATURES                                    │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │   │
-│  │  │   Price      │  │   Marker     │  │  Viewport    │               │   │
-│  │  │   Markers    │  │  Clustering  │  │   Loading    │               │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘               │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │   │
-│  │  │   List/Map   │  │   Popup      │  │   Search     │               │   │
-│  │  │    Sync      │  │   Cards      │  │   this Area  │               │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph MPO["MAP PROVIDER OPTIONS"]
+        GM["Google Maps (Airbnb-style)"]
+        MBX["Mapbox GL (Performance)"]
+        LEA["Leaflet + OpenStreetMap"]
+    end
+
+    MPO --> MF["MAP FEATURES"]
+
+    subgraph MF["MAP FEATURES"]
+        PM["Price Markers"]
+        MC["Marker Clustering"]
+        VL["Viewport Loading"]
+        LMS["List/Map Sync"]
+        PC["Popup Cards"]
+        SA["Search this Area"]
+    end
 ```
 
 ### Map Container with Google Maps
@@ -6078,47 +5816,27 @@ export function SplitView({ listings, mapCenter }: SplitViewProps) {
 
 ### Calendar Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Date Picker Architecture                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                        DateRangePicker                                │  │
-│  │  ┌─────────────────────┐  ┌─────────────────────┐                     │  │
-│  │  │   Check-in Input    │  │   Check-out Input   │                     │  │
-│  │  │   [Jul 15, 2024]    │  │   [Jul 20, 2024]    │                     │  │
-│  │  └─────────────────────┘  └─────────────────────┘                     │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                    ↓                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      Calendar Dropdown                                │  │
-│  │  ┌────────────────────────────────────────────────────────────────┐   │  │
-│  │  │                    MonthNavigation                             │   │  │
-│  │  │         ←  July 2024  |  August 2024  →                        │   │  │
-│  │  └────────────────────────────────────────────────────────────────┘   │  │
-│  │                                                                       │  │
-│  │  ┌────────────────────────┐  ┌────────────────────────┐               │  │
-│  │  │      CalendarMonth     │  │      CalendarMonth     │               │  │
-│  │  │  Su Mo Tu We Th Fr Sa  │  │  Su Mo Tu We Th Fr Sa  │               │  │
-│  │  │      1  2  3  4  5  6  │  │               1  2  3  │               │  │
-│  │  │   7  8  9 10 11 12 13  │  │   4  5  6  7  8  9 10  │               │  │
-│  │  │  14 ██ ██ ██ ██ 19 20  │  │  11 12 13 14 15 16 17  │               │  │
-│  │  │  21 22 23 24 25 26 27  │  │  18 19 20 21 22 23 24  │               │  │
-│  │  │  28 29 30 31           │  │  25 26 27 28 29 30 31  │               │  │
-│  │  └────────────────────────┘  └────────────────────────┘               │  │
-│  │                                                                       │  │
-│  │  Legend: ██ Selected  ░░ Unavailable  $$ Price Overlay               │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                    ↓                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      Data Sources                                     │  │
-│  │  • Availability API (blocked dates, minimum stays)                    │  │
-│  │  • Pricing API (dynamic pricing per night)                            │  │
-│  │  • Booking rules (check-in/out days, gaps)                            │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph DRP["DateRangePicker"]
+        CI["Check-in Input [Jul 15, 2024]"]
+        CO["Check-out Input [Jul 20, 2024]"]
+    end
+
+    DRP --> CD["Calendar Dropdown"]
+
+    subgraph CD["Calendar Dropdown"]
+        MN["MonthNavigation: &larr; July 2024 | August 2024 &rarr;"]
+        CM1["CalendarMonth - July 2024\nSelected days 14-19 highlighted"]
+        CM2["CalendarMonth - August 2024"]
+        Legend["Legend: Selected / Unavailable / Price Overlay"]
+        MN --> CM1
+        MN --> CM2
+        CM1 --> Legend
+        CM2 --> Legend
+    end
+
+    CD --> DS["Data Sources\n- Availability API (blocked dates, minimum stays)\n- Pricing API (dynamic pricing per night)\n- Booking rules (check-in/out days, gaps)"]
 ```
 
 ### Date Range Picker Component
@@ -7280,47 +6998,12 @@ export function BookingWidget({ listing }: BookingWidgetProps) {
 
 ### Reviews Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Reviews & Ratings System                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Rating Summary                                   │    │
-│  │  ┌─────────────────┐  ┌──────────────────────────────────────────┐  │    │
-│  │  │      4.92       │  │  Cleanliness    ████████████████░░  4.9  │  │    │
-│  │  │     ★★★★★       │  │  Communication  ██████████████████  5.0  │  │    │
-│  │  │   127 reviews   │  │  Check-in       █████████████████░  4.8  │  │    │
-│  │  └─────────────────┘  │  Accuracy       ████████████████░░  4.9  │  │    │
-│  │                       │  Location       ████████████████░░  4.9  │  │    │
-│  │                       │  Value          ███████████████░░░  4.7  │  │    │
-│  │                       └──────────────────────────────────────────┘  │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Filter & Sort Controls                           │    │
-│  │  [Most Recent ▼]  [All Ratings ▼]  🔍 Search reviews              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Review Cards                                   │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  👤 Sarah M.        ★★★★★    December 2024                  │    │    │
-│  │  │  "Amazing stay! The view was breathtaking and..."          │    │    │
-│  │  │  [Show more]                                                │    │    │
-│  │  │  ❤ 12  👍 Helpful                                           │    │    │
-│  │  │  ↳ Host Response: "Thank you so much, Sarah!..."           │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  │                            ...                                      │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                   Write Review (Post-Checkout)                      │    │
-│  │  Rate your stay: ☆☆☆☆☆                                            │    │
-│  │  Category ratings + Written feedback + Photo upload                 │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    RS["Rating Summary\nOverall: 4.92 (5 stars, 127 reviews)\nCleanliness 4.9, Communication 5.0, Check-in 4.8\nAccuracy 4.9, Location 4.9, Value 4.7"]
+    RS --> FSC["Filter &amp; Sort Controls\n[Most Recent] [All Ratings] Search reviews"]
+    FSC --> RC["Review Cards\nSarah M. - 5 stars - December 2024\n'Amazing stay! The view was breathtaking and...' [Show more]\n12 Likes, Helpful\nHost Response: 'Thank you so much, Sarah!...'\n..."]
+    RC --> WR["Write Review (Post-Checkout)\nRate your stay: (star input)\nCategory ratings + Written feedback + Photo upload"]
 ```
 
 ### Reviews Types & API
@@ -8328,55 +8011,25 @@ export function useReviewsAnalytics(reviews: Review[]): ReviewsSummary | null {
 
 ### Gallery Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Image Gallery System                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Hero Gallery (Bento Grid)                        │    │
-│  │  ┌─────────────────────────────────┬───────────┬───────────┐        │    │
-│  │  │                                 │           │           │        │    │
-│  │  │         Main Image              │  Image 2  │  Image 3  │        │    │
-│  │  │         (Large)                 │           │           │        │    │
-│  │  │                                 ├───────────┼───────────┤        │    │
-│  │  │                                 │           │   +12     │        │    │
-│  │  │                                 │  Image 4  │ Show All  │        │    │
-│  │  └─────────────────────────────────┴───────────┴───────────┘        │    │
-│  │                        [Show all photos]                            │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Full Gallery Modal                             │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Categories: [All] [Living] [Bedroom] [Kitchen] [Outdoor]   │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │                    Masonry Grid                             │    │    │
-│  │  │    ┌──────┐  ┌──────────┐  ┌──────┐  ┌──────┐              │    │    │
-│  │  │    │      │  │          │  │      │  │      │              │    │    │
-│  │  │    │ Img  │  │   Img    │  │ Img  │  │ Img  │              │    │    │
-│  │  │    │      │  │          │  │      │  │      │              │    │    │
-│  │  │    └──────┘  │          │  └──────┘  └──────┘              │    │    │
-│  │  │              └──────────┘                                   │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Lightbox Viewer                                │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │   ←  │           Full Image                        │  →     │    │    │
-│  │  │      │     Zoom / Pan / Pinch                      │        │    │    │
-│  │  │      │                                             │        │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │          Thumbnail Strip (Scroll)                           │    │    │
-│  │  │  [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] ...              │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  │                    Caption • 3/15 • Bedroom                         │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    HG["Hero Gallery (Bento Grid)\nMain Image (Large) + Image 2 + Image 3 + Image 4 + '+12 Show All'\n[Show all photos]"]
+    HG --> FGM["Full Gallery Modal"]
+
+    subgraph FGM["Full Gallery Modal"]
+        Cats["Categories: All / Living / Bedroom / Kitchen / Outdoor"]
+        Masonry["Masonry Grid: Img, Img, Img, Img (variable sizes)"]
+        Cats --> Masonry
+    end
+
+    FGM --> LV["Lightbox Viewer"]
+
+    subgraph LV["Lightbox Viewer"]
+        Main["Full Image with Prev/Next arrows\nZoom / Pan / Pinch"]
+        Thumb["Thumbnail Strip (Scroll): [1][2][3]...[10]..."]
+        Caption["Caption - 3/15 - Bedroom"]
+        Main --> Thumb --> Caption
+    end
 ```
 
 ### Image Types & Data
@@ -9407,52 +9060,28 @@ function Video360Player({ src }: { src: string }) {
 
 ### Wishlist Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Wishlists & Favorites System                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Save Button (On Listing Card)                    │    │
-│  │                       ♡ → ❤ (Toggle Animation)                      │    │
-│  │                    Click → Show Collection Picker                   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Collection Picker Modal                          │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  + Create new wishlist                                      │    │    │
-│  │  ├─────────────────────────────────────────────────────────────┤    │    │
-│  │  │  ┌─────┐  Summer 2024                        [✓] Selected   │    │    │
-│  │  │  │ 📷  │  12 stays saved                                    │    │    │
-│  │  │  └─────┘                                                    │    │    │
-│  │  │  ┌─────┐  Beach Getaways                     [ ]            │    │    │
-│  │  │  │ 📷  │  8 stays saved                                     │    │    │
-│  │  │  └─────┘                                                    │    │    │
-│  │  │  ┌─────┐  Mountain Retreats                  [ ]            │    │    │
-│  │  │  │ 📷  │  5 stays saved                                     │    │    │
-│  │  │  └─────┘                                                    │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Wishlists Page                                   │    │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │    │
-│  │  │             │  │             │  │             │                  │    │
-│  │  │ Collection  │  │ Collection  │  │  + Create   │                  │    │
-│  │  │   Card      │  │   Card      │  │    New      │                  │    │
-│  │  │             │  │             │  │             │                  │    │
-│  │  │ 12 stays    │  │ 8 stays     │  │             │                  │    │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                  │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Collection Detail View                           │    │
-│  │  • Edit name/settings  • Share collection  • Map view              │    │
-│  │  • Drag to reorder    • Remove items       • Collaborate           │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    SB["Save Button (On Listing Card)\nHeart toggle animation (empty -&gt; filled)\nClick -&gt; Show Collection Picker"]
+    SB --> CPM["Collection Picker Modal"]
+
+    subgraph CPM["Collection Picker Modal"]
+        Create["+ Create new wishlist"]
+        C1["Summer 2024 - 12 stays saved - Selected"]
+        C2["Beach Getaways - 8 stays saved"]
+        C3["Mountain Retreats - 5 stays saved"]
+        Create --> C1 --> C2 --> C3
+    end
+
+    CPM --> WP["Wishlists Page"]
+
+    subgraph WP["Wishlists Page"]
+        WC1["Collection Card - 12 stays"]
+        WC2["Collection Card - 8 stays"]
+        WC3["+ Create New"]
+    end
+
+    WP --> CDV["Collection Detail View\n- Edit name/settings\n- Share collection\n- Map view\n- Drag to reorder\n- Remove items\n- Collaborate"]
 ```
 
 ### Wishlist Types & Store
@@ -10434,43 +10063,23 @@ export default function WishlistDetailPage() {
 
 ### Performance Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      Performance Optimization Strategy                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Core Web Vitals Targets                          │    │
-│  │  ┌─────────────────┬─────────────────┬─────────────────┐            │    │
-│  │  │      LCP        │      FID        │      CLS        │            │    │
-│  │  │   < 2.5s        │   < 100ms       │   < 0.1         │            │    │
-│  │  │  (Largest       │  (First Input   │  (Cumulative    │            │    │
-│  │  │   Contentful    │   Delay)        │   Layout        │            │    │
-│  │  │   Paint)        │                 │   Shift)        │            │    │
-│  │  └─────────────────┴─────────────────┴─────────────────┘            │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Optimization Layers                              │    │
-│  │                                                                     │    │
-│  │  1. Build Time                                                      │    │
-│  │     • Code splitting    • Tree shaking    • Bundle analysis         │    │
-│  │     • Image optimization • Font subsetting                          │    │
-│  │                                                                     │    │
-│  │  2. Server                                                          │    │
-│  │     • SSR/SSG strategy  • Edge caching   • Streaming                │    │
-│  │     • API response caching               • Compression              │    │
-│  │                                                                     │    │
-│  │  3. Client                                                          │    │
-│  │     • Lazy loading      • Prefetching    • Service Worker           │    │
-│  │     • Virtual scrolling • Debouncing     • Memory management        │    │
-│  │                                                                     │    │
-│  │  4. Assets                                                          │    │
-│  │     • Image CDN         • Responsive images • WebP/AVIF            │    │
-│  │     • Critical CSS      • Font loading    • Resource hints          │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph CWV["Core Web Vitals Targets"]
+        LCP["LCP < 2.5s (Largest Contentful Paint)"]
+        FID["FID < 100ms (First Input Delay)"]
+        CLS["CLS < 0.1 (Cumulative Layout Shift)"]
+    end
+
+    CWV --> OL["Optimization Layers"]
+
+    subgraph OL["Optimization Layers"]
+        L1["1. Build Time\n- Code splitting\n- Tree shaking\n- Bundle analysis\n- Image optimization\n- Font subsetting"]
+        L2["2. Server\n- SSR/SSG strategy\n- Edge caching\n- Streaming\n- API response caching\n- Compression"]
+        L3["3. Client\n- Lazy loading\n- Prefetching\n- Service Worker\n- Virtual scrolling\n- Debouncing\n- Memory management"]
+        L4["4. Assets\n- Image CDN\n- Responsive images\n- WebP/AVIF\n- Critical CSS\n- Font loading\n- Resource hints"]
+        L1 --> L2 --> L3 --> L4
+    end
 ```
 
 ### Code Splitting Strategy
@@ -11347,39 +10956,20 @@ export default function RootLayout({
 
 ### Guest Selector Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Guest Selector Component                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Collapsed State                                  │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  👥 Guests                                                  │    │    │
-│  │  │  2 guests, 1 infant, 1 pet                                 ▼│    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                    ↓                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                    Expanded Dropdown                                │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Adults                                        [-] 2 [+]    │    │    │
-│  │  │  Age 13 or above                                            │    │    │
-│  │  ├─────────────────────────────────────────────────────────────┤    │    │
-│  │  │  Children                                      [-] 0 [+]    │    │    │
-│  │  │  Ages 2-12                                                  │    │    │
-│  │  ├─────────────────────────────────────────────────────────────┤    │    │
-│  │  │  Infants                                       [-] 1 [+]    │    │    │
-│  │  │  Under 2                                                    │    │    │
-│  │  ├─────────────────────────────────────────────────────────────┤    │    │
-│  │  │  Pets                                          [-] 1 [+]    │    │    │
-│  │  │  Bringing a service animal?                                 │    │    │
-│  │  └─────────────────────────────────────────────────────────────┘    │    │
-│  │  This place has a maximum of 6 guests (not including infants)       │    │
-│  │                                              [Close]                │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    CS["Collapsed State\nGuests: 2 guests, 1 infant, 1 pet (dropdown closed)"]
+    CS --> ED["Expanded Dropdown"]
+
+    subgraph ED["Expanded Dropdown"]
+        A["Adults (Age 13 or above): [-] 2 [+]"]
+        C["Children (Ages 2-12): [-] 0 [+]"]
+        I["Infants (Under 2): [-] 1 [+]"]
+        P["Pets (Bringing a service animal?): [-] 1 [+]"]
+        Note["This place has a maximum of 6 guests (not including infants)"]
+        Close["[Close]"]
+        A --> C --> I --> P --> Note --> Close
+    end
 ```
 
 ### Guest Selector Implementation
