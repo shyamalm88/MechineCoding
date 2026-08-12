@@ -86,24 +86,33 @@ document.addEventListener('DOMContentLoaded', function () {
 </ul>
 <hr />
 <h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
-│                     Ecommerce Application                        │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────────┐  ┌─────────────────────────┐   │
-│  │  Header  │  │   Product    │  │      Sidebar            │   │
-│  │  Search  │  │   Grid/List  │  │      Filters            │   │
-│  │  Cart    │  │              │  │      Categories         │   │
-│  └──────────┘  └──────────────┘  └─────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│                      State Management (Zustand)                  │
-├─────────────────────────────────────────────────────────────────┤
-│  Cart Store  │  User Store  │  Search Store  │  Filter Store   │
-├─────────────────────────────────────────────────────────────────┤
-│                    Data Layer (TanStack Query)                   │
-├─────────────────────────────────────────────────────────────────┤
-│  Products API  │  Cart API  │  Orders API  │  Search API       │
-└─────────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph EA[&quot;Ecommerce Application&quot;]
+        direction TB
+        subgraph UI[&quot; &quot;]
+            direction LR
+            Header[&quot;Header - Search, Cart&quot;]
+            ProductGrid[&quot;Product Grid/List&quot;]
+            Sidebar[&quot;Sidebar - Filters, Categories&quot;]
+        end
+        subgraph State[&quot;State Management (Zustand)&quot;]
+            direction LR
+            CartStore[&quot;Cart Store&quot;]
+            UserStore[&quot;User Store&quot;]
+            SearchStore[&quot;Search Store&quot;]
+            FilterStore[&quot;Filter Store&quot;]
+        end
+        subgraph Data[&quot;Data Layer (TanStack Query)&quot;]
+            direction LR
+            ProductsAPI[&quot;Products API&quot;]
+            CartAPI[&quot;Cart API&quot;]
+            OrdersAPI[&quot;Orders API&quot;]
+            SearchAPI[&quot;Search API&quot;]
+        end
+        UI --&gt; State --&gt; Data
+    end
+</div>
 <hr />
 <h2 id="3-core-data-types">3. Core Data Types</h2>
 <pre><code class="language-typescript">// types/product.ts

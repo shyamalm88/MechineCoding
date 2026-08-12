@@ -95,68 +95,7 @@ Bandwidth:
 </ul>
 <hr />
 <h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
-<pre><code>                                    ┌─────────────────────────────────┐
-                                    │   CDN (CloudFront/Cloudflare)   │
-                                    │   - Image delivery              │
-                                    │   - Thumbnail caching           │
-                                    └──────────────┬──────────────────┘
-                                                   │
-                                                   │
-┌─────────────────┐                ┌──────────────▼──────────────────┐
-│                 │                │      Load Balancer (L7)         │
-│  Mobile Apps    │◄───────────────┤      - SSL Termination          │
-│  (iOS/Android)  │                │      - Rate limiting            │
-│                 │                └──────────────┬──────────────────┘
-└─────────────────┘                               │
-                                                   │
-┌─────────────────┐                ┌──────────────▼──────────────────┐
-│                 │                │      API Gateway                │
-│  Web Client     │◄───────────────┤      - Auth validation          │
-│  (React/SPA)    │                │      - Request routing          │
-│                 │                │      - API composition          │
-└─────────────────┘                └──────────────┬──────────────────┘
-                                                   │
-                        ┌──────────────────────────┼──────────────────────────┐
-                        │                          │                          │
-                        │                          │                          │
-              ┌─────────▼─────────┐    ┌──────────▼──────────┐   ┌──────────▼─────────┐
-              │  Upload Service   │    │   Gallery Service   │   │   Search Service   │
-              │  - Resumable      │    │   - Photo listing   │   │   - Metadata search│
-              │  - Chunked upload │    │   - Timeline view   │   │   - ML-based search│
-              │  - Validation     │    │   - Album mgmt      │   │   - Face search    │
-              └─────────┬─────────┘    └──────────┬──────────┘   └──────────┬─────────┘
-                        │                         │                          │
-                        │                         │                          │
-              ┌─────────▼─────────┐    ┌──────────▼──────────┐   ┌──────────▼─────────┐
-              │ Image Processing  │    │   Metadata Service  │   │   ML/AI Service    │
-              │ - Thumbnail gen   │    │   - EXIF extract    │   │   - Face detection │
-              │ - Format convert  │    │   - Geo tagging     │   │   - Object detect  │
-              │ - Compression     │    │   - Deduplication   │   │   - Scene recog    │
-              └─────────┬─────────┘    └──────────┬──────────┘   └──────────┬─────────┘
-                        │                         │                          │
-                        │                         │                          │
-        ┌───────────────┴───────────┐  ┌──────────▼──────────┐   ┌──────────▼─────────┐
-        │                           │  │   PostgreSQL        │   │   Elasticsearch    │
-        │   Object Storage (S3)     │  │   - User data       │   │   - Search index   │
-        │   - Original photos       │  │   - Photo metadata  │   │   - Content tags   │
-        │   - Thumbnails (multi)    │  │   - Albums/shares   │   │   - Face vectors   │
-        │   - Encrypted at rest     │  │   - Permissions     │   │                    │
-        │                           │  └──────────┬──────────┘   └────────────────────┘
-        └───────────────────────────┘             │
-                                       ┌──────────▼──────────┐
-                                       │   Redis Cluster     │
-                                       │   - Session cache   │
-                                       │   - Metadata cache  │
-                                       │   - Rate limit      │
-                                       └─────────────────────┘
-
-                        ┌────────────────────────────────────┐
-                        │   Message Queue (Kafka/SQS)        │
-                        │   - Async processing tasks         │
-                        │   - ML pipeline events             │
-                        │   - Thumbnail generation jobs      │
-                        └────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/d02c7a9ab58c437f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="21-architecture-rationale">2.1 Architecture Rationale</h3>
 <p><strong>Microservices Approach:</strong>
 - <strong>Upload Service</strong>: Isolated to handle high write load, implement retry logic
@@ -171,57 +110,7 @@ Bandwidth:
 <hr />
 <h2 id="3-component-architecture-frontend">3. Component Architecture (Frontend)</h2>
 <h3 id="31-component-hierarchy">3.1 Component Hierarchy</h3>
-<pre><code>App
-│
-├── AuthProvider (Context)
-│   └── User session, tokens
-│
-├── Router
-│   │
-│   ├── PhotoGridView
-│   │   ├── VirtualizedGrid (react-window/react-virtuoso)
-│   │   │   ├── PhotoTile
-│   │   │   │   ├── LazyImage
-│   │   │   │   ├── SelectionOverlay
-│   │   │   │   └── PhotoActions
-│   │   │   └── DateSeparator
-│   │   │
-│   │   ├── GridControls
-│   │   │   ├── ViewToggle (grid/list/map)
-│   │   │   ├── SortOptions
-│   │   │   └── FilterPanel
-│   │   │
-│   │   ├── InfiniteScrollTrigger
-│   │   └── UploadDropzone
-│   │
-│   ├── AlbumView
-│   │   ├── AlbumHeader
-│   │   ├── PhotoGridView (reused)
-│   │   └── SharingSettings
-│   │
-│   ├── SearchView
-│   │   ├── SearchBar
-│   │   │   ├── Autocomplete
-│   │   │   └── FilterChips
-│   │   ├── SearchResults (PhotoGridView)
-│   │   └── SuggestedSearches
-│   │
-│   ├── PhotoDetailView (Modal/Route)
-│   │   ├── FullResolutionImage
-│   │   ├── MetadataPanel
-│   │   ├── NavigationControls (prev/next)
-│   │   └── ActionBar (share/delete/edit)
-│   │
-│   └── UploadManager
-│       ├── UploadQueue
-│       ├── UploadProgress
-│       └── RetryManager
-│
-└── GlobalComponents
-    ├── Notification/Toast
-    ├── ErrorBoundary
-    └── NetworkStatusIndicator
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/665ffb6c51a600bf.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="32-key-frontend-components">3.2 Key Frontend Components</h3>
 <p><strong>VirtualizedGrid:</strong></p>
 <pre><code class="language-javascript">// Renders only visible rows + buffer
@@ -248,68 +137,7 @@ Bandwidth:
 <hr />
 <h2 id="4-data-flow">4. Data Flow</h2>
 <h3 id="41-upload-flow">4.1 Upload Flow</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Request upload session
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Upload Service    │
-     │                          └────────┬───────────┘
-     │                                   │
-     │ 2. Return signed URL              │
-     │    + upload session ID            │
-     │◄──────────────────────────────────┤
-     │                                   │
-     │ 3. Upload chunks directly         │
-     │   (multipart upload)              │
-     ├───────────────────────────────────┼──────────┐
-     │                                   │          ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │    S3    │
-     │                                   │    └──────┬───┘
-     │ 4. Chunk uploaded ACK             │           │
-     │◄──────────────────────────────────┼───────────┘
-     │                                   │
-     │ 5. Complete upload (all chunks)   │
-     ├──────────────────────────────────►│
-     │                                   │
-     │                                   │ 6. Merge chunks
-     │                                   │    Extract EXIF
-     │                                   │    Save metadata
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │  PostgreSQL  │
-     │                                   │  └──────────────┘
-     │                                   │
-     │                                   │ 7. Queue processing
-     │                                   │    jobs
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Kafka     │
-     │                                   │  └──────┬───────┘
-     │ 8. Upload complete                │         │
-     │    Return photo ID                │         │
-     │◄──────────────────────────────────┤         │
-     │                                   │         │
-     │                                             │
-     │                              ┌──────────────┘
-     │                              ▼
-     │                     ┌──────────────────┐
-     │                     │ Async Workers    │
-     │                     │ - Thumbnails     │
-     │                     │ - Face detection │
-     │                     │ - Object tagging │
-     │                     └──────────────────┘
-     │
-     │ 9. WebSocket/SSE: Processing complete
-     │◄─────────────────────────────────────────
-     │
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/d9f70ade414f999f.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Upload Implementation Details:</strong></p>
 <ol>
 <li><strong>Chunked Upload (Resumable):</strong></li>
@@ -338,80 +166,7 @@ Bandwidth:
 <li>CORS configured for browser uploads</li>
 </ol>
 <h3 id="42-photo-grid-view-flow">4.2 Photo Grid View Flow</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Request photos (page=1, limit=50)
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Gallery Service   │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 2. Check cache
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │  (metadata)  │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 3. Cache miss
-     │                                   │◄────────┘
-     │                                   │
-     │                                   │ 4. Query DB
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │ PostgreSQL   │
-     │                                   │  │ SELECT *     │
-     │                                   │  │ FROM photos  │
-     │                                   │  │ WHERE ...    │
-     │                                   │  │ ORDER BY     │
-     │                                   │  │   created    │
-     │                                   │  │ LIMIT 50     │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │ 5. Results
-     │                                   │◄────────┘
-     │                                   │
-     │                                   │ 6. Cache results
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │    Redis     │
-     │                                   │  │   (1 hour)   │
-     │                                   │  └──────────────┘
-     │                                   │
-     │ 7. Return photo metadata          │
-     │    + CDN URLs (thumbnails)        │
-     │◄──────────────────────────────────┤
-     │                                   │
-     │ 8. Browser requests thumbnails    │
-     │    (parallel, HTTP/2)             │
-     ├───────────────────────────────────┼──────────┐
-     │                                   │          ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │   CDN    │
-     │                                   │    └──────┬───┘
-     │                                   │           │
-     │                                   │           │ Cache
-     │                                   │           │ miss?
-     │                                   │           │
-     │                                   │           ▼
-     │                                   │    ┌──────────┐
-     │                                   │    │    S3    │
-     │                                   │    └──────┬───┘
-     │ 9. Images delivered               │           │
-     │◄──────────────────────────────────┼───────────┘
-     │                                   │
-     │ 10. User scrolls near end         │
-     │     Trigger next page load        │
-     ├──────────────────────────────────►│
-     │     (page=2, limit=50)            │
-     │                                   │
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/95c3fb357a744dd6.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>View Optimization:</strong>
 - <strong>Cursor-based pagination</strong> (not offset): <code>?cursor=photoId123&amp;limit=50</code>
 - <strong>Thumbnail sizes</strong>: 150px, 400px, 800px (responsive)
@@ -419,48 +174,7 @@ Bandwidth:
 - <strong>Virtual scrolling</strong>: Only render visible + 3 screen buffer
 - <strong>Prefetch next page</strong> when 80% scrolled</p>
 <h3 id="43-search-flow">4.3 Search Flow</h3>
-<pre><code>┌──────────┐
-│  Client  │
-└────┬─────┘
-     │
-     │ 1. Search query: &quot;beach sunset&quot;
-     ├──────────────────────────────────────┐
-     │                                      ▼
-     │                          ┌────────────────────┐
-     │                          │  Search Service    │
-     │                          └────────┬───────────┘
-     │                                   │
-     │                                   │ 2. Parse query
-     │                                   │    + apply filters
-     │                                   │
-     │                                   │ 3. Query ES index
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────────┐
-     │                                   │  │ Elasticsearch    │
-     │                                   │  │ - Text search    │
-     │                                   │  │ - Vector search  │
-     │                                   │  │ - Filters (date) │
-     │                                   │  │ - Aggregations   │
-     │                                   │  └──────┬───────────┘
-     │                                   │         │
-     │                                   │ 4. Photo IDs + score
-     │                                   │◄────────┘
-     │                                   │
-     │                                   │ 5. Enrich metadata
-     │                                   ├────────┐
-     │                                   │        ▼
-     │                                   │  ┌──────────────┐
-     │                                   │  │ PostgreSQL   │
-     │                                   │  │ + Redis      │
-     │                                   │  └──────┬───────┘
-     │                                   │         │
-     │                                   │◄────────┘
-     │                                   │
-     │ 6. Return ranked results          │
-     │◄──────────────────────────────────┤
-     │                                   │
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/72aa636a926b945e.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Search Capabilities:</strong></p>
 <ol>
 <li><strong>Metadata Search</strong> (Elasticsearch):</li>
@@ -878,39 +592,7 @@ hash(user_id) % 64 → shard_id
 <hr />
 <h2 id="7-caching-strategy-multi-layer">7. Caching Strategy (Multi-Layer)</h2>
 <h3 id="71-caching-layers">7.1 Caching Layers</h3>
-<pre><code>┌─────────────────────────────────────────────────────────┐
-│                    Browser Cache                        │
-│  - Thumbnails (7 days)                                  │
-│  - Full images (1 day)                                  │
-│  - Cache-Control: public, max-age=604800               │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    CDN Cache (CloudFront)               │
-│  - Thumbnails (30 days)                                 │
-│  - Original images (7 days)                             │
-│  - 95%+ cache hit rate for images                       │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                 Redis Cache (Metadata)                  │
-│  Layer 1: Hot data (1 hour TTL)                         │
-│    - User's recent photos list                          │
-│    - Album metadata                                     │
-│  Layer 2: Warm data (24 hour TTL)                       │
-│    - User preferences                                   │
-│    - Share settings                                     │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│              Application Memory Cache                   │
-│  - User session data                                    │
-│  - Frequently accessed metadata (LRU, 100MB limit)      │
-└─────────────────────────────────────────────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0ae030d7d2b69bc1.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="72-redis-caching-patterns">7.2 Redis Caching Patterns</h3>
 <p><strong>1. Photo List Cache:</strong></p>
 <pre><code>Key: photos:user:{userId}:list:{cursor}:{limit}:{filters}
@@ -1027,40 +709,21 @@ https://cdn.example.com/thumbnails/{userId}/{photoId}_400x300.webp?v={version}
 <hr />
 <h2 id="8-state-management-frontend">8. State Management (Frontend)</h2>
 <h3 id="81-state-architecture">8.1 State Architecture</h3>
-<pre><code>┌────────────────────────────────────────────────────────┐
-│                  Global State (Redux/Zustand)          │
-├────────────────────────────────────────────────────────┤
-│  - Auth state (user, token)                            │
-│  - Photo collection state                              │
-│  - Upload queue state                                  │
-│  - UI state (selected photos, view mode)               │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              Server State (React Query/SWR)            │
-├────────────────────────────────────────────────────────┤
-│  - Photo data (cached, auto-refetch)                   │
-│  - Album data                                          │
-│  - Search results                                      │
-│  - User preferences                                    │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              Local State (useState/useReducer)         │
-├────────────────────────────────────────────────────────┤
-│  - Component-specific UI (modals, dropdowns)           │
-│  - Form inputs                                         │
-│  - Temporary selections                                │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│              URL State (React Router)                  │
-├────────────────────────────────────────────────────────┤
-│  - Current route (grid/album/search)                   │
-│  - Query params (filters, sort, cursor)                │
-│  - Share-able links                                    │
-└────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph GlobalState[&quot;Global State (Redux/Zustand)&quot;]
+        GS[&quot;Auth state (user, token) - Photo collection state - Upload queue state - UI state (selected photos, view mode)&quot;]
+    end
+    subgraph ServerState[&quot;Server State (React Query/SWR)&quot;]
+        SS[&quot;Photo data (cached, auto-refetch) - Album data - Search results - User preferences&quot;]
+    end
+    subgraph LocalState[&quot;Local State (useState/useReducer)&quot;]
+        LS[&quot;Component-specific UI (modals, dropdowns) - Form inputs - Temporary selections&quot;]
+    end
+    subgraph URLState[&quot;URL State (React Router)&quot;]
+        US[&quot;Current route (grid/album/search) - Query params (filters, sort, cursor) - Share-able links&quot;]
+    end
+</div>
 <h3 id="82-state-management-implementation">8.2 State Management Implementation</h3>
 <p><strong>React Query for Server State:</strong></p>
 <pre><code class="language-javascript">// Infinite query for photo grid
@@ -1358,25 +1021,11 @@ const srcSet = [
 /&gt;
 </code></pre>
 <p><strong>Thumbnail Generation Pipeline:</strong></p>
-<pre><code>Original Upload (5MB JPEG)
-        │
-        ▼
-┌───────────────────┐
-│ Image Processor   │
-│ (Sharp/ImageMagick│
-└────────┬──────────┘
-         │
-         ├─► Thumbnail 150x150 (WebP, AVIF, JPEG) → 5KB
-         ├─► Thumbnail 400x400 (WebP, AVIF, JPEG) → 20KB
-         ├─► Thumbnail 800x800 (WebP, AVIF, JPEG) → 60KB
-         ├─► Full HD 1920x1080 (WebP, JPEG) → 200KB
-         └─► Original (preserved) → 5MB
-
-Quality settings:
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/85119c9ffe6d37db.svg" alt="Architecture diagram" loading="lazy"></figure>
+<p>Quality settings:
 - WebP: quality 80
 - AVIF: quality 75 (equivalent to JPEG 85)
-- JPEG: quality 85
-</code></pre>
+- JPEG: quality 85</p>
 <p><strong>Blur Hash for Progressive Loading:</strong></p>
 <pre><code class="language-javascript">// Generate blur hash on upload
 import { encode } from 'blurhash';
@@ -1840,38 +1489,7 @@ async function checkStorageQuota(userId, fileSize) {
 <p><strong>Q9: How would you implement face detection and grouping?</strong></p>
 <p><strong>A:</strong></p>
 <p><strong>Pipeline:</strong></p>
-<pre><code>Photo Upload
-    │
-    ▼
-┌─────────────────┐
-│ Face Detection  │ (ML Model: MTCNN or RetinaFace)
-│ - Detect faces  │
-│ - Extract bbox  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Face Embeddings │ (FaceNet or ArcFace)
-│ - Generate 512  │
-│   dim vectors   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Face Clustering │ (DBSCAN or HDBSCAN)
-│ - Group similar │
-│   faces         │
-│ - Create person │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Store in DB     │
-│ - person_id     │
-│ - embeddings    │
-│ - confidence    │
-└─────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/8032cd971334bc4e.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Database schema:</strong></p>
 <pre><code class="language-sql">CREATE TABLE detected_faces (
     face_id UUID PRIMARY KEY,
@@ -1943,39 +1561,7 @@ LIMIT 50;
 <p><strong>Q10: How would you implement content-based image search ("find beach photos")?</strong></p>
 <p><strong>A:</strong></p>
 <p><strong>ML Pipeline:</strong></p>
-<pre><code>Photo Upload
-    │
-    ▼
-┌──────────────────┐
-│ Image Embedding  │ (CLIP or ResNet50)
-│ - Generate 512   │
-│   dim vector     │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Object Detection │ (YOLO or Faster R-CNN)
-│ - Detect objects │
-│ - Tags: &quot;beach&quot;, │
-│   &quot;ocean&quot;, &quot;sky&quot; │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Scene Recognition│ (Places365)
-│ - Classify scene │
-│ - &quot;outdoor&quot;,     │
-│   &quot;natural&quot;      │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Store in ES      │
-│ - Text tags      │
-│ - Image vector   │
-│ - Scene labels   │
-└──────────────────┘
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/a2a368e9ac71fdee.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Elasticsearch index:</strong></p>
 <pre><code class="language-json">{
   &quot;mappings&quot;: {
@@ -2177,21 +1763,7 @@ hasPermission(userPerms, PERMISSIONS.DELETE); // false
 }
 </code></pre>
 <p><strong>Access flow:</strong></p>
-<pre><code>User visits: /share/abc123
-    │
-    ▼
-Check share validity
-    ├─ Expired? → 403
-    ├─ Password required? → Prompt
-    ├─ Private? → Check recipient
-    └─ Valid → Grant access
-            │
-            ▼
-        Apply permissions
-            ├─ Can view? → Show photos
-            ├─ Can download? → Enable download button
-            └─ Can add? → Show upload UI
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/0aaffbd0473d8209.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="12-summary-key-takeaways">12. Summary &amp; Key Takeaways</h2>
 <h3 id="121-critical-design-decisions">12.1 Critical Design Decisions</h3>
