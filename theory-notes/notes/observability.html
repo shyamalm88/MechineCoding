@@ -36,20 +36,14 @@ document.addEventListener('DOMContentLoaded', function () {
 <p>You can't improve what you can't measure. Observability is how you understand your application in production.</p>
 <hr />
 <h2 id="1-the-three-pillars-of-observability">1. The Three Pillars of Observability</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
-│                    OBSERVABILITY                                 │
-├──────────────────┬──────────────────┬───────────────────────────┤
-│      LOGS        │     METRICS      │         TRACES            │
-│                  │                  │                           │
-│ What happened?   │ How much/often?  │ How long did it take?     │
-│                  │                  │                           │
-│ - Error messages │ - Page views     │ - Request duration        │
-│ - User actions   │ - Error rates    │ - Component render time   │
-│ - API responses  │ - Core Web Vitals│ - API call waterfall      │
-│                  │                  │                           │
-│ Sentry, LogRocket│ DataDog, Grafana │ OpenTelemetry, Jaeger     │
-└──────────────────┴──────────────────┴───────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Observability&quot;
+        Logs[&quot;LOGS - What happened?&lt;br/&gt;Error messages&lt;br/&gt;User actions&lt;br/&gt;API responses&lt;br/&gt;Tools: Sentry, LogRocket&quot;]
+        Metrics[&quot;METRICS - How much/often?&lt;br/&gt;Page views&lt;br/&gt;Error rates&lt;br/&gt;Core Web Vitals&lt;br/&gt;Tools: DataDog, Grafana&quot;]
+        Traces[&quot;TRACES - How long did it take?&lt;br/&gt;Request duration&lt;br/&gt;Component render time&lt;br/&gt;API call waterfall&lt;br/&gt;Tools: OpenTelemetry, Jaeger&quot;]
+    end
+</div>
 <hr />
 <h2 id="2-error-tracking">2. Error Tracking</h2>
 <p>Errors in production are inevitable. Catching them quickly is what matters.</p>
@@ -216,83 +210,57 @@ onTTFB(sendToAnalytics);
 </code></pre>
 <h3 id="understanding-each-metric">Understanding Each Metric</h3>
 <h4 id="lcp-largest-contentful-paint">LCP (Largest Contentful Paint)</h4>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
-│  Timeline                                                        │
-│  0ms ──────────────────────────────────────────────────▶ 2500ms │
-│       │                    │                                     │
-│       │                    └── LCP: Hero image fully rendered    │
-│       │                                                          │
-│       └── First byte received                                    │
-│                                                                  │
-│  What counts as LCP:                                             │
-│  - &lt;img&gt; elements                                                │
-│  - &lt;image&gt; inside &lt;svg&gt;                                          │
-│  - &lt;video&gt; poster image                                          │
-│  - Background image via CSS                                      │
-│  - Block-level text elements                                     │
-└─────────────────────────────────────────────────────────────────┘
-
-Optimization:
-- Preload LCP image: &lt;link rel=&quot;preload&quot; as=&quot;image&quot; href=&quot;hero.jpg&quot;&gt;
-- Use CDN for faster delivery
-- Optimize image size and format (WebP/AVIF)
-- Remove render-blocking resources
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Timeline: 0ms to 2500ms&quot;
+        Start[&quot;0ms&quot;] --&gt; TTFB[&quot;First byte received&quot;] --&gt; LCPEvent[&quot;LCP: Hero image fully rendered&quot;] --&gt; End[&quot;2500ms&quot;]
+    end
+    subgraph &quot;What counts as LCP&quot;
+        L1[&quot;img elements&quot;]
+        L2[&quot;image inside svg&quot;]
+        L3[&quot;video poster image&quot;]
+        L4[&quot;Background image via CSS&quot;]
+        L5[&quot;Block-level text elements&quot;]
+    end
+    subgraph &quot;Optimization&quot;
+        O1[&quot;Preload LCP image&quot;]
+        O2[&quot;Use CDN for faster delivery&quot;]
+        O3[&quot;Optimize image size and format (WebP/AVIF)&quot;]
+        O4[&quot;Remove render-blocking resources&quot;]
+    end
+</div>
 <h4 id="inp-interaction-to-next-paint">INP (Interaction to Next Paint)</h4>
-<pre><code>User clicks button
-       │
-       ▼
-┌──────────────────┐
-│  Input Delay     │  ← JS blocking main thread
-│  (event queued)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Processing Time │  ← Event handler execution
-│  (handler runs)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Presentation    │  ← Browser paints the update
-│  Delay           │
-└────────┬─────────┘
-         │
-         ▼
-    Next Paint
-
-Total INP = Input Delay + Processing + Presentation
-
-Optimization:
-- Break up long tasks (yield to main thread)
-- Use requestIdleCallback for non-critical work
-- Debounce/throttle expensive handlers
-- Move heavy work to Web Workers
-</code></pre>
+<div class="mermaid">
+graph TD
+    Click[&quot;User clicks button&quot;] --&gt; InputDelay[&quot;Input Delay (event queued) - JS blocking main thread&quot;]
+    InputDelay --&gt; Processing[&quot;Processing Time (handler runs) - event handler execution&quot;]
+    Processing --&gt; Presentation[&quot;Presentation Delay - browser paints the update&quot;]
+    Presentation --&gt; NextPaint[&quot;Next Paint&quot;]
+    NextPaint -.-&gt; Formula[&quot;Total INP = Input Delay + Processing + Presentation&quot;]
+    subgraph &quot;Optimization&quot;
+        O1[&quot;Break up long tasks (yield to main thread)&quot;]
+        O2[&quot;Use requestIdleCallback for non-critical work&quot;]
+        O3[&quot;Debounce/throttle expensive handlers&quot;]
+        O4[&quot;Move heavy work to Web Workers&quot;]
+    end
+</div>
 <h4 id="cls-cumulative-layout-shift">CLS (Cumulative Layout Shift)</h4>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
-│  Before Ad Loads              After Ad Loads                     │
-│  ┌────────────────┐           ┌────────────────┐                │
-│  │    Header      │           │    Header      │                │
-│  ├────────────────┤           ├────────────────┤                │
-│  │    Article     │           │      AD        │ ← Inserted!    │
-│  │    Content     │           ├────────────────┤                │
-│  │                │           │    Article     │ ← Shifted!     │
-│  │   [Button]     │           │    Content     │                │
-│  └────────────────┘           │                │                │
-│                               │   [Button]     │ ← User clicks  │
-│                               └────────────────┘    wrong thing │
-│                                                                  │
-│  CLS Score = (Impact Fraction) × (Distance Fraction)            │
-└─────────────────────────────────────────────────────────────────┘
-
-Optimization:
-- Reserve space for dynamic content (aspect-ratio, min-height)
-- Don't insert content above existing content
-- Use transform for animations instead of top/left
-- Preload fonts to avoid FOUT
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Before Ad Loads&quot;
+        B1[&quot;Header&quot;] --&gt; B2[&quot;Article Content&quot;] --&gt; B3[&quot;Button&quot;]
+    end
+    subgraph &quot;After Ad Loads&quot;
+        A1[&quot;Header&quot;] --&gt; A2[&quot;AD (Inserted!)&quot;] --&gt; A3[&quot;Article Content (Shifted!)&quot;] --&gt; A4[&quot;Button (User clicks wrong thing)&quot;]
+    end
+    Formula[&quot;CLS Score = Impact Fraction x Distance Fraction&quot;]
+    subgraph &quot;Optimization&quot;
+        O1[&quot;Reserve space for dynamic content (aspect-ratio, min-height)&quot;]
+        O2[&quot;Don't insert content above existing content&quot;]
+        O3[&quot;Use transform for animations instead of top/left&quot;]
+        O4[&quot;Preload fonts to avoid FOUT&quot;]
+    end
+</div>
 <hr />
 <h2 id="4-performance-monitoring">4. Performance Monitoring</h2>
 <h3 id="custom-performance-marks">Custom Performance Marks</h3>

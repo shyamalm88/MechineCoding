@@ -37,19 +37,15 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="1-the-state-spectrum">1. The State Spectrum</h2>
 <p>Not all state is equal. Understanding the different types helps you choose the right tool.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────────────┐
-│                        STATE SPECTRUM                                │
-├──────────────┬──────────────┬──────────────┬───────────────────────┤
-│   UI State   │  Form State  │ Server State │   Global App State    │
-│              │              │              │                       │
-│ - Modal open │ - Input vals │ - API data   │ - User session        │
-│ - Dropdown   │ - Validation │ - Cache      │ - Theme               │
-│ - Hover      │ - Dirty/clean│ - Loading    │ - Feature flags       │
-│              │              │              │                       │
-│  useState()  │  React Hook  │ React Query  │  Zustand/Redux        │
-│              │    Form      │  SWR         │  Context              │
-└──────────────┴──────────────┴──────────────┴───────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;State Spectrum&quot;
+        UI[&quot;UI State&lt;br/&gt;Modal open&lt;br/&gt;Dropdown&lt;br/&gt;Hover&lt;br/&gt;Tools: useState()&quot;]
+        Form[&quot;Form State&lt;br/&gt;Input vals&lt;br/&gt;Validation&lt;br/&gt;Dirty/clean&lt;br/&gt;Tools: React Hook Form&quot;]
+        Server[&quot;Server State&lt;br/&gt;API data&lt;br/&gt;Cache&lt;br/&gt;Loading&lt;br/&gt;Tools: React Query, SWR&quot;]
+        Global[&quot;Global App State&lt;br/&gt;User session&lt;br/&gt;Theme&lt;br/&gt;Feature flags&lt;br/&gt;Tools: Zustand/Redux, Context&quot;]
+    end
+</div>
 <h3 id="the-golden-rule">The Golden Rule</h3>
 <blockquote>
 <p><strong>Put state as close to where it's used as possible, and lift it up only when necessary.</strong></p>
@@ -236,23 +232,21 @@ function UpdateUser({ userId }) {
 }
 </code></pre>
 <h3 id="react-query-under-the-hood">React Query: Under the Hood</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
-│                    React Query Cache                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ['users']          → { data: [...], updatedAt: 1234567890 }    │
-│  ['user', 1]        → { data: {...}, updatedAt: 1234567891 }    │
-│  ['user', 2]        → { data: {...}, updatedAt: 1234567892 }    │
-│  ['posts', {page:1}]→ { data: [...], updatedAt: 1234567893 }    │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-
-Automatic behaviors:
-1. Deduplication: 10 components request ['user', 1] → 1 network call
-2. Background refetch: When tab regains focus
-3. Stale-while-revalidate: Show cached, fetch fresh in background
-4. Garbage collection: Remove unused queries after 5 minutes
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;React Query Cache&quot;
+        K1[&quot;['users']&quot;] --&gt; V1[&quot;data: [...], updatedAt: 1234567890&quot;]
+        K2[&quot;['user', 1]&quot;] --&gt; V2[&quot;data: {...}, updatedAt: 1234567891&quot;]
+        K3[&quot;['user', 2]&quot;] --&gt; V3[&quot;data: {...}, updatedAt: 1234567892&quot;]
+        K4[&quot;['posts', {page:1}]&quot;] --&gt; V4[&quot;data: [...], updatedAt: 1234567893&quot;]
+    end
+    subgraph &quot;Automatic behaviors&quot;
+        B1[&quot;1. Deduplication: 10 components request ['user', 1] -&gt; 1 network call&quot;]
+        B2[&quot;2. Background refetch: when tab regains focus&quot;]
+        B3[&quot;3. Stale-while-revalidate: show cached, fetch fresh in background&quot;]
+        B4[&quot;4. Garbage collection: remove unused queries after 5 minutes&quot;]
+    end
+</div>
 <h3 id="react-query-vs-swr">React Query vs SWR</h3>
 <table>
 <thead>
@@ -521,33 +515,7 @@ function Form() {
 </code></pre>
 <hr />
 <h2 id="8-decision-framework">8. Decision Framework</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
-│                    STATE DECISION TREE                           │
-└─────────────────────────────────────────────────────────────────┘
-
-Is it SERVER data (from API)?
-├── YES → React Query / SWR
-│         (caching, background refetch, deduplication)
-│
-└── NO → Is it used by MULTIPLE components?
-         ├── NO → useState / useReducer
-         │        (keep it local)
-         │
-         └── YES → How many components? How often does it change?
-                   │
-                   ├── Few components, low frequency
-                   │   → Context (simple, built-in)
-                   │
-                   ├── Many components, medium frequency
-                   │   → Zustand (simple, performant)
-                   │
-                   └── Enterprise, strict patterns, large team
-                       → Redux Toolkit (conventions, ecosystem)
-
-Is it FORM data?
-└── YES → React Hook Form / Formik
-          (validation, performance, submission handling)
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/22f43d3c46220d52.svg" alt="Architecture diagram" loading="lazy"></figure>
 <hr />
 <h2 id="9-anti-patterns-to-avoid">9. Anti-Patterns to Avoid</h2>
 <h3 id="1-putting-everything-in-global-state">1. Putting Everything in Global State</h3>

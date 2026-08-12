@@ -37,21 +37,20 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="1-what-is-cors">1. What is CORS?</h2>
 <p>CORS (Cross-Origin Resource Sharing) is a <strong>browser security mechanism</strong> that controls how web pages can request resources from different origins.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  SAME-ORIGIN POLICY                                          │
-│                                                              │
-│  An origin is defined by:                                    │
-│  ├── Protocol (https://)                                     │
-│  ├── Host (example.com)                                      │
-│  └── Port (:443)                                             │
-│                                                              │
-│  Examples:                                                   │
-│  https://app.com     vs  https://api.com      → Different   │
-│  https://app.com     vs  http://app.com       → Different   │
-│  https://app.com     vs  https://app.com:8080 → Different   │
-│  https://app.com/a   vs  https://app.com/b    → SAME        │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Same-Origin Policy&quot;
+        Def[&quot;An origin is defined by:&quot;] --&gt; Proto[&quot;Protocol (https://)&quot;]
+        Def --&gt; Host[&quot;Host (example.com)&quot;]
+        Def --&gt; Port[&quot;Port (:443)&quot;]
+    end
+    subgraph &quot;Examples&quot;
+        C1A[&quot;https://app.com&quot;] --&gt;|Different| C1B[&quot;https://api.com&quot;]
+        C2A[&quot;https://app.com&quot;] --&gt;|Different| C2B[&quot;http://app.com&quot;]
+        C3A[&quot;https://app.com&quot;] --&gt;|Different| C3B[&quot;https://app.com:8080&quot;]
+        C4A[&quot;https://app.com/a&quot;] --&gt;|SAME| C4B[&quot;https://app.com/b&quot;]
+    end
+</div>
 <h3 id="why-it-exists">Why It Exists</h3>
 <pre><code>Without CORS:
 
@@ -73,70 +72,32 @@ With CORS:
 <hr />
 <h2 id="2-the-preflight-dance">2. The Preflight Dance</h2>
 <h3 id="simple-requests-no-preflight">Simple Requests (No Preflight)</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  SIMPLE REQUEST (No Preflight)                               │
-│                                                              │
-│  Conditions:                                                 │
-│  ├── Method: GET, HEAD, or POST                              │
-│  ├── Headers: Only safe headers                              │
-│  │   └── Accept, Accept-Language, Content-Language          │
-│  │   └── Content-Type (only certain values)                 │
-│  └── Content-Type: text/plain, multipart/form-data,         │
-│                    application/x-www-form-urlencoded        │
-│                                                              │
-│  Browser ──────────────────────────────────────────▶ Server │
-│           GET /api/data                                      │
-│           Origin: https://app.com                            │
-│                                                              │
-│  Browser ◀────────────────────────────────────────── Server │
-│           200 OK                                             │
-│           Access-Control-Allow-Origin: https://app.com       │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Simple Request (No Preflight)&quot;
+        Cond[&quot;Conditions: Method GET, HEAD, or POST&lt;br/&gt;Headers: only safe headers (Accept, Accept-Language, Content-Language, limited Content-Type)&lt;br/&gt;Content-Type: text/plain, multipart/form-data, or application/x-www-form-urlencoded&quot;]
+        Browser1[&quot;Browser&quot;] --&gt;|&quot;GET /api/data, Origin: https://app.com&quot;| Server1[&quot;Server&quot;]
+        Server1 --&gt;|&quot;200 OK, Access-Control-Allow-Origin: https://app.com&quot;| Browser1
+    end
+</div>
 <h3 id="preflighted-requests">Preflighted Requests</h3>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  PREFLIGHT REQUIRED                                          │
-│                                                              │
-│  Triggers:                                                   │
-│  ├── Methods: PUT, DELETE, PATCH, CONNECT, OPTIONS, TRACE   │
-│  ├── Custom headers (Authorization, X-Custom-Header)         │
-│  ├── Content-Type: application/json                         │
-│  └── Readable streams in request body                       │
-└─────────────────────────────────────────────────────────────┘
-
-Step 1: Preflight (OPTIONS)
-───────────────────────────
-
-Browser ──────────────────────────────────────────────▶ Server
-         OPTIONS /api/users
-         Origin: https://app.com
-         Access-Control-Request-Method: POST
-         Access-Control-Request-Headers: Content-Type, Authorization
-
-Browser ◀────────────────────────────────────────────── Server
-         204 No Content
-         Access-Control-Allow-Origin: https://app.com
-         Access-Control-Allow-Methods: GET, POST, PUT, DELETE
-         Access-Control-Allow-Headers: Content-Type, Authorization
-         Access-Control-Max-Age: 86400
-
-Step 2: Actual Request
-──────────────────────
-
-Browser ──────────────────────────────────────────────▶ Server
-         POST /api/users
-         Origin: https://app.com
-         Content-Type: application/json
-         Authorization: Bearer token123
-
-         {&quot;name&quot;: &quot;John&quot;}
-
-Browser ◀────────────────────────────────────────────── Server
-         201 Created
-         Access-Control-Allow-Origin: https://app.com
-
-         {&quot;id&quot;: 1, &quot;name&quot;: &quot;John&quot;}
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Preflight Required - Triggers&quot;
+        T1[&quot;Methods: PUT, DELETE, PATCH, CONNECT, OPTIONS, TRACE&quot;]
+        T2[&quot;Custom headers (Authorization, X-Custom-Header)&quot;]
+        T3[&quot;Content-Type: application/json&quot;]
+        T4[&quot;Readable streams in request body&quot;]
+    end
+    subgraph &quot;Step 1: Preflight (OPTIONS)&quot;
+        Browser1[&quot;Browser&quot;] --&gt;|&quot;OPTIONS /api/users, Origin, Access-Control-Request-Method: POST, Access-Control-Request-Headers: Content-Type, Authorization&quot;| Server1[&quot;Server&quot;]
+        Server1 --&gt;|&quot;204 No Content, Allow-Origin, Allow-Methods: GET/POST/PUT/DELETE, Allow-Headers, Max-Age: 86400&quot;| Browser1
+    end
+    subgraph &quot;Step 2: Actual Request&quot;
+        Browser2[&quot;Browser&quot;] --&gt;|&quot;POST /api/users, Origin, Content-Type: application/json, Authorization: Bearer token123, body: name=John&quot;| Server2[&quot;Server&quot;]
+        Server2 --&gt;|&quot;201 Created, Allow-Origin, body: id=1 name=John&quot;| Browser2
+    end
+</div>
 <hr />
 <h2 id="3-cors-headers-reference">3. CORS Headers Reference</h2>
 <h3 id="response-headers-server-browser">Response Headers (Server → Browser)</h3>
@@ -279,19 +240,16 @@ app.use(cors({
 </code></pre>
 <hr />
 <h2 id="5-the-credentials-trap">5. The Credentials Trap</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  THE CREDENTIALS RULE                                        │
-│                                                              │
-│  When credentials: 'include' is used:                        │
-│                                                              │
-│  ❌ CANNOT use Access-Control-Allow-Origin: *                │
-│  ❌ CANNOT use Access-Control-Allow-Headers: *               │
-│  ❌ CANNOT use Access-Control-Allow-Methods: *               │
-│                                                              │
-│  ✅ MUST specify exact origin                                │
-│  ✅ MUST set Access-Control-Allow-Credentials: true          │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;The Credentials Rule - when credentials: 'include' is used&quot;
+        Cannot1[&quot;CANNOT use Access-Control-Allow-Origin: *&quot;]
+        Cannot2[&quot;CANNOT use Access-Control-Allow-Headers: *&quot;]
+        Cannot3[&quot;CANNOT use Access-Control-Allow-Methods: *&quot;]
+        Must1[&quot;MUST specify exact origin&quot;]
+        Must2[&quot;MUST set Access-Control-Allow-Credentials: true&quot;]
+    end
+</div>
 <pre><code class="language-js">// ❌ WRONG - Won't work with credentials
 res.header('Access-Control-Allow-Origin', '*');
 res.header('Access-Control-Allow-Credentials', 'true');
@@ -328,23 +286,24 @@ app.options('*', (req, res) =&gt; {
 </code></pre>
 <hr />
 <h2 id="7-cors-vs-csrf">7. CORS vs CSRF</h2>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  CORS ≠ CSRF PROTECTION                                      │
-│                                                              │
-│  CORS:                                                       │
-│  └── Protects reading response (browser blocks it)          │
-│  └── Does NOT prevent the request from being sent!          │
-│                                                              │
-│  CSRF Attack:                                                │
-│  └── Attacker doesn't need to read response                 │
-│  └── Just needs to trigger the action (transfer money)      │
-│                                                              │
-│  You still need:                                             │
-│  ├── CSRF tokens                                             │
-│  ├── SameSite cookies                                        │
-│  └── Origin header validation                                │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;CORS != CSRF Protection&quot;
+        subgraph &quot;CORS&quot;
+            C1[&quot;Protects reading response (browser blocks it)&quot;]
+            C2[&quot;Does NOT prevent the request from being sent!&quot;]
+        end
+        subgraph &quot;CSRF Attack&quot;
+            A1[&quot;Attacker doesn't need to read response&quot;]
+            A2[&quot;Just needs to trigger the action (transfer money)&quot;]
+        end
+        subgraph &quot;You still need&quot;
+            N1[&quot;CSRF tokens&quot;]
+            N2[&quot;SameSite cookies&quot;]
+            N3[&quot;Origin header validation&quot;]
+        end
+    end
+</div>
 <h3 id="proper-csrf-protection">Proper CSRF Protection</h3>
 <pre><code class="language-js">// Use SameSite cookies
 res.cookie('session', token, {

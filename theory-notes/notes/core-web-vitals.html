@@ -37,41 +37,31 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="1-what-are-core-web-vitals">1. What Are Core Web Vitals?</h2>
 <p>Core Web Vitals are Google's standardized metrics for measuring user experience. They directly impact <strong>SEO rankings</strong>.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                    CORE WEB VITALS                          │
-├──────────────────┬──────────────────┬──────────────────────┤
-│       LCP        │       INP        │        CLS           │
-│    Loading       │  Interactivity   │   Visual Stability   │
-│                  │                  │                      │
-│  &lt; 2.5s GOOD     │  &lt; 200ms GOOD    │   &lt; 0.1 GOOD        │
-│  2.5-4s NEEDS    │  200-500ms NEEDS │   0.1-0.25 NEEDS    │
-│  &gt; 4s POOR       │  &gt; 500ms POOR    │   &gt; 0.25 POOR       │
-└──────────────────┴──────────────────┴──────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Core Web Vitals&quot;
+        LCP[&quot;LCP - Loading&lt;br/&gt;&amp;lt; 2.5s GOOD&lt;br/&gt;2.5-4s NEEDS WORK&lt;br/&gt;&amp;gt; 4s POOR&quot;]
+        INP[&quot;INP - Interactivity&lt;br/&gt;&amp;lt; 200ms GOOD&lt;br/&gt;200-500ms NEEDS WORK&lt;br/&gt;&amp;gt; 500ms POOR&quot;]
+        CLS[&quot;CLS - Visual Stability&lt;br/&gt;&amp;lt; 0.1 GOOD&lt;br/&gt;0.1-0.25 NEEDS WORK&lt;br/&gt;&amp;gt; 0.25 POOR&quot;]
+    end
+</div>
 <hr />
 <h2 id="2-lcp-largest-contentful-paint">2. LCP (Largest Contentful Paint)</h2>
 <h3 id="what-it-measures">What It Measures</h3>
 <p>The time it takes for the <strong>largest visible element</strong> to render in the viewport.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  Timeline                                                    │
-│                                                              │
-│  0ms ─────────────────────────────────────────────▶ 2500ms  │
-│       │              │              │                        │
-│       │              │              └── LCP: Hero image      │
-│       │              │                  fully painted        │
-│       │              │                                       │
-│       │              └── FCP: First text painted            │
-│       │                                                      │
-│       └── TTFB: First byte received                         │
-│                                                              │
-│  What counts as LCP element:                                 │
-│  ├── &lt;img&gt; elements                                         │
-│  ├── &lt;image&gt; inside &lt;svg&gt;                                   │
-│  ├── &lt;video&gt; poster image                                   │
-│  ├── Background image via CSS url()                         │
-│  └── Block-level text elements (&lt;h1&gt;, &lt;p&gt;, etc.)            │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph LR
+    subgraph &quot;Timeline: 0ms to 2500ms&quot;
+        Start[&quot;0ms&quot;] --&gt; TTFB[&quot;TTFB: First byte received&quot;] --&gt; FCP[&quot;FCP: First text painted&quot;] --&gt; LCPEvent[&quot;LCP: Hero image fully painted&quot;] --&gt; End[&quot;2500ms&quot;]
+    end
+    subgraph &quot;What counts as LCP element&quot;
+        L1[&quot;img elements&quot;]
+        L2[&quot;image inside svg&quot;]
+        L3[&quot;video poster image&quot;]
+        L4[&quot;Background image via CSS url()&quot;]
+        L5[&quot;Block-level text elements (h1, p, etc.)&quot;]
+    end
+</div>
 <h3 id="measuring-lcp">Measuring LCP</h3>
 <pre><code class="language-js">// Using web-vitals library
 import { onLCP } from 'web-vitals';
@@ -152,31 +142,7 @@ observer.observe({ type: 'largest-contentful-paint', buffered: true });
 <h2 id="3-inp-interaction-to-next-paint">3. INP (Interaction to Next Paint)</h2>
 <h3 id="what-it-measures_1">What It Measures</h3>
 <p>INP measures the <strong>latency of all user interactions</strong> throughout the page lifecycle and reports the worst one (at the 98th percentile).</p>
-<pre><code>User clicks button
-       │
-       ▼
-┌──────────────────┐
-│  Input Delay     │  ← Time waiting in queue (main thread busy)
-│  (event queued)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Processing Time │  ← Event handler execution time
-│  (handler runs)  │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Presentation    │  ← Time for browser to paint the result
-│  Delay           │
-└────────┬─────────┘
-         │
-         ▼
-    Next Paint
-
-INP = Input Delay + Processing Time + Presentation Delay
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/99687690f802ff29.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="why-inp-replaced-fid">Why INP Replaced FID</h3>
 <table>
 <thead>
@@ -313,24 +279,16 @@ function processInChunks(items, callback) {
 <h2 id="4-cls-cumulative-layout-shift">4. CLS (Cumulative Layout Shift)</h2>
 <h3 id="what-it-measures_2">What It Measures</h3>
 <p>CLS quantifies how much visible elements <strong>unexpectedly shift</strong> during page load.</p>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  Before Ad Loads              After Ad Loads                 │
-│  ┌────────────────┐           ┌────────────────┐            │
-│  │    Header      │           │    Header      │            │
-│  ├────────────────┤           ├────────────────┤            │
-│  │    Article     │           │      AD        │ ← Inserted │
-│  │    Content     │           ├────────────────┤            │
-│  │                │           │    Article     │ ← Shifted! │
-│  │   [Button]     │           │    Content     │            │
-│  └────────────────┘           │   [Button]     │ ← Misclick!│
-│                               └────────────────┘            │
-│                                                              │
-│  CLS Score = Impact Fraction × Distance Fraction            │
-│                                                              │
-│  Impact: % of viewport affected                              │
-│  Distance: How far elements moved (as % of viewport)         │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Before Ad Loads&quot;
+        B1[&quot;Header&quot;] --&gt; B2[&quot;Article Content&quot;] --&gt; B3[&quot;Button&quot;]
+    end
+    subgraph &quot;After Ad Loads&quot;
+        A1[&quot;Header&quot;] --&gt; A2[&quot;AD (Inserted)&quot;] --&gt; A3[&quot;Article Content (Shifted!)&quot;] --&gt; A4[&quot;Button (Misclick!)&quot;]
+    end
+    Formula[&quot;CLS Score = Impact Fraction x Distance Fraction&lt;br/&gt;Impact: % of viewport affected&lt;br/&gt;Distance: how far elements moved (as % of viewport)&quot;]
+</div>
 <h3 id="the-cls-formula">The CLS Formula</h3>
 <pre><code>Layout Shift Score = Impact Fraction × Distance Fraction
 
@@ -567,22 +525,22 @@ function sendOnce(metric) {
 </tr>
 </tbody>
 </table>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│  WHY THEY DIFFER                                             │
-│                                                              │
-│  Lab Data:                                                   │
-│  - Simulated device/network                                  │
-│  - No real user interaction                                  │
-│  - Consistent, reproducible                                  │
-│                                                              │
-│  Field Data:                                                 │
-│  - Real devices (slow phones!)                              │
-│  - Real networks (3G in India!)                             │
-│  - Real user behavior                                        │
-│                                                              │
-│  Field data is what Google uses for rankings!                │
-└─────────────────────────────────────────────────────────────┘
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Why They Differ&quot;
+        subgraph &quot;Lab Data&quot;
+            L1[&quot;Simulated device/network&quot;]
+            L2[&quot;No real user interaction&quot;]
+            L3[&quot;Consistent, reproducible&quot;]
+        end
+        subgraph &quot;Field Data&quot;
+            F1[&quot;Real devices (slow phones!)&quot;]
+            F2[&quot;Real networks (3G in India!)&quot;]
+            F3[&quot;Real user behavior&quot;]
+        end
+    end
+    Note[&quot;Field data is what Google uses for rankings!&quot;]
+</div>
 <h3 id="chrome-user-experience-report-crux">Chrome User Experience Report (CrUX)</h3>
 <pre><code class="language-js">// Query CrUX API
 const response = await fetch(
