@@ -355,30 +355,24 @@ That last row matters as much as any of the technical ones: OT's transform math 
 
 **Solution:** on first access, the OT Server loads the S3 snapshot into Redis under `doc:{doc_id}:canonical`. Every committed operation after that gets applied to the Redis copy in memory, immediately. Any new joiner reads that Redis copy directly and gets the current state instantly — no operation replay, ever.
 
-```
-1. First user opens document
-   -> GET doc:{doc_id}:canonical -> cache miss
-   -> Fetch latest snapshot from S3 -> load into Redis
-   -> Set TTL = 30 min (refreshed on each op)
-
-2. User edits
-   -> Op arrives -> OT Server transforms -> appends to Cassandra
-   -> OT Server applies op to Redis canonical copy
-   -> OT Server broadcasts to all connected peers
-
-3. Second user joins mid-session
-   -> GET doc:{doc_id}:canonical -> cache hit (instant)
-   -> Return current state directly from Redis
-   -> No S3 fetch, no op replay, no latency spike
-
-4. Auto-save (every 10-20 seconds)
-   -> Serialize Redis canonical copy -> write to S3 as minor version (is_major = false)
-   -> Refresh TTL on Redis key
-
-5. Last user disconnects
-   -> Redis canonical TTL expires or is set short
-   -> Reconciliation job fires (see Deep Dive 8.3)
-   -> Redis key deleted
+```mermaid
+graph TD
+    subgraph "1. First user opens document"
+        A1["GET doc:{doc_id}:canonical"] -->|cache miss| A2["Fetch latest snapshot from S3"] --> A3["Load into Redis"] --> A4["Set TTL = 30 min (refreshed on each op)"]
+    end
+    subgraph "2. User edits"
+        B1["Op arrives"] --> B2["OT Server transforms"] --> B3["Appends to Cassandra"]
+        B3 --> B4["OT Server applies op to Redis canonical copy"] --> B5["OT Server broadcasts to all connected peers"]
+    end
+    subgraph "3. Second user joins mid-session"
+        C1["GET doc:{doc_id}:canonical"] -->|cache hit, instant| C2["Return current state directly from Redis - no S3 fetch, no op replay, no latency spike"]
+    end
+    subgraph "4. Auto-save (every 10-20 seconds)"
+        D1["Serialize Redis canonical copy"] --> D2["Write to S3 as minor version (is_major = false)"] --> D3["Refresh TTL on Redis key"]
+    end
+    subgraph "5. Last user disconnects"
+        E1["Redis canonical TTL expires or is set short"] --> E2["Reconciliation job fires (see Deep Dive 8.3)"] --> E3["Redis key deleted"]
+    end
 ```
 
 ```mermaid

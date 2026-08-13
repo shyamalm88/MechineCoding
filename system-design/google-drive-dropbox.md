@@ -544,18 +544,17 @@ This design treats cloud storage as two things pretending to be one product: a m
 
 ### Fast Path vs Reliable Path
 
-```
-Fast Path   (throughput):  Client chunks file locally
-                           -> Client uploads chunks directly to S3 via pre-signed URL
-                           -> S3 emits event to Message Queue
-
-Reliable Path (durability): Metadata DB write before upload confirmed
-                            -> Quota enforced atomically on /files/complete
-                            -> Notification fan-out only after metadata committed
-
-File bytes  = fast path only  (S3-native, CDN-accelerated on download)
-File record = reliable path   (PostgreSQL, ACID, quota-enforced)
-Sync signal = reliable path   (MQ -> Notification Service -> WebSocket)
+```mermaid
+graph TD
+    subgraph "Fast Path (throughput)"
+        F1["Client chunks file locally"] --> F2["Client uploads chunks directly to S3 via pre-signed URL"] --> F3["S3 emits event to Message Queue"]
+    end
+    subgraph "Reliable Path (durability)"
+        R1["Metadata DB write before upload confirmed"] --> R2["Quota enforced atomically on /files/complete"] --> R3["Notification fan-out only after metadata committed"]
+    end
+    Note1["File bytes = fast path only (S3-native, CDN-accelerated on download)"]
+    Note2["File record = reliable path (PostgreSQL, ACID, quota-enforced)"]
+    Note3["Sync signal = reliable path (MQ to Notification Service to WebSocket)"]
 ```
 
 ### Key Insights Checklist

@@ -505,24 +505,22 @@ This design treats LeetCode as two hard engineering problems hiding behind a fai
 
 ### Fast Path vs Reliable Path
 
-```
-FAST PATH (submission result):
-  Client POST /submit
-    → API uploads code to S3, enqueues job to SQS (durable immediately)
-    → Returns 202 Accepted with submission_id
-    → Worker pulls job, fetches code from S3, dispatches to Docker container
-    → Docker runs code with 5s timeout, returns pass/fail
-    → Worker writes submission row to DB
-    → Client polls GET /submissions/:id every 3s → sees result
-
-RELIABLE PATH (leaderboard):
-  Worker writes submission row to DB
-    → CDC (Postgres logical replication) emits change event
-    → Kafka consumer computes composite score
-    → ZADD leaderboard:{competition_id} {score} {user_id}
-    → All leaderboard reads hit Redis ZRANGE (O(log n), in-memory)
-    → Zero DB queries triggered by leaderboard requests
-    → Redis recoverable from DB replay if it goes down
+```mermaid
+graph TD
+    subgraph "Fast Path (submission result)"
+        F1["Client POST /submit"] --> F2["API uploads code to S3, enqueues job to SQS (durable immediately)"]
+        F2 --> F3["Returns 202 Accepted with submission_id"]
+        F3 --> F4["Worker pulls job, fetches code from S3, dispatches to Docker container"]
+        F4 --> F5["Docker runs code with 5s timeout, returns pass/fail"]
+        F5 --> F6["Worker writes submission row to DB"]
+        F6 --> F7["Client polls GET /submissions/:id every 3s - sees result"]
+    end
+    subgraph "Reliable Path (leaderboard)"
+        R1["Worker writes submission row to DB"] --> R2["CDC (Postgres logical replication) emits change event"]
+        R2 --> R3["Kafka consumer computes composite score"]
+        R3 --> R4["ZADD leaderboard:{competition_id} {score} {user_id}"]
+        R4 --> R5["All leaderboard reads hit Redis ZRANGE (O(log n), in-memory) - zero DB queries triggered by leaderboard requests, Redis recoverable from DB replay if it goes down"]
+    end
 ```
 
 ### Ordering Summary

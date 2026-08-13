@@ -425,11 +425,11 @@ This is the hardest correctness problem this system has to solve, precisely beca
 
 **The actual mechanism scopes ordering down to the one place it's actually needed: a single conversation.** Two pieces do this work together. First, Cassandra's `TIMEUUID` clustering key encodes a nanosecond-precision timestamp plus a random component for uniqueness, so messages land on disk already time-ordered even when two writes hit the same nanosecond. Second, and more importantly for what a client actually sees, each client tracks its own monotonically increasing `client_seq` per conversation, and stamps every outgoing message with `{conversation_id, client_seq}`. Cassandra's primary key is `((conversation_id), client_seq, message_id)` — every message in one conversation partitions together and clusters in exact sequence order. That sequence number is also what lets a client detect a gap on its own: if it receives `seq=44` while the last one it saw was `seq=42`, it knows immediately that `43` is missing and can ask for it directly, rather than silently rendering an incomplete conversation:
 
-```
-Client sees seq=44, last_seen=42
-  -> gap detected: seq=43 missing
-  -> GET /chats/{id}/messages?from_seq=43&limit=5
-  -> gap filled, conversation renders complete and in order
+```mermaid
+graph TD
+    Sees["Client sees seq=44, last_seen=42"] --> Gap["Gap detected: seq=43 missing"]
+    Gap --> Get["GET /chats/{id}/messages?from_seq=43&limit=5"]
+    Get --> Filled["Gap filled, conversation renders complete and in order"]
 ```
 
 The trade-off this accepts, explicitly: the system guarantees monotonic ordering within a conversation and eventual convergence across replicas of that conversation — it does not guarantee any ordering relationship *between* different conversations, and it doesn't need to, since nobody is comparing the timestamp of a message in one chat against a message in an entirely different one.

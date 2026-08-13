@@ -1834,14 +1834,15 @@ api.interceptors.response.use(
 4. **Fallback**: Push notifications for mobile when disconnected
 5. **Priority queues**: High-priority (DMs) vs low-priority (likes)
 
-```
-User connects → Load balancer → Consistent hash(userId) → WS Server
-
-Notification flow:
-1. Event (like) → Kafka
-2. Notification worker → Find user's WS server
-3. Publish to Redis channel → WS server subscribes
-4. WS server → Push to user
+```mermaid
+graph TD
+    User["User connects"] --> LB["Load balancer"] --> Hash["Consistent hash(userId)"] --> WSServer["WS Server"]
+    subgraph "Notification flow"
+        N1["1. Event (like)"] --> N2["Kafka"]
+        N2 --> N3["2. Notification worker - find user's WS server"]
+        N3 --> N4["3. Publish to Redis channel - WS server subscribes"]
+        N4 --> N5["4. WS server - push to user"]
+    end
 ```
 
 **Q4: SQL vs NoSQL for social graph (follows)?**

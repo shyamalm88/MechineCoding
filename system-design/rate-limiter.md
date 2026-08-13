@@ -589,25 +589,22 @@ At its core, this design answers one question, over and over, in under a millise
 
 ### Fast Path vs Reliable Path
 
-```
-Fast Path (allow — happy path):
-  Incoming request
-    → API Gateway extracts clientId from JWT / IP / API key
-    → Lookup rule from in-memory cache (no network)
-    → Redis Cluster Lua script: HMGET + calculate + HMSET (atomic, ~1ms)
-    → allowed=true → route to microservice
-    → Total added latency: <2ms
-
-Reliable Path (reject + fault tolerance):
-  Incoming request
-    → Redis check: tokens=0 → 429 immediately (fail fast)
-    → No microservice involvement, backend fully protected
-
-  Redis failure:
-    → Gateway detects timeout
-    → Falls back to local in-memory fixed window counter
-    → Redis Cluster promotes replica in <30s
-    → Gateway reconnects, local fallback discarded
+```mermaid
+graph TD
+    subgraph "Fast Path (allow - happy path)"
+        F1["Incoming request"] --> F2["API Gateway extracts clientId from JWT / IP / API key"]
+        F2 --> F3["Lookup rule from in-memory cache (no network)"]
+        F3 --> F4["Redis Cluster Lua script: HMGET + calculate + HMSET (atomic, ~1ms)"]
+        F4 --> F5["allowed=true - route to microservice - total added latency under 2ms"]
+    end
+    subgraph "Reliable Path (reject + fault tolerance)"
+        R1["Incoming request"] --> R2["Redis check: tokens=0"] --> R3["429 immediately, fail fast - no microservice involvement, backend fully protected"]
+    end
+    subgraph "Redis failure"
+        RF1["Gateway detects timeout"] --> RF2["Falls back to local in-memory fixed window counter"]
+        RF2 --> RF3["Redis Cluster promotes replica in under 30s"]
+        RF3 --> RF4["Gateway reconnects, local fallback discarded"]
+    end
 ```
 
 ### Key Insights Checklist

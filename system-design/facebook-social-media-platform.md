@@ -483,23 +483,35 @@ Neither pure model is acceptable in isolation, which is why the actual answer is
 
 **How push actually works, for regular users under 1,000 followers.** When a user posts, the Fan-out Service — reading the `filtered-post` Kafka topic — fetches that user's top followers from the Follower Cache (pre-ranked by interaction frequency, not just a raw follower list) and publishes `(follower_id, post_id)` pairs onto the `fan-out-tasks` Kafka topic. The Fan-out Consumer processes those tasks with a Redis `ZINCRBY user:feed:{followerId} {timestamp} {post_id}` for each one — so the follower's feed is already pre-computed and sitting in Redis before they ever open the app. When that follower does open the app, the Feed Service issues one `ZREVRANGE user:feed:{userId} 0 49` — an O(1) lookup — and batch-hydrates the results from the Post Cache, returning the full feed in under 200ms:
 
-```
-Write:  Fan-out Service -> Follower Cache (top followers) -> Kafka fan-out-tasks
-        -> Fan-out Consumer -> ZINCRBY user:feed:{followerId} {timestamp} {post_id}
-
-Read:   Feed Service -> ZREVRANGE user:feed:{userId} 0 49 (O(1))
-        -> batch hydrate from Post Cache -> return feed (< 200ms)
+```mermaid
+graph TD
+    subgraph "Write"
+        FanOut["Fan-out Service"] --> FollowerCache["Follower Cache (top followers)"]
+        FollowerCache --> KafkaTasks["Kafka fan-out-tasks"]
+        KafkaTasks --> FanOutConsumer["Fan-out Consumer"]
+        FanOutConsumer --> ZIncrby["ZINCRBY user:feed:{followerId} {timestamp} {post_id}"]
+    end
+    subgraph "Read"
+        FeedSvc["Feed Service"] --> ZRevrange["ZREVRANGE user:feed:{userId} 0 49 (O(1))"]
+        ZRevrange --> BatchHydrate["Batch hydrate from Post Cache"]
+        BatchHydrate --> ReturnFeed["Return feed (under 200ms)"]
+    end
 ```
 
 **How pull actually works, for celebrities at or above 1,000 followers.** When a celebrity posts, the Fan-out Service skips fan-out entirely — no `fan-out-tasks` are published, no follower feeds are touched. The Post Materializer instead writes the `post_id` into that celebrity's Post Materialization Cache in Redis, TTL-bounded, holding their latest 100 posts. When a follower of that celebrity opens the app, the Feed Service checks the Follower Cache to identify which of their followees are celebrities, the Backfill Service pulls each celebrity's recent `post_id`s from their Post Materialization Cache, and the result is merged with the follower's own pre-computed regular feed and re-sorted by timestamp before being returned:
 
-```
-Write:  Fan-out Service skips fan-out -> Post Materializer
-        -> writes post_id to celebrity's Post Materialization Cache (TTL-bounded)
-
-Read:   Feed Service identifies celebrity followees via Follower Cache
-        -> Backfill Service pulls celebrity post_ids -> merges with regular feed
-        -> re-sorts by timestamp -> unified feed returned
+```mermaid
+graph TD
+    subgraph "Write"
+        FanOutSkip["Fan-out Service skips fan-out"] --> PostMaterializer["Post Materializer"]
+        PostMaterializer --> MaterializationCache["Writes post_id to celebrity's Post Materialization Cache (TTL-bounded)"]
+    end
+    subgraph "Read"
+        FeedSvc2["Feed Service identifies celebrity followees via Follower Cache"] --> Backfill["Backfill Service pulls celebrity post_ids"]
+        Backfill --> Merge["Merges with regular feed"]
+        Merge --> Resort["Re-sorts by timestamp"]
+        Resort --> Unified["Unified feed returned"]
+    end
 ```
 
 **Trade-off accepted:** celebrity posts may appear 1–3 seconds later than regular posts, since the pull-side merge adds latency that push-side fan-out doesn't have. That's acceptable — the eventual consistency SLA already covers a wider window than this.
@@ -790,13 +802,17 @@ This design treats Facebook's feed as two amplifying problems wearing one UI: a 
 
 ### Fast Path vs Reliable Path
 
-```
-FAST PATH (feed read)
-User → API Gateway → Feed Service → Redis Feed Cache → return post_ids → hydrate → 200ms ✓
-
-RELIABLE PATH (post write)
-User → API Gateway → Content Service → Kafka(raw-post) [durable] → Moderator Service
-→ Kafka(filtered-post) [durable] → Post Consumer → Cassandra [replicated, RF=3] ✓
+```mermaid
+graph TD
+    subgraph "Fast Path (feed read)"
+        FUser["User"] --> FGateway["API Gateway"] --> FFeedSvc["Feed Service"] --> FRedisCache["Redis Feed Cache"]
+        FRedisCache --> FPostIds["Return post_ids"] --> FHydrate["Hydrate"] --> FDone["200ms - done"]
+    end
+    subgraph "Reliable Path (post write)"
+        RUser["User"] --> RGateway["API Gateway"] --> RContentSvc["Content Service"] --> RKafkaRaw["Kafka(raw-post) - durable"]
+        RKafkaRaw --> RModerator["Moderator Service"] --> RKafkaFiltered["Kafka(filtered-post) - durable"]
+        RKafkaFiltered --> RPostConsumer["Post Consumer"] --> RCassandra["Cassandra - replicated, RF=3 - done"]
+    end
 ```
 
 ### Key Insights Checklist *(say these out loud in the interview)*

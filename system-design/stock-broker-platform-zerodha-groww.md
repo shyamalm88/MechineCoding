@@ -429,16 +429,13 @@ A synchronous pipeline — receive the order, run the checks against the User DB
 
 The fix is to stop making the user's request wait on any of that. The Order Service's only job on the way in is to write the order to Kafka's `raw-orders` topic and return `PENDING` — a durable, cheap operation that happens before a single validation check runs, which is why the response the user sees is fast regardless of how backed up validation is behind it. The Validator Service then consumes from that topic at whatever pace it can actually sustain, completely decoupled from how fast orders are arriving, and only orders that pass its checks ever generate an exchange API call — rejected orders never touch that expensive, rate-limited external dependency at all. Once the exchange responds, the Order Tracker Service consumes the resulting `order-status` events and reconciles them back into the Order DB and Trade DB.
 
-```
-User → Order Service → Kafka (raw-orders) → Validator Service
-                                                    ↓
-                                        Kafka (verified-orders OR rejected-orders)
-                                                    ↓
-                                           Order Service → Exchange
-                                                    ↓
-                                        Kafka (order-status from Exchange WS)
-                                                    ↓
-                                            Order Tracker → Order DB + Trade DB
+```mermaid
+graph TD
+    User --> OrderSvc["Order Service"] --> KafkaRaw["Kafka (raw-orders)"] --> Validator["Validator Service"]
+    Validator --> KafkaVerified["Kafka (verified-orders OR rejected-orders)"]
+    KafkaVerified --> OrderSvc2["Order Service"] --> Exchange
+    Exchange --> KafkaStatus["Kafka (order-status from Exchange WS)"]
+    KafkaStatus --> OrderTracker["Order Tracker"] --> DBs["Order DB + Trade DB"]
 ```
 
 Limit orders complicate the "confirmed" step, because a single order doesn't always resolve in one shot. A limit order for 100 shares might fill 30 now and the remaining 70 over the following fifteen minutes, in whatever batches the exchange's matching engine actually produces. The Order Tracker handles each partial fill acknowledgement as its own event, updating the Trade DB incrementally rather than waiting for a single final number, and the order's status stays `PARTIALLY_FILLED` the entire time — it only moves to fully executed once every share is accounted for, or expires if it never fills completely.
@@ -597,15 +594,13 @@ User selects "3M" view → fetch 1-hour candles (375 candles, downsampled server
 **Problem:** Order goes through Kafka async pipeline — PENDING confirmation can take 1–3 seconds. User taps Buy and sees nothing for 3 seconds = feels broken.
 
 **Solution:**
-```
-User taps BUY
-  → Immediately show order in "Pending" state in Orders list (optimistic insert)
-  → Immediately grey out wallet balance by order amount (optimistic deduction UI)
-  → POST /orders fires in background
-
-On WebSocket order-status event:
-  → status=EXECUTED: update order row to "Executed", show green tick, play sound
-  → status=REJECTED: remove optimistic entry, restore wallet display, show error toast
+```mermaid
+graph TD
+    Tap["User taps BUY"] --> Pending["Immediately show order in 'Pending' state in Orders list (optimistic insert)"]
+    Pending --> GreyOut["Immediately grey out wallet balance by order amount (optimistic deduction UI)"]
+    GreyOut --> Post["POST /orders fires in background"]
+    Event["On WebSocket order-status event"] -->|status=EXECUTED| Executed["Update order row to 'Executed', show green tick, play sound"]
+    Event -->|status=REJECTED| Rejected["Remove optimistic entry, restore wallet display, show error toast"]
 ```
 - Optimistic state lives in a separate Redux slice (`pendingOrders`) — not mixed with confirmed orders
 - On app refresh / WS reconnect: `GET /orders?status=PENDING` reconciles optimistic state with server truth

@@ -159,24 +159,16 @@ That's the whole shape of the system in one line: a user drags a card, the UI up
 Every one of those events also carries a common envelope: an `event_id` (a UUID, doubling as the idempotency key), the `board_id` it routes on, the `actor_id` who triggered it, and a millisecond `ts`.
 
 Generically, any one of these events flows through the same eight steps on its way from a user's action to every other member's screen:
-```
-User action (e.g. drag card)
-    |
-[Optimistic UI] <- event applied to local state immediately (0ms)
-    |
-HTTP POST mutation to Board Service
-    |
-Board Service writes to PostgreSQL (source of truth)
-    |
-Board Service publishes event to Redis channel board:{boardId}
-    |
-All WS servers subscribed to board:{boardId} receive the event
-    |
-Each WS server pushes the event delta to its connected members
-    |
-Each client applies the event to its board state (<200ms end-to-end)
-    |
-Async: the same event is also published to Kafka -> Activity Service -> BigQuery
+```mermaid
+graph TD
+    Action["User action (e.g. drag card)"] --> Optimistic["Optimistic UI - event applied to local state immediately (0ms)"]
+    Optimistic --> HTTPPost["HTTP POST mutation to Board Service"]
+    HTTPPost --> PGWrite["Board Service writes to PostgreSQL (source of truth)"]
+    PGWrite --> RedisPublish["Board Service publishes event to Redis channel board:{boardId}"]
+    RedisPublish --> WSReceive["All WS servers subscribed to board:{boardId} receive the event"]
+    WSReceive --> WSPush["Each WS server pushes the event delta to its connected members"]
+    WSPush --> ClientApply["Each client applies the event to its board state (under 200ms end-to-end)"]
+    PGWrite -.->|async| Kafka["Kafka"] --> ActivitySvc["Activity Service"] --> BigQuery
 ```
 
 **Why go through named events instead of just letting clients read the database changes directly?** Four reasons, each ruling out a simpler alternative: the database is disk-backed and too slow to double as a real-time broadcast channel; events decouple a mutation from its fan-out, so the Board Service never needs to know which WebSocket servers happen to hold which connections; events are replayable, so a client reconnecting after a dropped connection can catch up from its `last_event_id` instead of needing a full reload; and the same event stream that drives real-time sync is also the audit log the Activity Service consumes — one source of truth, two consumers.
@@ -534,18 +526,17 @@ Trello-style boards are private by default, and the design commits to a specific
 | Change board visibility (public/private) | Yes | No | No |
 
 **The naive way to enforce that matrix — a database lookup on every single request — doesn't survive this system's write volume.** At 100K mutations a second, and with every WebSocket event also needing a permission check, a DB round trip per check would be a straightforward bottleneck long before anything else in this design became one. So the enforcement path is:
-```
-Every API request:
-  1. API Gateway validates JWT -> extracts user_id
-  2. Board Service looks up board_members for (board_id, user_id)
-     -> fetches role (cached in Redis, TTL=30s)
-  3. Middleware checks role against action's required permission
-  4. Permitted -> proceed  |  Denied -> 403 Forbidden
-
-Board membership changes (remove member, role downgrade):
-  -> Invalidate Redis cache entry immediately (strong consistency required)
-  -> User loses access on next request (max 30s stale window for TTL,
-     0s for explicit invalidation)
+```mermaid
+graph TD
+    subgraph "Every API request"
+        JWT["1. API Gateway validates JWT - extracts user_id"] --> Lookup["2. Board Service looks up board_members for (board_id, user_id) - fetches role, cached in Redis, TTL=30s"]
+        Lookup --> Middleware["3. Middleware checks role against action's required permission"]
+        Middleware -->|permitted| Proceed["4. Proceed"]
+        Middleware -->|denied| Forbidden["4. 403 Forbidden"]
+    end
+    subgraph "Board membership changes (remove member, role downgrade)"
+        Invalidate["Invalidate Redis cache entry immediately - strong consistency required"] --> LoseAccess["User loses access on next request - max 30s stale window for TTL, 0s for explicit invalidation"]
+    end
 ```
 Caching the role lookup in Redis is what makes the permission check cheap enough to run on every request — roughly a hundredfold reduction in database load compared to hitting PostgreSQL directly on each check.
 
@@ -573,12 +564,13 @@ The trade-off accepted here is what happens when a client-side upload simply fai
 The problem: when a user types `@alice` in a comment, Alice has to be notified within 5 seconds — in-app, email, or push — without the comment's own save being slowed down by however long notification delivery takes.
 
 The flow keeps those two concerns strictly separate. The client posts `POST /cards/{id}/comments` with the comment body and a `mentions` array; the Board Service saves the comment row and returns `200 OK` immediately, before anything about the notification has happened. Only after that does it publish two events asynchronously to Kafka: one to a `board.events` topic, which feeds the same Redis Pub/Sub fan-out from §8.3 so every board member sees the new comment appear in real time, and a separate `notification.mentions` event to the Notification Service. That service looks up Alice's notification preferences, checks a rate limit (no more than 10 notifications a minute per user, so a burst of activity can't spam her), and dispatches to whichever channel she's configured.
-```
-User types @alice in comment
-  -> POST /cards/{id}/comments
-  -> DB write (mentions=[u_alice])
-  -> Kafka: board.events + notification.mentions (async, non-blocking)
-  -> Kafka -> Notification Service -> push/email/in-app to Alice (<5s)
+```mermaid
+graph TD
+    Type["User types @alice in comment"] --> Post["POST /cards/{id}/comments"]
+    Post --> DBWrite["DB write (mentions=[u_alice])"]
+    DBWrite --> KafkaTopics["Kafka: board.events + notification.mentions (async, non-blocking)"]
+    KafkaTopics --> NotifSvc["Notification Service"]
+    NotifSvc --> Alice["Push/email/in-app to Alice (under 5s)"]
 ```
 Delivery is at-least-once, matching Kafka's own guarantee, and duplicate notifications are prevented with an idempotency key of `comment_id + user_id` — an `ON CONFLICT DO NOTHING` on that key means a redelivered event never produces a second in-app alert.
 
@@ -757,25 +749,23 @@ The hard part of this design was never storing a card — it was accepting that 
 
 ### Fast Path vs Reliable Path
 
-```
-Fast Path (card move, happy path):
-  User drags card
-    → Optimistic UI (0ms)
-    → POST /cards/{id}/move
-    → PostgreSQL UPDATE (optimistic lock check)
-    → 200 OK to actor
-    → Redis PUBLISH board:{id}
-    → WS servers push to all members
-    Total: ~150–200ms actor-to-viewer
-
-Reliable Path (reconnect + catch-up):
-  WS disconnects
-    → Client reconnects (exponential backoff)
-    → Sends last_event_id
-    → Server replays buffered events (30s window)
-    → Client applies diffs in order
-    → Board state fully reconciled
-    (If >30s gap: full snapshot reload)
+```mermaid
+graph TD
+    subgraph "Fast Path (card move, happy path)"
+        FDrag["User drags card"] --> FOptimistic["Optimistic UI (0ms)"]
+        FOptimistic --> FPost["POST /cards/{id}/move"]
+        FPost --> FUpdate["PostgreSQL UPDATE (optimistic lock check)"]
+        FUpdate --> FAck["200 OK to actor"]
+        FAck --> FPublish["Redis PUBLISH board:{id}"]
+        FPublish --> FPush["WS servers push to all members - total ~150-200ms actor-to-viewer"]
+    end
+    subgraph "Reliable Path (reconnect + catch-up)"
+        RDisconnect["WS disconnects"] --> RReconnect["Client reconnects (exponential backoff)"]
+        RReconnect --> RSend["Sends last_event_id"]
+        RSend --> RReplay["Server replays buffered events (30s window)"]
+        RReplay --> RApply["Client applies diffs in order"]
+        RApply --> RReconciled["Board state fully reconciled - if over 30s gap: full snapshot reload"]
+    end
 ```
 
 ### Key Insights Checklist

@@ -593,24 +593,24 @@ The entire design rests on one refusal: never compute a suggestion at the moment
 
 ### Fast Path vs Reliable Path
 
-```
-Fast Path (latency-optimised):
-  User keystroke
-    → 150ms debounce
-    → Client LRU cache (0ms, 40% hit)
-    → CDN edge cache (10ms, 60% of short-prefix traffic)
-    → Redis Trie shard (1-2ms)
-    → Personal history blend (0.5ms)
-    → Top-10 response
-
-Reliable Path (correctness-guaranteed):
-  Search completion event
-    → Kafka (durable log, at-least-once)
-    → Flink (5min trending freshness)
-    → Spark (hourly full frequency recompute)
-    → Cassandra (query frequency source of truth)
-    → Trie Builder (pre-compute topK)
-    → Redis atomic swap (zero-downtime update)
+```mermaid
+graph TD
+    subgraph "Fast Path (latency-optimised)"
+        Keystroke["User keystroke"] --> Debounce["150ms debounce"]
+        Debounce --> ClientLRU["Client LRU cache (0ms, 40% hit)"]
+        ClientLRU --> CDNCache["CDN edge cache (10ms, 60% of short-prefix traffic)"]
+        CDNCache --> RedisTrieShard["Redis Trie shard (1-2ms)"]
+        RedisTrieShard --> PersonalBlend["Personal history blend (0.5ms)"]
+        PersonalBlend --> Top10["Top-10 response"]
+    end
+    subgraph "Reliable Path (correctness-guaranteed)"
+        SearchEvent["Search completion event"] --> KafkaLog["Kafka (durable log, at-least-once)"]
+        KafkaLog --> Flink["Flink (5min trending freshness)"]
+        Flink --> Spark["Spark (hourly full frequency recompute)"]
+        Spark --> CassandraSrc["Cassandra (query frequency source of truth)"]
+        CassandraSrc --> TrieBuilder["Trie Builder (pre-compute topK)"]
+        TrieBuilder --> RedisSwap["Redis atomic swap (zero-downtime update)"]
+    end
 ```
 
 ### Key Insights Checklist

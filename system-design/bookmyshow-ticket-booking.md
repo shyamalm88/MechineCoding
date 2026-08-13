@@ -221,13 +221,13 @@ graph TD
     end
 ```
 
-```
-Flow:
-1. Seats locked → Payment UI shown
-2. Payment initiated → Backend validation
-3. Payment processing → External gateway
-4. Success → Confirm booking, release lock
-5. Failure → Release seat lock, retry option
+```mermaid
+graph TD
+    Locked["1. Seats locked"] --> PaymentUI["Payment UI shown"]
+    PaymentUI --> Initiated["2. Payment initiated"] --> Validation["Backend validation"]
+    Validation --> Processing["3. Payment processing"] --> Gateway["External gateway"]
+    Gateway -->|4. Success| Confirm["Confirm booking, release lock"]
+    Gateway -->|5. Failure| Release["Release seat lock, retry option"]
 ```
 
 ### 3.2 Backend Services Architecture

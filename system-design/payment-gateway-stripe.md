@@ -112,16 +112,22 @@ Remember Farhan's fifteen seconds from the story above — here's what actually 
 
 A payment gateway is not simply a transaction processor — it's a correctness-first orchestration layer that moves money safely across multiple financial entities while keeping an immutable audit trail the whole way through. Three sequential phases drive every payment: the merchant registers a **payment intent**, the gateway creates a **secure session** and hosts the card-entry page, and the shopper submits their card for **authorization**. In that third phase, the gateway tokenizes the card, scores it for fraud, routes it to a payment processor, writes the double-entry ledger, and fans a webhook out to the merchant — all while guaranteeing idempotency across every single step.
 
-```
-Phase 1: INTENT                 Phase 2: SESSION               Phase 3: PAY
-Merchant POST /payment-intents  Merchant POST /checkout/sess   User submits card on GW page
-         |                               |                              |
-  Idempotency-Key check          Redis TTL 10min                Fraud check  <50ms
-  PostgreSQL INSERT               session_id returned           Tokenize -> Vault
-  intent_id returned             checkout_url redirect          Route -> Processor
-         |                               |                              |
-  Redis: SET key->intent_id       User browser opens GW page    Ledger write (4 rows)
-  EX 86400 (dedup 24h)            countdown timer starts        Kafka -> Webhook -> Merchant
+```mermaid
+graph TD
+    subgraph "Phase 1: INTENT"
+        P1a["Merchant POST /payment-intents"] --> P1b["Idempotency-Key check, PostgreSQL INSERT, intent_id returned"]
+        P1b --> P1c["Redis: SET key to intent_id, EX 86400 (dedup 24h)"]
+    end
+    subgraph "Phase 2: SESSION"
+        P2a["Merchant POST /checkout/session"] --> P2b["Redis TTL 10min, session_id returned, checkout_url redirect"]
+        P2b --> P2c["User browser opens GW page, countdown timer starts"]
+    end
+    subgraph "Phase 3: PAY"
+        P3a["User submits card on GW page"] --> P3b["Fraud check under 50ms, Tokenize to Vault, Route to Processor"]
+        P3b --> P3c["Ledger write (4 rows), Kafka to Webhook to Merchant"]
+    end
+    P1c --> P2a
+    P2c --> P3a
 ```
 
 Three concurrent paths run through this pipeline, each optimized for something different: a **fast path** optimized for staying under the 200ms gateway budget (Redis session lookup, fraud rules, vault tokenization, and a synchronous processor call, all chained together); a **reliable path** optimized purely for correctness — zero double-charges, zero lost money — built from idempotency keys, an append-only ledger, ACID PostgreSQL, and the reconciliation job; and an **audit path** whose entire job is an immutable money trail, enforced by the double-entry bookkeeping invariant that debits always equal credits per `payment_id`.
@@ -603,30 +609,30 @@ This design treats a payment gateway as three obligations wearing one checkout b
 
 ### Fast Path vs Reliable Path
 
-```
-Fast Path (under 200ms gateway processing):
-  User submits card on gateway checkout page
-    → session validation (Redis, under 1ms)
-    → fraud check fast rules (Redis, under 5ms)
-    → fraud check ML score (inference service, under 50ms)
-    → tokenize card data (Vault, ~10ms)
-    → authorize with processor (sync, 2-5s processor-side)
-    → redirect user to merchant success_url
-
-Reliable Path (correctness — zero money lost):
-  Intent creation  → PostgreSQL INSERT before returning intent_id
-  Fraud DECLINE    → terminal state, no ledger entry, no processor call, no fee
-  Authorization    → ledger entries written BEFORE returning result to user
-  State transition → payment_events append BEFORE broadcasting result
-  Processor timeout → status = PENDING, reconciliation resolves within 1h
-  Webhooks         → Kafka at-least-once, retry with backoff, DLQ after 7 attempts
-
-If fast path fails (processor timeout at 30s):
-  Payment status = PENDING
-  No ledger entry yet (reconciliation writes it on resolution)
-  Reconciliation job picks up within 1h
-  Webhook sent to merchant after reconciliation resolves
-  User sees "payment processing" — confirmation email follows
+```mermaid
+graph TD
+    subgraph "Fast Path (under 200ms gateway processing)"
+        FP1["User submits card on gateway checkout page"] --> FP2["Session validation (Redis, under 1ms)"]
+        FP2 --> FP3["Fraud check fast rules (Redis, under 5ms)"]
+        FP3 --> FP4["Fraud check ML score (inference service, under 50ms)"]
+        FP4 --> FP5["Tokenize card data (Vault, ~10ms)"]
+        FP5 --> FP6["Authorize with processor (sync, 2-5s processor-side)"]
+        FP6 --> FP7["Redirect user to merchant success_url"]
+    end
+    subgraph "Reliable Path (correctness - zero money lost)"
+        RIntent["Intent creation"] --> RIntentC["PostgreSQL INSERT before returning intent_id"]
+        RFraud["Fraud DECLINE"] --> RFraudC["Terminal state, no ledger entry, no processor call, no fee"]
+        RAuth["Authorization"] --> RAuthC["Ledger entries written BEFORE returning result to user"]
+        RState["State transition"] --> RStateC["payment_events append BEFORE broadcasting result"]
+        RTimeout["Processor timeout"] --> RTimeoutC["Status = PENDING, reconciliation resolves within 1h"]
+        RWebhook["Webhooks"] --> RWebhookC["Kafka at-least-once, retry with backoff, DLQ after 7 attempts"]
+    end
+    subgraph "If fast path fails (processor timeout at 30s)"
+        IF1["Payment status = PENDING"] --> IF2["No ledger entry yet - reconciliation writes it on resolution"]
+        IF2 --> IF3["Reconciliation job picks up within 1h"]
+        IF3 --> IF4["Webhook sent to merchant after reconciliation resolves"]
+        IF4 --> IF5["User sees 'payment processing' - confirmation email follows"]
+    end
 ```
 
 ### Key Insights Checklist

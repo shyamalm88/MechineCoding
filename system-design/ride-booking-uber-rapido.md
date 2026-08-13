@@ -377,12 +377,12 @@ Whatever replaces the naive scan has to guard against three specific ways this c
 
 The pipeline that replaces the naive scan starts with a geo index search: Redis's `GEORADIUS` returns the top 100 candidates within 2km, using its built-in geohash indexing rather than anything hand-rolled. From there, an eligibility filter narrows that pool down to drivers who are actually `IDLE`, drive the right vehicle type, and clear a minimum rating and acceptance-rate bar — no point offering a ride to someone who's already on one. The routing engine then scores whoever survives that filter by predicted ETA, not raw distance, which turns out to matter a lot (more on that below). The top-scored driver gets a sequential offer with a 15-second window to respond, moving to the next candidate if they decline or time out — which is what prevents starvation, since a driver who doesn't respond just gets skipped, not stuck waiting on a request that'll never resolve. And the very last step, the one that actually rules out double-booking, is the driver's state flipping from `IDLE` to `RESERVED` atomically — not a plain write, for reasons worth walking through separately:
 
-```
-Step 1: Geo index search     -> GEORADIUS -> top 100 candidates within 2km
-Step 2: Eligibility filter   -> state=IDLE, vehicle type, rating, acceptance rate
-Step 3: ETA-based ranking    -> call routing engine for top 20; score by ETA + quality
-Step 4: Sequential dispatch  -> offer to top driver, 15s window; expand if exhausted
-Step 5: Atomic state lock    -> WATCH/MULTI/EXEC: IDLE -> RESERVED atomically
+```mermaid
+graph TD
+    S1["Step 1: Geo index search - GEORADIUS - top 100 candidates within 2km"] --> S2["Step 2: Eligibility filter - state=IDLE, vehicle type, rating, acceptance rate"]
+    S2 --> S3["Step 3: ETA-based ranking - call routing engine for top 20, score by ETA + quality"]
+    S3 --> S4["Step 4: Sequential dispatch - offer to top driver, 15s window, expand if exhausted"]
+    S4 --> S5["Step 5: Atomic state lock - WATCH/MULTI/EXEC: IDLE to RESERVED atomically"]
 ```
 
 One detail worth pausing on before getting to that atomic lock: Redis's `GEORADIUS` is geohash-based under the hood, which means its search cells are rectangles — corner-to-corner distances are longer than edge-to-edge ones, so a radius search can be subtly inconsistent depending on which direction a driver sits from the search origin. Uber's own production system solves this with H3, a hexagonal grid where every cell has exactly six equidistant neighbors, so expanding outward is geometrically uniform in every direction. For a design at this scale, plain `GEORADIUS` is a perfectly reasonable choice — H3 is the upgrade you reach for once geohash's edge distortion actually starts costing match quality, not a day-one requirement.
@@ -521,11 +521,12 @@ None of this needs to run at the same intensity all the time, either. A driver w
 
 The last piece is what happens when a driver's connection just drops — a flaky signal, a phone going into a tunnel, an app crash. There's no separate cleanup process watching for this:
 
-```
-Driver phone disconnects -> WebSocket closes -> Location Svc detects
-  -> EXPIRE driver:state:driver_id 30
-  -> After 30s with no heartbeat: key expires -> auto-removed from idle pool
-  -> No stale drivers offered to riders. No cron job needed.
+```mermaid
+graph TD
+    Disconnect["Driver phone disconnects"] --> WSCloses["WebSocket closes"]
+    WSCloses --> Detects["Location Svc detects"]
+    Detects --> Expire["EXPIRE driver:state:driver_id 30"]
+    Expire --> AutoRemove["After 30s with no heartbeat: key expires - auto-removed from idle pool - no stale drivers offered to riders, no cron job needed"]
 ```
 
 The same TTL mechanism from §8.1's driver state does double duty as the cleanup job here: no heartbeat for 30 seconds and the key simply expires, silently pulling that driver out of the idle pool. No stale driver ever gets offered to a rider, and nobody had to write a background sweep to make that true.
@@ -657,15 +658,18 @@ This design treats Uber/Rapido as two concurrent systems wearing one UI: a high-
 
 ### Fast Path vs Reliable Path
 
-```
-Fast Path   (latency):   Driver WS -> Redis GEOADD -> GEORADIUS -> WATCH/EXEC -> WS push to driver
-                         ON_TRIP tracking: Redis -> Kafka -> WS push to rider map
-
-Reliable Path (safety):  trip_start / trip_end -> Kafka -> PostgreSQL (billing, history)
-                         Fare request -> Ride Request DB -> Surge Calculator -> Redis
-
-Location = fast path only (ephemeral, overwritten every 1-5s, TTL self-heals)
-Trip record = reliable path (durable, drives billing and audit, never lost)
+```mermaid
+graph TD
+    subgraph "Fast Path (latency)"
+        FDriverWS["Driver WS"] --> FGeoadd["Redis GEOADD"] --> FGeoradius["GEORADIUS"] --> FWatchExec["WATCH/EXEC"] --> FPush["WS push to driver"]
+        FOnTrip["ON_TRIP tracking"] --> FRedis["Redis"] --> FKafka["Kafka"] --> FRiderPush["WS push to rider map"]
+    end
+    subgraph "Reliable Path (safety)"
+        RTrip["trip_start / trip_end"] --> RKafka["Kafka"] --> RPostgres["PostgreSQL (billing, history)"]
+        RFare["Fare request"] --> RRideDB["Ride Request DB"] --> RSurge["Surge Calculator"] --> RRedis["Redis"]
+    end
+    Note1["Location = fast path only (ephemeral, overwritten every 1-5s, TTL self-heals)"]
+    Note2["Trip record = reliable path (durable, drives billing and audit, never lost)"]
 ```
 
 ### Key Insights Checklist

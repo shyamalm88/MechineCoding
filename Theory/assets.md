@@ -29,12 +29,10 @@ A comprehensive reference for loading, optimizing, and delivering every type of 
 
 The browser must complete these steps before showing content:
 
-```
-HTML → DOM
-              ↘
-                → Render Tree → Layout → Paint
-              ↗
-CSS  → CSSOM
+```mermaid
+graph LR
+    HTML --> DOM --> RenderTree["Render Tree"] --> Layout --> Paint
+    CSS --> CSSOM --> RenderTree
 ```
 
 ### Render-Blocking Resources

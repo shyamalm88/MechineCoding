@@ -593,22 +593,22 @@ This design treats YouTube as two pipelines wearing one app: an async, correctne
 
 ### Fast Path vs Reliable Path
 
-```
-WATCH FAST PATH (target: < 2s video start)
-Viewer --> CDN Edge --> m3u8 manifest (cached) --> segments (cached, immutable)
-No origin contact needed if CDN hit rate is high. Redis serves metadata in < 1ms.
-
-WATCH RELIABLE PATH (CDN miss or origin needed)
-Viewer --> API Gateway --> Metadata Service --> Redis miss --> Cassandra read
-           --> CDN miss --> S3 origin --> segments served from origin with fallback
-
-UPLOAD FAST PATH (target: upload bytes as fast as possible)
-Creator --> presigned S3 URL --> direct multipart to S3 (no service in the path)
-
-UPLOAD RELIABLE PATH (correctness guarantee)
-S3 raw stored first --> Kafka job queued (durable) --> worker fetches raw from S3
---> idempotent transcode --> S3 transcoded --> DB update --> CDN prefetch
-Any step can fail and be retried safely. Raw video is never lost.
+```mermaid
+graph TD
+    subgraph "Watch Fast Path (target: under 2s video start)"
+        WF1["Viewer"] --> WF2["CDN Edge"] --> WF3["m3u8 manifest (cached)"] --> WF4["Segments (cached, immutable) - no origin contact needed if CDN hit rate is high, Redis serves metadata in under 1ms"]
+    end
+    subgraph "Watch Reliable Path (CDN miss or origin needed)"
+        WR1["Viewer"] --> WR2["API Gateway"] --> WR3["Metadata Service"] --> WR4["Redis miss"]
+        WR4 --> WR5["Cassandra read"] --> WR6["CDN miss"] --> WR7["S3 origin - segments served from origin with fallback"]
+    end
+    subgraph "Upload Fast Path (target: upload bytes as fast as possible)"
+        UF1["Creator"] --> UF2["Presigned S3 URL"] --> UF3["Direct multipart to S3 - no service in the path"]
+    end
+    subgraph "Upload Reliable Path (correctness guarantee)"
+        UR1["S3 raw stored first"] --> UR2["Kafka job queued (durable)"] --> UR3["Worker fetches raw from S3"]
+        UR3 --> UR4["Idempotent transcode"] --> UR5["S3 transcoded"] --> UR6["DB update"] --> UR7["CDN prefetch - any step can fail and be retried safely, raw video is never lost"]
+    end
 ```
 
 ### Key Insights Checklist

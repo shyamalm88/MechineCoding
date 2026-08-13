@@ -653,31 +653,30 @@ This design treats food delivery as three actors sharing one event bus rather th
 
 ### Fast Path vs Reliable Path
 
-```
-FAST PATH — order placement, optimized for latency under 2s:
-  Customer
-    → Cart Validation (Redis cart read)
-    → Order Created (PostgreSQL commit)
-    → Payment Processed (gateway call)
-    → CONFIRMED returned to client
-  Kafka publish is fire-and-forget after the DB commit — never blocks the response
-
-RELIABLE PATH — order safety, optimized for durability:
-  PostgreSQL commit = source of truth, order exists regardless of downstream state
-  Kafka event = async signal to restaurant, delivery, notification services
-  If Kafka is down: order is safe in DB, events replayed via outbox on recovery
-  If Payment Gateway is slow: order stays PENDING, auto-cancels after 15 minutes
-  If restaurant times out: auto-cancel with full refund
-
-TRACKING FAST PATH — GPS update visible to customer under 1s:
-  Driver GPS ping
-    → Kafka location.update topic (durable buffer)
-    → Location Update Service
-    → Redis Streams XADD (push notification to WebSocket server)
-    → WebSocket push to customer
-
-TRACKING AUDIT PATH — GPS history for dispute resolution:
-  Driver GPS ping → Kafka → Cassandra (async, append-only, 30-day retention)
+```mermaid
+graph TD
+    subgraph "Fast Path - order placement, optimized for latency under 2s"
+        FCustomer["Customer"] --> FCart["Cart Validation (Redis cart read)"]
+        FCart --> FOrder["Order Created (PostgreSQL commit)"]
+        FOrder --> FPayment["Payment Processed (gateway call)"]
+        FPayment --> FConfirmed["CONFIRMED returned to client - Kafka publish is fire-and-forget after the DB commit, never blocks the response"]
+    end
+    subgraph "Reliable Path - order safety, optimized for durability"
+        RTruth["PostgreSQL commit = source of truth, order exists regardless of downstream state"]
+        RKafka["Kafka event = async signal to restaurant, delivery, notification services"]
+        RKafkaDown["If Kafka is down"] --> RKafkaDownC["Order is safe in DB, events replayed via outbox on recovery"]
+        RGatewaySlow["If Payment Gateway is slow"] --> RGatewaySlowC["Order stays PENDING, auto-cancels after 15 minutes"]
+        RRestaurantTimeout["If restaurant times out"] --> RRestaurantTimeoutC["Auto-cancel with full refund"]
+    end
+    subgraph "Tracking Fast Path - GPS update visible to customer under 1s"
+        TFGPS["Driver GPS ping"] --> TFKafka["Kafka location.update topic (durable buffer)"]
+        TFKafka --> TFLocationSvc["Location Update Service"]
+        TFLocationSvc --> TFRedisStreams["Redis Streams XADD (push notification to WebSocket server)"]
+        TFRedisStreams --> TFPush["WebSocket push to customer"]
+    end
+    subgraph "Tracking Audit Path - GPS history for dispute resolution"
+        TAGPS["Driver GPS ping"] --> TAKafka["Kafka"] --> TACassandra["Cassandra (async, append-only, 30-day retention)"]
+    end
 ```
 
 ### Key Insights Checklist

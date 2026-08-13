@@ -393,12 +393,19 @@ document.getElementById('list').addEventListener('click', (e) => {
 
 ### Bubbling vs Capturing
 
+```mermaid
+graph LR
+    subgraph "Capturing phase"
+        D1[document] --> H1[html] --> B1[body] --> P1[parent] --> T1[target]
+    end
+    subgraph "Bubbling phase"
+        T2[target] --> P2[parent] --> B2[body] --> H2[html] --> D2[document]
+    end
 ```
-Capturing phase: document → html → body → parent → target
-Bubbling phase:  target → parent → body → html → document
 
-addEventListener(event, handler, true)  // third arg = true → capturing
-addEventListener(event, handler, false) // default → bubbling
+```js
+addEventListener(event, handler, true)  // third arg = true -> capturing
+addEventListener(event, handler, false) // default -> bubbling
 ```
 
 ### `stopPropagation` vs `stopImmediatePropagation`
