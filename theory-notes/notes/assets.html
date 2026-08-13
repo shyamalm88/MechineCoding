@@ -57,12 +57,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <hr />
 <h2 id="1-critical-rendering-path">1. Critical Rendering Path</h2>
 <p>The browser must complete these steps before showing content:</p>
-<pre><code>HTML → DOM
-              ↘
-                → Render Tree → Layout → Paint
-              ↗
-CSS  → CSSOM
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/3bec7954a14c012b.svg" alt="Architecture diagram" loading="lazy"></figure>
 <h3 id="render-blocking-resources">Render-Blocking Resources</h3>
 <table>
 <thead>

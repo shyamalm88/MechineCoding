@@ -79,23 +79,24 @@ document.addEventListener('DOMContentLoaded', function () {
 </ul>
 <hr />
 <h2 id="2-high-level-architecture">2. High-Level Architecture</h2>
-<pre><code>+------------------------------------------------------------------+
-|                     Video Conference App                          |
-+------------------------------------------------------------------+
-|  +------------------+  +-------------------+  +----------------+  |
-|  |   Video Grid     |  |   Controls Bar    |  |  Side Panels   |  |
-|  |   - Gallery      |  |   - Mute/Video    |  |  - Chat        |  |
-|  |   - Speaker      |  |   - Share Screen  |  |  - Participants|  |
-|  |   - Screen Share |  |   - Reactions     |  |  - Settings    |  |
-|  +------------------+  +-------------------+  +----------------+  |
-+------------------------------------------------------------------+
-|                     WebRTC Layer                                  |
-|  - PeerConnection   - MediaStream   - DataChannel                |
-+------------------------------------------------------------------+
-|                     Signaling (WebSocket)                         |
-|  - Join/Leave   - Offer/Answer   - ICE Candidates                |
-+------------------------------------------------------------------+
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Video Conference App&quot;
+        VideoGrid[&quot;Video Grid - Gallery, Speaker, Screen Share&quot;]
+        ControlsBar[&quot;Controls Bar - Mute/Video, Share Screen, Reactions&quot;]
+        SidePanels[&quot;Side Panels - Chat, Participants, Settings&quot;]
+    end
+    VideoGrid --&gt; WebRTC
+    ControlsBar --&gt; WebRTC
+    SidePanels --&gt; WebRTC
+    subgraph &quot;WebRTC Layer&quot;
+        WebRTC[&quot;PeerConnection, MediaStream, DataChannel&quot;]
+    end
+    WebRTC --&gt; Signaling
+    subgraph &quot;Signaling (WebSocket)&quot;
+        Signaling[&quot;Join/Leave, Offer/Answer, ICE Candidates&quot;]
+    end
+</div>
 <hr />
 <h2 id="3-core-data-types">3. Core Data Types</h2>
 <pre><code class="language-typescript">// types/conference.ts

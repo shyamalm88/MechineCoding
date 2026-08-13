@@ -492,12 +492,7 @@ sequenceDiagram
 <p>The obvious approach doesn't survive contact with the numbers. Scanning the driver table for nearby idle drivers on every request, repeated across 500,000 peak requests per second against 5 million driver rows, works out to 2.5 trillion row scans per second — no relational database, however well-indexed, gets anywhere near that.</p>
 <p>Whatever replaces the naive scan has to guard against three specific ways this can go wrong: two different ride requests both landing on the same driver at the same instant (double-booking); a driver getting offered a ride, timing out without responding, and never making it back into the available pool (driver starvation); and the search simply returning empty whenever there are only a couple of nearby drivers, instead of degrading gracefully by looking a little further out.</p>
 <p>The pipeline that replaces the naive scan starts with a geo index search: Redis's <code>GEORADIUS</code> returns the top 100 candidates within 2km, using its built-in geohash indexing rather than anything hand-rolled. From there, an eligibility filter narrows that pool down to drivers who are actually <code>IDLE</code>, drive the right vehicle type, and clear a minimum rating and acceptance-rate bar — no point offering a ride to someone who's already on one. The routing engine then scores whoever survives that filter by predicted ETA, not raw distance, which turns out to matter a lot (more on that below). The top-scored driver gets a sequential offer with a 15-second window to respond, moving to the next candidate if they decline or time out — which is what prevents starvation, since a driver who doesn't respond just gets skipped, not stuck waiting on a request that'll never resolve. And the very last step, the one that actually rules out double-booking, is the driver's state flipping from <code>IDLE</code> to <code>RESERVED</code> atomically — not a plain write, for reasons worth walking through separately:</p>
-<pre><code>Step 1: Geo index search     -&gt; GEORADIUS -&gt; top 100 candidates within 2km
-Step 2: Eligibility filter   -&gt; state=IDLE, vehicle type, rating, acceptance rate
-Step 3: ETA-based ranking    -&gt; call routing engine for top 20; score by ETA + quality
-Step 4: Sequential dispatch  -&gt; offer to top driver, 15s window; expand if exhausted
-Step 5: Atomic state lock    -&gt; WATCH/MULTI/EXEC: IDLE -&gt; RESERVED atomically
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/b89cc8b83b0045a3.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>One detail worth pausing on before getting to that atomic lock: Redis's <code>GEORADIUS</code> is geohash-based under the hood, which means its search cells are rectangles — corner-to-corner distances are longer than edge-to-edge ones, so a radius search can be subtly inconsistent depending on which direction a driver sits from the search origin. Uber's own production system solves this with H3, a hexagonal grid where every cell has exactly six equidistant neighbors, so expanding outward is geometrically uniform in every direction. For a design at this scale, plain <code>GEORADIUS</code> is a perfectly reasonable choice — H3 is the upgrade you reach for once geohash's edge distortion actually starts costing match quality, not a day-one requirement.</p>
 <p>Now, the mechanism behind step five, since it's the one piece of this system that has to be genuinely bulletproof. Two match-service instances can legitimately race to reserve the same driver — that's not a bug, it's just what concurrency at scale looks like — so the assignment can't be a plain <code>SET</code>. <code>WATCH</code> subscribes to changes on the driver's state key; the <code>MULTI/EXEC</code> that follows only commits if that key hasn't changed since the <code>WATCH</code> began:</p>
 <pre><code>WATCH driver:state:driver_001
@@ -627,11 +622,7 @@ sequenceDiagram
 </tbody>
 </table>
 <p>The last piece is what happens when a driver's connection just drops — a flaky signal, a phone going into a tunnel, an app crash. There's no separate cleanup process watching for this:</p>
-<pre><code>Driver phone disconnects -&gt; WebSocket closes -&gt; Location Svc detects
-  -&gt; EXPIRE driver:state:driver_id 30
-  -&gt; After 30s with no heartbeat: key expires -&gt; auto-removed from idle pool
-  -&gt; No stale drivers offered to riders. No cron job needed.
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/a486d3c4eba9c7df.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>The same TTL mechanism from §8.1's driver state does double duty as the cleanup job here: no heartbeat for 30 seconds and the key simply expires, silently pulling that driver out of the idle pool. No stale driver ever gets offered to a rider, and nobody had to write a background sweep to make that true.</p>
 <blockquote>
 <p>[!IMPORTANT]
@@ -780,15 +771,19 @@ When the interviewer says "walk me through your Uber design," hit these points i
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>Fast Path   (latency):   Driver WS -&gt; Redis GEOADD -&gt; GEORADIUS -&gt; WATCH/EXEC -&gt; WS push to driver
-                         ON_TRIP tracking: Redis -&gt; Kafka -&gt; WS push to rider map
-
-Reliable Path (safety):  trip_start / trip_end -&gt; Kafka -&gt; PostgreSQL (billing, history)
-                         Fare request -&gt; Ride Request DB -&gt; Surge Calculator -&gt; Redis
-
-Location = fast path only (ephemeral, overwritten every 1-5s, TTL self-heals)
-Trip record = reliable path (durable, drives billing and audit, never lost)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (latency)&quot;
+        FDriverWS[&quot;Driver WS&quot;] --&gt; FGeoadd[&quot;Redis GEOADD&quot;] --&gt; FGeoradius[&quot;GEORADIUS&quot;] --&gt; FWatchExec[&quot;WATCH/EXEC&quot;] --&gt; FPush[&quot;WS push to driver&quot;]
+        FOnTrip[&quot;ON_TRIP tracking&quot;] --&gt; FRedis[&quot;Redis&quot;] --&gt; FKafka[&quot;Kafka&quot;] --&gt; FRiderPush[&quot;WS push to rider map&quot;]
+    end
+    subgraph &quot;Reliable Path (safety)&quot;
+        RTrip[&quot;trip_start / trip_end&quot;] --&gt; RKafka[&quot;Kafka&quot;] --&gt; RPostgres[&quot;PostgreSQL (billing, history)&quot;]
+        RFare[&quot;Fare request&quot;] --&gt; RRideDB[&quot;Ride Request DB&quot;] --&gt; RSurge[&quot;Surge Calculator&quot;] --&gt; RRedis[&quot;Redis&quot;]
+    end
+    Note1[&quot;Location = fast path only (ephemeral, overwritten every 1-5s, TTL self-heals)&quot;]
+    Note2[&quot;Trip record = reliable path (durable, drives billing and audit, never lost)&quot;]
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <blockquote>
 <p>[!IMPORTANT]

@@ -255,24 +255,7 @@ Other members watching a board:  avg 4
 </table>
 <p>Every one of those events also carries a common envelope: an <code>event_id</code> (a UUID, doubling as the idempotency key), the <code>board_id</code> it routes on, the <code>actor_id</code> who triggered it, and a millisecond <code>ts</code>.</p>
 <p>Generically, any one of these events flows through the same eight steps on its way from a user's action to every other member's screen:</p>
-<pre><code>User action (e.g. drag card)
-    |
-[Optimistic UI] &lt;- event applied to local state immediately (0ms)
-    |
-HTTP POST mutation to Board Service
-    |
-Board Service writes to PostgreSQL (source of truth)
-    |
-Board Service publishes event to Redis channel board:{boardId}
-    |
-All WS servers subscribed to board:{boardId} receive the event
-    |
-Each WS server pushes the event delta to its connected members
-    |
-Each client applies the event to its board state (&lt;200ms end-to-end)
-    |
-Async: the same event is also published to Kafka -&gt; Activity Service -&gt; BigQuery
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/6247e2e77b49fac1.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p><strong>Why go through named events instead of just letting clients read the database changes directly?</strong> Four reasons, each ruling out a simpler alternative: the database is disk-backed and too slow to double as a real-time broadcast channel; events decouple a mutation from its fan-out, so the Board Service never needs to know which WebSocket servers happen to hold which connections; events are replayable, so a client reconnecting after a dropped connection can catch up from its <code>last_event_id</code> instead of needing a full reload; and the same event stream that drives real-time sync is also the audit log the Activity Service consumes — one source of truth, two consumers.</p>
 <p>With that event model in hand, the components fall out fairly directly. The simple version of the system is a Board Service that owns writes to PostgreSQL and publishes to Redis, a WebSocket tier that relays those publishes to connected browsers, and direct browser-to-S3 uploads for attachments so files never transit the API layer:</p>
 <div class="mermaid">
@@ -824,18 +807,18 @@ The snapshot cache turns board load into an O(1) operation for the roughly 99% o
 </tbody>
 </table>
 <p><strong>The naive way to enforce that matrix — a database lookup on every single request — doesn't survive this system's write volume.</strong> At 100K mutations a second, and with every WebSocket event also needing a permission check, a DB round trip per check would be a straightforward bottleneck long before anything else in this design became one. So the enforcement path is:</p>
-<pre><code>Every API request:
-  1. API Gateway validates JWT -&gt; extracts user_id
-  2. Board Service looks up board_members for (board_id, user_id)
-     -&gt; fetches role (cached in Redis, TTL=30s)
-  3. Middleware checks role against action's required permission
-  4. Permitted -&gt; proceed  |  Denied -&gt; 403 Forbidden
-
-Board membership changes (remove member, role downgrade):
-  -&gt; Invalidate Redis cache entry immediately (strong consistency required)
-  -&gt; User loses access on next request (max 30s stale window for TTL,
-     0s for explicit invalidation)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Every API request&quot;
+        JWT[&quot;1. API Gateway validates JWT - extracts user_id&quot;] --&gt; Lookup[&quot;2. Board Service looks up board_members for (board_id, user_id) - fetches role, cached in Redis, TTL=30s&quot;]
+        Lookup --&gt; Middleware[&quot;3. Middleware checks role against action's required permission&quot;]
+        Middleware --&gt;|permitted| Proceed[&quot;4. Proceed&quot;]
+        Middleware --&gt;|denied| Forbidden[&quot;4. 403 Forbidden&quot;]
+    end
+    subgraph &quot;Board membership changes (remove member, role downgrade)&quot;
+        Invalidate[&quot;Invalidate Redis cache entry immediately - strong consistency required&quot;] --&gt; LoseAccess[&quot;User loses access on next request - max 30s stale window for TTL, 0s for explicit invalidation&quot;]
+    end
+</div>
 <p>Caching the role lookup in Redis is what makes the permission check cheap enough to run on every request — roughly a hundredfold reduction in database load compared to hitting PostgreSQL directly on each check.</p>
 <p>That 30-second TTL is deliberately shorter than the 60-second snapshot cache TTL in §8.4, and the reason is the same one that made board membership "strong" consistency back in §5: role removal is a security event, not a display staleness issue, so 30 seconds is the accepted worst case for how long a just-removed member could still act on a board — with explicit invalidation on removal typically making it 0 in practice. (For an enterprise or compliance-sensitive board, this design would drop straight to 0 with a direct DB check on every mutation, trading the 100x cache win for a hard access guarantee.)</p>
 <p>Public boards fold neatly into the same mechanism without a special case: when <code>boards.visibility = 'public'</code>, the absence of a <code>board_members</code> row for a requester isn't treated as "no access" — the middleware treats it as an implicit <code>viewer</code> role.</p>
@@ -852,12 +835,7 @@ Never route binary file uploads through application servers if you can avoid it.
 <h3 id="87-mentions-notification-flow">8.7 @Mentions — Notification Flow</h3>
 <p>The problem: when a user types <code>@alice</code> in a comment, Alice has to be notified within 5 seconds — in-app, email, or push — without the comment's own save being slowed down by however long notification delivery takes.</p>
 <p>The flow keeps those two concerns strictly separate. The client posts <code>POST /cards/{id}/comments</code> with the comment body and a <code>mentions</code> array; the Board Service saves the comment row and returns <code>200 OK</code> immediately, before anything about the notification has happened. Only after that does it publish two events asynchronously to Kafka: one to a <code>board.events</code> topic, which feeds the same Redis Pub/Sub fan-out from §8.3 so every board member sees the new comment appear in real time, and a separate <code>notification.mentions</code> event to the Notification Service. That service looks up Alice's notification preferences, checks a rate limit (no more than 10 notifications a minute per user, so a burst of activity can't spam her), and dispatches to whichever channel she's configured.</p>
-<pre><code>User types @alice in comment
-  -&gt; POST /cards/{id}/comments
-  -&gt; DB write (mentions=[u_alice])
-  -&gt; Kafka: board.events + notification.mentions (async, non-blocking)
-  -&gt; Kafka -&gt; Notification Service -&gt; push/email/in-app to Alice (&lt;5s)
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/be45d0a9b60f25c5.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Delivery is at-least-once, matching Kafka's own guarantee, and duplicate notifications are prevented with an idempotency key of <code>comment_id + user_id</code> — an <code>ON CONFLICT DO NOTHING</code> on that key means a redelivered event never produces a second in-app alert.</p>
 <blockquote>
 <p>[!NOTE]
@@ -1048,25 +1026,24 @@ ws.onclose = () =&gt; {
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>Fast Path (card move, happy path):
-  User drags card
-    → Optimistic UI (0ms)
-    → POST /cards/{id}/move
-    → PostgreSQL UPDATE (optimistic lock check)
-    → 200 OK to actor
-    → Redis PUBLISH board:{id}
-    → WS servers push to all members
-    Total: ~150–200ms actor-to-viewer
-
-Reliable Path (reconnect + catch-up):
-  WS disconnects
-    → Client reconnects (exponential backoff)
-    → Sends last_event_id
-    → Server replays buffered events (30s window)
-    → Client applies diffs in order
-    → Board state fully reconciled
-    (If &gt;30s gap: full snapshot reload)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (card move, happy path)&quot;
+        FDrag[&quot;User drags card&quot;] --&gt; FOptimistic[&quot;Optimistic UI (0ms)&quot;]
+        FOptimistic --&gt; FPost[&quot;POST /cards/{id}/move&quot;]
+        FPost --&gt; FUpdate[&quot;PostgreSQL UPDATE (optimistic lock check)&quot;]
+        FUpdate --&gt; FAck[&quot;200 OK to actor&quot;]
+        FAck --&gt; FPublish[&quot;Redis PUBLISH board:{id}&quot;]
+        FPublish --&gt; FPush[&quot;WS servers push to all members - total ~150-200ms actor-to-viewer&quot;]
+    end
+    subgraph &quot;Reliable Path (reconnect + catch-up)&quot;
+        RDisconnect[&quot;WS disconnects&quot;] --&gt; RReconnect[&quot;Client reconnects (exponential backoff)&quot;]
+        RReconnect --&gt; RSend[&quot;Sends last_event_id&quot;]
+        RSend --&gt; RReplay[&quot;Server replays buffered events (30s window)&quot;]
+        RReplay --&gt; RApply[&quot;Client applies diffs in order&quot;]
+        RApply --&gt; RReconciled[&quot;Board state fully reconciled - if over 30s gap: full snapshot reload&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <blockquote>
 <p>[!TIP]

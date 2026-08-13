@@ -229,22 +229,7 @@ graph TD
 <p>The client doesn't fire a network request on every keystroke — that would be 3× more traffic than necessary at this scale — so it debounces at 150ms, well under the threshold where a delay would feel noticeable, and only fires once Mia pauses. Before it fires anything at all, it checks a local LRU cache (keyed by prefix, capped at 200 entries, 5-minute TTL); in practice, because people repeat common prefixes constantly (typing, backspacing, retyping), this alone answers about 40% of requests with zero network round-trip.</p>
 <p>On a cache miss, the request goes out — and for short prefixes (1–3 characters, like "a," "ap," "app") it hits a CDN edge cache first. This works because the top-10 suggestions for "app" are identical for essentially all 500 million users; there's no reason to personalize a prefix everyone shares, so it's cached without a user ID and served straight from the edge.</p>
 <p>Only on a CDN miss does the request reach the Autocomplete Service — stateless and horizontally scaled behind a load balancer — which does two things in parallel: it looks up the precomputed top-K list for the prefix from the Redis trie (sharded by first character, an O(prefix-length) lookup with no traversal at request time), and it pulls the last 100 searches for this user from a small Redis sorted set. A score blender then combines the two — global score weighted 0.7, personal score weighted 0.3 — and returns the top-10, sorted, typically inside 1–2ms once the request reaches Redis at all.</p>
-<pre><code>User types &quot;app&quot;
-     |
-[Client LRU cache]  hit? → return immediately (0ms)
-     |miss
-[CDN edge cache]    hit? → return in ~10ms (short prefix = global result)
-     |miss
-[Autocomplete Service]
-     |
-  [Redis Trie]      O(prefix_len) lookup → topK list at trie node
-     |
-  [User History]    Redis: last 100 searches for this userId
-     |
-  [Score Blender]   global score × 0.7 + personal score × 0.3
-     |
-  Return top-10 JSON
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/84d1532705b34230.svg" alt="Architecture diagram" loading="lazy"></figure>
 <div class="mermaid">
 sequenceDiagram
     participant U as User Browser
@@ -668,24 +653,25 @@ const getFromCache = (prefix) =&gt; {
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>Fast Path (latency-optimised):
-  User keystroke
-    → 150ms debounce
-    → Client LRU cache (0ms, 40% hit)
-    → CDN edge cache (10ms, 60% of short-prefix traffic)
-    → Redis Trie shard (1-2ms)
-    → Personal history blend (0.5ms)
-    → Top-10 response
-
-Reliable Path (correctness-guaranteed):
-  Search completion event
-    → Kafka (durable log, at-least-once)
-    → Flink (5min trending freshness)
-    → Spark (hourly full frequency recompute)
-    → Cassandra (query frequency source of truth)
-    → Trie Builder (pre-compute topK)
-    → Redis atomic swap (zero-downtime update)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (latency-optimised)&quot;
+        Keystroke[&quot;User keystroke&quot;] --&gt; Debounce[&quot;150ms debounce&quot;]
+        Debounce --&gt; ClientLRU[&quot;Client LRU cache (0ms, 40% hit)&quot;]
+        ClientLRU --&gt; CDNCache[&quot;CDN edge cache (10ms, 60% of short-prefix traffic)&quot;]
+        CDNCache --&gt; RedisTrieShard[&quot;Redis Trie shard (1-2ms)&quot;]
+        RedisTrieShard --&gt; PersonalBlend[&quot;Personal history blend (0.5ms)&quot;]
+        PersonalBlend --&gt; Top10[&quot;Top-10 response&quot;]
+    end
+    subgraph &quot;Reliable Path (correctness-guaranteed)&quot;
+        SearchEvent[&quot;Search completion event&quot;] --&gt; KafkaLog[&quot;Kafka (durable log, at-least-once)&quot;]
+        KafkaLog --&gt; Flink[&quot;Flink (5min trending freshness)&quot;]
+        Flink --&gt; Spark[&quot;Spark (hourly full frequency recompute)&quot;]
+        Spark --&gt; CassandraSrc[&quot;Cassandra (query frequency source of truth)&quot;]
+        CassandraSrc --&gt; TrieBuilder[&quot;Trie Builder (pre-compute topK)&quot;]
+        TrieBuilder --&gt; RedisSwap[&quot;Redis atomic swap (zero-downtime update)&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <blockquote>
 <p>[!TIP]

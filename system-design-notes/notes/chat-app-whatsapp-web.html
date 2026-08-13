@@ -197,21 +197,19 @@ Peak throughput (2x avg):               ~  2,300,000 msg/sec
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Meera's message to Raj from the story above — here's what actually happens underneath it, and underneath every message like it.</p>
 <p>Chat systems run <strong>two independent flows concurrently</strong>: a fast path and a reliable path. The fast path (WebSocket + Redis + Kafka) races to get Meera's message onto Raj's screen as quickly as possible. The reliable path (a Cassandra write) makes the message durable the instant it lands, regardless of whether the fast path succeeds, fails, or takes a detour through a push notification because Raj is on the subway. Production chat is the careful orchestration of both paths — never conflating them.</p>
-<pre><code>                        +-----------------------------------------------------+
-                        |                    FAST PATH                         |
-   +--------+  WS frame |  +------------+  Redis  +------+  Kafka  +--------+ |  WS push  +--------+
-   | User A | ---------&gt;|  | Chat Srvr1 | ------&gt; |Redis | ------&gt; | Kafka  | | ---------&gt;| User B |
-   +--------+           |  +-----+------+  lookup +------+         +----+---+ |           +--------+
-                        +--------|--------------------------------------------+
-                                 | concurrent write
-                        +--------v--------------------------------------------+
-                        |                  RELIABLE PATH                       |
-                        |              +-----------------+                     |
-                        |              |    Cassandra    |  &lt;- message is safe |
-                        |              | (durable store) |    the moment this  |
-                        |              +-----------------+    write confirms   |
-                        +-----------------------------------------------------+
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path&quot;
+        UserA[&quot;User A&quot;] --&gt;|WS frame| ChatSrvr1[&quot;Chat Srvr1&quot;]
+        ChatSrvr1 --&gt;|Redis lookup| Redis[(&quot;Redis&quot;)]
+        Redis --&gt;|Kafka| Kafka[[&quot;Kafka&quot;]]
+        Kafka --&gt;|WS push| UserB[&quot;User B&quot;]
+    end
+    ChatSrvr1 --&gt;|concurrent write| Cassandra
+    subgraph &quot;Reliable Path&quot;
+        Cassandra[(&quot;Cassandra - durable store - message is safe the moment this write confirms&quot;)]
+    end
+</div>
 <blockquote>
 <p>[!IMPORTANT]
 <strong>Single tick != Double tick.</strong> Single tick = Cassandra confirmed (reliable path). Double tick = WebSocket push succeeded (fast path). These are separate guarantees from separate subsystems. The fast path can fail. The reliable path must not.</p>
@@ -523,11 +521,7 @@ sequenceDiagram
 <p><strong>What this has to prevent:</strong> two people never see the same conversation rendered in two different orders, a client never silently drops a message because it arrived "out of turn," and none of this can come at the cost of the 1.16 million writes/sec the system has to sustain.</p>
 <p><strong>The obvious fix doesn't survive the throughput requirement.</strong> A single global sequence counter — one atomic counter incremented for every message in the entire system, across every conversation — would guarantee a strict global order. But every one of those 1.16 million writes a second would have to serialize through that one counter to get a number, turning the single most scalable part of the design (Cassandra's ability to add nodes for more write capacity) into a system bottlenecked on one node. Global ordering, at this throughput, is a distributed-counter bottleneck by construction — not a detail to optimize around later, a reason to not do it at all.</p>
 <p><strong>The actual mechanism scopes ordering down to the one place it's actually needed: a single conversation.</strong> Two pieces do this work together. First, Cassandra's <code>TIMEUUID</code> clustering key encodes a nanosecond-precision timestamp plus a random component for uniqueness, so messages land on disk already time-ordered even when two writes hit the same nanosecond. Second, and more importantly for what a client actually sees, each client tracks its own monotonically increasing <code>client_seq</code> per conversation, and stamps every outgoing message with <code>{conversation_id, client_seq}</code>. Cassandra's primary key is <code>((conversation_id), client_seq, message_id)</code> — every message in one conversation partitions together and clusters in exact sequence order. That sequence number is also what lets a client detect a gap on its own: if it receives <code>seq=44</code> while the last one it saw was <code>seq=42</code>, it knows immediately that <code>43</code> is missing and can ask for it directly, rather than silently rendering an incomplete conversation:</p>
-<pre><code>Client sees seq=44, last_seen=42
-  -&gt; gap detected: seq=43 missing
-  -&gt; GET /chats/{id}/messages?from_seq=43&amp;limit=5
-  -&gt; gap filled, conversation renders complete and in order
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/3e3b5156592798ac.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>The trade-off this accepts, explicitly: the system guarantees monotonic ordering within a conversation and eventual convergence across replicas of that conversation — it does not guarantee any ordering relationship <em>between</em> different conversations, and it doesn't need to, since nobody is comparing the timestamp of a message in one chat against a message in an entirely different one.</p>
 <blockquote>
 <p>[!IMPORTANT]

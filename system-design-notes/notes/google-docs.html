@@ -176,22 +176,18 @@ Redis cursor entries:   1 KB x 1M active documents    =  ~1 GB (negligible)
 <p><strong>Google Docs is not syncing text. It is syncing operations across distributed clients.</strong></p>
 </blockquote>
 <p>This is the insight that unlocks the entire design. When Devesh types "R" at position 29, his client does not send the document — it sends <code>{ type: "insert", pos: 29, char: "R", version: 42, client_id: "devesh" }</code>. The document itself is a <em>materialized view</em> of a sequence of operations, not the source of truth. The operations log is the source of truth. Two people editing the same position at the same millisecond will produce divergent documents unless something transforms one operation against the other before applying it — the entire architecture exists to make that transformation correct, fast, and durable, all at once.</p>
-<pre><code>                    +----------------------------------------------------------+
-                    |                      FAST PATH                            |
-  +--------+  op    |  +----------+  transform  +----------+  broadcast        |
-  | UserA  | ------&gt;|  |OT Server | -----------&gt;|OT Server | -------&gt; peers    |
-  +--------+        |  +-----+----+             +----------+                   |
-   (optimistic      |        | concurrent ops                                  |
-    local apply)    +--------+-------------------------------------------------+
-                             | append (before broadcast, before client ACK)
-                    +--------v-------------------------------------------------+
-                    |                   RELIABLE PATH                           |
-                    |              +-----------------+                          |
-                    |              | Operations Log  |  &lt;- every op stored     |
-                    |              |   (Cassandra)   |     before ACK sent     |
-                    |              +-----------------+                          |
-                    +----------------------------------------------------------+
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path&quot;
+        UserA[&quot;User A - optimistic local apply&quot;] --&gt;|op| OTServer1[&quot;OT Server&quot;]
+        OTServer1 --&gt;|transform| OTServer2[&quot;OT Server&quot;]
+        OTServer2 --&gt;|broadcast| Peers[&quot;peers&quot;]
+    end
+    OTServer1 --&gt;|append, before broadcast, before client ACK| OpsLog
+    subgraph &quot;Reliable Path&quot;
+        OpsLog[(&quot;Operations Log (Cassandra) - every op stored before ACK sent&quot;)]
+    end
+</div>
 <h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
@@ -500,30 +496,25 @@ sequenceDiagram
 <h3 id="82-redis-dual-role-canonical-state-presence">8.2 Redis Dual Role: Canonical State + Presence</h3>
 <p><strong>Here's the problem we're solving:</strong> when Devesh joins a document that Maya has been editing for ten minutes, the S3 snapshot is already stale — the operations log has three thousand events since it was written. Replaying three thousand operations to reconstruct current state on every new join takes seconds, which is unacceptable at the scale this system runs at.</p>
 <p><strong>Solution:</strong> on first access, the OT Server loads the S3 snapshot into Redis under <code>doc:{doc_id}:canonical</code>. Every committed operation after that gets applied to the Redis copy in memory, immediately. Any new joiner reads that Redis copy directly and gets the current state instantly — no operation replay, ever.</p>
-<pre><code>1. First user opens document
-   -&gt; GET doc:{doc_id}:canonical -&gt; cache miss
-   -&gt; Fetch latest snapshot from S3 -&gt; load into Redis
-   -&gt; Set TTL = 30 min (refreshed on each op)
-
-2. User edits
-   -&gt; Op arrives -&gt; OT Server transforms -&gt; appends to Cassandra
-   -&gt; OT Server applies op to Redis canonical copy
-   -&gt; OT Server broadcasts to all connected peers
-
-3. Second user joins mid-session
-   -&gt; GET doc:{doc_id}:canonical -&gt; cache hit (instant)
-   -&gt; Return current state directly from Redis
-   -&gt; No S3 fetch, no op replay, no latency spike
-
-4. Auto-save (every 10-20 seconds)
-   -&gt; Serialize Redis canonical copy -&gt; write to S3 as minor version (is_major = false)
-   -&gt; Refresh TTL on Redis key
-
-5. Last user disconnects
-   -&gt; Redis canonical TTL expires or is set short
-   -&gt; Reconciliation job fires (see Deep Dive 8.3)
-   -&gt; Redis key deleted
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;1. First user opens document&quot;
+        A1[&quot;GET doc:{doc_id}:canonical&quot;] --&gt;|cache miss| A2[&quot;Fetch latest snapshot from S3&quot;] --&gt; A3[&quot;Load into Redis&quot;] --&gt; A4[&quot;Set TTL = 30 min (refreshed on each op)&quot;]
+    end
+    subgraph &quot;2. User edits&quot;
+        B1[&quot;Op arrives&quot;] --&gt; B2[&quot;OT Server transforms&quot;] --&gt; B3[&quot;Appends to Cassandra&quot;]
+        B3 --&gt; B4[&quot;OT Server applies op to Redis canonical copy&quot;] --&gt; B5[&quot;OT Server broadcasts to all connected peers&quot;]
+    end
+    subgraph &quot;3. Second user joins mid-session&quot;
+        C1[&quot;GET doc:{doc_id}:canonical&quot;] --&gt;|cache hit, instant| C2[&quot;Return current state directly from Redis - no S3 fetch, no op replay, no latency spike&quot;]
+    end
+    subgraph &quot;4. Auto-save (every 10-20 seconds)&quot;
+        D1[&quot;Serialize Redis canonical copy&quot;] --&gt; D2[&quot;Write to S3 as minor version (is_major = false)&quot;] --&gt; D3[&quot;Refresh TTL on Redis key&quot;]
+    end
+    subgraph &quot;5. Last user disconnects&quot;
+        E1[&quot;Redis canonical TTL expires or is set short&quot;] --&gt; E2[&quot;Reconciliation job fires (see Deep Dive 8.3)&quot;] --&gt; E3[&quot;Redis key deleted&quot;]
+    end
+</div>
 <div class="mermaid">
 graph TD
     UserA[&quot;User A - first join&quot;]
@@ -710,17 +701,20 @@ Net result: session collapses into one committed major version.
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>FAST PATH (optimized for latency):
-  User types -&gt; apply locally (0ms) -&gt; WebSocket to OT Server (~20ms)
-  -&gt; transform against concurrent ops -&gt; broadcast to peers (~50ms)
-  -&gt; peer applies -&gt; end-to-end &lt; 100ms
-
-RELIABLE PATH (optimized for durability):
-  OT Server receives op -&gt; append to Cassandra ops log BEFORE broadcast
-  -&gt; if server crashes after write, op is in log
-  -&gt; on reconnect: client sends last_known_version -&gt; server replays missed ops
-  -&gt; document converges — zero data loss
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (optimized for latency)&quot;
+        Type[&quot;User types&quot;] --&gt;|apply locally, 0ms| WS[&quot;WebSocket to OT Server (~20ms)&quot;]
+        WS --&gt; Transform[&quot;transform against concurrent ops&quot;]
+        Transform --&gt;|broadcast, ~50ms| PeerApply[&quot;peer applies - end-to-end under 100ms&quot;]
+    end
+    subgraph &quot;Reliable Path (optimized for durability)&quot;
+        Receive[&quot;OT Server receives op&quot;] --&gt;|append BEFORE broadcast| CassandraLog[&quot;Cassandra ops log&quot;]
+        CassandraLog --&gt;|if server crashes after write, op is in log| Reconnect[&quot;On reconnect: client sends last_known_version&quot;]
+        Reconnect --&gt; Replay[&quot;Server replays missed ops&quot;]
+        Replay --&gt; Converge[&quot;Document converges - zero data loss&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <ul>
 <li><strong>OT requires a single central server per document</strong> — correctness requirement, not a scaling weakness. Two ordering points would transform the same concurrent ops in different orders, producing permanently divergent documents.</li>

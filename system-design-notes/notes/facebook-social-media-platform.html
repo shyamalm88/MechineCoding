@@ -609,20 +609,34 @@ sequenceDiagram
 <strong>Key Insight:</strong> Push = low read latency but high write cost. Pull = scalable writes but slow reads. Hybrid = the only answer that works at 500M DAU. Knowing all three models and when each breaks is what staff-level candidates say.</p>
 </blockquote>
 <p><strong>How push actually works, for regular users under 1,000 followers.</strong> When a user posts, the Fan-out Service — reading the <code>filtered-post</code> Kafka topic — fetches that user's top followers from the Follower Cache (pre-ranked by interaction frequency, not just a raw follower list) and publishes <code>(follower_id, post_id)</code> pairs onto the <code>fan-out-tasks</code> Kafka topic. The Fan-out Consumer processes those tasks with a Redis <code>ZINCRBY user:feed:{followerId} {timestamp} {post_id}</code> for each one — so the follower's feed is already pre-computed and sitting in Redis before they ever open the app. When that follower does open the app, the Feed Service issues one <code>ZREVRANGE user:feed:{userId} 0 49</code> — an O(1) lookup — and batch-hydrates the results from the Post Cache, returning the full feed in under 200ms:</p>
-<pre><code>Write:  Fan-out Service -&gt; Follower Cache (top followers) -&gt; Kafka fan-out-tasks
-        -&gt; Fan-out Consumer -&gt; ZINCRBY user:feed:{followerId} {timestamp} {post_id}
-
-Read:   Feed Service -&gt; ZREVRANGE user:feed:{userId} 0 49 (O(1))
-        -&gt; batch hydrate from Post Cache -&gt; return feed (&lt; 200ms)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Write&quot;
+        FanOut[&quot;Fan-out Service&quot;] --&gt; FollowerCache[&quot;Follower Cache (top followers)&quot;]
+        FollowerCache --&gt; KafkaTasks[&quot;Kafka fan-out-tasks&quot;]
+        KafkaTasks --&gt; FanOutConsumer[&quot;Fan-out Consumer&quot;]
+        FanOutConsumer --&gt; ZIncrby[&quot;ZINCRBY user:feed:{followerId} {timestamp} {post_id}&quot;]
+    end
+    subgraph &quot;Read&quot;
+        FeedSvc[&quot;Feed Service&quot;] --&gt; ZRevrange[&quot;ZREVRANGE user:feed:{userId} 0 49 (O(1))&quot;]
+        ZRevrange --&gt; BatchHydrate[&quot;Batch hydrate from Post Cache&quot;]
+        BatchHydrate --&gt; ReturnFeed[&quot;Return feed (under 200ms)&quot;]
+    end
+</div>
 <p><strong>How pull actually works, for celebrities at or above 1,000 followers.</strong> When a celebrity posts, the Fan-out Service skips fan-out entirely — no <code>fan-out-tasks</code> are published, no follower feeds are touched. The Post Materializer instead writes the <code>post_id</code> into that celebrity's Post Materialization Cache in Redis, TTL-bounded, holding their latest 100 posts. When a follower of that celebrity opens the app, the Feed Service checks the Follower Cache to identify which of their followees are celebrities, the Backfill Service pulls each celebrity's recent <code>post_id</code>s from their Post Materialization Cache, and the result is merged with the follower's own pre-computed regular feed and re-sorted by timestamp before being returned:</p>
-<pre><code>Write:  Fan-out Service skips fan-out -&gt; Post Materializer
-        -&gt; writes post_id to celebrity's Post Materialization Cache (TTL-bounded)
-
-Read:   Feed Service identifies celebrity followees via Follower Cache
-        -&gt; Backfill Service pulls celebrity post_ids -&gt; merges with regular feed
-        -&gt; re-sorts by timestamp -&gt; unified feed returned
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Write&quot;
+        FanOutSkip[&quot;Fan-out Service skips fan-out&quot;] --&gt; PostMaterializer[&quot;Post Materializer&quot;]
+        PostMaterializer --&gt; MaterializationCache[&quot;Writes post_id to celebrity's Post Materialization Cache (TTL-bounded)&quot;]
+    end
+    subgraph &quot;Read&quot;
+        FeedSvc2[&quot;Feed Service identifies celebrity followees via Follower Cache&quot;] --&gt; Backfill[&quot;Backfill Service pulls celebrity post_ids&quot;]
+        Backfill --&gt; Merge[&quot;Merges with regular feed&quot;]
+        Merge --&gt; Resort[&quot;Re-sorts by timestamp&quot;]
+        Resort --&gt; Unified[&quot;Unified feed returned&quot;]
+    end
+</div>
 <p><strong>Trade-off accepted:</strong> celebrity posts may appear 1–3 seconds later than regular posts, since the pull-side merge adds latency that push-side fan-out doesn't have. That's acceptable — the eventual consistency SLA already covers a wider window than this.</p>
 <blockquote>
 <p>[!NOTE]
@@ -872,13 +886,18 @@ IndexedDB (persisted across sessions):
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>FAST PATH (feed read)
-User → API Gateway → Feed Service → Redis Feed Cache → return post_ids → hydrate → 200ms ✓
-
-RELIABLE PATH (post write)
-User → API Gateway → Content Service → Kafka(raw-post) [durable] → Moderator Service
-→ Kafka(filtered-post) [durable] → Post Consumer → Cassandra [replicated, RF=3] ✓
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (feed read)&quot;
+        FUser[&quot;User&quot;] --&gt; FGateway[&quot;API Gateway&quot;] --&gt; FFeedSvc[&quot;Feed Service&quot;] --&gt; FRedisCache[&quot;Redis Feed Cache&quot;]
+        FRedisCache --&gt; FPostIds[&quot;Return post_ids&quot;] --&gt; FHydrate[&quot;Hydrate&quot;] --&gt; FDone[&quot;200ms - done&quot;]
+    end
+    subgraph &quot;Reliable Path (post write)&quot;
+        RUser[&quot;User&quot;] --&gt; RGateway[&quot;API Gateway&quot;] --&gt; RContentSvc[&quot;Content Service&quot;] --&gt; RKafkaRaw[&quot;Kafka(raw-post) - durable&quot;]
+        RKafkaRaw --&gt; RModerator[&quot;Moderator Service&quot;] --&gt; RKafkaFiltered[&quot;Kafka(filtered-post) - durable&quot;]
+        RKafkaFiltered --&gt; RPostConsumer[&quot;Post Consumer&quot;] --&gt; RCassandra[&quot;Cassandra - replicated, RF=3 - done&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist-say-these-out-loud-in-the-interview">Key Insights Checklist <em>(say these out loud in the interview)</em></h3>
 <ul>
 <li>"The news feed is the core engineering problem of Facebook. Push model gives low read latency but costs 1.16M writes/sec in fan-out. Pull model is cheap to write but takes 10 seconds to read. Neither works alone — the hybrid is the only answer at this scale."</li>

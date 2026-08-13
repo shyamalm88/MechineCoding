@@ -170,38 +170,29 @@ Auto-scaling transcoding workers is mandatory, not optional
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Maya's upload and Dev's watch from the story above — here's what's actually happening underneath both of them.</p>
 <p>YouTube is really two completely different systems sharing a data store. The <strong>Upload Path</strong> is a reliable, async pipeline where correctness matters more than speed — Maya's video can take a few minutes to become watchable, but it must never be silently lost along the way. The <strong>Watch Path</strong> is a fast, read-heavy path where latency matters above everything else — Dev's video has to start in about two seconds, no matter how many other people are streaming at that exact moment. Every design decision in this system maps cleanly onto one of these two paths.</p>
-<pre><code>UPLOAD PATH (Write-heavy, async, correctness-first)
-================================================================
-Creator --&gt; Chunked Upload --&gt; Raw S3
-                                  |
-                            Transcoding Queue (Kafka)
-                                  |
-                     +-----------+-----------+
-                     |           |           |
-                   360p        720p       1080p/4K
-                     |           |           |
-                     +-----------+-----------+
-                                  |
-                         Transcoded S3 Buckets
-                                  |
-                         CDN Prefetch + DB Metadata
-                                  |
-                           Video Goes Live
+<div class="mermaid">
+graph TD
+    subgraph &quot;Upload Path (Write-heavy, async, correctness-first)&quot;
+        Creator --&gt; ChunkedUpload[&quot;Chunked Upload&quot;] --&gt; RawS3[&quot;Raw S3&quot;]
+        RawS3 --&gt; TranscodeQueue[&quot;Transcoding Queue (Kafka)&quot;]
+        TranscodeQueue --&gt; P360[&quot;360p&quot;]
+        TranscodeQueue --&gt; P720[&quot;720p&quot;]
+        TranscodeQueue --&gt; P1080[&quot;1080p/4K&quot;]
+        P360 --&gt; TranscodedS3[&quot;Transcoded S3 Buckets&quot;]
+        P720 --&gt; TranscodedS3
+        P1080 --&gt; TranscodedS3
+        TranscodedS3 --&gt; CDNPrefetch[&quot;CDN Prefetch + DB Metadata&quot;]
+        CDNPrefetch --&gt; Live[&quot;Video Goes Live&quot;]
+    end
 
-
-WATCH PATH (Read-heavy, latency-first, CDN-dominated)
-================================================================
-Viewer --&gt; API Gateway --&gt; Metadata Service --&gt; Redis Cache
-                                                     |
-                                              Cassandra (miss)
-                                                     |
-                                          CDN Edge (m3u8 manifest)
-                                                     |
-                                        ABR Player picks quality tier
-                                                     |
-                                     CDN serves video segments (ts files)
-                                   (95%+ cache hit -- segments are immutable)
-</code></pre>
+    subgraph &quot;Watch Path (Read-heavy, latency-first, CDN-dominated)&quot;
+        Viewer --&gt; APIGateway[&quot;API Gateway&quot;] --&gt; MetadataSvc[&quot;Metadata Service&quot;] --&gt; RedisCache[&quot;Redis Cache&quot;]
+        RedisCache --&gt;|miss| Cassandra
+        Cassandra --&gt; CDNEdge[&quot;CDN Edge (m3u8 manifest)&quot;]
+        CDNEdge --&gt; ABRPlayer[&quot;ABR Player picks quality tier&quot;]
+        ABRPlayer --&gt; CDNSegments[&quot;CDN serves video segments (ts files) - 95%+ cache hit, segments are immutable&quot;]
+    end
+</div>
 <h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
@@ -673,22 +664,23 @@ Every 60s:      Batch job reads Redis counts, writes delta to Cassandra, resets 
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>WATCH FAST PATH (target: &lt; 2s video start)
-Viewer --&gt; CDN Edge --&gt; m3u8 manifest (cached) --&gt; segments (cached, immutable)
-No origin contact needed if CDN hit rate is high. Redis serves metadata in &lt; 1ms.
-
-WATCH RELIABLE PATH (CDN miss or origin needed)
-Viewer --&gt; API Gateway --&gt; Metadata Service --&gt; Redis miss --&gt; Cassandra read
-           --&gt; CDN miss --&gt; S3 origin --&gt; segments served from origin with fallback
-
-UPLOAD FAST PATH (target: upload bytes as fast as possible)
-Creator --&gt; presigned S3 URL --&gt; direct multipart to S3 (no service in the path)
-
-UPLOAD RELIABLE PATH (correctness guarantee)
-S3 raw stored first --&gt; Kafka job queued (durable) --&gt; worker fetches raw from S3
---&gt; idempotent transcode --&gt; S3 transcoded --&gt; DB update --&gt; CDN prefetch
-Any step can fail and be retried safely. Raw video is never lost.
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Watch Fast Path (target: under 2s video start)&quot;
+        WF1[&quot;Viewer&quot;] --&gt; WF2[&quot;CDN Edge&quot;] --&gt; WF3[&quot;m3u8 manifest (cached)&quot;] --&gt; WF4[&quot;Segments (cached, immutable) - no origin contact needed if CDN hit rate is high, Redis serves metadata in under 1ms&quot;]
+    end
+    subgraph &quot;Watch Reliable Path (CDN miss or origin needed)&quot;
+        WR1[&quot;Viewer&quot;] --&gt; WR2[&quot;API Gateway&quot;] --&gt; WR3[&quot;Metadata Service&quot;] --&gt; WR4[&quot;Redis miss&quot;]
+        WR4 --&gt; WR5[&quot;Cassandra read&quot;] --&gt; WR6[&quot;CDN miss&quot;] --&gt; WR7[&quot;S3 origin - segments served from origin with fallback&quot;]
+    end
+    subgraph &quot;Upload Fast Path (target: upload bytes as fast as possible)&quot;
+        UF1[&quot;Creator&quot;] --&gt; UF2[&quot;Presigned S3 URL&quot;] --&gt; UF3[&quot;Direct multipart to S3 - no service in the path&quot;]
+    end
+    subgraph &quot;Upload Reliable Path (correctness guarantee)&quot;
+        UR1[&quot;S3 raw stored first&quot;] --&gt; UR2[&quot;Kafka job queued (durable)&quot;] --&gt; UR3[&quot;Worker fetches raw from S3&quot;]
+        UR3 --&gt; UR4[&quot;Idempotent transcode&quot;] --&gt; UR5[&quot;S3 transcoded&quot;] --&gt; UR6[&quot;DB update&quot;] --&gt; UR7[&quot;CDN prefetch - any step can fail and be retried safely, raw video is never lost&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <p>These are the lines an interviewer wants to hear out loud:</p>
 <ol>

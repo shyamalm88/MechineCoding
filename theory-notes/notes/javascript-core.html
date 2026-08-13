@@ -339,11 +339,17 @@ document.getElementById('list').addEventListener('click', (e) =&gt; {
 });
 </code></pre>
 <h3 id="bubbling-vs-capturing">Bubbling vs Capturing</h3>
-<pre><code>Capturing phase: document → html → body → parent → target
-Bubbling phase:  target → parent → body → html → document
-
-addEventListener(event, handler, true)  // third arg = true → capturing
-addEventListener(event, handler, false) // default → bubbling
+<div class="mermaid">
+graph LR
+    subgraph &quot;Capturing phase&quot;
+        D1[document] --&gt; H1[html] --&gt; B1[body] --&gt; P1[parent] --&gt; T1[target]
+    end
+    subgraph &quot;Bubbling phase&quot;
+        T2[target] --&gt; P2[parent] --&gt; B2[body] --&gt; H2[html] --&gt; D2[document]
+    end
+</div>
+<pre><code class="language-js">addEventListener(event, handler, true)  // third arg = true -&gt; capturing
+addEventListener(event, handler, false) // default -&gt; bubbling
 </code></pre>
 <h3 id="stoppropagation-vs-stopimmediatepropagation"><code>stopPropagation</code> vs <code>stopImmediatePropagation</code></h3>
 <pre><code class="language-js">// stopPropagation — stops event from bubbling/capturing further

@@ -597,24 +597,23 @@ sequenceDiagram
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>FAST PATH (submission result):
-  Client POST /submit
-    → API uploads code to S3, enqueues job to SQS (durable immediately)
-    → Returns 202 Accepted with submission_id
-    → Worker pulls job, fetches code from S3, dispatches to Docker container
-    → Docker runs code with 5s timeout, returns pass/fail
-    → Worker writes submission row to DB
-    → Client polls GET /submissions/:id every 3s → sees result
-
-RELIABLE PATH (leaderboard):
-  Worker writes submission row to DB
-    → CDC (Postgres logical replication) emits change event
-    → Kafka consumer computes composite score
-    → ZADD leaderboard:{competition_id} {score} {user_id}
-    → All leaderboard reads hit Redis ZRANGE (O(log n), in-memory)
-    → Zero DB queries triggered by leaderboard requests
-    → Redis recoverable from DB replay if it goes down
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (submission result)&quot;
+        F1[&quot;Client POST /submit&quot;] --&gt; F2[&quot;API uploads code to S3, enqueues job to SQS (durable immediately)&quot;]
+        F2 --&gt; F3[&quot;Returns 202 Accepted with submission_id&quot;]
+        F3 --&gt; F4[&quot;Worker pulls job, fetches code from S3, dispatches to Docker container&quot;]
+        F4 --&gt; F5[&quot;Docker runs code with 5s timeout, returns pass/fail&quot;]
+        F5 --&gt; F6[&quot;Worker writes submission row to DB&quot;]
+        F6 --&gt; F7[&quot;Client polls GET /submissions/:id every 3s - sees result&quot;]
+    end
+    subgraph &quot;Reliable Path (leaderboard)&quot;
+        R1[&quot;Worker writes submission row to DB&quot;] --&gt; R2[&quot;CDC (Postgres logical replication) emits change event&quot;]
+        R2 --&gt; R3[&quot;Kafka consumer computes composite score&quot;]
+        R3 --&gt; R4[&quot;ZADD leaderboard:{competition_id} {score} {user_id}&quot;]
+        R4 --&gt; R5[&quot;All leaderboard reads hit Redis ZRANGE (O(log n), in-memory) - zero DB queries triggered by leaderboard requests, Redis recoverable from DB replay if it goes down&quot;]
+    end
+</div>
 <h3 id="ordering-summary">Ordering Summary</h3>
 <p>Leaderboard ordering is maintained in the Redis sorted set using a composite score: <code>problems_solved + (1 / submitted_at_unix_timestamp)</code>. This guarantees users with more solved problems always rank higher, and among ties, the user who solved their last problem earliest ranks higher. Ordering is maintained atomically per ZADD — no recomputation needed at read time. This guarantee is scoped to the sorted set partition key (competition_id); cross-competition rankings are not supported in this design.</p>
 <blockquote>

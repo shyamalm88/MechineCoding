@@ -644,25 +644,23 @@ The asymmetry that actually settles this: fail-close's downside has a ceiling �
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>Fast Path (allow — happy path):
-  Incoming request
-    → API Gateway extracts clientId from JWT / IP / API key
-    → Lookup rule from in-memory cache (no network)
-    → Redis Cluster Lua script: HMGET + calculate + HMSET (atomic, ~1ms)
-    → allowed=true → route to microservice
-    → Total added latency: &lt;2ms
-
-Reliable Path (reject + fault tolerance):
-  Incoming request
-    → Redis check: tokens=0 → 429 immediately (fail fast)
-    → No microservice involvement, backend fully protected
-
-  Redis failure:
-    → Gateway detects timeout
-    → Falls back to local in-memory fixed window counter
-    → Redis Cluster promotes replica in &lt;30s
-    → Gateway reconnects, local fallback discarded
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (allow - happy path)&quot;
+        F1[&quot;Incoming request&quot;] --&gt; F2[&quot;API Gateway extracts clientId from JWT / IP / API key&quot;]
+        F2 --&gt; F3[&quot;Lookup rule from in-memory cache (no network)&quot;]
+        F3 --&gt; F4[&quot;Redis Cluster Lua script: HMGET + calculate + HMSET (atomic, ~1ms)&quot;]
+        F4 --&gt; F5[&quot;allowed=true - route to microservice - total added latency under 2ms&quot;]
+    end
+    subgraph &quot;Reliable Path (reject + fault tolerance)&quot;
+        R1[&quot;Incoming request&quot;] --&gt; R2[&quot;Redis check: tokens=0&quot;] --&gt; R3[&quot;429 immediately, fail fast - no microservice involvement, backend fully protected&quot;]
+    end
+    subgraph &quot;Redis failure&quot;
+        RF1[&quot;Gateway detects timeout&quot;] --&gt; RF2[&quot;Falls back to local in-memory fixed window counter&quot;]
+        RF2 --&gt; RF3[&quot;Redis Cluster promotes replica in under 30s&quot;]
+        RF3 --&gt; RF4[&quot;Gateway reconnects, local fallback discarded&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <blockquote>
 <p>[!TIP]

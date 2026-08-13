@@ -147,21 +147,21 @@ App servers only: ~2,300 req/sec x 50 KB = ~115 MB/sec
 <h2 id="5-high-level-architecture">5. High-Level Architecture</h2>
 <p>Remember Ananya's homepage load and her trip to checkout from the story above — here's what actually happens underneath.</p>
 <p>A homepage in this design is not rendered by code — it is assembled dynamically, at request time, from configuration, data, and experiment assignments. Three systems collaborate to produce what a user actually sees. The Config Service decides <em>what</em> to show: which sections, in what order, with what layout — versioned, validated, and rolled out gradually rather than published all at once. The Personalization Engine decides <em>for whom</em>: it maps a user to a segment, an experiment variant, and ultimately a specific templateId, all in under 50ms. The Rendering Engine decides <em>how</em>: it maps each section's declared type to an actual React component, and — critically — has a defined fallback for a type it's never seen before, instead of crashing.</p>
-<pre><code>                    +-------------------------------------------------------------+
-                    |                       FAST PATH                             |
-  +--------+  req   |  +----------+  template  +----------+  SSR HTML            |
-  | Client | ------&gt;|  |   CDN    | ----------&gt;| SSR Layer| ---------&gt; browser   |
-  +--------+        |  +----------+  (cached)  +----------+  (above fold ready)  |
-                    |                                  |  stream below-fold       |
-                    +----------------------------------|--------------------------+
-                                                       |  GraphQL @defer patches
-                    +----------------------------------v--------------------------+
-                    |                    RELIABLE PATH                            |
-                    |  Personalization Engine --&gt; correct template for this user  |
-                    |  Config Service --&gt; versioned, validated template JSON      |
-                    |  Rendering Engine --&gt; section.type --&gt; React component      |
-                    +-------------------------------------------------------------+
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path&quot;
+        Client[&quot;Client&quot;] --&gt;|req| CDN[&quot;CDN&quot;]
+        CDN --&gt;|template, cached| SSR[&quot;SSR Layer&quot;]
+        SSR --&gt;|SSR HTML| Browser[&quot;Browser - above fold ready&quot;]
+    end
+    SSR -.-&gt;|stream below-fold, GraphQL @defer patches| Reliable
+    subgraph &quot;Reliable Path&quot;
+        Reliable[&quot;Reliable Path&quot;]
+        Personalization[&quot;Personalization Engine&quot;] --&gt;|correct template for this user| Reliable
+        ConfigSvc[&quot;Config Service&quot;] --&gt;|versioned, validated template JSON| Reliable
+        RenderingEngine[&quot;Rendering Engine&quot;] --&gt;|section.type| ReactComponent[&quot;React component&quot;]
+    end
+</div>
 <table>
 <thead>
 <tr>
@@ -408,8 +408,7 @@ sequenceDiagram
 <h3 id="81-config-schema-design-ab-testing">8.1 Config Schema Design + A/B Testing</h3>
 <p>A homepage layout change sounds trivial — "move the carousel above the banner" — but done wrong it's a production incident, not a UI tweak. At 11,500 requests per second, a bad config doesn't cause one broken page; it causes a blank section for millions of users, all at once, the instant it goes live. That's the reason the Config Service can't be treated as a place that just stores whatever JSON a product team uploads — it has to behave like a production system in its own right, with schema validation and a rollout process that can be halted partway through.</p>
 <p>Every template moves through a fixed lifecycle before it's ever live for everyone:</p>
-<pre><code>DRAFT --&gt; REVIEW --&gt; STAGED (canary, 10%) --&gt; LIVE (100%) --&gt; DEPRECATED
-</code></pre>
+<figure class="diagram-figure"><img class="excalidraw-diagram" src="../assets/diagrams/b767b0d4131b5336.svg" alt="Architecture diagram" loading="lazy"></figure>
 <p>Each section inside that template JSON carries seven fields, and the ones most likely to get skipped in a rushed edit are exactly the ones that matter most. Every section needs an <code>id</code>, which is what deduplication and telemetry key off of — without it, the same section rendered twice in an A/B split looks like two different sections in the analytics, and a <code>type</code>, which is how the Rendering Engine on the client knows which React component to mount, and a <code>position</code>, because two sections claiming the same position is an ordering conflict that blocks the whole publish outright. The field most likely to be forgotten is <code>layoutMeta.height</code> — a fixed pixel height — because a section missing it is precisely what causes layout shift in production, the exact CLS problem this whole design exists to avoid. A <code>layoutMeta.aboveTheFold</code> flag decides whether a section must be ready in the initial SSR response or can stream in later, and <code>dataSource.field</code> names which GraphQL field feeds it data — get that field wrong and the section renders with no data at all. The only genuinely optional field is <code>targetCohort</code>: leave it off and the section shows to everyone.</p>
 <p>None of that matters unless it's actually checked before anything ships. Five validation rules run at publish time, and four of them block the publish outright rather than just warning: every section must declare a <code>layoutMeta.height</code> (a missing height causes CLS), every <code>type</code> must already exist in the component registry (an unknown type renders a blank section), every <code>dataSource.field</code> must resolve to a real GraphQL field (a bad field means no data reaches the section), and no two sections may share a <code>position</code> (an unresolvable ordering conflict). The fifth rule — that a declared <code>targetCohort</code> must exist in the Personalization Service — is deliberately only a warning, not a block, because a section quietly failing to reach one cohort isn't the same severity of failure as breaking the page for everyone.</p>
 <blockquote>
@@ -637,20 +636,22 @@ In an interview: say "I would reduce CDN TTL from 5 min to 30s for experiment-re
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>FAST PATH (optimized for FCP under 1s):
-  Client --&gt; CDN edge (cohort cache hit) --&gt; SSR HTML delivered
-  CDN hit: 90% of requests never reach origin
-  Remaining 10%: SSR resolves segment (Redis under 10ms) + template (Redis under 5ms)
-               + fetches above-fold data (parallel, under 150ms)
-               --&gt; HTML sent --&gt; FCP under 400ms total
-
-RELIABLE PATH (optimized for correctness):
-  Config validated before publish (5 schema rules block bad templates)
-  Experiment assignment via consistent hash -- same bucket every session
-  Personalization fallback: cache miss --&gt; global default (never blank page)
-  Config rollback: status flip --&gt; Kafka --&gt; CDN purge --&gt; 30s propagation
-  Rendering Engine fallback: unknown type --&gt; reserved empty space (no crash)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (optimized for FCP under 1s)&quot;
+        Client[&quot;Client&quot;] --&gt;|cohort cache hit, 90% of requests never reach origin| CDN[&quot;CDN edge&quot;]
+        CDN --&gt; SSRHit[&quot;SSR HTML delivered&quot;]
+        CDN -.-&gt;|remaining 10% miss| Resolve[&quot;SSR resolves segment (Redis, under 10ms) + template (Redis, under 5ms) + above-fold data (parallel, under 150ms)&quot;]
+        Resolve --&gt; FCP[&quot;HTML sent - FCP under 400ms total&quot;]
+    end
+    subgraph &quot;Reliable Path (optimized for correctness)&quot;
+        Validate[&quot;Config validated before publish - 5 schema rules block bad templates&quot;]
+        Experiment[&quot;Experiment assignment via consistent hash - same bucket every session&quot;]
+        PersFallback[&quot;Personalization fallback: cache miss&quot;] --&gt; GlobalDefault[&quot;Global default - never blank page&quot;]
+        Rollback[&quot;Config rollback: status flip&quot;] --&gt; KafkaPurge[&quot;Kafka&quot;] --&gt; CDNPurge[&quot;CDN purge - 30s propagation&quot;]
+        RenderFallback[&quot;Rendering Engine fallback: unknown type&quot;] --&gt; ReservedSpace[&quot;Reserved empty space - no crash&quot;]
+    end
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <ul>
 <li><strong>A homepage is assembled, not rendered.</strong> Config decides structure. Personalization Engine decides which config. Rendering Engine decides how to paint it. No single system owns the page.</li>

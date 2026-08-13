@@ -204,19 +204,18 @@ Peak (10x average):       ~5,800 uploads/sec
 <p>Remember Maya's photo upload and the near-instant sync to her phone from the story above — here's what actually happens underneath.</p>
 <p>A cloud storage system isn't really a file store in the way a hard drive is — it's a metadata store with a blob-storage backend that continuously keeps distributed clients in agreement about what exists. Three flows define everything that happens: <strong>upload</strong> (the client splits a file into chunks and pushes them straight to blob storage using a temporary signed URL), <strong>metadata management</strong> (a database tracks what exists — names, folders, ownership, permissions — without ever touching the actual bytes), and <strong>sync</strong> (a storage-layer event triggers a notification, which pushes to every other device over an open connection). The file's bytes and the file's record travel down completely separate paths, and only meet again at the very end, when a client reconstructs a file from its metadata.</p>
 <p>Google Drive is not a filesystem — it's a metadata store with a blob storage backend. A "folder" is not a directory on disk, it's a row in a database with <code>type = folder</code>. Moving a file doesn't move any bytes, it just changes a <code>parent_id</code> field on that row. The actual bytes live in an object store, addressed not by a path but by a content hash.</p>
-<pre><code>                    +-----------------------------------------------------+
-                    |                    FAST PATH                        |
-  +--------+  chunk |  +----------------+   pre-signed URL               |
-  | Client | ------&gt;|  | Upload Service | ---------------------&gt; S3/Blob |
-  |(Chunker|        |  +-------+--------+   client uploads directly      |
-  |+Watcher|        +----------|-----------------------------------------+
-  +--------+                   | metadata write (before ACK)
-                    +----------v-----------------------------------------+
-                    |                  RELIABLE PATH                      |
-                    |  Metadata DB (file record, hash, parent_id, quota)  |
-                    |  Notification Service --&gt; sync other devices        |
-                    +-----------------------------------------------------+
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path&quot;
+        Client[&quot;Client (Chunker + Watcher)&quot;] --&gt;|chunk| UploadService[&quot;Upload Service&quot;]
+        UploadService --&gt;|pre-signed URL, client uploads directly| S3[&quot;S3/Blob&quot;]
+    end
+    UploadService --&gt;|metadata write, before ACK| MetadataDB
+    subgraph &quot;Reliable Path&quot;
+        MetadataDB[(&quot;Metadata DB - file record, hash, parent_id, quota&quot;)]
+        MetadataDB --&gt; NotificationSvc[&quot;Notification Service - sync other devices&quot;]
+    end
+</div>
 <h3 id="core-design-principles">Core Design Principles</h3>
 <table>
 <thead>
@@ -627,18 +626,18 @@ Mention the Bloom filter dedup optimization in interviews — it is a senior-lev
 </tbody>
 </table>
 <h3 id="fast-path-vs-reliable-path">Fast Path vs Reliable Path</h3>
-<pre><code>Fast Path   (throughput):  Client chunks file locally
-                           -&gt; Client uploads chunks directly to S3 via pre-signed URL
-                           -&gt; S3 emits event to Message Queue
-
-Reliable Path (durability): Metadata DB write before upload confirmed
-                            -&gt; Quota enforced atomically on /files/complete
-                            -&gt; Notification fan-out only after metadata committed
-
-File bytes  = fast path only  (S3-native, CDN-accelerated on download)
-File record = reliable path   (PostgreSQL, ACID, quota-enforced)
-Sync signal = reliable path   (MQ -&gt; Notification Service -&gt; WebSocket)
-</code></pre>
+<div class="mermaid">
+graph TD
+    subgraph &quot;Fast Path (throughput)&quot;
+        F1[&quot;Client chunks file locally&quot;] --&gt; F2[&quot;Client uploads chunks directly to S3 via pre-signed URL&quot;] --&gt; F3[&quot;S3 emits event to Message Queue&quot;]
+    end
+    subgraph &quot;Reliable Path (durability)&quot;
+        R1[&quot;Metadata DB write before upload confirmed&quot;] --&gt; R2[&quot;Quota enforced atomically on /files/complete&quot;] --&gt; R3[&quot;Notification fan-out only after metadata committed&quot;]
+    end
+    Note1[&quot;File bytes = fast path only (S3-native, CDN-accelerated on download)&quot;]
+    Note2[&quot;File record = reliable path (PostgreSQL, ACID, quota-enforced)&quot;]
+    Note3[&quot;Sync signal = reliable path (MQ to Notification Service to WebSocket)&quot;]
+</div>
 <h3 id="key-insights-checklist">Key Insights Checklist</h3>
 <blockquote>
 <p>[!IMPORTANT]

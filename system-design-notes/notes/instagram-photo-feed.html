@@ -1675,14 +1675,16 @@ api.interceptors.response.use(
 3. <strong>Connection partitioning</strong>: Users sharded to specific WS servers
 4. <strong>Fallback</strong>: Push notifications for mobile when disconnected
 5. <strong>Priority queues</strong>: High-priority (DMs) vs low-priority (likes)</p>
-<pre><code>User connects → Load balancer → Consistent hash(userId) → WS Server
-
-Notification flow:
-1. Event (like) → Kafka
-2. Notification worker → Find user's WS server
-3. Publish to Redis channel → WS server subscribes
-4. WS server → Push to user
-</code></pre>
+<div class="mermaid">
+graph TD
+    User[&quot;User connects&quot;] --&gt; LB[&quot;Load balancer&quot;] --&gt; Hash[&quot;Consistent hash(userId)&quot;] --&gt; WSServer[&quot;WS Server&quot;]
+    subgraph &quot;Notification flow&quot;
+        N1[&quot;1. Event (like)&quot;] --&gt; N2[&quot;Kafka&quot;]
+        N2 --&gt; N3[&quot;2. Notification worker - find user's WS server&quot;]
+        N3 --&gt; N4[&quot;3. Publish to Redis channel - WS server subscribes&quot;]
+        N4 --&gt; N5[&quot;4. WS server - push to user&quot;]
+    end
+</div>
 <p><strong>Q4: SQL vs NoSQL for social graph (follows)?</strong></p>
 <p><strong>A:</strong> <strong>PostgreSQL is sufficient</strong> for most cases:</p>
 <pre><code class="language-sql">-- Follow relationship
