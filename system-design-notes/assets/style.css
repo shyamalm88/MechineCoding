@@ -178,6 +178,18 @@ main blockquote {
   position: relative;
   cursor: zoom-in;
   transition: border-color 0.15s ease;
+  overflow-x: auto;
+}
+/* .diagram-figure only ever wraps a single hand-drawn .excalidraw-diagram
+   image (see build.py). center-justifying content wider than the card
+   would overflow symmetrically on both sides, so scrolling right would
+   never reach the start of a wide diagram (like a component tree with
+   many siblings) -- flush-left keeps the natural reading start in view. */
+.diagram-figure {
+  justify-content: flex-start;
+}
+.diagram-figure .excalidraw-diagram {
+  flex-shrink: 0;
 }
 .mermaid:hover,
 .diagram-figure:hover {
@@ -213,8 +225,19 @@ main blockquote {
 }
 
 .excalidraw-diagram {
-  max-width: 100%;
+  /* Constrain by HEIGHT, not width. Some diagrams (e.g. a component tree
+     with many siblings at one level) render at an extreme aspect ratio --
+     8000px wide by 800px tall is a real example. Fitting that to the
+     article's ~800px column width via max-width/height:auto would crush
+     it to ~80px tall, too small to read. Capping height and letting width
+     be whatever it needs keeps every diagram legible; .diagram-figure's
+     overflow-x: auto lets you scroll to see the rest of a wide one, and
+     the click-to-zoom lightbox (which already uses object-fit: contain)
+     is there for viewing the whole thing at once regardless of shape. */
+  max-width: none;
+  width: auto;
   height: auto;
+  max-height: 32rem;
 }
 
 .diagram-lightbox {
