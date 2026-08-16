@@ -1,0 +1,2867 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redis + Kafka — Interview Preparation — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: Redis + Kafka — Interview Questions and Answers
+tags:
+  - redis
+  - kafka
+  - spring-boot
+  - spring-data-redis
+  - spring-kafka
+  - caching
+  - messaging
+  - distributed-systems
+  - interview</p>
+<hr />
+<h1 id="redis-kafka-interview-preparation">Redis + Kafka — Interview Preparation</h1>
+<blockquote>
+<p>[!note]
+This note is designed for a Java/Spring Boot full-stack developer preparing for senior-level interviews.</p>
+<p>The goal is not to memorize Redis commands or Kafka annotations.</p>
+<p>Learn each topic through:</p>
+<p><strong>What → Why → How → Internals → Production usage → Trade-offs → Failure modes → Interview traps</strong></p>
+</blockquote>
+<hr />
+<h1 id="part-i-redis">PART I — REDIS</h1>
+<h1 id="1-what-is-redis">1. What is Redis?</h1>
+<p>Redis is an in-memory data store commonly used for:</p>
+<pre><code class="language-text">Caching
+Session storage
+Counters
+Rate limiting
+Distributed coordination
+Queues
+Pub/Sub
+Short-lived state
+Leaderboards
+Deduplication
+</code></pre>
+<p>Redis is primarily memory-oriented, but it can also persist data.</p>
+<p>Mental model:</p>
+<pre><code class="language-text">Application
+    ↓
+Redis
+    ↓
+Fast in-memory operations
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Redis is not simply "a cache". It is a data-structure server with persistence, replication, clustering, and several messaging/coordination capabilities.</p>
+</blockquote>
+<hr />
+<h1 id="2-why-is-redis-fast">2. Why is Redis fast?</h1>
+<p>Redis is fast because:</p>
+<pre><code class="language-text">Data primarily resides in memory
++
+Efficient data structures
++
+Simple request/response model
++
+Low overhead for many operations
+</code></pre>
+<p>But:</p>
+<blockquote>
+<p>"Redis is in memory, therefore every Redis operation is O(1)" is false.</p>
+</blockquote>
+<p>Different commands have different complexity.</p>
+<p>For example:</p>
+<pre><code class="language-text">GET → approximately O(1)
+HGET → approximately O(1)
+SADD → approximately O(1) average
+ZRANGE → depends on requested range
+</code></pre>
+<p>Always understand the complexity of the command being used.</p>
+<hr />
+<h1 id="3-redis-vs-traditional-database">3. Redis vs Traditional Database</h1>
+<table>
+<thead>
+<tr>
+<th>Redis</th>
+<th>Relational DB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Memory-oriented</td>
+<td>Disk/storage-oriented</td>
+</tr>
+<tr>
+<td>Very low latency</td>
+<td>Generally higher latency</td>
+</tr>
+<tr>
+<td>Key/data-structure model</td>
+<td>Relational model</td>
+</tr>
+<tr>
+<td>Great for cache/state</td>
+<td>Great for durable business data</td>
+</tr>
+<tr>
+<td>Limited query model</td>
+<td>Rich SQL</td>
+</tr>
+<tr>
+<td>TTL built-in</td>
+<td>Usually application/schema dependent</td>
+</tr>
+<tr>
+<td>Persistence available</td>
+<td>Primarily durable storage</td>
+</tr>
+</tbody>
+</table>
+<p>Redis does not automatically replace PostgreSQL/MySQL.</p>
+<hr />
+<h1 id="4-redis-data-types">4. Redis Data Types</h1>
+<p>Important Redis structures:</p>
+<pre><code class="language-text">String
+Hash
+List
+Set
+Sorted Set
+Stream
+Bitmap
+HyperLogLog
+Geospatial
+</code></pre>
+<p>Interview priority:</p>
+<pre><code class="language-text">String
+Hash
+List
+Set
+Sorted Set
+Stream
+</code></pre>
+<hr />
+<h1 id="5-redis-string">5. Redis String</h1>
+<p>Example:</p>
+<pre><code class="language-text">SET user:1:name &quot;Alice&quot;
+GET user:1:name
+</code></pre>
+<p>Strings can also store:</p>
+<pre><code class="language-text">numbers
+JSON
+serialized values
+counters
+tokens
+</code></pre>
+<p>Counter:</p>
+<pre><code class="language-text">INCR page:view:count
+</code></pre>
+<p>This is useful because increment operations can be atomic.</p>
+<hr />
+<h1 id="6-redis-hash">6. Redis Hash</h1>
+<p>Example:</p>
+<pre><code class="language-text">HSET user:1 name Alice age 30
+HGET user:1 name
+HGETALL user:1
+</code></pre>
+<p>Useful for representing an object:</p>
+<pre><code class="language-text">user:1
+ ├── name
+ ├── email
+ ├── age
+ └── status
+</code></pre>
+<p>Compared with storing the entire object as one serialized String:</p>
+<pre><code class="language-text">Hash
+→ individual fields can be updated
+
+String JSON
+→ usually read/modify/write the whole value
+</code></pre>
+<hr />
+<h1 id="7-redis-list">7. Redis List</h1>
+<p>Example:</p>
+<pre><code class="language-text">LPUSH queue task1
+RPUSH queue task2
+LPOP queue
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">simple queues
+recent items
+ordered collections
+</code></pre>
+<p>But Redis Lists should not automatically be considered a replacement for Kafka or a durable job queue.</p>
+<hr />
+<h1 id="8-redis-set">8. Redis Set</h1>
+<p>Sets contain unique members.</p>
+<pre><code class="language-text">SADD users:active 101
+SADD users:active 102
+SADD users:active 101
+</code></pre>
+<p>The second <code>101</code> is not duplicated.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">unique membership
+tags
+deduplication
+set intersection
+set difference
+</code></pre>
+<hr />
+<h1 id="9-redis-sorted-set">9. Redis Sorted Set</h1>
+<p>A sorted set stores:</p>
+<pre><code class="language-text">member + score
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">ZADD leaderboard 100 Alice
+ZADD leaderboard 250 Bob
+ZADD leaderboard 180 Charlie
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">leaderboards
+ranking
+priority queues
+time-based indexes
+score-based retrieval
+</code></pre>
+<hr />
+<h1 id="10-redis-streams">10. Redis Streams</h1>
+<p>Redis Streams provide an append-oriented log structure.</p>
+<p>Useful concepts:</p>
+<pre><code class="language-text">stream
+entry ID
+consumer group
+consumer
+pending entries
+acknowledgment
+</code></pre>
+<p>Example mental model:</p>
+<pre><code class="language-text">Producer
+   ↓
+Redis Stream
+   ↓
+Consumer Group
+   ├── Consumer A
+   ├── Consumer B
+   └── Consumer C
+</code></pre>
+<p>Streams are substantially more capable for durable event processing than simple Pub/Sub.</p>
+<hr />
+<h1 id="11-redis-pubsub">11. Redis Pub/Sub</h1>
+<p>Pub/Sub:</p>
+<pre><code class="language-text">Publisher
+    ↓
+Channel
+    ↓
+Subscribers
+</code></pre>
+<p>Important property:</p>
+<blockquote>
+<p>Traditional Redis Pub/Sub is not a durable message log.</p>
+</blockquote>
+<p>If a subscriber is disconnected when a message is published, it does not automatically receive the missed message later.</p>
+<p>Use Streams when durable consumption and replay are required.</p>
+<hr />
+<h1 id="12-redis-ttl">12. Redis TTL</h1>
+<p>Example:</p>
+<pre><code class="language-text">SET session:123 abc EX 3600
+</code></pre>
+<p>The key expires after the TTL.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">sessions
+OTP state
+temporary locks
+cache entries
+rate-limit windows
+short-lived tokens
+</code></pre>
+<hr />
+<h1 id="13-cache-aside-pattern">13. Cache-Aside Pattern</h1>
+<p>Most common caching pattern:</p>
+<pre><code class="language-text">Request
+   ↓
+Check Redis
+   ↓
+Hit?
+ ┌───┴───┐
+Yes      No
+ ↓        ↓
+Return   Database
+          ↓
+        Redis
+          ↓
+        Return
+</code></pre>
+<p>Pseudo-code:</p>
+<pre><code class="language-java">User user = redis.get(key);
+
+if (user == null) {
+    user = database.find(id);
+    redis.set(key, user, ttl);
+}
+
+return user;
+</code></pre>
+<hr />
+<h1 id="14-why-cache-aside-is-popular">14. Why Cache-Aside Is Popular</h1>
+<p>Benefits:</p>
+<pre><code class="language-text">Application controls what gets cached
+Database remains source of truth
+Easy to introduce incrementally
+Works well with read-heavy workloads
+</code></pre>
+<p>But:</p>
+<pre><code class="language-text">Cache misses
+stale data
+cache stampede
+invalidation
+cold cache
+</code></pre>
+<p>must be handled.</p>
+<hr />
+<h1 id="15-cache-invalidation">15. Cache Invalidation</h1>
+<p>Classic problem:</p>
+<pre><code class="language-text">Database
+   ↓ update
+Database = new value
+
+Redis
+   ↓
+old value
+</code></pre>
+<p>Possible strategies:</p>
+<pre><code class="language-text">TTL
+explicit eviction
+write-through
+write-behind
+event-driven invalidation
+versioned keys
+</code></pre>
+<p>Classic interview statement:</p>
+<blockquote>
+<p>Cache invalidation is one of the hardest parts of caching because correctness depends on keeping cached state consistent enough with the source of truth.</p>
+</blockquote>
+<hr />
+<h1 id="16-cache-aside-write-strategy">16. Cache-Aside Write Strategy</h1>
+<p>One common approach:</p>
+<pre><code class="language-text">Update DB
+   ↓
+Delete Redis key
+</code></pre>
+<p>Why delete instead of blindly writing cache first?</p>
+<p>Because the database remains the source of truth.</p>
+<p>But even this has race conditions.</p>
+<p>Example:</p>
+<pre><code class="language-text">T1 reads old DB value
+T2 updates DB
+T2 deletes cache
+T1 writes old value into cache
+</code></pre>
+<p>This is why cache consistency requires careful design.</p>
+<hr />
+<h1 id="17-write-through-cache">17. Write-Through Cache</h1>
+<pre><code class="language-text">Application
+   ↓
+Cache
+   ↓
+Database
+</code></pre>
+<p>Application writes to cache and cache synchronously updates the database.</p>
+<p>Benefits:</p>
+<pre><code class="language-text">cache stays populated
+</code></pre>
+<p>Trade-off:</p>
+<pre><code class="language-text">more write latency
+more coupling
+</code></pre>
+<hr />
+<h1 id="18-write-behind-cache">18. Write-Behind Cache</h1>
+<pre><code class="language-text">Application
+   ↓
+Cache
+   ↓
+asynchronous write
+   ↓
+Database
+</code></pre>
+<p>Potentially lower write latency.</p>
+<p>But failure handling becomes more complex.</p>
+<p>Risk:</p>
+<pre><code class="language-text">cache updated
+database write not completed
+system crashes
+</code></pre>
+<hr />
+<h1 id="19-cache-stampede">19. Cache Stampede</h1>
+<p>Suppose a popular key expires:</p>
+<pre><code class="language-text">1000 requests
+     ↓
+same cache miss
+     ↓
+1000 DB queries
+</code></pre>
+<p>This can overload the database.</p>
+<p>Solutions:</p>
+<pre><code class="language-text">request coalescing
+distributed lock
+early refresh
+randomized TTL
+stale-while-revalidate
+prewarming
+</code></pre>
+<hr />
+<h1 id="20-cache-penetration">20. Cache Penetration</h1>
+<p>Requests repeatedly ask for data that does not exist.</p>
+<pre><code class="language-text">Request ID=999999
+ ↓
+Redis miss
+ ↓
+DB miss
+ ↓
+No cache entry
+</code></pre>
+<p>Attack/request pattern repeats.</p>
+<p>Solutions:</p>
+<pre><code class="language-text">negative caching
+Bloom filter
+input validation
+rate limiting
+</code></pre>
+<hr />
+<h1 id="21-cache-avalanche">21. Cache Avalanche</h1>
+<p>Large numbers of cache entries expire around the same time.</p>
+<pre><code class="language-text">Redis
+ ↓
+many keys expire
+ ↓
+massive DB traffic
+</code></pre>
+<p>Mitigation:</p>
+<pre><code class="language-text">TTL jitter
+staggered expiration
+prewarming
+load protection
+</code></pre>
+<hr />
+<h1 id="22-redis-eviction">22. Redis Eviction</h1>
+<p>When Redis reaches its configured memory limit, an eviction policy may determine what gets removed.</p>
+<p>Common policies include:</p>
+<pre><code class="language-text">noeviction
+allkeys-lru
+volatile-lru
+allkeys-lfu
+volatile-lfu
+allkeys-random
+volatile-random
+volatile-ttl
+</code></pre>
+<p>Understand:</p>
+<pre><code class="language-text">LRU → least recently used
+LFU → least frequently used
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Choosing an eviction policy is a workload decision.</p>
+</blockquote>
+<hr />
+<h1 id="23-redis-persistence">23. Redis Persistence</h1>
+<p>Redis supports persistence mechanisms such as:</p>
+<pre><code class="language-text">RDB
+AOF
+</code></pre>
+<h3 id="rdb">RDB</h3>
+<p>Periodic snapshots.</p>
+<p>Advantages:</p>
+<pre><code class="language-text">compact
+fast restart/load
+good backup characteristics
+</code></pre>
+<p>Trade-off:</p>
+<pre><code class="language-text">recent writes may be lost depending on snapshot interval
+</code></pre>
+<h3 id="aof">AOF</h3>
+<p>Records write operations.</p>
+<p>Advantages:</p>
+<pre><code class="language-text">more frequent durability options
+</code></pre>
+<p>Trade-offs:</p>
+<pre><code class="language-text">larger logs
+rewrite/maintenance overhead
+</code></pre>
+<hr />
+<h1 id="24-rdb-vs-aof">24. RDB vs AOF</h1>
+<table>
+<thead>
+<tr>
+<th>RDB</th>
+<th>AOF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Snapshot</td>
+<td>Operation log</td>
+</tr>
+<tr>
+<td>Compact</td>
+<td>Usually larger</td>
+</tr>
+<tr>
+<td>Fast restore</td>
+<td>More write history</td>
+</tr>
+<tr>
+<td>Possible larger loss window</td>
+<td>Can offer stronger durability</td>
+</tr>
+<tr>
+<td>Good backups</td>
+<td>Good recovery characteristics</td>
+</tr>
+</tbody>
+</table>
+<p>Some systems use both.</p>
+<hr />
+<h1 id="25-redis-replication">25. Redis Replication</h1>
+<p>Typical:</p>
+<pre><code class="language-text">Primary
+   ↓
+Replica
+</code></pre>
+<p>Replication improves:</p>
+<pre><code class="language-text">read scaling
+availability
+failover capabilities
+</code></pre>
+<p>But replication is commonly asynchronous.</p>
+<p>Therefore:</p>
+<blockquote>
+<p>A successful write on the primary does not automatically mean every replica has received it.</p>
+</blockquote>
+<hr />
+<h1 id="26-redis-sentinel">26. Redis Sentinel</h1>
+<p>Sentinel provides monitoring/failover coordination for Redis deployments.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Primary
+  ↓
+Replicas
+
+Sentinels
+  ↓
+Monitor
+  ↓
+Detect failure
+  ↓
+Promote replica
+</code></pre>
+<p>Sentinel is different from Redis Cluster.</p>
+<hr />
+<h1 id="27-redis-cluster">27. Redis Cluster</h1>
+<p>Redis Cluster distributes data across nodes.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Client
+  ↓
+Cluster
+ ├── Node A
+ ├── Node B
+ ├── Node C
+ └── replicas
+</code></pre>
+<p>Redis Cluster uses hash slots.</p>
+<pre><code class="language-text">16384 hash slots
+</code></pre>
+<p>Keys are mapped to slots.</p>
+<hr />
+<h1 id="28-redis-cluster-vs-sentinel">28. Redis Cluster vs Sentinel</h1>
+<table>
+<thead>
+<tr>
+<th>Sentinel</th>
+<th>Cluster</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>High availability/failover</td>
+<td>Sharding + HA</td>
+</tr>
+<tr>
+<td>Primarily one logical dataset</td>
+<td>Dataset distributed</td>
+</tr>
+<tr>
+<td>Replica promotion</td>
+<td>Multiple shards</td>
+</tr>
+<tr>
+<td>No data sharding by itself</td>
+<td>Hash-slot partitioning</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="29-redis-hash-tags">29. Redis Hash Tags</h1>
+<p>Redis Cluster supports hash tags:</p>
+<pre><code class="language-text">user:{123}:profile
+user:{123}:orders
+</code></pre>
+<p>The portion inside <code>{}</code> determines the hash slot.</p>
+<p>Useful when multiple related keys need to be colocated.</p>
+<p>This matters because multi-key operations generally require keys to belong to the same hash slot.</p>
+<hr />
+<h1 id="30-redis-atomicity">30. Redis Atomicity</h1>
+<p>Redis executes individual commands atomically from the perspective of other Redis commands.</p>
+<p>For example:</p>
+<pre><code class="language-text">INCR counter
+</code></pre>
+<p>is atomic.</p>
+<p>But:</p>
+<pre><code class="language-text">GET
+application calculation
+SET
+</code></pre>
+<p>is not automatically atomic as a sequence.</p>
+<p>For multi-step atomic behavior, consider:</p>
+<pre><code class="language-text">MULTI / EXEC
+Lua scripts
+server-side functions
+appropriate atomic commands
+</code></pre>
+<hr />
+<h1 id="31-redis-transactions">31. Redis Transactions</h1>
+<p>Redis transactions use:</p>
+<pre><code class="language-text">MULTI
+EXEC
+DISCARD
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">MULTI
+SET a 10
+SET b 20
+EXEC
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Redis transactions are not identical to relational database transactions.</p>
+</blockquote>
+<p>Redis does not provide the same rollback model as a traditional SQL database.</p>
+<hr />
+<h1 id="32-lua-scripts">32. Lua Scripts</h1>
+<p>Lua scripts can execute multiple Redis operations atomically from the perspective of other commands.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">rate limiting
+atomic check-and-set
+distributed coordination
+multi-key logic
+</code></pre>
+<p>But avoid huge scripts because they can block Redis processing.</p>
+<hr />
+<h1 id="33-distributed-lock-with-redis">33. Distributed Lock with Redis</h1>
+<p>A common pattern:</p>
+<pre><code class="language-text">SET lock:key unique-value NX EX 30
+</code></pre>
+<p>Meaning conceptually:</p>
+<pre><code class="language-text">NX → only if key does not exist
+EX → expiration
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>A distributed lock is not simply "SET a key".</p>
+</blockquote>
+<p>You must consider:</p>
+<pre><code class="language-text">ownership
+expiration
+safe release
+client crashes
+clock/time issues
+lock renewal
+network partitions
+</code></pre>
+<hr />
+<h1 id="34-safe-lock-release">34. Safe Lock Release</h1>
+<p>Do not blindly:</p>
+<pre><code class="language-text">DEL lock:key
+</code></pre>
+<p>because another client might have acquired the lock after your lock expired.</p>
+<p>Use an owner token and atomically verify ownership before deletion.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">if value == myToken:
+    delete
+</code></pre>
+<p>This is typically implemented atomically with a server-side script.</p>
+<hr />
+<h1 id="35-redis-rate-limiting">35. Redis Rate Limiting</h1>
+<p>Common approaches:</p>
+<pre><code class="language-text">fixed window
+sliding window
+token bucket
+leaky bucket
+</code></pre>
+<p>Redis is useful because operations can be atomic and state can be shared across application instances.</p>
+<p>Example:</p>
+<pre><code class="language-text">API request
+   ↓
+Redis counter
+   ↓
+limit exceeded?
+ ├── yes → 429
+ └── no  → continue
+</code></pre>
+<hr />
+<h1 id="36-redis-and-sessions">36. Redis and Sessions</h1>
+<p>Redis is commonly used as a shared session store:</p>
+<pre><code class="language-text">Client
+ ↓
+Application instance A
+ ↓
+Redis
+
+or
+
+Client
+ ↓
+Application instance B
+ ↓
+Redis
+</code></pre>
+<p>This allows horizontal scaling without requiring sticky sessions.</p>
+<hr />
+<h1 id="37-redis-serialization">37. Redis Serialization</h1>
+<p>When storing Java objects, consider:</p>
+<pre><code class="language-text">JSON
+binary serialization
+String
+Hash
+</code></pre>
+<p>Be careful with Java native serialization because of:</p>
+<pre><code class="language-text">security concerns
+compatibility
+versioning
+coupling
+</code></pre>
+<p>Prefer an explicit, controlled serialization format for distributed systems.</p>
+<hr />
+<h1 id="38-redis-key-design">38. Redis Key Design</h1>
+<p>Bad:</p>
+<pre><code class="language-text">user
+</code></pre>
+<p>Better:</p>
+<pre><code class="language-text">user:123
+user:123:profile
+user:123:orders
+</code></pre>
+<p>A key convention should make ownership and purpose obvious.</p>
+<p>Think:</p>
+<pre><code class="language-text">domain:identifier:resource
+</code></pre>
+<hr />
+<h1 id="39-redis-big-keys">39. Redis Big Keys</h1>
+<p>A "big key" can cause:</p>
+<pre><code class="language-text">high memory usage
+slow operations
+network overhead
+replication impact
+eviction problems
+</code></pre>
+<p>Avoid storing enormous blobs or giant collections without understanding access patterns.</p>
+<hr />
+<h1 id="40-redis-hot-keys">40. Redis Hot Keys</h1>
+<p>A hot key receives enormous traffic.</p>
+<p>Example:</p>
+<pre><code class="language-text">homepage:config
+</code></pre>
+<p>10 million requests may target the same key.</p>
+<p>Potential solutions:</p>
+<pre><code class="language-text">local cache
+key replication/sharding strategy
+request coalescing
+precomputation
+CDN
+</code></pre>
+<hr />
+<h1 id="41-redis-failure-modes">41. Redis Failure Modes</h1>
+<p>Be prepared for:</p>
+<pre><code class="language-text">Redis unavailable
+network partition
+replica lag
+memory exhaustion
+eviction
+hot keys
+big keys
+cache stampede
+stale data
+serialization incompatibility
+slow commands
+connection-pool exhaustion
+</code></pre>
+<p>A production application should define:</p>
+<pre><code class="language-text">cache failure behavior
+timeouts
+fallback
+circuit breaking
+</code></pre>
+<p>Do not let Redis being unavailable automatically take down the entire application if Redis is only a cache.</p>
+<hr />
+<h1 id="42-spring-data-redis">42. Spring Data Redis</h1>
+<p>Spring Boot commonly integrates Redis using Spring Data Redis.</p>
+<p>Common abstractions:</p>
+<pre><code class="language-text">RedisTemplate
+StringRedisTemplate
+Spring Cache
+</code></pre>
+<p>Example conceptual flow:</p>
+<pre><code class="language-text">@Service
+ ↓
+RedisTemplate
+ ↓
+Redis
+</code></pre>
+<p>For straightforward caching:</p>
+<pre><code class="language-java">@Cacheable(&quot;users&quot;)
+public User getUser(Long id) {
+    ...
+}
+</code></pre>
+<hr />
+<h1 id="43-redis-interview-traps">43. Redis Interview Traps</h1>
+<h3 id="trap-1">Trap 1</h3>
+<p>"Redis is always persistent."</p>
+<p>False.</p>
+<p>Redis can be configured for persistence, but it is fundamentally memory-oriented and durability depends on configuration.</p>
+<h3 id="trap-2">Trap 2</h3>
+<p>"Redis is a database replacement."</p>
+<p>Not generally.</p>
+<h3 id="trap-3">Trap 3</h3>
+<p>"Pub/Sub guarantees delivery."</p>
+<p>Traditional Pub/Sub does not provide durable replay.</p>
+<h3 id="trap-4">Trap 4</h3>
+<p>"All Redis commands are O(1)."</p>
+<p>False.</p>
+<h3 id="trap-5">Trap 5</h3>
+<p>"DEL lock:key is a safe distributed lock release."</p>
+<p>Not necessarily.</p>
+<h3 id="trap-6">Trap 6</h3>
+<p>"TTL solves cache consistency."</p>
+<p>TTL reduces staleness duration but does not solve all consistency races.</p>
+<hr />
+<h1 id="part-ii-kafka">PART II — KAFKA</h1>
+<h1 id="44-what-is-apache-kafka">44. What is Apache Kafka?</h1>
+<p>Kafka is a distributed event streaming platform.</p>
+<p>It is commonly used for:</p>
+<pre><code class="language-text">Event streaming
+Messaging
+Data pipelines
+Log aggregation
+Asynchronous processing
+Event-driven architectures
+Integration between services
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">Producer
+   ↓
+Kafka Topic
+   ↓
+Partitions
+   ↓
+Consumer Groups
+   ↓
+Consumers
+</code></pre>
+<hr />
+<h1 id="45-why-kafka">45. Why Kafka?</h1>
+<p>Kafka is designed for:</p>
+<pre><code class="language-text">high throughput
+durable event storage
+horizontal scalability
+partitioned processing
+replay
+decoupling
+</code></pre>
+<p>Kafka is not simply a queue.</p>
+<p>A Kafka topic behaves more like a distributed append-only log.</p>
+<hr />
+<h1 id="46-kafka-core-components">46. Kafka Core Components</h1>
+<p>Know:</p>
+<pre><code class="language-text">Broker
+Topic
+Partition
+Producer
+Consumer
+Consumer Group
+Offset
+Replica
+Leader
+Follower
+</code></pre>
+<hr />
+<h1 id="47-kafka-broker">47. Kafka Broker</h1>
+<p>A broker is a Kafka server.</p>
+<p>A Kafka cluster contains multiple brokers.</p>
+<pre><code class="language-text">Kafka Cluster
+ ├── Broker 1
+ ├── Broker 2
+ └── Broker 3
+</code></pre>
+<p>Partitions are distributed across brokers.</p>
+<hr />
+<h1 id="48-kafka-topic">48. Kafka Topic</h1>
+<p>A topic is a logical stream/category of events.</p>
+<p>Example:</p>
+<pre><code class="language-text">payment-events
+order-events
+user-events
+</code></pre>
+<p>A topic contains partitions.</p>
+<pre><code class="language-text">payment-events
+ ├── partition 0
+ ├── partition 1
+ └── partition 2
+</code></pre>
+<hr />
+<h1 id="49-kafka-partition">49. Kafka Partition</h1>
+<p>A partition is an ordered append-only log.</p>
+<pre><code class="language-text">Partition 0:
+
+offset 0 → event A
+offset 1 → event B
+offset 2 → event C
+offset 3 → event D
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Kafka guarantees ordering within a partition, not globally across an entire topic.</p>
+</blockquote>
+<hr />
+<h1 id="50-why-partitions">50. Why Partitions?</h1>
+<p>Partitions provide:</p>
+<pre><code class="language-text">parallelism
+scalability
+distribution
+ordering boundaries
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">Topic
+ ├── P0 → Consumer A
+ ├── P1 → Consumer B
+ └── P2 → Consumer C
+</code></pre>
+<hr />
+<h1 id="51-kafka-offset">51. Kafka Offset</h1>
+<p>Each record in a partition has an offset.</p>
+<pre><code class="language-text">P0
+0
+1
+2
+3
+4
+</code></pre>
+<p>Offset identifies the position of a record within that partition.</p>
+<p>Offsets are partition-specific.</p>
+<hr />
+<h1 id="52-consumer">52. Consumer</h1>
+<p>A consumer reads records from Kafka.</p>
+<pre><code class="language-text">Kafka
+  ↓
+Consumer
+  ↓
+Application logic
+</code></pre>
+<p>Consumers track their progress through offsets.</p>
+<hr />
+<h1 id="53-consumer-group">53. Consumer Group</h1>
+<p>A consumer group allows multiple consumers to divide partitions.</p>
+<p>Example:</p>
+<pre><code class="language-text">Topic: 4 partitions
+
+Consumer Group A
+ ├── Consumer 1 → P0
+ ├── Consumer 2 → P1
+ ├── Consumer 3 → P2
+ └── Consumer 4 → P3
+</code></pre>
+<p>Within one consumer group:</p>
+<blockquote>
+<p>A partition is assigned to at most one active consumer at a time.</p>
+</blockquote>
+<hr />
+<h1 id="54-more-consumers-than-partitions">54. More Consumers Than Partitions</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">4 partitions
+6 consumers
+</code></pre>
+<p>Only four consumers can actively consume partitions.</p>
+<pre><code class="language-text">C1 → P0
+C2 → P1
+C3 → P2
+C4 → P3
+C5 → idle
+C6 → idle
+</code></pre>
+<p>Therefore:</p>
+<blockquote>
+<p>Maximum active parallelism for a consumer group is bounded by partition count.</p>
+</blockquote>
+<hr />
+<h1 id="55-multiple-consumer-groups">55. Multiple Consumer Groups</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">Topic
+ ↓
+Group A
+Group B
+Group C
+</code></pre>
+<p>Each group gets its own logical consumption position.</p>
+<p>Therefore the same event can be independently processed by:</p>
+<pre><code class="language-text">Payment service
+Analytics service
+Notification service
+</code></pre>
+<p>This is one of Kafka's most important differences from a traditional work queue.</p>
+<hr />
+<h1 id="56-kafka-ordering">56. Kafka Ordering</h1>
+<p>Kafka guarantees ordering:</p>
+<pre><code class="language-text">within a partition
+</code></pre>
+<p>Not:</p>
+<pre><code class="language-text">across all partitions
+</code></pre>
+<p>If events for the same entity must remain ordered, use a stable key.</p>
+<p>Example:</p>
+<pre><code class="language-text">key = orderId
+</code></pre>
+<p>Then events for the same order can be routed to the same partition.</p>
+<hr />
+<h1 id="57-kafka-message-key">57. Kafka Message Key</h1>
+<p>Example:</p>
+<pre><code class="language-java">producer.send(
+    new ProducerRecord&lt;&gt;(
+        &quot;orders&quot;,
+        orderId,
+        orderEvent
+    )
+);
+</code></pre>
+<p>The key influences partition selection.</p>
+<p>Common strategy:</p>
+<pre><code class="language-text">key = entity ID
+</code></pre>
+<p>This gives:</p>
+<pre><code class="language-text">same entity
+   ↓
+same partition
+   ↓
+preserved ordering for that entity
+</code></pre>
+<hr />
+<h1 id="58-kafka-producer">58. Kafka Producer</h1>
+<p>Producer sends records:</p>
+<pre><code class="language-text">Application
+   ↓
+Kafka Producer
+   ↓
+Broker
+</code></pre>
+<p>Important producer settings/concepts:</p>
+<pre><code class="language-text">acks
+retries
+batching
+linger
+compression
+idempotence
+delivery timeout
+</code></pre>
+<hr />
+<h1 id="59-acks">59. acks</h1>
+<p>Important settings conceptually:</p>
+<pre><code class="language-text">acks=0
+acks=1
+acks=all
+</code></pre>
+<h3 id="acks0">acks=0</h3>
+<p>Producer does not wait for broker acknowledgment.</p>
+<p>Lower latency but weaker delivery guarantees.</p>
+<h3 id="acks1">acks=1</h3>
+<p>Leader acknowledges.</p>
+<h3 id="acksall">acks=all</h3>
+<p>Acknowledgment waits for required in-sync replicas according to replication configuration.</p>
+<p>Stronger durability.</p>
+<hr />
+<h1 id="60-kafka-replication">60. Kafka Replication</h1>
+<p>A partition can have multiple replicas.</p>
+<pre><code class="language-text">Partition P0
+ ├── Leader
+ ├── Follower
+ └── Follower
+</code></pre>
+<p>Producer normally writes to the leader.</p>
+<p>Followers replicate the data.</p>
+<hr />
+<h1 id="61-isr-in-sync-replicas">61. ISR — In-Sync Replicas</h1>
+<p>ISR means replicas considered sufficiently caught up with the leader according to Kafka's replication rules.</p>
+<p>Example:</p>
+<pre><code class="language-text">Leader
+Follower A
+Follower B
+</code></pre>
+<p>If a follower falls too far behind, it may leave ISR.</p>
+<p>This matters for durability and leader failover.</p>
+<hr />
+<h1 id="62-replication-factor">62. Replication Factor</h1>
+<p>Example:</p>
+<pre><code class="language-text">replication.factor = 3
+</code></pre>
+<p>means each partition has three replicas.</p>
+<p>Higher replication improves resilience but costs:</p>
+<pre><code class="language-text">storage
+network
+replication overhead
+</code></pre>
+<hr />
+<h1 id="63-producer-batching">63. Producer Batching</h1>
+<p>Kafka producers can batch records.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">event
+event
+event
+event
+ ↓
+batch
+ ↓
+broker
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">higher throughput
+fewer network requests
+better compression
+</code></pre>
+<p>Trade-off:</p>
+<pre><code class="language-text">potentially increased latency
+</code></pre>
+<hr />
+<h1 id="64-kafka-compression">64. Kafka Compression</h1>
+<p>Common compression codecs:</p>
+<pre><code class="language-text">gzip
+snappy
+lz4
+zstd
+</code></pre>
+<p>Compression can reduce:</p>
+<pre><code class="language-text">network bandwidth
+disk usage
+</code></pre>
+<p>but uses CPU.</p>
+<hr />
+<h1 id="65-kafka-consumer-poll-model">65. Kafka Consumer Poll Model</h1>
+<p>Consumers typically poll Kafka for records.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">consumer.poll()
+      ↓
+records
+      ↓
+application processing
+      ↓
+commit offset
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Consumer liveness and processing time are connected to polling behavior and consumer configuration.</p>
+</blockquote>
+<hr />
+<h1 id="66-kafka-offset-commit">66. Kafka Offset Commit</h1>
+<p>Offsets indicate processed position.</p>
+<p>Common approaches:</p>
+<pre><code class="language-text">automatic commit
+manual commit
+manual immediate commit
+</code></pre>
+<p>For critical processing, understand exactly when the offset is committed relative to business processing.</p>
+<hr />
+<h1 id="67-at-most-once">67. At-Most-Once</h1>
+<p>Conceptually:</p>
+<pre><code class="language-text">commit offset
+   ↓
+process message
+</code></pre>
+<p>If processing fails after the commit:</p>
+<pre><code class="language-text">message may be lost
+</code></pre>
+<p>Guarantee:</p>
+<pre><code class="language-text">at-most-once
+</code></pre>
+<hr />
+<h1 id="68-at-least-once">68. At-Least-Once</h1>
+<p>Conceptually:</p>
+<pre><code class="language-text">process message
+   ↓
+commit offset
+</code></pre>
+<p>If the application crashes after processing but before committing:</p>
+<pre><code class="language-text">message processed again
+</code></pre>
+<p>Therefore duplicates are possible.</p>
+<p>Kafka applications commonly use at-least-once processing plus idempotent business logic.</p>
+<hr />
+<h1 id="69-exactly-once">69. Exactly-Once</h1>
+<p>Exactly-once semantics are more nuanced than:</p>
+<blockquote>
+<p>"Kafka never processes a message twice."</p>
+</blockquote>
+<p>Kafka supports transactional/idempotent mechanisms for specific processing patterns.</p>
+<p>You must distinguish:</p>
+<pre><code class="language-text">Kafka's transactional guarantees
+vs
+external side effects
+</code></pre>
+<p>If a consumer:</p>
+<pre><code class="language-text">reads Kafka
+ ↓
+charges external payment API
+ ↓
+commits Kafka transaction
+</code></pre>
+<p>Kafka cannot automatically roll back the external payment.</p>
+<hr />
+<h1 id="70-idempotent-consumer">70. Idempotent Consumer</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">event ID = 123
+</code></pre>
+<p>Consumer receives it twice.</p>
+<p>Store processed IDs:</p>
+<pre><code class="language-text">event:123 → processed
+</code></pre>
+<p>or use a database uniqueness constraint.</p>
+<p>Then:</p>
+<pre><code class="language-text">duplicate event
+ ↓
+detect
+ ↓
+skip duplicate side effect
+</code></pre>
+<hr />
+<h1 id="71-consumer-rebalancing">71. Consumer Rebalancing</h1>
+<p>When group membership changes:</p>
+<pre><code class="language-text">consumer joins
+consumer leaves
+consumer crashes
+partition count changes
+</code></pre>
+<p>Kafka may rebalance partitions.</p>
+<p>Example:</p>
+<pre><code class="language-text">Before:
+C1 → P0,P1
+C2 → P2,P3
+
+After C2 leaves:
+C1 → P0,P1,P2,P3
+</code></pre>
+<p>Rebalancing can temporarily affect throughput and processing.</p>
+<hr />
+<h1 id="72-consumer-group-coordinator">72. Consumer Group Coordinator</h1>
+<p>Kafka coordinates consumer groups so partitions can be assigned to consumers.</p>
+<p>Know conceptually:</p>
+<pre><code class="language-text">group membership
+heartbeats
+partition assignment
+rebalance
+offset management
+</code></pre>
+<hr />
+<h1 id="73-consumer-lag">73. Consumer Lag</h1>
+<p>Consumer lag indicates how far behind a consumer/group is from the latest available records.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Latest offset = 1000
+Consumer offset = 700
+
+Lag ≈ 300
+</code></pre>
+<p>High lag may indicate:</p>
+<pre><code class="language-text">slow processing
+traffic spike
+too few partitions/consumers
+downstream bottleneck
+consumer failures
+rebalancing
+</code></pre>
+<hr />
+<h1 id="74-how-to-reduce-kafka-consumer-lag">74. How to Reduce Kafka Consumer Lag</h1>
+<p>Possible approaches:</p>
+<pre><code class="language-text">increase consumer instances
+increase partition count where appropriate
+optimize processing
+batch processing
+parallelize work carefully
+increase downstream capacity
+reduce expensive DB calls
+avoid unnecessary retries
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Adding consumers does nothing if there are not enough partitions to distribute.</p>
+</blockquote>
+<hr />
+<h1 id="75-kafka-delivery-flow">75. Kafka Delivery Flow</h1>
+<p>Producer:</p>
+<pre><code class="language-text">Application
+ ↓
+Producer
+ ↓
+Partition leader
+ ↓
+Replication
+</code></pre>
+<p>Consumer:</p>
+<pre><code class="language-text">Partition
+ ↓
+Consumer
+ ↓
+Business processing
+ ↓
+Offset commit
+</code></pre>
+<hr />
+<h1 id="76-kafka-vs-redis-pubsub">76. Kafka vs Redis Pub/Sub</h1>
+<table>
+<thead>
+<tr>
+<th>Kafka</th>
+<th>Redis Pub/Sub</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Durable log</td>
+<td>Ephemeral delivery</td>
+</tr>
+<tr>
+<td>Replay</td>
+<td>No normal replay</td>
+</tr>
+<tr>
+<td>Consumer groups</td>
+<td>Subscribers</td>
+</tr>
+<tr>
+<td>Partitioning</td>
+<td>Channels</td>
+</tr>
+<tr>
+<td>High-scale event streaming</td>
+<td>Lightweight real-time messaging</td>
+</tr>
+<tr>
+<td>Persistent events</td>
+<td>Messages can be missed while offline</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="77-kafka-vs-redis-streams">77. Kafka vs Redis Streams</h1>
+<table>
+<thead>
+<tr>
+<th>Kafka</th>
+<th>Redis Streams</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Distributed event log</td>
+<td>Redis-based stream</td>
+</tr>
+<tr>
+<td>Built for large event pipelines</td>
+<td>Useful inside Redis ecosystem</td>
+</tr>
+<tr>
+<td>Strong partition model</td>
+<td>Stream/consumer groups</td>
+</tr>
+<tr>
+<td>Large-scale retention</td>
+<td>Memory/storage-oriented Redis deployment</td>
+</tr>
+<tr>
+<td>Ecosystem for event streaming</td>
+<td>Convenient when Redis already exists</td>
+</tr>
+</tbody>
+</table>
+<p>Choose based on architecture, scale, durability, operational requirements, and existing infrastructure.</p>
+<hr />
+<h1 id="78-kafka-vs-rabbitmq">78. Kafka vs RabbitMQ</h1>
+<p>Kafka:</p>
+<pre><code class="language-text">event log
+replay
+high throughput
+partitioning
+stream processing
+</code></pre>
+<p>RabbitMQ:</p>
+<pre><code class="language-text">message broker
+routing
+work queues
+acknowledgment
+complex routing patterns
+</code></pre>
+<p>The correct choice depends on the workload.</p>
+<hr />
+<h1 id="79-kafka-retention">79. Kafka Retention</h1>
+<p>Kafka normally retains records based on configured policies rather than deleting them immediately after consumption.</p>
+<p>Retention can be based on:</p>
+<pre><code class="language-text">time
+size
+</code></pre>
+<p>This allows consumers to replay older events as long as they remain available.</p>
+<hr />
+<h1 id="80-log-compaction">80. Log Compaction</h1>
+<p>Compaction keeps the latest record for a key, subject to Kafka's compaction semantics.</p>
+<p>Example:</p>
+<pre><code class="language-text">key=user123 value=ACTIVE
+key=user123 value=SUSPENDED
+key=user123 value=DELETED
+</code></pre>
+<p>Compaction can eventually retain the latest state representation for that key.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">latest state
+configuration
+CDC/state topics
+</code></pre>
+<hr />
+<h1 id="81-tombstone-records">81. Tombstone Records</h1>
+<p>In compacted topics, a null-value record for a key can act as a tombstone indicating deletion.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">key=user123
+value=null
+</code></pre>
+<p>This allows deletion information to propagate through a compacted log.</p>
+<hr />
+<h1 id="82-kafka-partition-count">82. Kafka Partition Count</h1>
+<p>Choosing partitions is an architectural decision.</p>
+<p>More partitions can provide:</p>
+<pre><code class="language-text">more parallelism
+higher throughput
+more consumer concurrency
+</code></pre>
+<p>But also:</p>
+<pre><code class="language-text">more metadata
+more open resources
+more operational overhead
+more complicated rebalancing
+</code></pre>
+<p>Do not choose an enormous partition count without a scaling reason.</p>
+<hr />
+<h1 id="83-can-you-reduce-kafka-partitions">83. Can You Reduce Kafka Partitions?</h1>
+<p>Changing partition count downward is not a normal supported operation.</p>
+<p>Therefore:</p>
+<blockquote>
+<p>Partition count should be chosen carefully because increasing partitions later is possible, but it can change key-to-partition distribution and therefore affect ordering behavior.</p>
+</blockquote>
+<hr />
+<h1 id="84-kafka-schema-evolution">84. Kafka Schema Evolution</h1>
+<p>Events are APIs.</p>
+<p>If producers and consumers evolve independently, schema compatibility matters.</p>
+<p>Common technologies:</p>
+<pre><code class="language-text">Avro
+Protobuf
+JSON Schema
+</code></pre>
+<p>Schema registry systems can enforce compatibility policies.</p>
+<p>Important compatibility concepts:</p>
+<pre><code class="language-text">backward
+forward
+full
+</code></pre>
+<hr />
+<h1 id="85-kafka-event-design">85. Kafka Event Design</h1>
+<p>A good event should contain enough context for consumers.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;eventId&quot;: &quot;evt-123&quot;,
+  &quot;eventType&quot;: &quot;ORDER_CREATED&quot;,
+  &quot;version&quot;: 1,
+  &quot;occurredAt&quot;: &quot;2026-08-17T10:00:00Z&quot;,
+  &quot;orderId&quot;: &quot;order-123&quot;,
+  &quot;customerId&quot;: &quot;customer-42&quot;
+}
+</code></pre>
+<p>Important fields:</p>
+<pre><code class="language-text">event ID
+event type
+schema/version
+timestamp
+entity identifier
+relevant payload
+</code></pre>
+<hr />
+<h1 id="86-event-vs-command">86. Event vs Command</h1>
+<p>Event:</p>
+<pre><code class="language-text">OrderCreated
+</code></pre>
+<p>Means:</p>
+<blockquote>
+<p>Something happened.</p>
+</blockquote>
+<p>Command:</p>
+<pre><code class="language-text">CreateOrder
+</code></pre>
+<p>Means:</p>
+<blockquote>
+<p>Please perform an action.</p>
+</blockquote>
+<p>This distinction helps design event-driven systems.</p>
+<hr />
+<h1 id="87-kafka-dead-letter-topic">87. Kafka Dead Letter Topic</h1>
+<p>If a message repeatedly fails:</p>
+<pre><code class="language-text">Consumer
+ ↓
+process
+ ↓
+failure
+ ↓
+retry
+ ↓
+failure
+ ↓
+DLT
+</code></pre>
+<p>DLT/DLQ can retain failed records for investigation or later reprocessing.</p>
+<p>Important:</p>
+<blockquote>
+<p>A DLT is not a substitute for fixing the underlying failure.</p>
+</blockquote>
+<hr />
+<h1 id="88-retry-strategies">88. Retry Strategies</h1>
+<p>Possible:</p>
+<pre><code class="language-text">immediate retry
+fixed delay
+exponential backoff
+retry topic
+dead letter topic
+</code></pre>
+<p>Be careful with:</p>
+<pre><code class="language-text">retry storms
+poison messages
+ordering
+duplicate processing
+</code></pre>
+<hr />
+<h1 id="89-poison-message">89. Poison Message</h1>
+<p>A poison message consistently fails processing.</p>
+<p>Bad pattern:</p>
+<pre><code class="language-text">message
+ ↓
+fail
+ ↓
+retry
+ ↓
+fail
+ ↓
+retry forever
+</code></pre>
+<p>This can block progress or consume resources.</p>
+<p>Better:</p>
+<pre><code class="language-text">bounded retries
+ ↓
+DLT
+ ↓
+investigate
+</code></pre>
+<hr />
+<h1 id="90-kafka-transactions">90. Kafka Transactions</h1>
+<p>Kafka supports transactions for certain producer/consumer workflows.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Consume input
+   ↓
+Process
+   ↓
+Produce output
+   ↓
+Commit transaction
+</code></pre>
+<p>Useful for Kafka-to-Kafka processing.</p>
+<p>But remember:</p>
+<pre><code class="language-text">Kafka transaction
+≠
+global transaction across arbitrary external systems
+</code></pre>
+<hr />
+<h1 id="91-kafka-exactly-once-processing-trap">91. Kafka Exactly-Once Processing Trap</h1>
+<p>Question:</p>
+<blockquote>
+<p>If Kafka supports exactly-once semantics, can I safely call an external payment API exactly once?</p>
+</blockquote>
+<p>No.</p>
+<p>Kafka can coordinate Kafka-side transactional operations, but an external API is outside that transaction.</p>
+<p>For external side effects, consider:</p>
+<pre><code class="language-text">idempotency
+outbox/inbox
+deduplication
+sagas
+transactional state
+</code></pre>
+<hr />
+<h1 id="92-kafka-backpressure">92. Kafka Backpressure</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">Kafka produces 100k events/sec
+Consumer processes 20k/sec
+</code></pre>
+<p>Lag increases.</p>
+<p>Possible strategies:</p>
+<pre><code class="language-text">increase partitions
+increase consumers
+batch processing
+optimize consumer
+buffer carefully
+rate-limit producer
+scale downstream systems
+</code></pre>
+<p>Do not solve every backpressure problem by simply adding memory.</p>
+<hr />
+<h1 id="93-kafka-ordering-vs-parallelism">93. Kafka Ordering vs Parallelism</h1>
+<p>Suppose an order needs:</p>
+<pre><code class="language-text">CREATED
+PAID
+SHIPPED
+</code></pre>
+<p>If all events use:</p>
+<pre><code class="language-text">key = orderId
+</code></pre>
+<p>they can go to the same partition.</p>
+<p>Then:</p>
+<pre><code class="language-text">CREATED
+  ↓
+PAID
+  ↓
+SHIPPED
+</code></pre>
+<p>ordering is preserved for that order.</p>
+<p>If you use random keys:</p>
+<pre><code class="language-text">CREATED → P0
+PAID    → P1
+SHIPPED → P2
+</code></pre>
+<p>global ordering for that order is no longer guaranteed.</p>
+<hr />
+<h1 id="94-kafka-consumer-concurrency">94. Kafka Consumer Concurrency</h1>
+<p>In Spring Kafka, consumer concurrency can create multiple consumer instances/threads.</p>
+<p>But:</p>
+<pre><code class="language-text">concurrency &gt; partition count
+</code></pre>
+<p>does not create additional partition-level parallelism.</p>
+<p>Think:</p>
+<pre><code class="language-text">parallelism ≤ available partitions
+</code></pre>
+<hr />
+<h1 id="95-spring-kafka">95. Spring Kafka</h1>
+<p>Spring Boot commonly integrates Kafka through Spring Kafka.</p>
+<p>Typical concepts:</p>
+<pre><code class="language-text">KafkaTemplate
+@KafkaListener
+ConsumerFactory
+ProducerFactory
+ConcurrentKafkaListenerContainerFactory
+</code></pre>
+<p>Producer:</p>
+<pre><code class="language-java">kafkaTemplate.send(
+    &quot;orders&quot;,
+    orderId,
+    event
+);
+</code></pre>
+<p>Consumer:</p>
+<pre><code class="language-java">@KafkaListener(
+    topics = &quot;orders&quot;,
+    groupId = &quot;payment-service&quot;
+)
+public void consume(OrderEvent event) {
+    ...
+}
+</code></pre>
+<hr />
+<h1 id="96-kafkalistener">96. @KafkaListener</h1>
+<p>A listener receives Kafka records.</p>
+<p>Important configuration areas:</p>
+<pre><code class="language-text">group ID
+concurrency
+ack mode
+error handling
+retry
+deserialization
+batch listeners
+</code></pre>
+<hr />
+<h1 id="97-spring-kafka-error-handling">97. Spring Kafka Error Handling</h1>
+<p>Production consumers should define what happens when processing fails.</p>
+<p>Possible:</p>
+<pre><code class="language-text">retry
+backoff
+dead-letter topic
+skip
+recover
+</code></pre>
+<p>A listener should not simply crash forever on one malformed message.</p>
+<hr />
+<h1 id="98-kafka-serialization">98. Kafka Serialization</h1>
+<p>Producer:</p>
+<pre><code class="language-text">Java object
+ ↓
+Serializer
+ ↓
+bytes
+</code></pre>
+<p>Consumer:</p>
+<pre><code class="language-text">bytes
+ ↓
+Deserializer
+ ↓
+Java object
+</code></pre>
+<p>Common:</p>
+<pre><code class="language-text">StringSerializer
+JsonSerializer
+Avro
+Protobuf
+</code></pre>
+<p>Schema evolution must be considered.</p>
+<hr />
+<h1 id="99-kafka-consumer-database-transaction">99. Kafka Consumer Database Transaction</h1>
+<p>A common pattern:</p>
+<pre><code class="language-text">Kafka message
+ ↓
+DB transaction
+ ├── update DB
+ └── record processed event
+ ↓
+commit DB
+ ↓
+commit Kafka offset
+</code></pre>
+<p>If the DB commit succeeds but offset commit fails:</p>
+<pre><code class="language-text">message may be consumed again
+</code></pre>
+<p>Therefore the DB operation should be idempotent.</p>
+<p>A uniqueness constraint on <code>event_id</code> can be an effective deduplication mechanism.</p>
+<hr />
+<h1 id="100-inbox-pattern">100. Inbox Pattern</h1>
+<p>The inbox pattern stores incoming event IDs before applying business effects.</p>
+<pre><code class="language-text">Kafka event
+ ↓
+Inbox table
+ ↓
+business transaction
+ ↓
+mark processed
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">deduplication
+at-least-once consumers
+</code></pre>
+<hr />
+<h1 id="101-outbox-kafka">101. Outbox + Kafka</h1>
+<p>A common reliable architecture:</p>
+<pre><code class="language-text">Application
+   ↓
+DB transaction
+ ├── business update
+ └── outbox event
+        ↓
+Outbox publisher
+        ↓
+Kafka
+        ↓
+Consumer
+        ↓
+DB transaction
+ ├── inbox/dedup
+ └── business update
+</code></pre>
+<p>This creates a robust event-driven pipeline.</p>
+<hr />
+<h1 id="102-kafka-consumer-failure">102. Kafka Consumer Failure</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">Consumer reads message
+ ↓
+DB update
+ ↓
+Consumer crashes
+ ↓
+offset not committed
+</code></pre>
+<p>The message may be delivered again.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">at-least-once
++
+idempotent processing
+</code></pre>
+<p>is a very common production design.</p>
+<hr />
+<h1 id="103-kafka-consumer-rebalance-trap">103. Kafka Consumer Rebalance Trap</h1>
+<p>Long processing can interfere with consumer group membership if the consumer does not poll within configured limits.</p>
+<p>Potential symptoms:</p>
+<pre><code class="language-text">rebalances
+duplicate processing
+lag
+partition ownership changes
+</code></pre>
+<p>Mitigations include:</p>
+<pre><code class="language-text">shorter processing batches
+appropriate poll configuration
+pause/resume strategies where appropriate
+moving slow work to controlled executors
+scaling consumers
+</code></pre>
+<p>Do not simply increase every timeout without understanding why processing is slow.</p>
+<hr />
+<h1 id="104-kafka-large-messages">104. Kafka Large Messages</h1>
+<p>Large messages create:</p>
+<pre><code class="language-text">memory pressure
+network overhead
+serialization overhead
+broker storage impact
+consumer latency
+</code></pre>
+<p>Better:</p>
+<pre><code class="language-text">store large payload externally
+put reference/metadata in Kafka
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;documentId&quot;: &quot;doc-123&quot;,
+  &quot;storageUri&quot;: &quot;...&quot;
+}
+</code></pre>
+<p>Kafka should usually carry events, not giant binary objects.</p>
+<hr />
+<h1 id="105-kafka-security">105. Kafka Security</h1>
+<p>Important:</p>
+<pre><code class="language-text">TLS
+authentication
+authorization
+ACLs
+secret/key management
+encryption in transit
+</code></pre>
+<p>Kafka security should be designed around:</p>
+<pre><code class="language-text">who can produce?
+who can consume?
+which topics?
+which consumer groups?
+</code></pre>
+<hr />
+<h1 id="106-kafka-monitoring">106. Kafka Monitoring</h1>
+<p>Important metrics:</p>
+<pre><code class="language-text">consumer lag
+records in/out
+request latency
+producer errors
+consumer errors
+under-replicated partitions
+ISR changes
+broker disk usage
+network throughput
+CPU
+GC
+request queue time
+</code></pre>
+<p>Consumer lag is important but not sufficient.</p>
+<hr />
+<h1 id="107-under-replicated-partitions">107. Under-Replicated Partitions</h1>
+<p>If a partition has fewer in-sync replicas than expected:</p>
+<pre><code class="language-text">replication health problem
+</code></pre>
+<p>Potential causes:</p>
+<pre><code class="language-text">broker failure
+network problems
+disk pressure
+slow broker
+resource saturation
+</code></pre>
+<p>This is a critical Kafka health signal.</p>
+<hr />
+<h1 id="108-kafka-failure-modes">108. Kafka Failure Modes</h1>
+<p>Be prepared for:</p>
+<pre><code class="language-text">broker failure
+leader election
+consumer crash
+producer retries
+duplicate delivery
+consumer lag
+rebalancing
+poison messages
+DLT growth
+under-replicated partitions
+disk exhaustion
+network partition
+schema incompatibility
+hot partitions
+</code></pre>
+<hr />
+<h1 id="109-hot-partition">109. Hot Partition</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">99% of events
+key = celebrityUser
+</code></pre>
+<p>All events may go to one partition.</p>
+<p>Then:</p>
+<pre><code class="language-text">P0 → overloaded
+P1 → low traffic
+P2 → low traffic
+</code></pre>
+<p>Increasing total partition count does not automatically fix a hot key.</p>
+<p>You may need:</p>
+<pre><code class="language-text">better key distribution
+key salting where ordering allows
+different partitioning strategy
+local aggregation
+</code></pre>
+<p>But salting can destroy ordering for that entity.</p>
+<hr />
+<h1 id="110-kafka-partitioning-strategy">110. Kafka Partitioning Strategy</h1>
+<p>Choose a key based on the business ordering requirement.</p>
+<p>Examples:</p>
+<pre><code class="language-text">orderId → order ordering
+customerId → customer ordering
+accountId → account ordering
+</code></pre>
+<p>Question to ask:</p>
+<blockquote>
+<p>What entity must remain ordered?</p>
+</blockquote>
+<p>That entity is often the partition key.</p>
+<hr />
+<h1 id="111-redis-kafka-together">111. Redis + Kafka Together</h1>
+<p>They solve different problems.</p>
+<p>Typical architecture:</p>
+<pre><code class="language-text">                  ┌──────────┐
+                  │  Kafka   │
+                  │ Event Log│
+                  └────┬─────┘
+                       │
+                       ▼
+                 Consumers
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+           Database           Redis
+        Source of truth       Cache
+</code></pre>
+<p>Kafka:</p>
+<pre><code class="language-text">events
+durability
+replay
+decoupling
+</code></pre>
+<p>Redis:</p>
+<pre><code class="language-text">low-latency state
+cache
+counters
+shared ephemeral state
+</code></pre>
+<hr />
+<h1 id="112-example-order-system">112. Example: Order System</h1>
+<pre><code class="language-text">Client
+  ↓
+Order Service
+  ├── PostgreSQL
+  ├── Redis
+  └── Kafka
+</code></pre>
+<p>Create order:</p>
+<pre><code class="language-text">POST /orders
+ ↓
+DB transaction
+ ├── create order
+ └── outbox event
+ ↓
+Outbox publisher
+ ↓
+Kafka: OrderCreated
+ ↓
+ ├── Payment Service
+ ├── Inventory Service
+ └── Notification Service
+</code></pre>
+<p>Redis can store:</p>
+<pre><code class="language-text">order:123
+inventory counters
+rate limits
+short-lived state
+</code></pre>
+<hr />
+<h1 id="113-example-rate-limiting">113. Example: Rate Limiting</h1>
+<pre><code class="language-text">Request
+ ↓
+API Gateway
+ ↓
+Redis
+ ↓
+counter/token bucket
+ ↓
+Allowed?
+ ├── no → 429
+ └── yes
+       ↓
+      API
+</code></pre>
+<p>Kafka is not the natural choice for the per-request counter itself.</p>
+<hr />
+<h1 id="114-example-notification-system">114. Example: Notification System</h1>
+<pre><code class="language-text">Order Service
+   ↓
+Kafka
+   ↓
+Notification Service
+   ↓
+Redis / DB
+   ↓
+Email/SMS/Push providers
+</code></pre>
+<p>Kafka decouples notification processing from order creation.</p>
+<p>Redis can be used for:</p>
+<pre><code class="language-text">deduplication
+rate limits
+provider state
+short-lived delivery state
+</code></pre>
+<hr />
+<h1 id="115-redis-vs-kafka-decision-framework">115. Redis vs Kafka Decision Framework</h1>
+<p>Ask:</p>
+<h3 id="do-i-need-a-cache">Do I need a cache?</h3>
+<pre><code class="language-text">Redis
+</code></pre>
+<h3 id="do-i-need-an-event-log-and-replay">Do I need an event log and replay?</h3>
+<pre><code class="language-text">Kafka
+</code></pre>
+<h3 id="do-i-need-extremely-low-latency-shared-state">Do I need extremely low-latency shared state?</h3>
+<pre><code class="language-text">Redis
+</code></pre>
+<h3 id="do-i-need-multiple-independent-consumers">Do I need multiple independent consumers?</h3>
+<pre><code class="language-text">Kafka
+</code></pre>
+<h3 id="do-messages-need-durable-retention">Do messages need durable retention?</h3>
+<pre><code class="language-text">Kafka
+</code></pre>
+<h3 id="do-i-need-a-simple-counter">Do I need a simple counter?</h3>
+<pre><code class="language-text">Redis
+</code></pre>
+<h3 id="do-i-need-stream-processing">Do I need stream processing?</h3>
+<pre><code class="language-text">Kafka
+</code></pre>
+<h3 id="do-i-need-a-temporary-distributed-lock">Do I need a temporary distributed lock?</h3>
+<pre><code class="language-text">Redis
+</code></pre>
+<hr />
+<h1 id="116-senior-interview-trap-redis-is-not-automatically-the-source-of-truth">116. Senior Interview Trap: Redis Is Not Automatically the Source of Truth</h1>
+<p>Bad architecture:</p>
+<pre><code class="language-text">DB
+ ↓
+Redis
+
+Application assumes Redis is always correct
+</code></pre>
+<p>If Redis is being used as a cache:</p>
+<pre><code class="language-text">Database = source of truth
+Redis = acceleration layer
+</code></pre>
+<p>Unless the architecture explicitly defines Redis as authoritative state.</p>
+<hr />
+<h1 id="117-senior-interview-trap-kafka-is-not-a-database">117. Senior Interview Trap: Kafka Is Not a Database</h1>
+<p>Kafka stores events durably, but using Kafka as the primary transactional query database for arbitrary application queries is usually a poor design.</p>
+<p>Kafka is excellent for:</p>
+<pre><code class="language-text">event history
+stream processing
+integration
+replay
+</code></pre>
+<p>A database is generally better for:</p>
+<pre><code class="language-text">arbitrary queries
+transactions
+constraints
+relational integrity
+</code></pre>
+<hr />
+<h1 id="118-senior-interview-trap-kafka-does-not-guarantee-business-exactly-once">118. Senior Interview Trap: Kafka Does Not Guarantee Business Exactly-Once</h1>
+<p>Even if Kafka processing is exactly-once within Kafka's transactional model:</p>
+<pre><code class="language-text">Kafka
+ ↓
+external payment API
+</code></pre>
+<p>does not become exactly-once automatically.</p>
+<p>External side effects require:</p>
+<pre><code class="language-text">idempotency
+deduplication
+transactional state
+compensation
+</code></pre>
+<hr />
+<h1 id="119-senior-interview-trap-more-partitions-is-not-always-better">119. Senior Interview Trap: More Partitions Is Not Always Better</h1>
+<p>More partitions provide potential parallelism.</p>
+<p>But also increase:</p>
+<pre><code class="language-text">metadata
+resources
+rebalancing cost
+operational complexity
+</code></pre>
+<p>Choose based on expected throughput and consumer parallelism.</p>
+<hr />
+<h1 id="120-senior-interview-trap-more-redis-memory-is-not-a-scaling-strategy">120. Senior Interview Trap: More Redis Memory Is Not a Scaling Strategy</h1>
+<p>If memory grows because of:</p>
+<pre><code class="language-text">big keys
+missing TTL
+unbounded collections
+hot data
+</code></pre>
+<p>simply increasing RAM may hide the architectural problem.</p>
+<p>Investigate:</p>
+<pre><code class="language-text">key sizes
+TTL
+eviction
+access patterns
+memory fragmentation
+</code></pre>
+<hr />
+<h1 id="121-senior-interview-scenario-redis-goes-down">121. Senior Interview Scenario: Redis Goes Down</h1>
+<p>If Redis is only a cache:</p>
+<pre><code class="language-text">Redis unavailable
+ ↓
+fallback to DB
+</code></pre>
+<p>But:</p>
+<pre><code class="language-text">100k requests
+ ↓
+Redis unavailable
+ ↓
+100k DB requests
+</code></pre>
+<p>can cause a database meltdown.</p>
+<p>Therefore use:</p>
+<pre><code class="language-text">timeouts
+circuit breaker
+request coalescing
+local cache
+rate limiting
+load shedding
+</code></pre>
+<hr />
+<h1 id="122-senior-interview-scenario-kafka-consumer-is-slow">122. Senior Interview Scenario: Kafka Consumer Is Slow</h1>
+<p>Start with:</p>
+<pre><code class="language-text">Is consumer lag increasing?
+</code></pre>
+<p>Then investigate:</p>
+<pre><code class="language-text">processing latency
+DB latency
+external API latency
+partition distribution
+consumer count
+partition count
+rebalances
+retry rate
+GC
+CPU
+</code></pre>
+<p>Do not automatically add consumers.</p>
+<hr />
+<h1 id="123-senior-interview-scenario-messages-are-duplicated">123. Senior Interview Scenario: Messages Are Duplicated</h1>
+<p>Possible reasons:</p>
+<pre><code class="language-text">consumer processed message
+ ↓
+crashed before offset commit
+ ↓
+message replayed
+</code></pre>
+<p>Solution:</p>
+<pre><code class="language-text">idempotent consumer
+</code></pre>
+<p>Possible implementation:</p>
+<pre><code class="language-text">eventId UNIQUE
+</code></pre>
+<p>in a database table.</p>
+<hr />
+<h1 id="124-senior-interview-scenario-messages-are-out-of-order">124. Senior Interview Scenario: Messages Are Out of Order</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Are events in the same partition?
+</code></pre>
+<p>If not:</p>
+<pre><code class="language-text">same entity
+ ↓
+different partitions
+ ↓
+no ordering guarantee
+</code></pre>
+<p>Use a stable partition key where ordering is required.</p>
+<hr />
+<h1 id="125-senior-interview-scenario-one-kafka-consumer-group-is-slow">125. Senior Interview Scenario: One Kafka Consumer Group Is Slow</h1>
+<p>Remember:</p>
+<pre><code class="language-text">one consumer group
+</code></pre>
+<p>does not affect another consumer group directly in terms of partition ownership.</p>
+<p>Example:</p>
+<pre><code class="language-text">Topic
+ ├── Payment Group
+ ├── Analytics Group
+ └── Notification Group
+</code></pre>
+<p>Each group maintains its own consumption position.</p>
+<hr />
+<h1 id="126-senior-interview-scenario-redis-cache-has-stale-data">126. Senior Interview Scenario: Redis Cache Has Stale Data</h1>
+<p>Ask:</p>
+<pre><code class="language-text">When is cache written?
+When is cache invalidated?
+What is TTL?
+Can concurrent requests race?
+Can stale values be written after invalidation?
+Is DB the source of truth?
+</code></pre>
+<p>Possible solutions:</p>
+<pre><code class="language-text">explicit invalidation
+versioning
+short TTL
+event-driven invalidation
+locking/coalescing
+</code></pre>
+<hr />
+<h1 id="127-senior-interview-scenario-need-a-distributed-lock">127. Senior Interview Scenario: Need a Distributed Lock</h1>
+<p>Before Redis locking, ask:</p>
+<pre><code class="language-text">Can the operation be made idempotent?
+Can a DB unique constraint solve it?
+Can the workload be partitioned?
+</code></pre>
+<p>A distributed lock should not be the first tool for every concurrency problem.</p>
+<hr />
+<h1 id="128-senior-interview-scenario-redis-and-db-must-stay-consistent">128. Senior Interview Scenario: Redis and DB Must Stay Consistent</h1>
+<p>Possible architecture:</p>
+<pre><code class="language-text">DB
+ ↓
+Outbox/event
+ ↓
+Kafka
+ ↓
+Cache invalidation consumer
+ ↓
+Redis
+</code></pre>
+<p>This can decouple cache invalidation from the DB transaction.</p>
+<p>But asynchronous invalidation means temporary staleness must be accepted.</p>
+<hr />
+<h1 id="129-senior-interview-scenario-kafka-event-is-published-before-db-commit">129. Senior Interview Scenario: Kafka Event Is Published Before DB Commit</h1>
+<p>Bad:</p>
+<pre><code class="language-text">publish Kafka event
+ ↓
+DB transaction
+ ↓
+DB fails
+</code></pre>
+<p>Kafka contains an event describing something that never committed.</p>
+<p>Prefer:</p>
+<pre><code class="language-text">DB transaction
+ ├── business data
+ └── outbox
+       ↓
+commit
+       ↓
+publisher
+       ↓
+Kafka
+</code></pre>
+<hr />
+<h1 id="130-senior-interview-scenario-consumer-db-update-succeeds-kafka-offset-commit-fails">130. Senior Interview Scenario: Consumer DB Update Succeeds, Kafka Offset Commit Fails</h1>
+<p>Then:</p>
+<pre><code class="language-text">same message
+ ↓
+consumed again
+</code></pre>
+<p>Therefore:</p>
+<pre><code class="language-text">DB operation must be idempotent
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">unique event ID
+upsert
+version check
+inbox table
+</code></pre>
+<hr />
+<h1 id="131-redis-interview-questions-basic-to-advanced">131. Redis Interview Questions — Basic to Advanced</h1>
+<ol>
+<li>What is Redis?</li>
+<li>Why is Redis fast?</li>
+<li>Redis vs database?</li>
+<li>What Redis data types do you know?</li>
+<li>String vs Hash?</li>
+<li>When would you use Set?</li>
+<li>When would you use Sorted Set?</li>
+<li>What are Redis Streams?</li>
+<li>Redis Pub/Sub?</li>
+<li>Pub/Sub vs Streams?</li>
+<li>What is TTL?</li>
+<li>What is cache-aside?</li>
+<li>Write-through vs write-behind?</li>
+<li>What is cache invalidation?</li>
+<li>What is cache stampede?</li>
+<li>What is cache penetration?</li>
+<li>What is cache avalanche?</li>
+<li>What are Redis eviction policies?</li>
+<li>LRU vs LFU?</li>
+<li>What is RDB?</li>
+<li>What is AOF?</li>
+<li>RDB vs AOF?</li>
+<li>What is Redis replication?</li>
+<li>What is Sentinel?</li>
+<li>Sentinel vs Cluster?</li>
+<li>What are Redis hash slots?</li>
+<li>What are hash tags?</li>
+<li>Why can multi-key operations be problematic in Cluster?</li>
+<li>Are Redis commands atomic?</li>
+<li>What are MULTI/EXEC?</li>
+<li>Does Redis support rollback like SQL?</li>
+<li>What are Lua scripts used for?</li>
+<li>How do you implement a Redis lock?</li>
+<li>Why is <code>SET NX EX</code> useful?</li>
+<li>Why should lock release verify ownership?</li>
+<li>How do you implement distributed rate limiting?</li>
+<li>Redis sessions?</li>
+<li>Redis serialization?</li>
+<li>How do you design Redis keys?</li>
+<li>What is a big key?</li>
+<li>What is a hot key?</li>
+<li>How do you monitor Redis?</li>
+<li>What happens when Redis memory is full?</li>
+<li>What happens if Redis goes down?</li>
+<li>How do you prevent Redis from becoming a single point of failure?</li>
+<li>Redis Cluster vs database sharding?</li>
+<li>How would you handle stale cache data?</li>
+<li>How would you prevent cache stampede?</li>
+<li>How would you design a distributed lock?</li>
+<li>When should Redis NOT be used?</li>
+</ol>
+<hr />
+<h1 id="132-kafka-interview-questions-basic-to-advanced">132. Kafka Interview Questions — Basic to Advanced</h1>
+<ol>
+<li>What is Kafka?</li>
+<li>Kafka vs traditional message queue?</li>
+<li>What is a broker?</li>
+<li>What is a topic?</li>
+<li>What is a partition?</li>
+<li>Why do partitions exist?</li>
+<li>What is an offset?</li>
+<li>What is a producer?</li>
+<li>What is a consumer?</li>
+<li>What is a consumer group?</li>
+<li>What happens when consumers exceed partitions?</li>
+<li>Can multiple consumer groups consume the same topic?</li>
+<li>What ordering guarantees does Kafka provide?</li>
+<li>How does the message key affect partitioning?</li>
+<li>What is a partition leader?</li>
+<li>What are follower replicas?</li>
+<li>What is replication factor?</li>
+<li>What is ISR?</li>
+<li>What does <code>acks=all</code> mean?</li>
+<li>What is producer idempotence?</li>
+<li>What is producer batching?</li>
+<li>What is compression?</li>
+<li>How does a consumer commit offsets?</li>
+<li>Auto vs manual offset commits?</li>
+<li>At-most-once vs at-least-once?</li>
+<li>What is exactly-once semantics?</li>
+<li>Why is exactly-once difficult with external APIs?</li>
+<li>What is consumer lag?</li>
+<li>How do you reduce lag?</li>
+<li>What is consumer rebalancing?</li>
+<li>What causes rebalancing?</li>
+<li>What is a poison message?</li>
+<li>What is a dead-letter topic?</li>
+<li>How should retries work?</li>
+<li>What is Kafka retention?</li>
+<li>What is log compaction?</li>
+<li>What is a tombstone record?</li>
+<li>Why does partition count matter?</li>
+<li>Can Kafka partition count be reduced?</li>
+<li>What is a hot partition?</li>
+<li>How do you design a partition key?</li>
+<li>What is schema evolution?</li>
+<li>Avro vs JSON vs Protobuf?</li>
+<li>What is Schema Registry?</li>
+<li>Event vs command?</li>
+<li>What is Kafka Streams?</li>
+<li>What are Kafka transactions?</li>
+<li>What is the outbox pattern?</li>
+<li>What is the inbox pattern?</li>
+<li>How do you implement an idempotent Kafka consumer?</li>
+<li>Kafka vs Redis Pub/Sub?</li>
+<li>Kafka vs Redis Streams?</li>
+<li>Kafka vs RabbitMQ?</li>
+<li>How do you monitor Kafka?</li>
+<li>What are under-replicated partitions?</li>
+<li>What happens if a broker dies?</li>
+<li>What happens if a consumer dies?</li>
+<li>What happens if the producer retries?</li>
+<li>How do you handle duplicate messages?</li>
+<li>How do you guarantee per-order ordering?</li>
+<li>How do you handle large Kafka messages?</li>
+<li>How do you secure Kafka?</li>
+<li>How do you design Kafka for high throughput?</li>
+<li>How do you design Kafka for high availability?</li>
+<li>When should Kafka NOT be used?</li>
+</ol>
+<hr />
+<h1 id="133-combined-redis-kafka-questions">133. Combined Redis + Kafka Questions</h1>
+<ol>
+<li>Redis vs Kafka?</li>
+<li>Why would you use both Redis and Kafka?</li>
+<li>Redis cache + Kafka event invalidation?</li>
+<li>Kafka event + Redis materialized view?</li>
+<li>Redis for rate limiting and Kafka for audit events?</li>
+<li>How would you prevent duplicate Kafka processing using Redis?</li>
+<li>Redis vs Kafka for distributed locking?</li>
+<li>Redis Pub/Sub vs Kafka?</li>
+<li>Redis Streams vs Kafka?</li>
+<li>How would you build a notification system with Kafka and Redis?</li>
+<li>How would you build an order system with Kafka, Redis, and PostgreSQL?</li>
+<li>How would you maintain cache consistency after Kafka events?</li>
+<li>What if Redis is unavailable but Kafka is healthy?</li>
+<li>What if Kafka is unavailable but Redis is healthy?</li>
+<li>How would you handle DB → Kafka reliability?</li>
+<li>How would you handle Kafka → DB reliability?</li>
+<li>How would you implement idempotency using Redis?</li>
+<li>Why might a database uniqueness constraint be safer than Redis-only deduplication?</li>
+<li>How would you handle cache stampede in a Kafka-driven system?</li>
+<li>How would you build a distributed rate limiter using Redis?</li>
+<li>How would you build an event-driven cache invalidation system?</li>
+<li>How would you handle ordering + caching?</li>
+<li>How would you design a payment system using Kafka and Redis?</li>
+<li>How would you design inventory reservation?</li>
+<li>How would you prevent overselling inventory?</li>
+</ol>
+<hr />
+<h1 id="134-high-value-follow-up-chain-redis">134. High-Value Follow-Up Chain — Redis</h1>
+<pre><code class="language-text">What is Redis?
+   ↓
+Why is it fast?
+   ↓
+What data structures exist?
+   ↓
+Why String vs Hash?
+   ↓
+What is TTL?
+   ↓
+Cache-aside?
+   ↓
+Cache invalidation?
+   ↓
+Stampede?
+   ↓
+Eviction?
+   ↓
+Persistence?
+   ↓
+Replication?
+   ↓
+Cluster?
+   ↓
+Hot key?
+   ↓
+Distributed lock?
+   ↓
+Failure handling?
+</code></pre>
+<hr />
+<h1 id="135-high-value-follow-up-chain-kafka">135. High-Value Follow-Up Chain — Kafka</h1>
+<pre><code class="language-text">What is Kafka?
+   ↓
+Topic?
+   ↓
+Partition?
+   ↓
+Offset?
+   ↓
+Producer?
+   ↓
+Consumer?
+   ↓
+Consumer group?
+   ↓
+Ordering?
+   ↓
+Partition key?
+   ↓
+Replication?
+   ↓
+ISR?
+   ↓
+acks?
+   ↓
+Consumer lag?
+   ↓
+Rebalancing?
+   ↓
+At-least-once?
+   ↓
+Idempotency?
+   ↓
+Exactly-once?
+   ↓
+External side effects?
+</code></pre>
+<hr />
+<h1 id="136-high-value-follow-up-chain-event-driven-architecture">136. High-Value Follow-Up Chain — Event-Driven Architecture</h1>
+<pre><code class="language-text">REST request
+   ↓
+Service
+   ↓
+Database transaction
+   ↓
+Outbox
+   ↓
+Kafka
+   ↓
+Consumer Group
+   ↓
+Consumer
+   ↓
+Idempotency / Inbox
+   ↓
+Database
+   ↓
+Redis cache
+   ↓
+API read
+</code></pre>
+<p>Be able to explain:</p>
+<pre><code class="language-text">What happens if DB commit fails?
+What happens if Kafka publish fails?
+What happens if consumer crashes?
+What happens if offset commit fails?
+What happens if Redis is unavailable?
+What happens if the same event arrives twice?
+What happens if events arrive out of order?
+</code></pre>
+<hr />
+<h1 id="137-redis-kafka-architecture-example">137. Redis + Kafka Architecture Example</h1>
+<pre><code class="language-text">                         ┌──────────────┐
+                         │   Client     │
+                         └──────┬───────┘
+                                │
+                                ▼
+                         ┌──────────────┐
+                         │ Spring Boot  │
+                         │ API Service  │
+                         └──────┬───────┘
+                                │
+                 ┌──────────────┼──────────────┐
+                 │              │              │
+                 ▼              ▼              ▼
+              Redis          Database        Outbox
+              Cache          Source           Table
+                 │              │              │
+                 │              │              ▼
+                 │              │           Publisher
+                 │              │              │
+                 │              │              ▼
+                 │              │           Kafka
+                 │              │              │
+                 │              │       ┌──────┼──────┐
+                 │              │       ▼      ▼      ▼
+                 │              │    Payment Inventory Notification
+                 │              │
+                 └──────────────┴───────────────┘
+</code></pre>
+<hr />
+<h1 id="138-final-mental-model">138. Final Mental Model</h1>
+<h2 id="redis">Redis</h2>
+<p>Think:</p>
+<pre><code class="language-text">FAST SHARED STATE
+      │
+      ├── Cache
+      ├── TTL
+      ├── Counter
+      ├── Set
+      ├── Sorted Set
+      ├── Session
+      ├── Rate Limiter
+      ├── Lock
+      └── Stream
+</code></pre>
+<h2 id="kafka">Kafka</h2>
+<p>Think:</p>
+<pre><code class="language-text">DURABLE EVENT LOG
+       │
+       ├── Topic
+       │
+       ├── Partition
+       │
+       ├── Offset
+       │
+       ├── Consumer Group
+       │
+       ├── Replication
+       │
+       ├── Ordering
+       │
+       ├── Replay
+       │
+       └── Event Processing
+</code></pre>
+<hr />
+<h1 id="139-golden-rules">139. Golden Rules</h1>
+<h3 id="redis_1">Redis</h3>
+<ol>
+<li>Redis is not automatically a database replacement.</li>
+<li>Redis is not automatically persistent.</li>
+<li>Not every command is O(1).</li>
+<li>TTL does not solve every consistency problem.</li>
+<li>Cache invalidation requires deliberate design.</li>
+<li>Do not blindly use Redis locks.</li>
+<li>Verify lock ownership before release.</li>
+<li>Avoid huge keys.</li>
+<li>Watch for hot keys.</li>
+<li>Cache failure must have a defined fallback.</li>
+<li>Use TTL for temporary data where appropriate.</li>
+<li>Choose eviction policies based on workload.</li>
+<li>Do not treat Pub/Sub as durable messaging.</li>
+<li>Redis Streams are different from Pub/Sub.</li>
+<li>Serialization is part of the distributed-system contract.</li>
+</ol>
+<h3 id="kafka_1">Kafka</h3>
+<ol>
+<li>Kafka is an event log, not simply a queue.</li>
+<li>Ordering is guaranteed within a partition.</li>
+<li>Partition key determines ordering boundaries.</li>
+<li>Consumer parallelism is bounded by partitions.</li>
+<li>More partitions are not always better.</li>
+<li>At-least-once processing means duplicates are possible.</li>
+<li>Idempotency is essential for many consumers.</li>
+<li>Exactly-once Kafka semantics do not make external APIs exactly-once.</li>
+<li>Consumer lag is a critical metric.</li>
+<li>Rebalancing affects processing.</li>
+<li>Poison messages need bounded retry/DLT strategies.</li>
+<li>Schema evolution must be designed.</li>
+<li>Large messages are usually a smell.</li>
+<li>Kafka retention enables replay.</li>
+<li>Kafka should not automatically become the source of truth for arbitrary queries.</li>
+<li>Outbox solves an important DB → Kafka reliability gap.</li>
+<li>Inbox/deduplication helps Kafka → DB reliability.</li>
+<li>Monitor under-replicated partitions.</li>
+<li>Choose partition keys around business ordering requirements.</li>
+<li>Treat Kafka events as public contracts between services.</li>
+</ol>
+<hr />
+<h1 id="140-final-interview-framework">140. Final Interview Framework</h1>
+<p>When asked:</p>
+<blockquote>
+<p>"What is Redis?"</p>
+</blockquote>
+<p>Do not answer:</p>
+<blockquote>
+<p>"Redis is an in-memory cache."</p>
+</blockquote>
+<p>Instead:</p>
+<pre><code class="language-text">Definition
+ ↓
+Why it is fast
+ ↓
+Data structures
+ ↓
+Persistence
+ ↓
+Replication
+ ↓
+Cluster
+ ↓
+Typical use cases
+ ↓
+Failure modes
+ ↓
+Trade-offs
+</code></pre>
+<p>When asked:</p>
+<blockquote>
+<p>"What is Kafka?"</p>
+</blockquote>
+<p>Do not answer:</p>
+<blockquote>
+<p>"Kafka is a messaging system."</p>
+</blockquote>
+<p>Instead:</p>
+<pre><code class="language-text">Distributed event log
+ ↓
+Topic
+ ↓
+Partitions
+ ↓
+Offsets
+ ↓
+Consumer groups
+ ↓
+Ordering
+ ↓
+Replication
+ ↓
+Retention
+ ↓
+Delivery semantics
+ ↓
+Idempotency
+ ↓
+Failure handling
+</code></pre>
+<p>That is the level expected in a strong Java/Spring Boot interview.</p>
+<hr />
+<h1 id="141-final-self-test">141. Final Self-Test</h1>
+<p>You are interview-ready on Redis when you can explain without notes:</p>
+<pre><code class="language-text">Redis
+Data types
+Strings
+Hashes
+Sets
+Sorted Sets
+Streams
+Pub/Sub
+TTL
+Cache-aside
+Write-through
+Write-behind
+Invalidation
+Stampede
+Penetration
+Avalanche
+Eviction
+RDB
+AOF
+Replication
+Sentinel
+Cluster
+Hash slots
+Hash tags
+Atomicity
+MULTI/EXEC
+Lua
+Distributed locks
+Rate limiting
+Sessions
+Serialization
+Big keys
+Hot keys
+Failure handling
+Spring Data Redis
+</code></pre>
+<p>You are interview-ready on Kafka when you can explain:</p>
+<pre><code class="language-text">Kafka
+Broker
+Topic
+Partition
+Offset
+Producer
+Consumer
+Consumer Group
+Partition key
+Ordering
+Replication
+Leader
+Follower
+ISR
+Replication factor
+acks
+Producer retries
+Idempotent producer
+Batching
+Compression
+Offset commits
+At-most-once
+At-least-once
+Exactly-once
+Consumer lag
+Rebalancing
+Retention
+Compaction
+Tombstones
+Schema evolution
+DLT
+Retries
+Poison messages
+Transactions
+Outbox
+Inbox
+Idempotent consumer
+Hot partitions
+Large messages
+Security
+Monitoring
+Spring Kafka
+</code></pre>
+<p>And finally, you should be able to design:</p>
+<pre><code class="language-text">1. Distributed cache
+2. Rate limiter
+3. Distributed lock
+4. Notification system
+5. Order event pipeline
+6. Payment event pipeline
+7. Inventory reservation
+8. Event-driven cache invalidation
+9. Kafka-based audit system
+10. Redis + Kafka + PostgreSQL architecture
+</code></pre>
+<hr />
+<h1 id="142-the-most-important-mental-model">142. The Most Important Mental Model</h1>
+<p>For a full-stack Java/Spring Boot developer, remember:</p>
+<pre><code class="language-text">                 USER REQUEST
+                      │
+                      ▼
+                 REST API
+                      │
+              ┌───────┴───────┐
+              │               │
+              ▼               ▼
+            Redis          Database
+             Cache         Source of Truth
+              │               │
+              │               │
+              │            Transaction
+              │               │
+              │               ▼
+              │             Outbox
+              │               │
+              │               ▼
+              │             Kafka
+              │               │
+              │        ┌──────┼──────┐
+              │        ▼      ▼      ▼
+              │     Service Service Service
+              │        │      │      │
+              │        └──────┴──────┘
+              │               │
+              └───────────────┘
+</code></pre>
+<p>The core distinction:</p>
+<pre><code class="language-text">Redis
+→ &quot;What state do I need extremely quickly right now?&quot;
+
+Kafka
+→ &quot;What happened, and which services need to know about it?&quot;
+</code></pre>
+<p>That distinction will help you answer a surprisingly large number of senior interview questions.</p></main>
+</div>
+</body>
+</html>

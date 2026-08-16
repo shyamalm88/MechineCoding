@@ -1,0 +1,70 @@
+{
+  "title": "Java Notes",
+  "groups": [
+    {
+      "category": "Core Java & JVM",
+      "items": [
+        {
+          "slug": "java-collections",
+          "label": "Java Collections",
+          "stars": 3
+        },
+        {
+          "slug": "java-threads",
+          "label": "Java Threads",
+          "stars": 3
+        },
+        {
+          "slug": "modern-java-jvm",
+          "label": "Modern Java JVM",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Spring & Data Access",
+      "items": [
+        {
+          "slug": "spring-boot-jdbc-hibernate-security-rest",
+          "label": "Spring Boot JDBC Hibernate Security REST",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Data Stores & Messaging",
+      "items": [
+        {
+          "slug": "redis-kafka",
+          "label": "Redis Kafka",
+          "stars": 3
+        },
+        {
+          "slug": "sql-nosql",
+          "label": "SQL NoSQL",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "Architecture & Distributed Systems",
+      "items": [
+        {
+          "slug": "microservices",
+          "label": "Microservices",
+          "stars": 3
+        }
+      ]
+    },
+    {
+      "category": "DevOps & Deployment",
+      "items": [
+        {
+          "slug": "docker-kubernetes-maven-cicd",
+          "label": "Docker Kubernetes Maven CI/CD",
+          "stars": 2
+        }
+      ]
+    }
+  ]
+}

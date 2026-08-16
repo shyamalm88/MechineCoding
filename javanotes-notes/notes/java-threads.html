@@ -1,0 +1,1608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Java Threads --- From Basics to Advanced — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><h1 id="java-threads-from-basics-to-advanced">Java Threads --- From Basics to Advanced</h1>
+<blockquote>
+<p><strong>Modern baseline:</strong> Java 25 is an LTS release, and Java 26 is the
+current feature release. This note uses modern Java concepts while
+also covering older concurrency APIs that you will encounter in
+enterprise codebases.</p>
+</blockquote>
+<hr />
+<h2 id="1-what-is-a-thread">1. What is a Thread?</h2>
+<p>A <strong>thread</strong> is an independent path of execution inside a process.</p>
+<p>A Java application can have multiple threads executing concurrently.</p>
+<p>Think of a Java process as a restaurant:</p>
+<ul>
+<li>Process = the whole restaurant</li>
+<li>Thread = a waiter doing work</li>
+<li>Heap = shared kitchen/resources</li>
+<li>Thread stack = the waiter's own notepad</li>
+<li>Multiple threads can access shared objects in the heap</li>
+</ul>
+<p>The important distinction is:</p>
+<p><strong>Process</strong> - Has its own address space/resources. - Processes are
+relatively isolated.</p>
+<p><strong>Thread</strong> - Exists inside a process. - Threads in the same JVM share
+the heap and many process-level resources. - Each thread has its own
+stack and execution state.</p>
+<p>A Java thread is represented by <code>java.lang.Thread</code>.</p>
+<hr />
+<h2 id="2-why-do-we-need-threads">2. Why Do We Need Threads?</h2>
+<p>Suppose an application has to perform three independent operations:</p>
+<pre><code class="language-text">Task A: Call payment service       → 2 seconds
+Task B: Call inventory service     → 2 seconds
+Task C: Send notification          → 2 seconds
+</code></pre>
+<p>Sequential execution:</p>
+<pre><code class="language-text">A ───── 2s ─────
+                B ───── 2s ─────
+                              C ───── 2s ─────
+
+Total ≈ 6 seconds
+</code></pre>
+<p>Concurrent execution:</p>
+<pre><code class="language-text">A ───────────── 2s ───────────
+B ───────────── 2s ───────────
+C ───────────── 2s ───────────
+
+Total ≈ 2 seconds
+</code></pre>
+<p>This does <strong>not</strong> mean threads always make a program faster.</p>
+<p>Concurrency is primarily about allowing multiple tasks to make progress
+during overlapping periods.</p>
+<hr />
+<h1 id="3-concurrency-vs-parallelism">3. Concurrency vs Parallelism</h1>
+<p>These are related but different.</p>
+<h2 id="concurrency">Concurrency</h2>
+<p>Multiple tasks are in progress during overlapping time periods.</p>
+<pre><code class="language-text">CPU
+│ A A B B A C C B
+└──────────────────→ time
+</code></pre>
+<p>The CPU may switch between tasks.</p>
+<h2 id="parallelism">Parallelism</h2>
+<p>Multiple tasks actually execute simultaneously on different CPU cores.</p>
+<pre><code class="language-text">Core 1: A A A A
+Core 2: B B B B
+Core 3: C C C C
+</code></pre>
+<p>So:</p>
+<blockquote>
+<p>Concurrency = dealing with multiple things at once.</p>
+<p>Parallelism = executing multiple things at the same time.</p>
+</blockquote>
+<p>A single-core machine can provide concurrency through scheduling, but
+not true CPU parallelism.</p>
+<hr />
+<h1 id="4-the-main-thread">4. The Main Thread</h1>
+<p>When a Java application starts, the JVM starts the thread that executes
+<code>main()</code>.</p>
+<pre><code class="language-java">public class Main {
+    public static void main(String[] args) {
+        System.out.println(Thread.currentThread().getName());
+    }
+}
+</code></pre>
+<p>Typically:</p>
+<pre><code class="language-text">main
+</code></pre>
+<p><code>Thread.currentThread()</code> returns the currently executing thread.</p>
+<p>Useful methods:</p>
+<pre><code class="language-java">Thread.currentThread().getName();
+Thread.currentThread().threadId();
+Thread.currentThread().isAlive();
+Thread.currentThread().isVirtual();
+</code></pre>
+<hr />
+<h1 id="5-creating-a-thread">5. Creating a Thread</h1>
+<p>There are several approaches.</p>
+<h2 id="approach-1-extend-thread">Approach 1 --- Extend Thread</h2>
+<pre><code class="language-java">class MyThread extends Thread {
+
+    @Override
+    public void run() {
+        System.out.println(&quot;Running&quot;);
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        MyThread t = new MyThread();
+        t.start();
+    }
+}
+</code></pre>
+<p>Important:</p>
+<pre><code class="language-java">t.start();
+</code></pre>
+<p>is NOT the same as:</p>
+<pre><code class="language-java">t.run();
+</code></pre>
+<h3 id="start"><code>start()</code></h3>
+<p>Creates/schedules a new thread of execution.</p>
+<h3 id="run"><code>run()</code></h3>
+<p>Just invokes the method normally if called directly.</p>
+<pre><code class="language-java">t.run();
+</code></pre>
+<p>does not create a new thread.</p>
+<p>This is one of the most common interview questions.</p>
+<hr />
+<h1 id="6-why-runnable-is-usually-better-than-extending-thread">6. Why Runnable Is Usually Better Than Extending Thread</h1>
+<p>Instead of:</p>
+<pre><code class="language-java">class MyTask extends Thread {
+    @Override
+    public void run() {
+        // work
+    }
+}
+</code></pre>
+<p>prefer:</p>
+<pre><code class="language-java">class MyTask implements Runnable {
+    @Override
+    public void run() {
+        // work
+    }
+}
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-java">Thread t = new Thread(new MyTask());
+t.start();
+</code></pre>
+<p>Why?</p>
+<p>Because <code>Runnable</code> represents <strong>the task</strong>, while <code>Thread</code> represents
+<strong>the execution mechanism</strong>.</p>
+<p>This separation is important.</p>
+<pre><code class="language-text">Runnable
+   ↓
+WHAT should be done?
+
+Thread
+   ↓
+WHO executes it?
+</code></pre>
+<p>Also, Java supports single inheritance, so extending <code>Thread</code> prevents
+the class from extending another class.</p>
+<hr />
+<h1 id="7-lambda-thread">7. Lambda + Thread</h1>
+<p>Because <code>Runnable</code> is a functional interface:</p>
+<pre><code class="language-java">Thread t = new Thread(() -&gt; {
+    System.out.println(&quot;Hello&quot;);
+});
+
+t.start();
+</code></pre>
+<p>This is common but should not be confused with a production concurrency
+architecture.</p>
+<p>For larger applications, prefer executors or structured concurrency
+instead of manually creating large numbers of threads.</p>
+<hr />
+<h1 id="8-thread-lifecycle">8. Thread Lifecycle</h1>
+<p>A Java thread can move through these states:</p>
+<pre><code class="language-text">NEW
+ ↓
+RUNNABLE
+ ↓
+TERMINATED
+</code></pre>
+<p>and may temporarily enter:</p>
+<pre><code class="language-text">BLOCKED
+WAITING
+TIMED_WAITING
+</code></pre>
+<p>Official Java states:</p>
+<pre><code class="language-java">Thread.State.NEW
+Thread.State.RUNNABLE
+Thread.State.BLOCKED
+Thread.State.WAITING
+Thread.State.TIMED_WAITING
+Thread.State.TERMINATED
+</code></pre>
+<hr />
+<h2 id="new">NEW</h2>
+<p>Thread object exists but has not started.</p>
+<pre><code class="language-java">Thread t = new Thread(() -&gt; {});
+</code></pre>
+<p>State:</p>
+<pre><code class="language-text">NEW
+</code></pre>
+<hr />
+<h2 id="runnable">RUNNABLE</h2>
+<p>After:</p>
+<pre><code class="language-java">t.start();
+</code></pre>
+<p>the thread becomes eligible for execution.</p>
+<p>Important:</p>
+<p>Java's <code>RUNNABLE</code> state includes a thread that is actually running as
+well as one that is ready to run.</p>
+<p>Java does not expose a separate <code>RUNNING</code> state.</p>
+<hr />
+<h2 id="blocked">BLOCKED</h2>
+<p>A thread is waiting to acquire a monitor lock.</p>
+<p>Example:</p>
+<pre><code class="language-java">synchronized (lock) {
+    // critical section
+}
+</code></pre>
+<p>If another thread owns <code>lock</code>, the waiting thread may become <code>BLOCKED</code>.</p>
+<hr />
+<h2 id="waiting">WAITING</h2>
+<p>A thread waits indefinitely for another thread/action.</p>
+<p>Examples:</p>
+<pre><code class="language-java">Object.wait();
+Thread.join();
+</code></pre>
+<hr />
+<h2 id="timed_waiting">TIMED_WAITING</h2>
+<p>Waiting for a bounded amount of time.</p>
+<p>Examples:</p>
+<pre><code class="language-java">Thread.sleep(1000);
+Object.wait(1000);
+Thread.join(1000);
+</code></pre>
+<hr />
+<h2 id="terminated">TERMINATED</h2>
+<p><code>run()</code> completed or terminated because of an uncaught exception.</p>
+<p>A thread cannot be restarted.</p>
+<pre><code class="language-java">Thread t = new Thread(...);
+
+t.start();
+t.start(); // IllegalThreadStateException
+</code></pre>
+<hr />
+<h1 id="9-threadsleep">9. Thread.sleep()</h1>
+<pre><code class="language-java">Thread.sleep(1000);
+</code></pre>
+<p>The current thread pauses for approximately one second.</p>
+<p>Important:</p>
+<p><code>sleep()</code> does NOT release intrinsic locks.</p>
+<p>Example:</p>
+<pre><code class="language-java">synchronized (lock) {
+    Thread.sleep(5000);
+}
+</code></pre>
+<p>The thread sleeps while still holding <code>lock</code>.</p>
+<p>This can block other threads from entering the synchronized section.</p>
+<hr />
+<h1 id="10-threadjoin">10. Thread.join()</h1>
+<p><code>join()</code> allows one thread to wait for another thread to finish.</p>
+<pre><code class="language-java">Thread worker = new Thread(() -&gt; {
+    System.out.println(&quot;Working...&quot;);
+});
+
+worker.start();
+
+worker.join();
+
+System.out.println(&quot;Worker finished&quot;);
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">main
+ │
+ ├── starts worker
+ │
+ ├── waits at join()
+ │
+ │       worker executes
+ │       worker finishes
+ │
+ └── main continues
+</code></pre>
+<p><code>join()</code> is extremely important for understanding coordination.</p>
+<hr />
+<h1 id="11-threadinterrupt">11. Thread.interrupt()</h1>
+<p>Interrupt is a <strong>cooperative cancellation mechanism</strong>.</p>
+<p>It does not forcibly kill a thread.</p>
+<pre><code class="language-java">thread.interrupt();
+</code></pre>
+<p>The target thread should respond appropriately.</p>
+<p>For example:</p>
+<pre><code class="language-java">try {
+    Thread.sleep(10_000);
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+}
+</code></pre>
+<p>Why restore the interrupt flag?</p>
+<p>Because catching <code>InterruptedException</code> clears the interrupted status.</p>
+<p>A common good pattern is:</p>
+<pre><code class="language-java">catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+    return;
+}
+</code></pre>
+<p>Do not casually swallow interrupts:</p>
+<pre><code class="language-java">catch (InterruptedException e) {
+    // nothing
+}
+</code></pre>
+<p>That can break cancellation and shutdown behavior.</p>
+<hr />
+<h1 id="12-daemon-vs-non-daemon-threads">12. Daemon vs Non-Daemon Threads</h1>
+<p>A JVM normally continues running while at least one non-daemon thread is
+alive.</p>
+<p>Daemon threads are background threads.</p>
+<pre><code class="language-java">Thread t = new Thread(task);
+t.setDaemon(true);
+t.start();
+</code></pre>
+<p>Important:</p>
+<p><code>setDaemon(true)</code> must be called before <code>start()</code>.</p>
+<p>Daemon threads should not be used for critical work that must complete
+reliably during shutdown.</p>
+<hr />
+<h1 id="13-thread-priority">13. Thread Priority</h1>
+<p>Java has thread priorities:</p>
+<pre><code class="language-java">Thread.MIN_PRIORITY
+Thread.NORM_PRIORITY
+Thread.MAX_PRIORITY
+</code></pre>
+<p>Usually:</p>
+<pre><code class="language-text">1
+5
+10
+</code></pre>
+<p>Do not design application correctness around thread priority.</p>
+<p>Scheduling behavior is platform-dependent.</p>
+<hr />
+<h1 id="14-the-real-problem-shared-mutable-state">14. The Real Problem: Shared Mutable State</h1>
+<p>Threads themselves are not usually the hardest part.</p>
+<p>The real difficulty is:</p>
+<blockquote>
+<p>Multiple threads accessing mutable shared state.</p>
+</blockquote>
+<p>Example:</p>
+<pre><code class="language-java">class Counter {
+    int count = 0;
+
+    void increment() {
+        count++;
+    }
+}
+</code></pre>
+<p>This looks harmless.</p>
+<p>But:</p>
+<pre><code class="language-java">count++;
+</code></pre>
+<p>is conceptually:</p>
+<pre><code class="language-text">read count
+add 1
+write count
+</code></pre>
+<p>Two threads can interleave these operations.</p>
+<p>Suppose:</p>
+<pre><code class="language-text">count = 0
+
+Thread A reads 0
+Thread B reads 0
+
+Thread A writes 1
+Thread B writes 1
+</code></pre>
+<p>Expected:</p>
+<pre><code class="language-text">2
+</code></pre>
+<p>Actual:</p>
+<pre><code class="language-text">1
+</code></pre>
+<p>This is a <strong>race condition</strong>.</p>
+<hr />
+<h1 id="15-race-condition">15. Race Condition</h1>
+<p>A race condition occurs when the result depends on timing/interleaving
+between concurrent operations.</p>
+<p>Typical symptoms:</p>
+<ul>
+<li>intermittent bugs</li>
+<li>difficult reproduction</li>
+<li>different results between runs</li>
+<li>bugs that disappear when debugging</li>
+<li>production-only failures</li>
+</ul>
+<p>Concurrency bugs are often nondeterministic.</p>
+<hr />
+<h1 id="16-atomicity">16. Atomicity</h1>
+<p>An operation is atomic if it appears indivisible to other threads.</p>
+<p><code>count++</code> is not atomic.</p>
+<p>For counters, use:</p>
+<pre><code class="language-java">AtomicInteger counter = new AtomicInteger();
+
+counter.incrementAndGet();
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-java">System.out.println(counter.get());
+</code></pre>
+<hr />
+<h1 id="17-synchronized">17. synchronized</h1>
+<p><code>synchronized</code> provides mutual exclusion and memory visibility
+guarantees.</p>
+<pre><code class="language-java">class Counter {
+
+    private int count;
+
+    public synchronized void increment() {
+        count++;
+    }
+
+    public synchronized int getCount() {
+        return count;
+    }
+}
+</code></pre>
+<p>Only one thread at a time can execute synchronized methods using the
+same object's monitor.</p>
+<hr />
+<h1 id="18-synchronized-block">18. Synchronized Block</h1>
+<p>Instead of locking the whole method:</p>
+<pre><code class="language-java">public synchronized void increment() {
+    count++;
+}
+</code></pre>
+<p>you can limit the critical section:</p>
+<pre><code class="language-java">public void increment() {
+
+    synchronized (this) {
+        count++;
+    }
+}
+</code></pre>
+<p>Even better, when appropriate, use a private lock:</p>
+<pre><code class="language-java">private final Object lock = new Object();
+
+public void increment() {
+    synchronized (lock) {
+        count++;
+    }
+}
+</code></pre>
+<p>This avoids exposing your lock to external code.</p>
+<hr />
+<h1 id="19-intrinsic-lock-monitor">19. Intrinsic Lock / Monitor</h1>
+<p>Every Java object can act as an intrinsic lock.</p>
+<p>When you write:</p>
+<pre><code class="language-java">synchronized (obj) {
+}
+</code></pre>
+<p>the executing thread acquires the monitor associated with <code>obj</code>.</p>
+<p>Only one thread can own that monitor at a time.</p>
+<p>This leads to:</p>
+<pre><code class="language-text">Thread A
+   ↓
+acquire lock
+   ↓
+critical section
+   ↓
+release lock
+</code></pre>
+<p>Other threads attempting the same monitor may become <code>BLOCKED</code>.</p>
+<hr />
+<h1 id="20-synchronized-and-memory-visibility">20. synchronized and Memory Visibility</h1>
+<p><code>synchronized</code> is not only about "one thread at a time."</p>
+<p>It also establishes happens-before relationships.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Thread A
+writes data
+   ↓
+unlock
+   ↓
+Thread B
+lock
+   ↓
+sees A's writes
+</code></pre>
+<p>This is why synchronization solves both:</p>
+<ul>
+<li>mutual exclusion</li>
+<li>visibility</li>
+</ul>
+<hr />
+<h1 id="21-volatile">21. volatile</h1>
+<p><code>volatile</code> is primarily about visibility and ordering, not
+compound-operation atomicity.</p>
+<pre><code class="language-java">private volatile boolean running = true;
+</code></pre>
+<p>Thread A:</p>
+<pre><code class="language-java">running = false;
+</code></pre>
+<p>Thread B:</p>
+<pre><code class="language-java">while (running) {
+    // work
+}
+</code></pre>
+<p><code>volatile</code> helps ensure that the update is visible.</p>
+<p>But:</p>
+<pre><code class="language-java">volatile int count;
+
+count++;
+</code></pre>
+<p>is still not atomic.</p>
+<p>Remember:</p>
+<blockquote>
+<p>volatile != atomic</p>
+</blockquote>
+<hr />
+<h1 id="22-atomic-classes">22. Atomic Classes</h1>
+<p>Java provides:</p>
+<pre><code class="language-java">AtomicInteger
+AtomicLong
+AtomicBoolean
+AtomicReference
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">AtomicInteger count = new AtomicInteger();
+
+count.incrementAndGet();
+count.decrementAndGet();
+count.compareAndSet(10, 20);
+</code></pre>
+<p>These are useful for lock-free or low-lock atomic operations.</p>
+<hr />
+<h1 id="23-cas-compare-and-set">23. CAS --- Compare And Set</h1>
+<p>CAS is a fundamental technique behind many atomic operations.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">if currentValue == expectedValue
+    replace with newValue
+else
+    fail
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">counter.compareAndSet(10, 20);
+</code></pre>
+<p>CAS is central to many non-blocking concurrency algorithms.</p>
+<hr />
+<h1 id="24-executorservice">24. ExecutorService</h1>
+<p>In real applications, manually creating threads is usually not the
+preferred abstraction.</p>
+<p>Instead:</p>
+<pre><code class="language-java">ExecutorService executor =
+        Executors.newFixedThreadPool(10);
+</code></pre>
+<p>Submit tasks:</p>
+<pre><code class="language-java">executor.submit(() -&gt; {
+    System.out.println(&quot;Task running&quot;);
+});
+</code></pre>
+<p>Shutdown:</p>
+<pre><code class="language-java">executor.shutdown();
+</code></pre>
+<p>The idea:</p>
+<pre><code class="language-text">Application
+    ↓
+ExecutorService
+    ↓
+Thread Pool
+    ↓
+Worker Threads
+    ↓
+Tasks
+</code></pre>
+<hr />
+<h1 id="25-why-thread-pools">25. Why Thread Pools?</h1>
+<p>Creating a platform thread has a cost.</p>
+<p>Instead of:</p>
+<pre><code class="language-text">Request → create thread
+Request → create thread
+Request → create thread
+...
+</code></pre>
+<p>use:</p>
+<pre><code class="language-text">Requests
+   ↓
+Task queue
+   ↓
+Thread pool
+   ↓
+Reusable workers
+</code></pre>
+<p>Thread pools provide:</p>
+<ul>
+<li>resource control</li>
+<li>thread reuse</li>
+<li>bounded concurrency</li>
+<li>queueing</li>
+<li>lifecycle management</li>
+</ul>
+<hr />
+<h1 id="26-fixed-thread-pool">26. Fixed Thread Pool</h1>
+<pre><code class="language-java">ExecutorService executor =
+        Executors.newFixedThreadPool(10);
+</code></pre>
+<p>At most roughly 10 worker threads execute tasks concurrently.</p>
+<p>Useful for CPU-bound work when the pool size is deliberately chosen
+based on workload and environment.</p>
+<hr />
+<h1 id="27-cached-thread-pool">27. Cached Thread Pool</h1>
+<pre><code class="language-java">Executors.newCachedThreadPool();
+</code></pre>
+<p>Can create threads as needed and reuse idle ones.</p>
+<p>Be careful: under heavy load, an unbounded thread creation strategy can
+become dangerous.</p>
+<p>Do not blindly use it for production workloads.</p>
+<hr />
+<h1 id="28-scheduledexecutorservice">28. ScheduledExecutorService</h1>
+<p>For delayed/repeated work:</p>
+<pre><code class="language-java">ScheduledExecutorService scheduler =
+        Executors.newScheduledThreadPool(2);
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">scheduler.schedule(
+    () -&gt; System.out.println(&quot;Hello&quot;),
+    5,
+    TimeUnit.SECONDS
+);
+</code></pre>
+<hr />
+<h1 id="29-callable">29. Callable</h1>
+<p><code>Runnable</code> does not return a result.</p>
+<pre><code class="language-java">Runnable task = () -&gt; {
+    System.out.println(&quot;Hello&quot;);
+};
+</code></pre>
+<p><code>Callable&lt;T&gt;</code> returns a result and can throw checked exceptions.</p>
+<pre><code class="language-java">Callable&lt;Integer&gt; task = () -&gt; {
+    return 42;
+};
+</code></pre>
+<p>Submit:</p>
+<pre><code class="language-java">Future&lt;Integer&gt; future = executor.submit(task);
+</code></pre>
+<p>Retrieve:</p>
+<pre><code class="language-java">Integer result = future.get();
+</code></pre>
+<hr />
+<h1 id="30-future">30. Future</h1>
+<p>A <code>Future</code> represents the eventual result of asynchronous computation.</p>
+<pre><code class="language-text">submit task
+     ↓
+Future
+     ↓
+task executes
+     ↓
+result available
+</code></pre>
+<p>But:</p>
+<pre><code class="language-java">future.get();
+</code></pre>
+<p>is blocking.</p>
+<p>So <code>Future</code> is useful but has limitations for composing complex
+asynchronous workflows.</p>
+<hr />
+<h1 id="31-completablefuture">31. CompletableFuture</h1>
+<p>For asynchronous composition:</p>
+<pre><code class="language-java">CompletableFuture
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">CompletableFuture
+    .supplyAsync(() -&gt; fetchUser())
+    .thenApply(user -&gt; user.getName())
+    .thenAccept(System.out::println);
+</code></pre>
+<p>Composition:</p>
+<pre><code class="language-java">CompletableFuture&lt;User&gt; user =
+    CompletableFuture.supplyAsync(this::fetchUser);
+
+CompletableFuture&lt;Order&gt; order =
+    user.thenCompose(this::fetchOrder);
+</code></pre>
+<p>Parallel operations can be combined:</p>
+<pre><code class="language-java">CompletableFuture.allOf(a, b, c);
+</code></pre>
+<hr />
+<h1 id="32-common-completablefuture-methods">32. Common CompletableFuture Methods</h1>
+<h2 id="thenapply">thenApply</h2>
+<p>Transform a result:</p>
+<pre><code class="language-java">future.thenApply(x -&gt; x * 2);
+</code></pre>
+<h2 id="thenaccept">thenAccept</h2>
+<p>Consume a result:</p>
+<pre><code class="language-java">future.thenAccept(System.out::println);
+</code></pre>
+<h2 id="thencompose">thenCompose</h2>
+<p>Chain dependent asynchronous operations:</p>
+<pre><code class="language-java">future.thenCompose(this::nextAsyncOperation);
+</code></pre>
+<h2 id="thencombine">thenCombine</h2>
+<p>Combine independent results:</p>
+<pre><code class="language-java">futureA.thenCombine(
+    futureB,
+    (a, b) -&gt; combine(a, b)
+);
+</code></pre>
+<h2 id="exceptionally">exceptionally</h2>
+<p>Handle failure:</p>
+<pre><code class="language-java">future.exceptionally(ex -&gt; fallback);
+</code></pre>
+<h2 id="handle">handle</h2>
+<p>Handle both result and failure:</p>
+<pre><code class="language-java">future.handle((result, error) -&gt; {
+    if (error != null) {
+        return fallback;
+    }
+    return result;
+});
+</code></pre>
+<hr />
+<h1 id="33-forkjoinpool">33. ForkJoinPool</h1>
+<p>Java provides:</p>
+<pre><code class="language-java">ForkJoinPool
+</code></pre>
+<p>It is designed for tasks that can be recursively split into smaller
+tasks.</p>
+<p>Concept:</p>
+<pre><code class="language-text">Large Task
+   ↓
+Split
+ ┌───────┐
+ A       B
+ ↓       ↓
+A1 A2   B1 B2
+</code></pre>
+<p>Fork/join uses <strong>work stealing</strong>.</p>
+<p>An idle worker can steal work from another worker's queue.</p>
+<hr />
+<h1 id="34-parallel-streams">34. Parallel Streams</h1>
+<pre><code class="language-java">list.parallelStream()
+    .map(...)
+    .filter(...)
+    .toList();
+</code></pre>
+<p>Parallel streams use the common ForkJoinPool by default.</p>
+<p>Do NOT assume:</p>
+<pre><code class="language-text">parallelStream = faster
+</code></pre>
+<p>Parallelism has overhead and can be slower for:</p>
+<ul>
+<li>small collections</li>
+<li>cheap operations</li>
+<li>I/O-bound operations</li>
+<li>workloads with contention</li>
+<li>operations with poor parallel decomposition</li>
+</ul>
+<hr />
+<h1 id="35-lock-api">35. Lock API</h1>
+<p>Java also provides explicit locks.</p>
+<pre><code class="language-java">Lock lock = new ReentrantLock();
+
+lock.lock();
+
+try {
+    // critical section
+} finally {
+    lock.unlock();
+}
+</code></pre>
+<p>The <code>finally</code> is essential.</p>
+<hr />
+<h1 id="36-reentrantlock">36. ReentrantLock</h1>
+<p><code>ReentrantLock</code> provides capabilities beyond basic <code>synchronized</code>.</p>
+<p>For example:</p>
+<pre><code class="language-java">lock.tryLock();
+</code></pre>
+<p>or:</p>
+<pre><code class="language-java">lock.tryLock(1, TimeUnit.SECONDS);
+</code></pre>
+<p>You can also use interruptible locking:</p>
+<pre><code class="language-java">lock.lockInterruptibly();
+</code></pre>
+<p>This can be useful when you need more control over lock acquisition.</p>
+<hr />
+<h1 id="37-readwritelock">37. ReadWriteLock</h1>
+<p>When reads are frequent and writes are rare:</p>
+<pre><code class="language-java">ReadWriteLock lock =
+        new ReentrantReadWriteLock();
+</code></pre>
+<p>Multiple readers can hold the read lock concurrently.</p>
+<p>A writer requires exclusive access.</p>
+<pre><code class="language-text">Readers:
+R1 ─────
+R2 ─────
+R3 ─────
+
+Writer:
+          W ─────
+</code></pre>
+<hr />
+<h1 id="38-stampedlock">38. StampedLock</h1>
+<p><code>StampedLock</code> provides:</p>
+<ul>
+<li>read lock</li>
+<li>write lock</li>
+<li>optimistic read</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-java">StampedLock lock = new StampedLock();
+
+long stamp = lock.tryOptimisticRead();
+
+try {
+    // read
+} finally {
+    if (!lock.validate(stamp)) {
+        // retry under read lock
+    }
+}
+</code></pre>
+<p>Useful in some read-heavy workloads, but more complex than
+<code>ReentrantReadWriteLock</code>.</p>
+<p>Do not use it automatically.</p>
+<hr />
+<h1 id="39-semaphore">39. Semaphore</h1>
+<p>A semaphore controls access to a limited number of permits.</p>
+<pre><code class="language-java">Semaphore semaphore = new Semaphore(10);
+</code></pre>
+<p>Concept:</p>
+<pre><code class="language-text">10 permits
+
+Request 1 → permit
+Request 2 → permit
+...
+Request 10 → permit
+Request 11 → waits
+</code></pre>
+<p>Useful for limiting concurrent access to resources.</p>
+<p>Examples:</p>
+<ul>
+<li>database connection-like resource limits</li>
+<li>external service concurrency</li>
+<li>expensive operations</li>
+</ul>
+<hr />
+<h1 id="40-countdownlatch">40. CountDownLatch</h1>
+<p>Used when one or more threads need to wait until a number of operations
+complete.</p>
+<pre><code class="language-java">CountDownLatch latch =
+        new CountDownLatch(3);
+</code></pre>
+<p>Workers:</p>
+<pre><code class="language-java">latch.countDown();
+</code></pre>
+<p>Waiting thread:</p>
+<pre><code class="language-java">latch.await();
+</code></pre>
+<p>Concept:</p>
+<pre><code class="language-text">Task A ── countDown()
+Task B ── countDown()
+Task C ── countDown()
+             ↓
+          count = 0
+             ↓
+         waiting thread continues
+</code></pre>
+<p>A latch generally cannot be reset.</p>
+<hr />
+<h1 id="41-cyclicbarrier">41. CyclicBarrier</h1>
+<p>A barrier allows multiple threads to meet at a synchronization point.</p>
+<pre><code class="language-java">CyclicBarrier barrier =
+        new CyclicBarrier(3);
+</code></pre>
+<p>Each thread:</p>
+<pre><code class="language-java">barrier.await();
+</code></pre>
+<p>They wait until all required parties arrive.</p>
+<p>Unlike a latch, a cyclic barrier can be reused.</p>
+<hr />
+<h1 id="42-phaser">42. Phaser</h1>
+<p><code>Phaser</code> is a more flexible synchronization mechanism for phased
+computation.</p>
+<p>It can support changing numbers of participants and multiple phases.</p>
+<p>Think:</p>
+<pre><code class="language-text">Phase 1
+ ↓
+Phase 2
+ ↓
+Phase 3
+</code></pre>
+<p>Useful for advanced coordination problems.</p>
+<hr />
+<h1 id="43-blockingqueue">43. BlockingQueue</h1>
+<p>A <code>BlockingQueue</code> is extremely important.</p>
+<p>Examples:</p>
+<pre><code class="language-java">ArrayBlockingQueue
+LinkedBlockingQueue
+PriorityBlockingQueue
+SynchronousQueue
+</code></pre>
+<p>Producer:</p>
+<pre><code class="language-java">queue.put(task);
+</code></pre>
+<p>Consumer:</p>
+<pre><code class="language-java">Task task = queue.take();
+</code></pre>
+<p>Concept:</p>
+<pre><code class="language-text">Producer
+   ↓
+BlockingQueue
+   ↓
+Consumer
+</code></pre>
+<p>This is the classic producer-consumer pattern.</p>
+<hr />
+<h1 id="44-concurrenthashmap">44. ConcurrentHashMap</h1>
+<p><code>HashMap</code> is not thread-safe for concurrent mutation.</p>
+<p>For concurrent access:</p>
+<pre><code class="language-java">ConcurrentHashMap&lt;K, V&gt;
+</code></pre>
+<p>It provides concurrent operations designed for multi-threaded access.</p>
+<p>Example:</p>
+<pre><code class="language-java">ConcurrentHashMap&lt;String, Integer&gt; map =
+        new ConcurrentHashMap&lt;&gt;();
+
+map.merge(&quot;java&quot;, 1, Integer::sum);
+</code></pre>
+<hr />
+<h1 id="45-thread-safety">45. Thread Safety</h1>
+<p>A component is thread-safe when it behaves correctly when accessed
+concurrently according to its contract.</p>
+<p>Thread safety can be achieved through:</p>
+<ul>
+<li>immutability</li>
+<li>confinement</li>
+<li>synchronization</li>
+<li>locks</li>
+<li>atomic variables</li>
+<li>concurrent collections</li>
+<li>message passing</li>
+<li>avoiding shared mutable state</li>
+</ul>
+<p>A very useful principle:</p>
+<blockquote>
+<p>The easiest shared state to synchronize is the state you don't share.</p>
+</blockquote>
+<hr />
+<h1 id="46-immutability">46. Immutability</h1>
+<p>Immutable objects are naturally easier to share across threads.</p>
+<p>Example:</p>
+<pre><code class="language-java">public record User(
+    String id,
+    String name
+) {}
+</code></pre>
+<p>Once constructed, the record's components cannot be reassigned.</p>
+<p>Immutability dramatically reduces concurrency problems.</p>
+<hr />
+<h1 id="47-thread-confinement">47. Thread Confinement</h1>
+<p>Keep mutable state inside one thread.</p>
+<pre><code class="language-text">Thread A
+  └── private mutable state
+
+Thread B
+  └── private mutable state
+</code></pre>
+<p>No sharing → fewer synchronization problems.</p>
+<hr />
+<h1 id="48-threadlocal">48. ThreadLocal</h1>
+<p><code>ThreadLocal</code> gives each thread its own value.</p>
+<pre><code class="language-java">ThreadLocal&lt;String&gt; user =
+        new ThreadLocal&lt;&gt;();
+
+user.set(&quot;Shyamal&quot;);
+
+String value = user.get();
+
+user.remove();
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">Thread A → &quot;A's value&quot;
+Thread B → &quot;B's value&quot;
+Thread C → &quot;C's value&quot;
+</code></pre>
+<p>It is not shared state in the usual sense.</p>
+<hr />
+<h1 id="49-threadlocal-warning">49. ThreadLocal Warning</h1>
+<p>ThreadLocal can become problematic with thread pools.</p>
+<p>A worker thread may live for a long time.</p>
+<p>If you do:</p>
+<pre><code class="language-java">threadLocal.set(value);
+</code></pre>
+<p>and forget:</p>
+<pre><code class="language-java">threadLocal.remove();
+</code></pre>
+<p>the value can remain associated with the pooled worker longer than
+intended.</p>
+<p>Typical safe pattern:</p>
+<pre><code class="language-java">try {
+    threadLocal.set(value);
+    // work
+} finally {
+    threadLocal.remove();
+}
+</code></pre>
+<p>With virtual threads, ThreadLocal is supported, but because a JVM can
+have very large numbers of virtual threads, you should carefully
+consider the memory cost and whether scoped values are a better fit.</p>
+<hr />
+<h1 id="50-scopedvalue-modern-java">50. ScopedValue --- Modern Java</h1>
+<p>Java 25 finalized <code>ScopedValue</code>.</p>
+<p>It is designed for safely sharing immutable, bounded-lifetime data with
+callees and child threads.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Caller
+  ↓
+bind value
+  ↓
+Method A
+  ↓
+Method B
+  ↓
+Method C
+</code></pre>
+<p>The value is available within the scope.</p>
+<p>It is especially relevant with:</p>
+<ul>
+<li>virtual threads</li>
+<li>structured concurrency</li>
+</ul>
+<p>It is not simply "a newer ThreadLocal." Its programming model is
+different.</p>
+<p>Use it when you have one-way, immutable contextual data with a bounded
+lifetime.</p>
+<hr />
+<h1 id="51-memory-model">51. Memory Model</h1>
+<p>The Java Memory Model (JMM) defines how threads interact through memory.</p>
+<p>Three important concepts:</p>
+<h3 id="visibility">Visibility</h3>
+<p>Will another thread see my write?</p>
+<h3 id="atomicity">Atomicity</h3>
+<p>Can an operation be observed halfway through?</p>
+<h3 id="ordering">Ordering</h3>
+<p>Can operations appear reordered from another thread's perspective?</p>
+<p>Concurrency correctness requires understanding all three.</p>
+<hr />
+<h1 id="52-happens-before">52. Happens-Before</h1>
+<p>The happens-before relationship is one of the most important advanced
+Java concurrency concepts.</p>
+<p>If action A happens-before action B, then the effects of A are
+guaranteed to be visible/ordered appropriately with respect to B.</p>
+<p>Important happens-before relationships include:</p>
+<pre><code class="language-text">Program order
+Lock unlock → subsequent lock
+volatile write → subsequent volatile read
+Thread.start() → actions in started thread
+Actions in thread → successful join()
+</code></pre>
+<p>This is the foundation behind Java's visibility guarantees.</p>
+<hr />
+<h1 id="53-deadlock">53. Deadlock</h1>
+<p>Deadlock occurs when threads wait forever for each other.</p>
+<p>Example:</p>
+<pre><code class="language-text">Thread A:
+locks A
+waits for B
+
+Thread B:
+locks B
+waits for A
+</code></pre>
+<p>Diagram:</p>
+<pre><code class="language-text">Thread A ──holds──&gt; Lock A
+   │
+   └──waits for──&gt; Lock B
+
+Thread B ──holds──&gt; Lock B
+   │
+   └──waits for──&gt; Lock A
+</code></pre>
+<p>Neither can proceed.</p>
+<hr />
+<h1 id="54-preventing-deadlock">54. Preventing Deadlock</h1>
+<p>Common techniques:</p>
+<ol>
+<li>Always acquire locks in the same global order.</li>
+</ol>
+<pre><code class="language-text">Lock A → Lock B
+</code></pre>
+<p>Never:</p>
+<pre><code class="language-text">Thread 1: A → B
+Thread 2: B → A
+</code></pre>
+<ol>
+<li>
+<p>Minimize lock scope.</p>
+</li>
+<li>
+<p>Avoid unnecessary nested locks.</p>
+</li>
+<li>
+<p>Use <code>tryLock()</code> when appropriate.</p>
+</li>
+<li>
+<p>Prefer higher-level concurrency abstractions.</p>
+</li>
+</ol>
+<hr />
+<h1 id="55-livelock">55. Livelock</h1>
+<p>Threads are active but cannot make progress.</p>
+<p>Example:</p>
+<pre><code class="language-text">Thread A repeatedly backs off for B
+Thread B repeatedly backs off for A
+</code></pre>
+<p>Unlike deadlock:</p>
+<pre><code class="language-text">Deadlock → threads stuck
+Livelock → threads active but useless
+</code></pre>
+<hr />
+<h1 id="56-starvation">56. Starvation</h1>
+<p>A thread never gets sufficient access to a resource because other
+threads continuously get priority/access.</p>
+<p>Example:</p>
+<pre><code class="language-text">Thread A waits
+Thread B repeatedly acquires resource
+Thread C repeatedly acquires resource
+Thread A keeps waiting
+</code></pre>
+<hr />
+<h1 id="57-false-sharing">57. False Sharing</h1>
+<p>A lower-level performance issue.</p>
+<p>Two independent variables can occupy the same CPU cache line.</p>
+<pre><code class="language-text">Cache line
+┌───────────────────────┐
+│ variable A | variable B│
+└───────────────────────┘
+</code></pre>
+<p>Two CPUs repeatedly modifying separate variables can cause cache-line
+invalidation.</p>
+<p>This matters mostly in highly optimized, low-level concurrent systems.</p>
+<p>Do not optimize for it prematurely.</p>
+<hr />
+<h1 id="58-platform-threads">58. Platform Threads</h1>
+<p>Traditional Java threads are platform threads.</p>
+<p>They are typically mapped roughly 1:1 to operating-system threads.</p>
+<p>They have significant resource costs.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">100,000 requests
+</code></pre>
+<p>does not generally imply:</p>
+<pre><code class="language-text">100,000 platform threads
+</code></pre>
+<p>You normally use a bounded thread pool.</p>
+<hr />
+<h1 id="59-virtual-threads">59. Virtual Threads</h1>
+<p>Virtual threads were finalized in Java 21.</p>
+<p>They are lightweight threads managed by the Java runtime.</p>
+<pre><code class="language-java">Thread.startVirtualThread(() -&gt; {
+    System.out.println(&quot;Hello&quot;);
+});
+</code></pre>
+<p>Or:</p>
+<pre><code class="language-java">Thread.ofVirtual()
+      .name(&quot;worker&quot;)
+      .start(() -&gt; {
+          // work
+      });
+</code></pre>
+<p>Or:</p>
+<pre><code class="language-java">ExecutorService executor =
+    Executors.newVirtualThreadPerTaskExecutor();
+</code></pre>
+<hr />
+<h1 id="60-platform-vs-virtual-threads">60. Platform vs Virtual Threads</h1>
+<pre><code class="language-text">Platform Thread
+      ↓
+OS thread
+      ↓
+Expensive
+      ↓
+Limited quantity
+</code></pre>
+<p>Virtual:</p>
+<pre><code class="language-text">Virtual Thread
+      ↓
+JVM scheduler
+      ↓
+Carrier platform thread
+      ↓
+Can support huge numbers
+</code></pre>
+<p>Virtual threads are designed primarily for <strong>scale and throughput</strong>,
+especially when tasks spend substantial time blocked on I/O.</p>
+<p>They are not "faster CPU threads."</p>
+<hr />
+<h1 id="61-virtual-thread-example">61. Virtual Thread Example</h1>
+<pre><code class="language-java">try (var executor =
+         Executors.newVirtualThreadPerTaskExecutor()) {
+
+    executor.submit(() -&gt; {
+        callDatabase();
+    });
+
+    executor.submit(() -&gt; {
+        callPaymentService();
+    });
+}
+</code></pre>
+<p>This style allows straightforward blocking code while supporting large
+numbers of concurrent tasks.</p>
+<hr />
+<h1 id="62-virtual-threads-and-blocking-io">62. Virtual Threads and Blocking I/O</h1>
+<p>This is the key mental model.</p>
+<p>Traditional platform thread:</p>
+<pre><code class="language-text">Platform Thread
+     ↓
+blocking I/O
+     ↓
+OS thread remains occupied
+</code></pre>
+<p>Virtual thread:</p>
+<pre><code class="language-text">Virtual Thread
+     ↓
+blocking I/O
+     ↓
+virtual thread can unmount
+     ↓
+carrier thread can run another virtual thread
+</code></pre>
+<p>Therefore virtual threads are excellent for workloads with lots of
+waiting.</p>
+<hr />
+<h1 id="63-virtual-threads-are-not-a-cpu-parallelism-trick">63. Virtual Threads Are NOT a CPU Parallelism Trick</h1>
+<p>Bad reasoning:</p>
+<blockquote>
+<p>"I have 64 cores, so I'll create millions of virtual threads for
+CPU-intensive calculations."</p>
+</blockquote>
+<p>Virtual threads do not create more CPU capacity.</p>
+<p>If work is CPU-bound:</p>
+<pre><code class="language-text">CPU
+ ↓
+limited number of cores
+</code></pre>
+<p>Millions of CPU-heavy tasks still compete for those cores.</p>
+<p>Virtual threads primarily improve <strong>concurrency/throughput</strong>, not raw
+CPU speed.</p>
+<hr />
+<h1 id="64-virtual-thread-pinning">64. Virtual Thread Pinning</h1>
+<p>A virtual thread can sometimes be <strong>pinned to its carrier platform thread</strong>.</p>
+<p>The important modern-Java nuance is that older interview material is now partly outdated. Before Java 24, a virtual thread could be pinned while blocked inside <code>synchronized</code> methods/statements. JDK 24 changed the JVM implementation so that virtual threads can generally block in <code>synchronized</code> constructs without the old monitor-pin limitation.</p>
+<p>Remaining pinning situations can still matter, especially around native/foreign-function execution and blocking behavior that prevents the virtual thread from unmounting.</p>
+<p>Do <strong>not</strong> memorize:</p>
+<pre><code class="language-text">&quot;synchronized always pins virtual threads&quot;
+</code></pre>
+<p>That statement is outdated for modern JDKs. Instead remember:</p>
+<pre><code class="language-text">Virtual Thread
+      ↓
+blocking operation
+      ↓
+ideally unmounts from carrier
+      ↓
+carrier can run another virtual thread
+</code></pre>
+<p>If the virtual thread is pinned for a long time:</p>
+<pre><code class="language-text">Virtual Thread
+      ↓
+PINNED
+      ↓
+Carrier remains occupied
+      ↓
+less scalability
+</code></pre>
+<h3 id="interview-answer">Interview answer</h3>
+<blockquote>
+<p>Virtual-thread pinning means a virtual thread cannot unmount from its carrier during certain blocking situations. Historically this included monitor-based synchronization, but Java 24 removed nearly all of those cases. Remaining pinning can still occur around native/foreign-function interactions. In production, I would use JFR and current-JDK diagnostics rather than assuming every <code>synchronized</code> block is a pinning problem.</p>
+</blockquote>
+<hr />
+<h1 id="65-virtual-threads-and-thread-pools">65. Virtual Threads and Thread Pools</h1>
+<p>One important mindset change:</p>
+<p>Old model:</p>
+<pre><code class="language-text">Thread creation expensive
+        ↓
+Reuse a small thread pool
+</code></pre>
+<p>Virtual-thread model:</p>
+<pre><code class="language-text">Virtual thread cheap
+        ↓
+Create one per task
+</code></pre>
+<p>This is why:</p>
+<pre><code class="language-java">Executors.newVirtualThreadPerTaskExecutor()
+</code></pre>
+<p>is often preferable to trying to create a huge reusable virtual-thread
+pool.</p>
+<p>Virtual threads themselves are cheap; pooling them is generally
+unnecessary.</p>
+<hr />
+<h1 id="66-structured-concurrency">66. Structured Concurrency</h1>
+<p>Structured concurrency treats related concurrent tasks as one unit of
+work.</p>
+<p>Example problem:</p>
+<pre><code class="language-text">Request
+ ├── fetch user
+ ├── fetch orders
+ └── fetch recommendations
+</code></pre>
+<p>These tasks are related to one request.</p>
+<p>A structured concurrency model lets you:</p>
+<ul>
+<li>fork subtasks</li>
+<li>wait for them together</li>
+<li>propagate failure</li>
+<li>cancel related tasks</li>
+<li>keep lifetimes bounded</li>
+</ul>
+<p>Java 26 continues structured concurrency as a <strong>preview API</strong>, so you
+should learn the concept, but don't treat the API as a finalized
+everyday production API yet.</p>
+<hr />
+<h1 id="67-structured-concurrency-mental-model">67. Structured Concurrency Mental Model</h1>
+<p>Without structure:</p>
+<pre><code class="language-text">Request
+ ├── Thread A ────────────────&gt;
+ ├── Thread B ─────────&gt;
+ └── Thread C ─────────────────────&gt;
+</code></pre>
+<p>Lifetimes can become difficult to reason about.</p>
+<p>With structured concurrency:</p>
+<pre><code class="language-text">Request scope
+┌──────────────────────────────┐
+│ A ──────────┐               │
+│ B ───────┐  │               │
+│ C ────────────────┐         │
+│            join   │         │
+└──────────────────────────────┘
+</code></pre>
+<p>The child tasks belong to the parent operation.</p>
+<hr />
+<h1 id="68-thread-safety-in-spring">68. Thread Safety in Spring</h1>
+<p>This is extremely important for you as a future Spring developer.</p>
+<p>Spring singleton beans are usually shared across requests.</p>
+<p>Example:</p>
+<pre><code class="language-java">@Service
+public class UserService {
+
+    private int counter = 0;
+
+    public void increment() {
+        counter++;
+    }
+}
+</code></pre>
+<p>If this is a singleton bean, multiple requests can access the same
+instance concurrently.</p>
+<p>Therefore:</p>
+<blockquote>
+<p>Do not put request-specific mutable state in singleton Spring beans.</p>
+</blockquote>
+<p>Prefer:</p>
+<pre><code class="language-java">@Service
+public class UserService {
+
+    public User getUser(String id) {
+        // local variables are thread-confined
+    }
+}
+</code></pre>
+<p>Local variables belong to the executing thread's stack.</p>
+<p>Shared instance fields are different.</p>
+<hr />
+<h1 id="69-spring-singleton-does-not-mean-one-thread">69. Spring Singleton Does NOT Mean One Thread</h1>
+<p>Very important:</p>
+<pre><code class="language-text">Spring singleton
+     ≠
+single-threaded
+</code></pre>
+<p>It means one bean instance in that Spring application context.</p>
+<p>Many request threads can call it concurrently.</p>
+<pre><code class="language-text">Request 1 ──┐
+Request 2 ──┤
+Request 3 ──┼──&gt; same UserService instance
+Request 4 ──┤
+Request 5 ──┘
+</code></pre>
+<p>Therefore Spring singleton beans should normally be stateless.</p>
+<hr />
+<p>\n# 74. Advanced Interview Gap Addendum\n\nThis section closes several high-value gaps for senior Java/Spring Boot interviews without replacing the existing material.\n\n---\n\n## Q74.1. Why is ThreadLocal particularly important in Spring applications?\n\n<code>ThreadLocal</code> is a Core Java mechanism, but Spring and Java production libraries use the same idea for thread-bound contextual data. Examples to recognize include <code>RequestContextHolder</code>, <code>SecurityContextHolder</code>, and MDC-based logging context.\n\nThe key production model is:\n\n<code>text\nRequest A → Worker Thread-1 → context A\nRequest B → Worker Thread-2 → context B\n</code>\n\nWith a thread pool, the same worker can process another request:\n\n<code>text\nRequest A → Thread-1 → set(A) → request ends\n                         ↓\n                    Thread-1 reused\n                         ↓\nRequest B → Thread-1\n</code>\n\nIf request-specific data is not cleared, stale context can survive longer than intended.\n\nUse cleanup when you own the ThreadLocal lifecycle:\n\n<code>java\ntry {\n    context.set(value);\n    process();\n} finally {\n    context.remove();\n}\n</code>\n\n### Interview scenario\n\n&gt; A Spring Boot service occasionally logs User A's request ID while processing User B's request. What would you investigate?\n\nA strong answer includes ThreadLocal/MDC, thread pools, context propagation, request lifecycle, async execution, and missing cleanup.\n\n---\n\n## Q74.2. Why is ThreadLocal.remove() especially important with thread pools?\n\nA pooled thread usually lives longer than a request:\n\n<code>text\nThread lifetime &gt; Request lifetime\n</code>\n\nTherefore:\n\n&gt; ThreadLocal gives thread isolation, not request isolation.\n\nRequest-specific context needs explicit lifecycle cleanup when the application owns that context.\n\n---\n\n## Q74.3. ThreadLocal vs ScopedValue?\n\n<code>text\nThreadLocal\n→ mutable thread-associated state\n→ explicit cleanup is important\n\nScopedValue\n→ immutable/bounded contextual data\n→ lexically scoped\n→ especially relevant with virtual threads and structured concurrency\n</code>\n\nScopedValue was finalized in Java 25. It is not simply a newer spelling of ThreadLocal; the programming model is different.\n\n---\n\n## Q74.4. What is the correct way to shut down an ExecutorService?\n\n<code>shutdown()</code> means stop accepting new tasks while previously submitted tasks continue. <code>shutdownNow()</code> attempts to stop execution, typically by interrupting running tasks, and returns tasks that never started. <code>awaitTermination()</code> lets the caller wait for termination.\n\nA robust pattern is:\n\n<code>java\nexecutor.shutdown();\n\ntry {\n    if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {\n        executor.shutdownNow();\n\n        if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {\n            // log failure to terminate\n        }\n    }\n} catch (InterruptedException e) {\n    executor.shutdownNow();\n    Thread.currentThread().interrupt();\n}\n</code>\n\n### Senior interview point\n\n<code>shutdownNow()</code> does not forcibly kill arbitrary Java code. Cancellation is cooperative, so tasks must respond to interruption appropriately.\n\n---\n\n## Q74.5. What is the Executors.newFixedThreadPool() trap?\n\n<code>java\nExecutors.newFixedThreadPool(10);\n</code>\n\ndoes not mean the entire workload is bounded. The traditional fixed-thread-pool factory uses an unbounded work queue. Under sustained overload:\n\n<code>text\n10 workers\n   +\nunbounded queue\n   ↓\nqueue growth\n   ↓\nlatency / memory pressure\n</code>\n\nFor production systems, explicitly configuring <code>ThreadPoolExecutor</code> with a bounded queue and an appropriate rejection policy is often preferable:\n\n<code>java\nThreadPoolExecutor executor =\n    new ThreadPoolExecutor(\n        10, 20,\n        30, TimeUnit.SECONDS,\n        new ArrayBlockingQueue&lt;&gt;(500),\n        new ThreadPoolExecutor.CallerRunsPolicy()\n    );\n</code>\n\nThe correct numbers depend on the workload.\n\nWhen discussing thread pools, always ask:\n\n<code>text\nworkers? queue capacity? rejection policy?\nqueue latency? shutdown? downstream capacity?\n</code>\n\n---\n\n## Q74.6. How do you implement bounded concurrency with Semaphore?\n\nSuppose 10,000 requests exist but an external service should receive at most 20 concurrent calls:\n\n<code>java\nSemaphore semaphore = new Semaphore(20);\n\nsemaphore.acquire();\ntry {\n    callExternalService();\n} finally {\n    semaphore.release();\n}\n</code>\n\nThe important distinction is:\n\n<code>text\nThread pool\n→ controls worker execution\n\nSemaphore\n→ controls access to limited capacity\n</code>\n\nThis is useful for downstream protection, expensive operations, and other bounded resources.\n\n---\n\n## Q74.7. CountDownLatch vs CyclicBarrier vs Semaphore\n\nUse this mental model:\n\n<code>text\nCountDownLatch\n→ wait until N things happen\n\nCyclicBarrier\n→ N participants meet at a synchronization point\n\nSemaphore\n→ only N participants may enter concurrently\n</code>\n\nA latch is generally one-shot; a cyclic barrier is reusable.\n\n---\n\n## Q74.8. Why is swallowing InterruptedException a serious bug?\n\nBad:\n\n<code>java\ntry {\n    queue.take();\n} catch (InterruptedException e) {\n    // ignore\n}\n</code>\n\nBetter:\n\n<code>java\ntry {\n    queue.take();\n} catch (InterruptedException e) {\n    Thread.currentThread().interrupt();\n    return;\n}\n</code>\n\nOr propagate it when the API allows:\n\n<code>java\nvoid process() throws InterruptedException {\n    queue.take();\n}\n</code>\n\nInterrupt is a cooperative cancellation signal. Swallowing it can break executor shutdown, request cancellation, and application lifecycle behavior.\n\n---\n\n## Q74.9. What is double-checked locking and why does it need volatile?\n\nClassic lazy Singleton:\n\n<code>java\nclass Singleton {\n    private static volatile Singleton instance;\n\n    private Singleton() {}\n\n    static Singleton getInstance() {\n        if (instance == null) {\n            synchronized (Singleton.class) {\n                if (instance == null) {\n                    instance = new Singleton();\n                }\n            }\n        }\n        return instance;\n    }\n}\n</code>\n\nThe two checks avoid synchronization after initialization while preventing multiple construction during initialization. <code>volatile</code> is required for correct visibility and ordering/safe publication under the Java Memory Model.\n\nFor a Singleton specifically, the initialization-on-demand holder idiom is often simpler. The real interview topic is:\n\n<code>text\nvolatile\n+ visibility\n+ ordering\n+ safe publication\n+ Java Memory Model\n</code>\n\n---\n\n## Q74.10. volatile vs synchronized vs AtomicInteger\n\n<code>text\nvolatile\n→ visibility/order; not compound-operation atomicity\n\nsynchronized\n→ mutual exclusion + visibility/order\n\nAtomicInteger\n→ atomic operations on an integer, typically via CAS-style mechanisms\n</code>\n\nExample:\n\n<code>java\nvolatile boolean running;\n\nAtomicInteger count = new AtomicInteger();\ncount.incrementAndGet();\n\n synchronized (lock) {\n    // compound critical section\n}\n</code>\n\nChoose based on the required correctness property, not on which API sounds more advanced.\n\n---\n\n## Q74.11. Does synchronized still pin virtual threads?\n\nDo <strong>not</strong> answer simply: "Yes." That was important before Java 24. JDK 24 delivered JEP 491, changing the JVM so virtual threads can generally block in <code>synchronized</code> methods/statements without the old monitor-pin limitation.\n\nRemaining pinning situations are narrower, particularly around native/foreign-function interactions. The exact behavior is JDK-version dependent, so state the Java version in a senior interview.\n\nA strong answer is:\n\n&gt; Virtual-thread pinning is real, but the old rule that synchronized always pins a virtual thread is outdated from Java 24 onward. I would use current-JDK/JFR diagnostics to investigate remaining pinning rather than blindly replacing synchronized with ReentrantLock.\n\n---\n\n## Q74.12. What is structured concurrency and what is its current status?\n\nStructured concurrency treats related concurrent tasks as one unit of work:\n\n<code>text\nRequest\n ├── fetch user\n ├── fetch orders\n └── fetch recommendations\n</code>\n\nThe model gives related subtasks clearer lifetime, joining, failure propagation, cancellation, and observability.\n\nAs of Java 26, <code>StructuredTaskScope</code> is still a <strong>preview API</strong>. Learn the concept and the purpose, but do not describe it as a finalized general-purpose Java API.\n\n---\n\n## Q74.13. CompletableFuture vs Structured Concurrency\n\n<code>CompletableFuture</code> emphasizes asynchronous pipelines:\n\n<code>text\nstage → stage → combine\n</code>\n\nStructured concurrency emphasizes a parent operation owning related child tasks:\n\n<code>text\nparent\n ├── child A\n ├── child B\n └── child C\n       ↓\n     join / failure / cancellation\n</code>\n\nThey overlap but are not identical abstractions. Structured concurrency is primarily about task relationships and lifetimes.\n\n---\n\n## Q74.14. What should you think about when using virtual threads in Spring Boot?\n\nDo not stop at "virtual threads are cheap." Trace the whole resource chain:\n\n<code>text\nRequests\n   ↓\nVirtual threads\n   ↓\nApplication\n   ↓\nDB connection pool\n   ↓\nDatabase\n</code>\n\nand:\n\n<code>text\nVirtual threads\n   ↓\nHTTP client / connection pool\n   ↓\nDownstream service\n</code>\n\nVirtual threads remove one bottleneck; they do not increase database or downstream capacity. Use appropriate connection pools, timeouts, semaphores, rate limits, bulkheads, and other capacity controls where needed.\n\n---\n\n## Q74.15. Senior scenario: the API becomes slow under load\n\nSuppose:\n\n<code>text\nSpring Boot API\n    ↓\n10,000 concurrent requests\n    ↓\nDB + 2 downstream services\n</code>\n\nDo not immediately say "increase the thread pool." Investigate:\n\n<code>text\nCPU? GC? memory?\nthread pool? virtual-thread behavior?\nDB connection pool? DB query latency?\nHTTP connection pool? downstream latency?\nqueue growth? lock contention?\nretries? timeouts? external rate limits?\n</code>\n\nThen ask:\n\n&gt; What resource is actually saturated?\n\nThe correct concurrency solution depends on the bottleneck.\n\n---\n\n# 77. Final High-Priority Concurrency Checklist\n\nFor Java + Spring Boot interviews, make sure you can explain these without memorizing one-line definitions:\n\n<code>text\nFOUNDATION\nThread/process, concurrency/parallelism, lifecycle, start/run, sleep, join, interrupt\n\nSHARED STATE\nRace condition, atomicity, synchronized, monitor, volatile, AtomicInteger, CAS, JMM, happens-before\n\nTASK EXECUTION\nExecutorService, ThreadPoolExecutor, queues, rejection, Callable, Future, CompletableFuture, shutdown lifecycle\n\nCOORDINATION\nSemaphore, CountDownLatch, CyclicBarrier, BlockingQueue, ReentrantLock, ReadWriteLock\n\nTHREAD CONTEXT\nThreadLocal, remove(), thread pools, MDC, Spring context holders, ScopedValue\n\nFAILURE\nDeadlock, starvation, livelock, cancellation, InterruptedException, pool exhaustion\n\nMODERN JAVA\nPlatform threads, virtual threads, DB-pool interaction, modern pinning behavior, StructuredTaskScope preview\n\nADVANCED\nDouble-checked locking, volatile, safe publication, production concurrency diagnosis\n</code>\n\n---\n\n</p>
+<h1 id="70-common-interview-traps">70. Common Interview Traps</h1>
+<h3 id="start-vs-run"><code>start()</code> vs <code>run()</code></h3>
+<p><code>start()</code> creates/schedules concurrent execution.</p>
+<p><code>run()</code> is just a method invocation when called directly.</p>
+<h3 id="sleep-vs-wait"><code>sleep()</code> vs <code>wait()</code></h3>
+<p><code>sleep()</code> pauses the current thread and does not release intrinsic
+locks.</p>
+<p><code>wait()</code> releases the object's monitor and must be used with the
+appropriate monitor ownership.</p>
+<h3 id="synchronized-vs-volatile"><code>synchronized</code> vs <code>volatile</code></h3>
+<p><code>synchronized</code> provides mutual exclusion plus visibility/order
+guarantees.</p>
+<p><code>volatile</code> provides visibility/order semantics but does not make
+compound operations atomic.</p>
+<h3 id="runnable-vs-callable"><code>Runnable</code> vs <code>Callable</code></h3>
+<p>Runnable:</p>
+<pre><code class="language-text">no result
+</code></pre>
+<p>Callable:</p>
+<pre><code class="language-text">returns result
+can throw checked exceptions
+</code></pre>
+<h3 id="hashmap-vs-concurrenthashmap"><code>HashMap</code> vs <code>ConcurrentHashMap</code></h3>
+<p>HashMap is not designed for concurrent mutation.</p>
+<p>ConcurrentHashMap is designed for concurrent access.</p>
+<h3 id="future-vs-completablefuture"><code>Future</code> vs <code>CompletableFuture</code></h3>
+<p>Future represents an asynchronous result but is awkward for complex
+composition.</p>
+<p>CompletableFuture supports composition and asynchronous pipelines.</p>
+<h3 id="platform-vs-virtual-thread">Platform vs Virtual Thread</h3>
+<p>Platform threads are OS-backed and relatively expensive.</p>
+<p>Virtual threads are JVM-scheduled and lightweight, especially useful for
+high-concurrency I/O workloads.</p>
+<hr />
+<h1 id="71-recommended-learning-order">71. Recommended Learning Order</h1>
+<p>Do NOT try to memorize everything in this note at once.</p>
+<p>Learn in this order:</p>
+<pre><code class="language-text">1. Thread basics
+2. start() vs run()
+3. Runnable
+4. Thread lifecycle
+5. sleep()
+6. join()
+7. interrupt()
+8. Race conditions
+9. synchronized
+10. intrinsic locks
+11. volatile
+12. AtomicInteger / CAS
+13. ExecutorService
+14. Thread pools
+15. Callable / Future
+16. CompletableFuture
+17. BlockingQueue
+18. ConcurrentHashMap
+19. Lock / ReentrantLock
+20. CountDownLatch
+21. CyclicBarrier
+22. Semaphore
+23. ThreadLocal
+24. Java Memory Model
+25. happens-before
+26. Deadlock / starvation / livelock
+27. ForkJoinPool
+28. Parallel streams
+29. Platform threads
+30. Virtual threads
+31. ScopedValue
+32. Structured concurrency
+33. Spring concurrency
+34. Production debugging/performance
+</code></pre>
+<hr />
+<h1 id="72-a-mental-model-to-remember">72. A Mental Model to Remember</h1>
+<p>When thinking about Java concurrency, ask these questions:</p>
+<pre><code class="language-text">1. Who owns the data?
+2. Is the data shared?
+3. Is the data mutable?
+4. Can multiple threads access it?
+5. Do I need atomicity?
+6. Do I need visibility?
+7. Do I need ordering?
+8. Do I need mutual exclusion?
+9. Can I avoid sharing instead?
+10. Can I use immutability?
+11. Should this be a task submitted to an executor?
+12. Is this CPU-bound or I/O-bound?
+13. Should I use a platform thread or virtual thread?
+14. How will cancellation work?
+15. What happens when a task fails?
+</code></pre>
+<p>If you can answer these questions, you are thinking like a
+concurrent-programming engineer rather than simply memorizing APIs.</p>
+<hr />
+<h1 id="73-the-big-picture">73. The Big Picture</h1>
+<pre><code class="language-text">                         JAVA CONCURRENCY
+                                │
+             ┌──────────────────┴──────────────────┐
+             │                                     │
+        Thread Basics                         Shared State
+             │                                     │
+       ┌─────┼─────┐                    ┌──────────┼──────────┐
+       │     │     │                    │          │          │
+    Thread Runnable Lifecycle       synchronized volatile   Atomic
+       │                         │
+       │                         └── Locks
+       │
+       └───────────────┐
+                       │
+                 Task Execution
+                       │
+             ┌─────────┼─────────┐
+             │         │         │
+        ExecutorService Future CompletableFuture
+             │
+        Thread Pools
+             │
+     ┌───────┴────────┐
+     │                │
+ Platform Threads  Virtual Threads
+                         │
+                ┌────────┴────────┐
+                │                 │
+           ScopedValue      Structured
+                           Concurrency
+</code></pre>
+<p>The ultimate goal is not:</p>
+<blockquote>
+<p>"I know 30 concurrency classes."</p>
+</blockquote>
+<p>The goal is:</p>
+<blockquote>
+<p>"Given a concurrent problem, I can identify the shared state, the
+synchronization requirements, the task model, the failure/cancellation
+model, and choose an appropriate Java concurrency abstraction."</p>
+</blockquote>
+<hr />
+<h1 id="78-updated-learning-priority">78. Updated Learning Priority</h1>
+<p>For efficient interview preparation, study in this order:</p>
+<pre><code class="language-text">1. Thread basics + lifecycle
+2. start/run + Runnable/Callable
+3. Race conditions + atomicity
+4. synchronized + monitor
+5. volatile + Java Memory Model + happens-before
+6. AtomicInteger + CAS
+7. ExecutorService + ThreadPoolExecutor
+8. Future + CompletableFuture
+9. Interrupts + cancellation
+10. Graceful executor shutdown
+11. BlockingQueue + producer/consumer
+12. ReentrantLock
+13. Semaphore + bounded concurrency
+14. CountDownLatch + CyclicBarrier
+15. ThreadLocal + thread-pool leak scenario
+16. Spring singleton thread safety + MDC/context
+17. Deadlock/starvation/livelock
+18. Platform vs virtual threads
+19. Virtual threads + downstream resource limits
+20. Modern virtual-thread pinning
+21. ScopedValue
+22. Structured concurrency
+23. Double-checked locking + volatile
+24. Production concurrency scenarios
+</code></pre>
+<p>The objective is not to know every concurrency class. The objective is to identify the required property:</p>
+<pre><code class="language-text">Need visibility?
+Need atomicity?
+Need mutual exclusion?
+Need bounded concurrency?
+Need cancellation?
+Need coordination?
+Need contextual data?
+Need high I/O concurrency?
+Need structured task lifetime?
+</code></pre>
+<p>and then select the simplest correct abstraction.</p>
+<hr />
+<h2 id="sources-current-java-notes">Sources / Current Java Notes</h2>
+<ul>
+<li>OpenJDK JEP 491: Synchronize Virtual Threads without Pinning (Java 24).</li>
+<li>OpenJDK JEP 525: Structured Concurrency, sixth preview (Java 26).</li>
+<li>Java SE 26 Thread and concurrency APIs, including virtual threads and thread-local support.</li>
+</ul></main>
+</div>
+</body>
+</html>

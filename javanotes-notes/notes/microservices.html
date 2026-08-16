@@ -1,0 +1,1741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microservices — Interview Preparation — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: Microservices — Interview Preparation
+tags:
+  - microservices
+  - spring-boot
+  - java
+  - distributed-systems
+  - kafka
+  - redis
+  - rest
+  - resilience
+  - api-gateway
+  - observability
+  - interview</p>
+<hr />
+<h1 id="microservices-interview-preparation">Microservices — Interview Preparation</h1>
+<blockquote>
+<p>[!note]
+This note is designed for a Java/Spring Boot full-stack developer.</p>
+<p>You do not need to become a distributed-systems researcher.</p>
+<p>You do need to understand how services communicate, fail, scale, secure themselves, own data, and remain observable.</p>
+<p>Core mental model:</p>
+<p><strong>Service boundary → API → data ownership → communication → consistency → resilience → observability → deployment</strong></p>
+</blockquote>
+<hr />
+<h1 id="part-i-fundamentals">PART I — FUNDAMENTALS</h1>
+<h1 id="1-what-is-a-microservice">1. What Is a Microservice?</h1>
+<p>A microservice is a relatively small, independently deployable service organized around a business capability or bounded context.</p>
+<p>Typical properties:</p>
+<pre><code class="language-text">independently deployable
+business capability oriented
+owns its logic
+often owns its data
+communicates through APIs/events
+can scale independently
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>"Small service" alone does not make a good microservice.</p>
+</blockquote>
+<hr />
+<h1 id="2-monolith-vs-microservices">2. Monolith vs Microservices</h1>
+<p>Monolith:</p>
+<pre><code class="language-text">             Application
+ ┌─────────────────────────────┐
+ │ User │ Order │ Payment │ ...│
+ └─────────────────────────────┘
+          ↓
+       Database
+</code></pre>
+<p>Microservices:</p>
+<pre><code class="language-text">User Service     → User DB
+Order Service    → Order DB
+Payment Service  → Payment DB
+Inventory Service→ Inventory DB
+</code></pre>
+<p>Microservices introduce independence but also distributed-system complexity.</p>
+<hr />
+<h1 id="3-when-should-you-use-microservices">3. When Should You Use Microservices?</h1>
+<p>Good reasons:</p>
+<pre><code class="language-text">independent scaling
+independent deployment
+clear domain boundaries
+large organization/team boundaries
+different reliability requirements
+different technology/runtime needs
+</code></pre>
+<p>Bad reason:</p>
+<blockquote>
+<p>"Everyone uses microservices."</p>
+</blockquote>
+<hr />
+<h1 id="4-monolith-advantages">4. Monolith Advantages</h1>
+<pre><code class="language-text">simple deployment
+simple debugging
+local transactions
+simple calls
+easy refactoring
+low operational overhead
+</code></pre>
+<p>For a small team/product, a modular monolith can be an excellent architecture.</p>
+<hr />
+<h1 id="5-microservice-costs">5. Microservice Costs</h1>
+<pre><code class="language-text">network calls
+distributed failures
+distributed tracing
+eventual consistency
+deployment complexity
+service discovery
+configuration
+monitoring
+security
+cross-service transactions
+data duplication
+</code></pre>
+<p>Senior answer:</p>
+<blockquote>
+<p>Microservices trade local simplicity for organizational and deployment scalability.</p>
+</blockquote>
+<hr />
+<h1 id="6-what-is-a-service-boundary">6. What Is a Service Boundary?</h1>
+<p>A service boundary should usually follow a business capability/bounded context rather than a technical layer.</p>
+<p>Bad:</p>
+<pre><code class="language-text">UserController Service
+UserRepository Service
+PaymentRepository Service
+</code></pre>
+<p>Better:</p>
+<pre><code class="language-text">Order Service
+Payment Service
+Inventory Service
+Notification Service
+</code></pre>
+<hr />
+<h1 id="7-bounded-context">7. Bounded Context</h1>
+<p>A bounded context defines where a particular domain model and terminology apply.</p>
+<p>For example:</p>
+<pre><code class="language-text">Order
+</code></pre>
+<p>may mean:</p>
+<pre><code class="language-text">Order Service → purchase lifecycle
+Payment Service → payment transaction
+Shipping Service → shipment
+</code></pre>
+<p>Do not force one giant universal domain model across services.</p>
+<hr />
+<h1 id="8-database-per-service">8. Database per Service</h1>
+<p>Preferred microservice principle:</p>
+<pre><code class="language-text">Order Service
+ ↓
+Order DB
+
+Payment Service
+ ↓
+Payment DB
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">ownership
+independent scaling
+schema independence
+failure isolation
+</code></pre>
+<p>Costs:</p>
+<pre><code class="language-text">distributed queries
+distributed transactions
+data duplication
+eventual consistency
+</code></pre>
+<hr />
+<h1 id="9-shared-database">9. Shared Database</h1>
+<pre><code class="language-text">Order Service ─┐
+Payment Service├──→ same DB
+User Service ──┘
+</code></pre>
+<p>This can be practical during migration, but it creates:</p>
+<pre><code class="language-text">coupling
+schema coordination
+ownership ambiguity
+</code></pre>
+<p>It weakens independent service evolution.</p>
+<hr />
+<h1 id="10-api-gateway">10. API Gateway</h1>
+<p>Typical:</p>
+<pre><code class="language-text">Client
+  ↓
+API Gateway
+  ↓
+Services
+</code></pre>
+<p>Gateway responsibilities may include:</p>
+<pre><code class="language-text">routing
+authentication
+authorization
+rate limiting
+TLS termination
+request aggregation
+observability
+</code></pre>
+<p>Avoid putting large amounts of business logic into the gateway.</p>
+<hr />
+<h1 id="11-api-gateway-vs-load-balancer">11. API Gateway vs Load Balancer</h1>
+<p>Load balancer primarily distributes traffic.</p>
+<p>API Gateway can provide higher-level API concerns:</p>
+<pre><code class="language-text">routing
+auth
+rate limits
+aggregation
+transformation
+</code></pre>
+<p>They can coexist.</p>
+<hr />
+<h1 id="12-service-discovery">12. Service Discovery</h1>
+<p>Services need to find other services.</p>
+<p>Options:</p>
+<pre><code class="language-text">DNS
+service registry
+Kubernetes Service
+client-side discovery
+server-side discovery
+</code></pre>
+<p>Kubernetes often provides service discovery through DNS and Services.</p>
+<hr />
+<h1 id="13-synchronous-communication">13. Synchronous Communication</h1>
+<p>Example:</p>
+<pre><code class="language-text">Order Service
+    ↓ HTTP
+Payment Service
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">simple request/response
+immediate result
+easy to understand
+</code></pre>
+<p>Costs:</p>
+<pre><code class="language-text">latency
+availability coupling
+cascading failures
+</code></pre>
+<hr />
+<h1 id="14-asynchronous-communication">14. Asynchronous Communication</h1>
+<pre><code class="language-text">Order Service
+     ↓
+   Kafka
+     ↓
+Payment Service
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">decoupling
+buffering
+replay
+independent processing
+</code></pre>
+<p>Costs:</p>
+<pre><code class="language-text">eventual consistency
+debugging complexity
+duplicate events
+ordering
+retry/DLT management
+</code></pre>
+<hr />
+<h1 id="15-rest-vs-messaging">15. REST vs Messaging</h1>
+<p>REST:</p>
+<pre><code class="language-text">&quot;I need an answer now.&quot;
+</code></pre>
+<p>Event:</p>
+<pre><code class="language-text">&quot;Something happened.&quot;
+</code></pre>
+<p>Command:</p>
+<pre><code class="language-text">&quot;Please perform this action.&quot;
+</code></pre>
+<p>This distinction helps determine communication style.</p>
+<hr />
+<h1 id="16-rest-vs-grpc">16. REST vs gRPC</h1>
+<p>REST:</p>
+<pre><code class="language-text">HTTP/JSON
+widely accessible
+browser-friendly
+simple debugging
+</code></pre>
+<p>gRPC:</p>
+<pre><code class="language-text">HTTP/2
+binary serialization
+strong contracts
+streaming
+efficient service-to-service communication
+</code></pre>
+<p>For browser-facing APIs, REST is often simpler.</p>
+<p>For internal high-performance service-to-service calls, gRPC can be attractive.</p>
+<hr />
+<h1 id="part-ii-data-and-consistency">PART II — DATA AND CONSISTENCY</h1>
+<h1 id="17-why-is-database-per-service-important">17. Why Is Database per Service Important?</h1>
+<p>Because the service should own:</p>
+<pre><code class="language-text">schema
+data lifecycle
+business rules
+</code></pre>
+<p>Other services should ideally access it through:</p>
+<pre><code class="language-text">API
+events
+</code></pre>
+<p>rather than direct SQL queries.</p>
+<hr />
+<h1 id="18-distributed-transactions">18. Distributed Transactions</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">Order DB
++
+Payment DB
+</code></pre>
+<p>must commit atomically.</p>
+<p>A normal local DB transaction cannot cover both independently.</p>
+<p>Options:</p>
+<pre><code class="language-text">2PC
+Saga
+outbox
+compensation
+</code></pre>
+<hr />
+<h1 id="19-two-phase-commit">19. Two-Phase Commit</h1>
+<p>2PC conceptually:</p>
+<pre><code class="language-text">Coordinator
+ ↓
+prepare
+ ↓
+all participants agree
+ ↓
+commit
+</code></pre>
+<p>Problem:</p>
+<pre><code class="language-text">coordination
+blocking
+latency
+failure complexity
+</code></pre>
+<p>Many microservice architectures prefer eventual consistency and Saga-style workflows instead.</p>
+<hr />
+<h1 id="20-saga-pattern">20. Saga Pattern</h1>
+<p>A Saga breaks a distributed transaction into local transactions.</p>
+<p>Example:</p>
+<pre><code class="language-text">Create Order
+ ↓
+Reserve Inventory
+ ↓
+Charge Payment
+ ↓
+Confirm Order
+</code></pre>
+<p>If payment fails:</p>
+<pre><code class="language-text">release inventory
+ ↓
+cancel order
+</code></pre>
+<p>The reverse actions are compensating transactions.</p>
+<hr />
+<h1 id="21-choreography-saga">21. Choreography Saga</h1>
+<p>Services react to events.</p>
+<pre><code class="language-text">OrderCreated
+ ↓
+InventoryReserved
+ ↓
+PaymentCompleted
+ ↓
+OrderConfirmed
+</code></pre>
+<p>Advantages:</p>
+<pre><code class="language-text">less central orchestration
+loosely coupled
+</code></pre>
+<p>Disadvantages:</p>
+<pre><code class="language-text">event flow becomes hard to understand
+business process can become scattered
+</code></pre>
+<hr />
+<h1 id="22-orchestration-saga">22. Orchestration Saga</h1>
+<p>A central orchestrator coordinates:</p>
+<pre><code class="language-text">Order Saga
+ ├── reserve inventory
+ ├── charge payment
+ ├── confirm order
+ └── compensate failures
+</code></pre>
+<p>Advantages:</p>
+<pre><code class="language-text">central workflow visibility
+easier business process reasoning
+</code></pre>
+<p>Disadvantages:</p>
+<pre><code class="language-text">orchestrator complexity
+central coordination
+</code></pre>
+<hr />
+<h1 id="23-idempotency">23. Idempotency</h1>
+<p>An operation is idempotent when repeating it produces the same intended business outcome.</p>
+<p>Example:</p>
+<pre><code class="language-text">POST /payments
+Idempotency-Key: abc123
+</code></pre>
+<p>If request is retried:</p>
+<pre><code class="language-text">same key
+ ↓
+same payment result
+</code></pre>
+<p>Important for:</p>
+<pre><code class="language-text">retries
+network failures
+Kafka duplicate delivery
+client retries
+</code></pre>
+<hr />
+<h1 id="24-idempotency-implementation">24. Idempotency Implementation</h1>
+<p>Possible:</p>
+<pre><code class="language-text">idempotency key
+ ↓
+database unique constraint
+ ↓
+stored result
+</code></pre>
+<p>Redis can accelerate lookup:</p>
+<pre><code class="language-text">Redis
+ ↓
+fast duplicate detection
+</code></pre>
+<p>But durable correctness often belongs in the database.</p>
+<hr />
+<h1 id="25-outbox-pattern">25. Outbox Pattern</h1>
+<p>Problem:</p>
+<pre><code class="language-text">DB update succeeds
+Kafka publish fails
+</code></pre>
+<p>Outbox:</p>
+<pre><code class="language-text">DB transaction
+ ├── business data
+ └── outbox event
+        ↓
+      COMMIT
+        ↓
+Outbox Publisher
+        ↓
+      Kafka
+</code></pre>
+<p>This prevents the business update and event record from becoming inconsistent due to a simple dual-write failure.</p>
+<hr />
+<h1 id="26-inbox-pattern">26. Inbox Pattern</h1>
+<p>Consumer receives:</p>
+<pre><code class="language-text">eventId=123
+</code></pre>
+<p>Store it:</p>
+<pre><code class="language-text">inbox(eventId)
+</code></pre>
+<p>inside the same business transaction.</p>
+<p>If event 123 arrives again:</p>
+<pre><code class="language-text">already processed
+ ↓
+skip
+</code></pre>
+<p>Useful for at-least-once delivery.</p>
+<hr />
+<h1 id="27-eventual-consistency">27. Eventual Consistency</h1>
+<p>Microservices often accept:</p>
+<pre><code class="language-text">Service A updated
+ ↓
+event published
+ ↓
+Service B eventually updates
+</code></pre>
+<p>For a short period:</p>
+<pre><code class="language-text">A = new
+B = old
+</code></pre>
+<p>This is eventual consistency.</p>
+<hr />
+<h1 id="28-strong-consistency-vs-eventual-consistency">28. Strong Consistency vs Eventual Consistency</h1>
+<p>Use strong consistency where correctness requires it:</p>
+<pre><code class="language-text">ledger
+inventory constraints
+critical state transition
+</code></pre>
+<p>Eventual consistency can be acceptable for:</p>
+<pre><code class="language-text">notifications
+analytics
+search indexes
+recommendation data
+read models
+</code></pre>
+<hr />
+<h1 id="29-distributed-cache">29. Distributed Cache</h1>
+<p>Typical:</p>
+<pre><code class="language-text">Service
+ ↓
+Redis
+</code></pre>
+<p>Questions:</p>
+<pre><code class="language-text">What is source of truth?
+How is invalidation handled?
+What happens when Redis fails?
+How stale can data be?
+</code></pre>
+<hr />
+<h1 id="part-iii-resilience">PART III — RESILIENCE</h1>
+<h1 id="30-network-calls-are-not-method-calls">30. Network Calls Are Not Method Calls</h1>
+<p>Java method:</p>
+<pre><code class="language-java">paymentService.charge();
+</code></pre>
+<p>is typically:</p>
+<pre><code class="language-text">in-process
+</code></pre>
+<p>Microservice call:</p>
+<pre><code class="language-text">HTTP POST /payments
+</code></pre>
+<p>can fail due to:</p>
+<pre><code class="language-text">network
+DNS
+timeout
+service overload
+connection pool
+load balancer
+serialization
+deployment
+</code></pre>
+<p>Therefore:</p>
+<blockquote>
+<p>Treat remote calls as unreliable boundaries.</p>
+</blockquote>
+<hr />
+<h1 id="31-timeout">31. Timeout</h1>
+<p>Every remote call should have an appropriate timeout.</p>
+<p>Without timeout:</p>
+<pre><code class="language-text">Service B hangs
+ ↓
+Service A thread waits
+ ↓
+many requests accumulate
+ ↓
+thread pool exhaustion
+</code></pre>
+<p>Timeouts are a fundamental resilience mechanism.</p>
+<hr />
+<h1 id="32-retry">32. Retry</h1>
+<p>Retry transient failures:</p>
+<pre><code class="language-text">temporary network failure
+503
+connection reset
+</code></pre>
+<p>Do not blindly retry:</p>
+<pre><code class="language-text">validation error
+authentication failure
+business rejection
+non-idempotent operation
+</code></pre>
+<hr />
+<h1 id="33-exponential-backoff">33. Exponential Backoff</h1>
+<p>Instead of:</p>
+<pre><code class="language-text">retry immediately
+retry immediately
+retry immediately
+</code></pre>
+<p>use increasing delay:</p>
+<pre><code class="language-text">100ms
+200ms
+400ms
+800ms
+...
+</code></pre>
+<p>This reduces pressure on a struggling service.</p>
+<hr />
+<h1 id="34-jitter">34. Jitter</h1>
+<p>If 10,000 clients retry at exactly:</p>
+<pre><code class="language-text">1 second
+</code></pre>
+<p>they create another traffic spike.</p>
+<p>Jitter randomizes retry timing.</p>
+<pre><code class="language-text">1.0s
+1.2s
+0.9s
+1.4s
+...
+</code></pre>
+<hr />
+<h1 id="35-circuit-breaker">35. Circuit Breaker</h1>
+<p>Concept:</p>
+<pre><code class="language-text">CLOSED
+ ↓ failures
+OPEN
+ ↓ timeout
+HALF-OPEN
+ ↓ test
+CLOSED
+</code></pre>
+<p>When a dependency is failing repeatedly:</p>
+<pre><code class="language-text">stop sending traffic
+</code></pre>
+<p>This prevents cascading failures.</p>
+<hr />
+<h1 id="36-bulkhead">36. Bulkhead</h1>
+<p>Separate resources so one dependency cannot consume everything.</p>
+<p>Example:</p>
+<pre><code class="language-text">Service
+ ├── payment pool
+ ├── notification pool
+ └── reporting pool
+</code></pre>
+<p>If reporting becomes slow:</p>
+<pre><code class="language-text">reporting resources exhausted
+</code></pre>
+<p>Payment can continue.</p>
+<hr />
+<h1 id="37-rate-limiting">37. Rate Limiting</h1>
+<p>Protect services from excessive traffic.</p>
+<p>Common algorithms:</p>
+<pre><code class="language-text">fixed window
+sliding window
+token bucket
+leaky bucket
+</code></pre>
+<p>Redis is often useful for distributed rate limiting.</p>
+<hr />
+<h1 id="38-load-shedding">38. Load Shedding</h1>
+<p>When overloaded, reject some work rather than allowing the entire system to collapse.</p>
+<p>Example:</p>
+<pre><code class="language-text">system overloaded
+ ↓
+return 429/503
+</code></pre>
+<p>This protects remaining capacity.</p>
+<hr />
+<h1 id="39-backpressure">39. Backpressure</h1>
+<p>Producer:</p>
+<pre><code class="language-text">100k events/sec
+</code></pre>
+<p>Consumer:</p>
+<pre><code class="language-text">20k/sec
+</code></pre>
+<p>Without control:</p>
+<pre><code class="language-text">queue/lag grows
+</code></pre>
+<p>Backpressure mechanisms:</p>
+<pre><code class="language-text">bounded queues
+rate limiting
+consumer scaling
+batching
+load shedding
+</code></pre>
+<hr />
+<h1 id="40-cascading-failure">40. Cascading Failure</h1>
+<p>Example:</p>
+<pre><code class="language-text">A → B → C → D
+</code></pre>
+<p>If D becomes slow:</p>
+<pre><code class="language-text">C waits
+ ↓
+B waits
+ ↓
+A waits
+</code></pre>
+<p>Soon the whole system can become unhealthy.</p>
+<p>Mitigate with:</p>
+<pre><code class="language-text">timeouts
+circuit breakers
+bulkheads
+bounded concurrency
+fallbacks
+</code></pre>
+<hr />
+<h1 id="41-fallback">41. Fallback</h1>
+<p>If recommendation service fails:</p>
+<pre><code class="language-text">Recommendation unavailable
+ ↓
+return popular products
+</code></pre>
+<p>Fallback should be:</p>
+<pre><code class="language-text">safe
+useful
+bounded
+</code></pre>
+<p>Do not hide serious correctness failures with fake fallback data.</p>
+<hr />
+<h1 id="part-iv-api-design">PART IV — API DESIGN</h1>
+<h1 id="42-api-versioning">42. API Versioning</h1>
+<p>Strategies:</p>
+<pre><code class="language-text">/v1/orders
+/v2/orders
+</code></pre>
+<p>or:</p>
+<pre><code class="language-text">header versioning
+content negotiation
+</code></pre>
+<p>URL versioning is easy to understand, but the right strategy depends on organizational API policy.</p>
+<hr />
+<h1 id="43-backward-compatibility">43. Backward Compatibility</h1>
+<p>A new service version should ideally not break old clients.</p>
+<p>Safer:</p>
+<pre><code class="language-text">add optional field
+</code></pre>
+<p>Risky:</p>
+<pre><code class="language-text">rename/remove field
+change meaning
+change type incompatibly
+</code></pre>
+<hr />
+<h1 id="44-api-error-model">44. API Error Model</h1>
+<p>Use a consistent error format.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;code&quot;: &quot;ORDER_NOT_FOUND&quot;,
+  &quot;message&quot;: &quot;Order does not exist&quot;,
+  &quot;traceId&quot;: &quot;abc123&quot;
+}
+</code></pre>
+<p>Avoid leaking:</p>
+<pre><code class="language-text">stack traces
+database errors
+internal secrets
+</code></pre>
+<hr />
+<h1 id="45-api-gateway-aggregation">45. API Gateway Aggregation</h1>
+<p>Client needs:</p>
+<pre><code class="language-text">user
+orders
+recommendations
+</code></pre>
+<p>Instead of three browser calls:</p>
+<pre><code class="language-text">Client
+ ↓
+Gateway
+ ├── User
+ ├── Orders
+ └── Recommendations
+ ↓
+combined response
+</code></pre>
+<p>This can reduce client complexity and round trips.</p>
+<p>Trade-off:</p>
+<pre><code class="language-text">gateway coupling
+latency
+failure handling
+</code></pre>
+<hr />
+<h1 id="46-pagination">46. Pagination</h1>
+<p>For large collections:</p>
+<pre><code class="language-text">page + size
+</code></pre>
+<p>or preferably for deep pagination:</p>
+<pre><code class="language-text">cursor
+</code></pre>
+<p>Cursor pagination often scales better than huge OFFSET queries.</p>
+<hr />
+<h1 id="47-put-vs-patch">47. PUT vs PATCH</h1>
+<p>PUT commonly represents replacement of a resource representation.</p>
+<p>PATCH represents partial modification.</p>
+<p>Be precise about API semantics rather than saying:</p>
+<blockquote>
+<p>PUT is always idempotent and PATCH is never idempotent.</p>
+</blockquote>
+<p>HTTP method semantics and implementation determine actual behavior.</p>
+<hr />
+<h1 id="48-api-idempotency">48. API Idempotency</h1>
+<p>Important operations:</p>
+<pre><code class="language-text">payment
+order creation
+refund
+inventory reservation
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">Idempotency-Key
+</code></pre>
+<p>when clients may retry.</p>
+<hr />
+<h1 id="part-v-service-security">PART V — SERVICE SECURITY</h1>
+<h1 id="49-authentication-vs-authorization">49. Authentication vs Authorization</h1>
+<p>Authentication:</p>
+<pre><code class="language-text">Who are you?
+</code></pre>
+<p>Authorization:</p>
+<pre><code class="language-text">What are you allowed to do?
+</code></pre>
+<hr />
+<h1 id="50-service-to-service-authentication">50. Service-to-Service Authentication</h1>
+<p>Possible:</p>
+<pre><code class="language-text">OAuth2 client credentials
+mTLS
+signed tokens
+service identity
+</code></pre>
+<p>Do not assume a private network means trusted traffic.</p>
+<hr />
+<h1 id="51-jwt">51. JWT</h1>
+<p>JWT can carry claims:</p>
+<pre><code class="language-text">sub
+iss
+aud
+exp
+scope
+roles
+</code></pre>
+<p>Service should validate:</p>
+<pre><code class="language-text">signature
+issuer
+audience
+expiry
+</code></pre>
+<p>Do not blindly trust decoded payloads.</p>
+<hr />
+<h1 id="52-token-propagation">52. Token Propagation</h1>
+<p>Example:</p>
+<pre><code class="language-text">Client
+ ↓ token
+Gateway
+ ↓ token/context
+Order Service
+ ↓
+Payment Service
+</code></pre>
+<p>Be careful about:</p>
+<pre><code class="language-text">audience
+scope
+token lifetime
+least privilege
+</code></pre>
+<hr />
+<h1 id="53-mtls">53. mTLS</h1>
+<p>Mutual TLS authenticates both sides of a connection.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">service identity
+encrypted communication
+zero-trust environments
+</code></pre>
+<hr />
+<h1 id="part-vi-observability">PART VI — OBSERVABILITY</h1>
+<h1 id="54-three-pillars">54. Three Pillars</h1>
+<pre><code class="language-text">Logs
+Metrics
+Traces
+</code></pre>
+<hr />
+<h1 id="55-correlation-id">55. Correlation ID</h1>
+<p>Request:</p>
+<pre><code class="language-text">X-Request-ID: abc123
+</code></pre>
+<p>Propagate it:</p>
+<pre><code class="language-text">Gateway
+ ↓ abc123
+Order
+ ↓ abc123
+Payment
+ ↓ abc123
+Kafka event
+</code></pre>
+<p>Then logs can be correlated.</p>
+<p>Distributed tracing is generally more powerful than a manually propagated correlation ID alone.</p>
+<hr />
+<h1 id="56-distributed-tracing">56. Distributed Tracing</h1>
+<p>Example:</p>
+<pre><code class="language-text">Trace
+ └── Gateway 20ms
+      └── Order 50ms
+           ├── Redis 2ms
+           ├── DB 15ms
+           └── Payment 100ms
+</code></pre>
+<p>You immediately see:</p>
+<pre><code class="language-text">Payment
+</code></pre>
+<p>is the major contributor.</p>
+<hr />
+<h1 id="57-opentelemetry">57. OpenTelemetry</h1>
+<p>OpenTelemetry provides standard instrumentation concepts for:</p>
+<pre><code class="language-text">traces
+metrics
+logs
+</code></pre>
+<p>It can export telemetry to compatible observability systems.</p>
+<hr />
+<h1 id="58-metrics">58. Metrics</h1>
+<p>Useful microservice metrics:</p>
+<pre><code class="language-text">request rate
+error rate
+latency
+CPU
+memory
+DB connections
+Kafka lag
+Redis hit ratio
+queue depth
+circuit breaker state
+</code></pre>
+<hr />
+<h1 id="59-sli-slo-sla">59. SLI / SLO / SLA</h1>
+<p>SLI:</p>
+<pre><code class="language-text">measured indicator
+</code></pre>
+<p>SLO:</p>
+<pre><code class="language-text">target
+</code></pre>
+<p>SLA:</p>
+<pre><code class="language-text">contract/commitment
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">SLI = successful request percentage
+
+SLO = 99.9% success
+
+SLA = contractual commitment
+</code></pre>
+<hr />
+<h1 id="part-vii-deployment">PART VII — DEPLOYMENT</h1>
+<h1 id="60-containerization">60. Containerization</h1>
+<p>Spring Boot:</p>
+<pre><code class="language-text">Docker image
+ ↓
+container
+ ↓
+Kubernetes
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">consistent environment
+packaging
+deployment automation
+</code></pre>
+<hr />
+<h1 id="61-kubernetes-deployment">61. Kubernetes Deployment</h1>
+<p>Conceptual:</p>
+<pre><code class="language-text">Deployment
+ ↓
+Pods
+ ↓
+Spring Boot containers
+</code></pre>
+<p>Kubernetes handles:</p>
+<pre><code class="language-text">replicas
+rolling deployment
+service discovery
+health checks
+</code></pre>
+<hr />
+<h1 id="62-readiness-vs-liveness">62. Readiness vs Liveness</h1>
+<p>Readiness:</p>
+<pre><code class="language-text">Should this instance receive traffic?
+</code></pre>
+<p>Liveness:</p>
+<pre><code class="language-text">Is this process alive?
+</code></pre>
+<p>Do not use liveness to detect every temporary dependency failure.</p>
+<p>Otherwise Kubernetes may continuously restart healthy applications.</p>
+<hr />
+<h1 id="63-graceful-shutdown">63. Graceful Shutdown</h1>
+<p>During deployment:</p>
+<pre><code class="language-text">instance receives SIGTERM
+ ↓
+stop accepting new traffic
+ ↓
+finish in-flight requests
+ ↓
+close resources
+ ↓
+exit
+</code></pre>
+<p>Spring Boot supports graceful shutdown features.</p>
+<p>This matters for:</p>
+<pre><code class="language-text">HTTP requests
+Kafka consumers
+DB transactions
+</code></pre>
+<hr />
+<h1 id="64-rolling-deployment">64. Rolling Deployment</h1>
+<pre><code class="language-text">old v1
+old v1
+old v1
+
+ ↓
+
+old v1
+old v1
+new v2
+
+ ↓
+
+old v1
+new v2
+new v2
+
+ ↓
+
+new v2
+new v2
+new v2
+</code></pre>
+<p>Requires backward-compatible APIs/schema during transition.</p>
+<hr />
+<h1 id="65-blue-green-deployment">65. Blue-Green Deployment</h1>
+<pre><code class="language-text">Blue → current
+Green → new
+</code></pre>
+<p>Switch traffic:</p>
+<pre><code class="language-text">Blue
+ ↓
+Green
+</code></pre>
+<p>Rollback can be fast.</p>
+<p>Cost:</p>
+<pre><code class="language-text">duplicate environment capacity
+</code></pre>
+<hr />
+<h1 id="66-canary-deployment">66. Canary Deployment</h1>
+<p>Send a small percentage of traffic to the new version.</p>
+<pre><code class="language-text">95% → v1
+5%  → v2
+</code></pre>
+<p>Monitor:</p>
+<pre><code class="language-text">errors
+latency
+business metrics
+</code></pre>
+<p>Then gradually increase.</p>
+<hr />
+<h1 id="part-viii-microservice-design-patterns">PART VIII — MICROSERVICE DESIGN PATTERNS</h1>
+<h1 id="67-api-gateway">67. API Gateway</h1>
+<pre><code class="language-text">Client
+ ↓
+Gateway
+ ↓
+Services
+</code></pre>
+<hr />
+<h1 id="68-backend-for-frontend-bff">68. Backend for Frontend (BFF)</h1>
+<p>Different clients can have tailored APIs:</p>
+<pre><code class="language-text">Web BFF
+Mobile BFF
+</code></pre>
+<p>Useful when:</p>
+<pre><code class="language-text">client requirements differ significantly
+</code></pre>
+<hr />
+<h1 id="69-strangler-fig-pattern">69. Strangler Fig Pattern</h1>
+<p>Used to migrate a monolith incrementally.</p>
+<pre><code class="language-text">Monolith
+ ↓
+new service extracts one capability
+ ↓
+traffic routed to new service
+ ↓
+repeat
+</code></pre>
+<p>This is safer than rewriting everything at once.</p>
+<hr />
+<h1 id="70-sidecar">70. Sidecar</h1>
+<p>A helper process/container runs beside the service.</p>
+<p>Common historical/service-mesh uses:</p>
+<pre><code class="language-text">proxy
+telemetry
+security
+network policy
+</code></pre>
+<hr />
+<h1 id="71-service-mesh">71. Service Mesh</h1>
+<p>A service mesh can provide infrastructure-level:</p>
+<pre><code class="language-text">traffic management
+mTLS
+observability
+retries
+service identity
+</code></pre>
+<p>Examples include ecosystems built around Envoy.</p>
+<p>But do not add a service mesh merely because the architecture is microservices.</p>
+<hr />
+<h1 id="part-ix-microservice-failure-scenarios">PART IX — MICROSERVICE FAILURE SCENARIOS</h1>
+<h1 id="72-service-b-is-down">72. Service B Is Down</h1>
+<p>Bad:</p>
+<pre><code class="language-text">A → B
+</code></pre>
+<p>A waits indefinitely.</p>
+<p>Better:</p>
+<pre><code class="language-text">A
+ ↓ timeout
+ ↓ retry if appropriate
+ ↓ circuit breaker
+ ↓ fallback
+</code></pre>
+<hr />
+<h1 id="73-service-b-is-slow">73. Service B Is Slow</h1>
+<p>This can be more dangerous than B being completely down.</p>
+<p>Why?</p>
+<p>Because requests accumulate.</p>
+<pre><code class="language-text">B slow
+ ↓
+A waits
+ ↓
+threads/connections consumed
+ ↓
+A becomes slow
+ ↓
+cascading failure
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">timeout
+bounded concurrency
+bulkhead
+circuit breaker
+</code></pre>
+<hr />
+<h1 id="74-service-b-returns-500">74. Service B Returns 500</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Is failure transient?
+Is operation idempotent?
+Should we retry?
+Should we fallback?
+Should we fail fast?
+</code></pre>
+<p>Never blindly retry all 500 responses.</p>
+<hr />
+<h1 id="75-kafka-is-down">75. Kafka Is Down</h1>
+<p>If Kafka is asynchronous:</p>
+<pre><code class="language-text">API request
+ ↓
+DB
+ ↓
+outbox
+ ↓
+Kafka temporarily unavailable
+</code></pre>
+<p>The business transaction can still succeed if the event remains safely in the outbox.</p>
+<p>Publisher retries later.</p>
+<p>This is one reason the Outbox pattern is powerful.</p>
+<hr />
+<h1 id="76-redis-is-down">76. Redis Is Down</h1>
+<p>If Redis is a cache:</p>
+<pre><code class="language-text">Redis unavailable
+ ↓
+fallback to DB
+</code></pre>
+<p>But protect the DB from a cache stampede.</p>
+<p>Use:</p>
+<pre><code class="language-text">timeouts
+circuit breaker
+local cache
+request coalescing
+rate limiting
+</code></pre>
+<hr />
+<h1 id="77-database-is-down">77. Database Is Down</h1>
+<p>Unlike a cache, the database may be the source of truth.</p>
+<p>Possible:</p>
+<pre><code class="language-text">fail fast
+retry carefully
+queue asynchronous commands where appropriate
+return degraded response
+</code></pre>
+<p>Do not pretend the system succeeded if the business transaction did not commit.</p>
+<hr />
+<h1 id="78-duplicate-kafka-event">78. Duplicate Kafka Event</h1>
+<pre><code class="language-text">eventId=123
+ ↓
+processed
+ ↓
+same event arrives
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">idempotency
+inbox
+unique constraint
+state/version checks
+</code></pre>
+<hr />
+<h1 id="79-out-of-order-event">79. Out-of-Order Event</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">OrderPaid
+OrderCreated
+</code></pre>
+<p>arrive in wrong order.</p>
+<p>Solutions:</p>
+<pre><code class="language-text">partition by orderId
+sequence number
+event version
+state machine
+ignore stale events
+buffering
+</code></pre>
+<hr />
+<h1 id="80-distributed-clock-problem">80. Distributed Clock Problem</h1>
+<p>Do not rely blindly on:</p>
+<pre><code class="language-text">server timestamp A
+server timestamp B
+</code></pre>
+<p>for ordering distributed events.</p>
+<p>Use:</p>
+<pre><code class="language-text">Kafka partition ordering
+sequence numbers
+database version
+logical timestamps
+event IDs
+</code></pre>
+<p>where appropriate.</p>
+<hr />
+<h1 id="81-retry-storm">81. Retry Storm</h1>
+<pre><code class="language-text">dependency fails
+ ↓
+10k requests retry
+ ↓
+dependency becomes more overloaded
+ ↓
+more failures
+ ↓
+more retries
+</code></pre>
+<p>Mitigate:</p>
+<pre><code class="language-text">exponential backoff
+jitter
+retry budgets
+circuit breakers
+load shedding
+</code></pre>
+<hr />
+<h1 id="82-thundering-herd">82. Thundering Herd</h1>
+<p>A popular cache key expires:</p>
+<pre><code class="language-text">100k requests
+ ↓
+all miss cache
+ ↓
+100k DB calls
+</code></pre>
+<p>Solutions:</p>
+<pre><code class="language-text">request coalescing
+jittered TTL
+early refresh
+distributed lock
+stale-while-revalidate
+</code></pre>
+<hr />
+<h1 id="part-x-microservice-interview-questions">PART X — MICROSERVICE INTERVIEW QUESTIONS</h1>
+<h1 id="83-fundamentals">83. Fundamentals</h1>
+<ol>
+<li>What is a microservice?</li>
+<li>Microservice vs monolith?</li>
+<li>When should you use microservices?</li>
+<li>What are the disadvantages?</li>
+<li>What is a bounded context?</li>
+<li>How do you identify service boundaries?</li>
+<li>What is database-per-service?</li>
+<li>Why avoid shared databases?</li>
+<li>What is an API Gateway?</li>
+<li>API Gateway vs Load Balancer?</li>
+<li>What is service discovery?</li>
+<li>Client-side vs server-side discovery?</li>
+<li>REST vs messaging?</li>
+<li>REST vs gRPC?</li>
+<li>Event vs command?</li>
+<li>Synchronous vs asynchronous communication?</li>
+<li>What is eventual consistency?</li>
+<li>What is strong consistency?</li>
+</ol>
+<hr />
+<h1 id="84-data-transactions">84. Data / Transactions</h1>
+<ol>
+<li>Why is distributed transaction difficult?</li>
+<li>What is 2PC?</li>
+<li>What is Saga?</li>
+<li>Choreography vs orchestration?</li>
+<li>What is a compensating transaction?</li>
+<li>What is idempotency?</li>
+<li>How do you implement idempotency?</li>
+<li>What is the Outbox pattern?</li>
+<li>What is the Inbox pattern?</li>
+<li>DB + Kafka dual-write problem?</li>
+<li>How do you handle DB → Kafka reliability?</li>
+<li>How do you handle Kafka → DB reliability?</li>
+<li>How do you handle duplicate events?</li>
+<li>How do you handle out-of-order events?</li>
+<li>How do you handle stale read models?</li>
+</ol>
+<hr />
+<h1 id="85-resilience">85. Resilience</h1>
+<ol>
+<li>Why are remote calls different from method calls?</li>
+<li>What is a timeout?</li>
+<li>How should retries work?</li>
+<li>When should you NOT retry?</li>
+<li>What is exponential backoff?</li>
+<li>What is jitter?</li>
+<li>What is a circuit breaker?</li>
+<li>What is bulkhead isolation?</li>
+<li>What is rate limiting?</li>
+<li>What is backpressure?</li>
+<li>What is load shedding?</li>
+<li>What is a cascading failure?</li>
+<li>What is a retry storm?</li>
+<li>What is a thundering herd?</li>
+<li>What is graceful degradation?</li>
+</ol>
+<hr />
+<h1 id="86-api">86. API</h1>
+<ol>
+<li>How do you version APIs?</li>
+<li>How do you maintain backward compatibility?</li>
+<li>PUT vs PATCH?</li>
+<li>How do you implement pagination?</li>
+<li>Offset vs cursor pagination?</li>
+<li>How do you design error responses?</li>
+<li>How do you make POST idempotent?</li>
+<li>What is API aggregation?</li>
+<li>What is BFF?</li>
+<li>How do you handle partial failure in API aggregation?</li>
+</ol>
+<hr />
+<h1 id="87-security">87. Security</h1>
+<ol>
+<li>Authentication vs authorization?</li>
+<li>Service-to-service authentication?</li>
+<li>OAuth2 client credentials?</li>
+<li>JWT validation?</li>
+<li>Token propagation?</li>
+<li>mTLS?</li>
+<li>How do you implement least privilege?</li>
+<li>Should internal services trust each other automatically?</li>
+</ol>
+<hr />
+<h1 id="88-observability">88. Observability</h1>
+<ol>
+<li>Logs vs metrics vs traces?</li>
+<li>What is distributed tracing?</li>
+<li>What is OpenTelemetry?</li>
+<li>What is correlation ID?</li>
+<li>What metrics would you monitor?</li>
+<li>What is consumer lag?</li>
+<li>What is an SLI?</li>
+<li>What is an SLO?</li>
+<li>What is an SLA?</li>
+<li>How do you debug a slow request across 5 services?</li>
+</ol>
+<hr />
+<h1 id="89-deployment">89. Deployment</h1>
+<ol>
+<li>What is rolling deployment?</li>
+<li>Blue-green vs canary?</li>
+<li>What is graceful shutdown?</li>
+<li>Readiness vs liveness?</li>
+<li>What happens during Kubernetes pod termination?</li>
+<li>How do you avoid breaking API compatibility during deployment?</li>
+<li>How do you perform zero-downtime DB migration?</li>
+<li>What is Strangler Fig?</li>
+</ol>
+<hr />
+<h1 id="90-senior-scenario-questions">90. Senior Scenario Questions</h1>
+<ol>
+<li>Design an order microservice architecture.</li>
+<li>Design a payment microservice.</li>
+<li>Design inventory reservation.</li>
+<li>Design notification service.</li>
+<li>Design a ride-booking backend.</li>
+<li>Design a URL-shortening service.</li>
+<li>Design a distributed rate limiter.</li>
+<li>Design an event-driven order pipeline.</li>
+<li>How would you migrate a monolith to microservices?</li>
+<li>How would you split a large monolith?</li>
+<li>How would you handle service B being unavailable?</li>
+<li>How would you handle service B being slow?</li>
+<li>How would you prevent cascading failure?</li>
+<li>How would you guarantee no duplicate payment?</li>
+<li>How would you guarantee DB + Kafka consistency?</li>
+<li>How would you maintain cache consistency?</li>
+<li>How would you handle Kafka duplicate events?</li>
+<li>How would you handle out-of-order events?</li>
+<li>How would you debug a production latency spike?</li>
+<li>How would you handle a database outage?</li>
+<li>How would you handle a Redis outage?</li>
+<li>How would you handle Kafka outage?</li>
+<li>How would you scale one extremely hot service?</li>
+<li>How would you handle a hot database partition?</li>
+<li>How would you deploy a breaking schema change safely?</li>
+<li>How would you design multi-region microservices?</li>
+</ol>
+<hr />
+<h1 id="part-xi-deep-scenarios">PART XI — DEEP SCENARIOS</h1>
+<h1 id="91-order-system">91. Order System</h1>
+<p>Requirements:</p>
+<pre><code class="language-text">create order
+reserve inventory
+charge payment
+send notification
+</code></pre>
+<p>Possible architecture:</p>
+<pre><code class="language-text">                    Client
+                      ↓
+                 API Gateway
+                      ↓
+                 Order Service
+                      ↓
+                PostgreSQL
+                      ↓
+                    Outbox
+                      ↓
+                    Kafka
+              ┌───────┼────────┐
+              ↓       ↓        ↓
+         Inventory  Payment  Notification
+           Service   Service    Service
+              ↓       ↓
+             DB      DB
+</code></pre>
+<p>Redis:</p>
+<pre><code class="language-text">cache
+rate limiting
+idempotency acceleration
+</code></pre>
+<hr />
+<h1 id="92-order-failure">92. Order Failure</h1>
+<p>Payment fails:</p>
+<pre><code class="language-text">OrderCreated
+ ↓
+InventoryReserved
+ ↓
+PaymentFailed
+ ↓
+ReleaseInventory
+ ↓
+OrderCancelled
+</code></pre>
+<p>This is a Saga-style workflow.</p>
+<hr />
+<h1 id="93-payment-idempotency">93. Payment Idempotency</h1>
+<p>Client:</p>
+<pre><code class="language-text">POST /payments
+Idempotency-Key: abc
+</code></pre>
+<p>Payment service:</p>
+<pre><code class="language-text">BEGIN
+ ↓
+check idempotency record
+ ↓
+create payment
+ ↓
+store result
+ ↓
+COMMIT
+</code></pre>
+<p>Retry:</p>
+<pre><code class="language-text">same key
+ ↓
+return stored result
+</code></pre>
+<hr />
+<h1 id="94-inventory-reservation">94. Inventory Reservation</h1>
+<p>Use atomic database operation:</p>
+<pre><code class="language-sql">UPDATE inventory
+SET available = available - 1
+WHERE product_id = ?
+  AND available &gt; 0;
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-text">affected rows = 1
+→ success
+
+affected rows = 0
+→ unavailable
+</code></pre>
+<p>This can be preferable to a distributed lock.</p>
+<hr />
+<h1 id="95-notification-service">95. Notification Service</h1>
+<pre><code class="language-text">Kafka
+ ↓
+Notification Consumer
+ ↓
+Provider
+</code></pre>
+<p>Provider may fail.</p>
+<p>Use:</p>
+<pre><code class="language-text">retry
+backoff
+DLT
+idempotency
+provider-specific rate limits
+</code></pre>
+<hr />
+<h1 id="96-multi-region">96. Multi-Region</h1>
+<p>Possible:</p>
+<pre><code class="language-text">Region A
+ ├── services
+ └── database
+
+Region B
+ ├── services
+ └── database
+</code></pre>
+<p>Questions:</p>
+<pre><code class="language-text">active-active?
+active-passive?
+data replication?
+conflict resolution?
+latency?
+data residency?
+failover?
+</code></pre>
+<p>Multi-region is not automatically better; it dramatically increases complexity.</p>
+<hr />
+<h1 id="97-service-ownership">97. Service Ownership</h1>
+<p>Each service should have:</p>
+<pre><code class="language-text">clear owner
+clear API contract
+clear data ownership
+clear SLO
+clear operational responsibility
+</code></pre>
+<p>Microservices without ownership become distributed monoliths.</p>
+<hr />
+<h1 id="98-distributed-monolith">98. Distributed Monolith</h1>
+<p>A system can have many services and still behave like a monolith:</p>
+<pre><code class="language-text">A requires B
+B requires C
+C requires D
+D requires A
+</code></pre>
+<p>Every deployment requires all services.</p>
+<p>This is a distributed monolith.</p>
+<p>Warning signs:</p>
+<pre><code class="language-text">tight synchronous coupling
+shared database
+shared release cycle
+shared codebase/domain model
+</code></pre>
+<hr />
+<h1 id="99-how-to-avoid-distributed-monolith">99. How to Avoid Distributed Monolith</h1>
+<p>Use:</p>
+<pre><code class="language-text">clear boundaries
+asynchronous events where appropriate
+independent data ownership
+backward-compatible APIs
+failure isolation
+independent deployment
+</code></pre>
+<p>But don't force asynchronous messaging everywhere.</p>
+<hr />
+<h1 id="100-microservices-vs-modular-monolith">100. Microservices vs Modular Monolith</h1>
+<p>A modular monolith can provide:</p>
+<pre><code class="language-text">strong module boundaries
+single deployment
+local method calls
+simple transactions
+</code></pre>
+<p>Microservices add:</p>
+<pre><code class="language-text">deployment independence
+scaling independence
+network boundaries
+operational complexity
+</code></pre>
+<p>A well-designed modular monolith can be a better starting point.</p>
+<hr />
+<h1 id="101-final-mental-model">101. Final Mental Model</h1>
+<pre><code class="language-text">                    CLIENT
+                       │
+                       ▼
+                 API GATEWAY
+                       │
+       ┌───────────────┼────────────────┐
+       ▼               ▼                ▼
+   ORDER SERVICE   PAYMENT SERVICE  USER SERVICE
+       │               │                │
+       ▼               ▼                ▼
+   Order DB        Payment DB         User DB
+       │
+       ▼
+    OUTBOX
+       │
+       ▼
+     KAFKA
+       │
+ ┌─────┼──────────────┐
+ ▼     ▼              ▼
+Inventory Notification Analytics
+Service   Service      Service
+   │
+   ▼
+  Redis
+</code></pre>
+<p>Cross-cutting:</p>
+<pre><code class="language-text">Security
+Observability
+Resilience
+Configuration
+Service discovery
+Deployment
+</code></pre>
+<hr />
+<h1 id="102-the-golden-rules">102. The Golden Rules</h1>
+<ol>
+<li>Microservices are about boundaries and independent deployment, not small classes.</li>
+<li>Split by business capability, not technical layer.</li>
+<li>Prefer clear data ownership.</li>
+<li>A shared database creates coupling.</li>
+<li>Remote calls are unreliable.</li>
+<li>Every remote call needs a timeout.</li>
+<li>Retry only when failure is plausibly transient and the operation is safe to retry.</li>
+<li>Use exponential backoff and jitter.</li>
+<li>Circuit breakers prevent repeated calls to unhealthy dependencies.</li>
+<li>Bulkheads prevent one dependency from exhausting shared resources.</li>
+<li>Idempotency is essential when retries and duplicate delivery exist.</li>
+<li>Database constraints provide durable correctness.</li>
+<li>Outbox solves an important DB-to-event dual-write problem.</li>
+<li>Inbox/deduplication helps with event-to-database reliability.</li>
+<li>Eventual consistency must be explicitly accepted.</li>
+<li>Sagas use local transactions plus compensation.</li>
+<li>Kafka gives durable event streaming; it does not magically provide distributed transactions across arbitrary systems.</li>
+<li>Redis is usually a cache/state layer, not automatically the source of truth.</li>
+<li>API contracts must evolve backward-compatibly.</li>
+<li>Observability is part of the architecture, not an afterthought.</li>
+<li>Logs tell you what happened; metrics tell you how much; traces tell you where.</li>
+<li>Readiness and liveness are different.</li>
+<li>Graceful shutdown matters during rolling deployments.</li>
+<li>More services do not automatically mean better architecture.</li>
+<li>A distributed monolith is often worse than a modular monolith.</li>
+<li>Do not introduce microservices before understanding the boundaries.</li>
+<li>Prefer simple synchronous communication when the workflow requires an immediate answer and failure coupling is acceptable.</li>
+<li>Prefer asynchronous communication when decoupling, buffering, and independent processing are valuable.</li>
+<li>Multi-region architecture introduces substantial consistency and operational complexity.</li>
+<li>The best microservice architecture is the simplest architecture that satisfies the business and scaling requirements.</li>
+</ol>
+<hr />
+<h1 id="103-interview-answer-framework">103. Interview Answer Framework</h1>
+<p>When asked:</p>
+<blockquote>
+<p>"How would you design this microservice system?"</p>
+</blockquote>
+<p>Answer in this order:</p>
+<pre><code class="language-text">1. Requirements
+2. Service boundaries
+3. APIs
+4. Synchronous vs asynchronous communication
+5. Database ownership
+6. Cache
+7. Kafka/events
+8. Consistency
+9. Idempotency
+10. Failure handling
+11. Scaling
+12. Security
+13. Observability
+14. Deployment
+15. Trade-offs
+</code></pre>
+<p>Do not jump directly to:</p>
+<pre><code class="language-text">Kafka + Redis + Kubernetes
+</code></pre>
+<p>Technology should follow requirements.</p>
+<hr />
+<h1 id="104-final-self-test">104. Final Self-Test</h1>
+<p>You should be able to explain without notes:</p>
+<pre><code class="language-text">Microservices
+Monolith
+Modular monolith
+Service boundary
+Bounded context
+Database per service
+API Gateway
+Service discovery
+REST
+gRPC
+Kafka
+Synchronous communication
+Asynchronous communication
+Event
+Command
+Distributed transaction
+2PC
+Saga
+Choreography
+Orchestration
+Compensation
+Eventual consistency
+Strong consistency
+Idempotency
+Outbox
+Inbox
+Timeout
+Retry
+Backoff
+Jitter
+Circuit breaker
+Bulkhead
+Rate limiting
+Backpressure
+Load shedding
+Cascading failure
+Retry storm
+Thundering herd
+API versioning
+Backward compatibility
+BFF
+JWT
+OAuth2
+mTLS
+Distributed tracing
+OpenTelemetry
+Correlation ID
+SLI
+SLO
+SLA
+Docker
+Kubernetes
+Readiness
+Liveness
+Graceful shutdown
+Rolling deployment
+Blue-green
+Canary
+Strangler Fig
+Distributed monolith
+Multi-region
+</code></pre>
+<p>And you should be able to design:</p>
+<pre><code class="language-text">Order system
+Payment system
+Inventory system
+Notification system
+Ride booking
+Rate limiter
+Event-driven pipeline
+Monolith migration
+Multi-region service
+</code></pre>
+<p>with explicit discussion of:</p>
+<pre><code class="language-text">data ownership
+failure modes
+consistency
+idempotency
+scaling
+observability
+security
+trade-offs
+</code></pre></main>
+</div>
+</body>
+</html>

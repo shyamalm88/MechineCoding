@@ -1,0 +1,3238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL + NoSQL — Interview Preparation — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: SQL + NoSQL — Interview Preparation
+tags:
+  - sql
+  - database
+  - nosql
+  - postgresql
+  - mysql
+  - mongodb
+  - redis
+  - cassandra
+  - dynamodb
+  - spring-boot
+  - hibernate
+  - jdbc
+  - system-design
+  - interview</p>
+<hr />
+<h1 id="sql-nosql-interview-preparation">SQL + NoSQL — Interview Preparation</h1>
+<blockquote>
+<p>[!note]
+This note is designed for a Java/Spring Boot full-stack developer preparing for senior interviews.</p>
+<p>The goal is not to memorize SQL syntax.</p>
+<p>Learn databases through:</p>
+<p><strong>Data model → Query → Index → Execution plan → Transaction → Concurrency → Scaling → Failure → Trade-off</strong></p>
+</blockquote>
+<hr />
+<h1 id="part-i-database-fundamentals">PART I — DATABASE FUNDAMENTALS</h1>
+<h1 id="1-what-is-a-database">1. What is a Database?</h1>
+<p>A database is a system for storing, organizing, retrieving, and modifying data.</p>
+<p>A production database must typically address:</p>
+<pre><code class="language-text">Storage
+Querying
+Transactions
+Concurrency
+Durability
+Availability
+Recovery
+Security
+Scalability
+</code></pre>
+<p>Do not think of a database as simply:</p>
+<pre><code class="language-text">&quot;place where data is stored&quot;
+</code></pre>
+<p>A database also provides guarantees and mechanisms around that data.</p>
+<hr />
+<h1 id="2-dbms-vs-database">2. DBMS vs Database</h1>
+<p>A database is the stored data.</p>
+<p>A DBMS is the software that manages it.</p>
+<p>Examples:</p>
+<pre><code class="language-text">PostgreSQL
+MySQL
+Oracle
+SQL Server
+MongoDB
+Cassandra
+DynamoDB
+</code></pre>
+<hr />
+<h1 id="3-sql-vs-nosql">3. SQL vs NoSQL</h1>
+<p>SQL databases generally provide:</p>
+<pre><code class="language-text">relational data model
+tables
+rows
+columns
+SQL
+strong transactional capabilities
+joins
+constraints
+</code></pre>
+<p>NoSQL is a broad category that includes:</p>
+<pre><code class="language-text">document
+key-value
+wide-column
+graph
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>NoSQL does not mean "no SQL" and does not automatically mean "eventually consistent."</p>
+</blockquote>
+<hr />
+<h1 id="4-main-database-categories">4. Main Database Categories</h1>
+<pre><code class="language-text">Relational
+ ├── PostgreSQL
+ ├── MySQL
+ └── Oracle
+
+Document
+ ├── MongoDB
+ └── Couchbase
+
+Key-Value
+ ├── DynamoDB
+ └── Redis
+
+Wide Column
+ ├── Cassandra
+ └── HBase
+
+Graph
+ ├── Neo4j
+ └── Amazon Neptune
+</code></pre>
+<p>Different databases optimize for different access patterns.</p>
+<hr />
+<h1 id="5-how-to-choose-a-database">5. How to Choose a Database</h1>
+<p>Ask:</p>
+<pre><code class="language-text">What data model?
+What queries?
+What consistency?
+What transaction requirements?
+What scale?
+What latency?
+What write/read ratio?
+What relationship complexity?
+What availability requirement?
+What operational ecosystem?
+</code></pre>
+<p>Never answer:</p>
+<blockquote>
+<p>"MongoDB because it is scalable."</p>
+</blockquote>
+<p>That is incomplete.</p>
+<hr />
+<h1 id="part-ii-relational-sql">PART II — RELATIONAL / SQL</h1>
+<h1 id="6-what-is-a-relational-database">6. What is a Relational Database?</h1>
+<p>Data is represented using:</p>
+<pre><code class="language-text">tables
+rows
+columns
+relationships
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">users
+--------------------------------
+id | name | email
+--------------------------------
+1  | Alice | alice@example.com
+2  | Bob   | bob@example.com
+</code></pre>
+<p>Relationships are represented using keys.</p>
+<hr />
+<h1 id="7-primary-key">7. Primary Key</h1>
+<p>A primary key uniquely identifies a row.</p>
+<pre><code class="language-sql">CREATE TABLE users (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(100)
+);
+</code></pre>
+<p>Properties:</p>
+<pre><code class="language-text">unique
+not null
+stable identity
+</code></pre>
+<p>A primary key can be:</p>
+<pre><code class="language-text">single-column
+composite
+</code></pre>
+<hr />
+<h1 id="8-foreign-key">8. Foreign Key</h1>
+<p>Represents a relationship between tables.</p>
+<pre><code class="language-sql">CREATE TABLE orders (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">referential integrity
+</code></pre>
+<p>The database can prevent invalid references.</p>
+<hr />
+<h1 id="9-unique-constraint">9. Unique Constraint</h1>
+<pre><code class="language-sql">email VARCHAR(255) UNIQUE
+</code></pre>
+<p>Useful when the business rule requires uniqueness.</p>
+<p>Important:</p>
+<blockquote>
+<p>Application-level checks alone are not enough for concurrency-safe uniqueness.</p>
+</blockquote>
+<p>Better:</p>
+<pre><code class="language-text">application validation
++
+database unique constraint
+</code></pre>
+<hr />
+<h1 id="10-not-null">10. NOT NULL</h1>
+<pre><code class="language-sql">name VARCHAR(100) NOT NULL
+</code></pre>
+<p>Use database constraints to protect invariants.</p>
+<p>Do not rely entirely on application validation.</p>
+<hr />
+<h1 id="11-check-constraint">11. CHECK Constraint</h1>
+<pre><code class="language-sql">age INT CHECK (age &gt;= 0)
+</code></pre>
+<p>Useful for enforcing database-level invariants.</p>
+<hr />
+<h1 id="12-normalization">12. Normalization</h1>
+<p>Normalization reduces redundancy and update anomalies.</p>
+<p>Common levels:</p>
+<pre><code class="language-text">1NF
+2NF
+3NF
+BCNF
+</code></pre>
+<p>For most application interviews, understand:</p>
+<pre><code class="language-text">1NF → atomic values
+2NF → remove partial dependency
+3NF → remove transitive dependency
+</code></pre>
+<hr />
+<h1 id="13-denormalization">13. Denormalization</h1>
+<p>Denormalization intentionally duplicates data to improve:</p>
+<pre><code class="language-text">read performance
+query simplicity
+reporting
+</code></pre>
+<p>Trade-offs:</p>
+<pre><code class="language-text">duplicate data
+update complexity
+consistency challenges
+storage
+</code></pre>
+<p>Senior answer:</p>
+<blockquote>
+<p>Normalize by default for correctness, then denormalize based on measured workload and access patterns.</p>
+</blockquote>
+<hr />
+<h1 id="14-sql-select">14. SQL SELECT</h1>
+<p>Basic:</p>
+<pre><code class="language-sql">SELECT id, name
+FROM users;
+</code></pre>
+<p>Avoid:</p>
+<pre><code class="language-sql">SELECT *
+</code></pre>
+<p>when you do not need every column.</p>
+<p>Benefits:</p>
+<pre><code class="language-text">less data transfer
+less memory
+clearer contracts
+better projection
+</code></pre>
+<hr />
+<h1 id="15-where">15. WHERE</h1>
+<pre><code class="language-sql">SELECT *
+FROM users
+WHERE status = 'ACTIVE';
+</code></pre>
+<p>Filtering should ideally happen as close to the database as practical.</p>
+<hr />
+<h1 id="16-order-by">16. ORDER BY</h1>
+<pre><code class="language-sql">SELECT *
+FROM users
+ORDER BY created_at DESC;
+</code></pre>
+<p>Sorting can be expensive.</p>
+<p>Indexes can sometimes support ordering efficiently.</p>
+<hr />
+<h1 id="17-limit-offset">17. LIMIT / OFFSET</h1>
+<pre><code class="language-sql">SELECT *
+FROM users
+ORDER BY id
+LIMIT 50 OFFSET 1000;
+</code></pre>
+<p>Simple but large offsets can become inefficient.</p>
+<hr />
+<h1 id="18-keyset-cursor-pagination">18. Keyset / Cursor Pagination</h1>
+<p>Instead of:</p>
+<pre><code class="language-sql">OFFSET 100000
+</code></pre>
+<p>use a cursor/key:</p>
+<pre><code class="language-sql">SELECT *
+FROM users
+WHERE id &gt; 100000
+ORDER BY id
+LIMIT 50;
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">better large-scale pagination
+stable traversal
+less work than huge offsets
+</code></pre>
+<p>Trade-off:</p>
+<pre><code class="language-text">more complex navigation
+</code></pre>
+<hr />
+<h1 id="19-inner-join">19. INNER JOIN</h1>
+<p>Returns matching rows.</p>
+<pre><code class="language-sql">SELECT u.id, o.id
+FROM users u
+INNER JOIN orders o
+    ON o.user_id = u.id;
+</code></pre>
+<hr />
+<h1 id="20-left-join">20. LEFT JOIN</h1>
+<p>Returns all rows from the left table.</p>
+<pre><code class="language-sql">SELECT u.id, o.id
+FROM users u
+LEFT JOIN orders o
+    ON o.user_id = u.id;
+</code></pre>
+<p>Users without orders can still appear.</p>
+<hr />
+<h1 id="21-right-join">21. RIGHT JOIN</h1>
+<p>Conceptually the reverse of LEFT JOIN.</p>
+<p>In practice, many teams prefer rewriting it as a LEFT JOIN for readability.</p>
+<hr />
+<h1 id="22-full-outer-join">22. FULL OUTER JOIN</h1>
+<p>Returns matching and non-matching rows from both sides.</p>
+<p>Availability depends on the database.</p>
+<hr />
+<h1 id="23-cross-join">23. CROSS JOIN</h1>
+<p>Cartesian product.</p>
+<pre><code class="language-text">3 users × 4 products
+= 12 combinations
+</code></pre>
+<p>Use deliberately.</p>
+<hr />
+<h1 id="24-join-vs-subquery">24. JOIN vs Subquery</h1>
+<p>Both can solve overlapping problems.</p>
+<p>Do not claim:</p>
+<blockquote>
+<p>"JOIN is always faster."</p>
+</blockquote>
+<p>The optimizer and query shape determine performance.</p>
+<p>Use:</p>
+<pre><code class="language-text">clarity
+correctness
+execution plan
+</code></pre>
+<p>to choose.</p>
+<hr />
+<h1 id="25-group-by">25. GROUP BY</h1>
+<pre><code class="language-sql">SELECT status, COUNT(*)
+FROM users
+GROUP BY status;
+</code></pre>
+<p>Used for aggregation.</p>
+<hr />
+<h1 id="26-having">26. HAVING</h1>
+<p>Filters groups after aggregation.</p>
+<pre><code class="language-sql">SELECT user_id, COUNT(*)
+FROM orders
+GROUP BY user_id
+HAVING COUNT(*) &gt; 10;
+</code></pre>
+<p>Remember:</p>
+<pre><code class="language-text">WHERE → filters rows
+HAVING → filters groups
+</code></pre>
+<hr />
+<h1 id="27-count">27. COUNT</h1>
+<pre><code class="language-sql">SELECT COUNT(*)
+FROM users;
+</code></pre>
+<p>Understand the distinction between:</p>
+<pre><code class="language-text">COUNT(*)
+COUNT(column)
+COUNT(DISTINCT column)
+</code></pre>
+<p><code>COUNT(column)</code> does not count NULL values.</p>
+<hr />
+<h1 id="28-distinct">28. DISTINCT</h1>
+<pre><code class="language-sql">SELECT DISTINCT country
+FROM users;
+</code></pre>
+<p>Useful, but may require sorting/hashing and can become expensive on large datasets.</p>
+<hr />
+<h1 id="29-union-vs-union-all">29. UNION vs UNION ALL</h1>
+<pre><code class="language-sql">UNION
+</code></pre>
+<p>removes duplicates.</p>
+<pre><code class="language-sql">UNION ALL
+</code></pre>
+<p>keeps duplicates and generally avoids the duplicate-removal cost.</p>
+<p>Use <code>UNION ALL</code> when duplicate elimination is not required.</p>
+<hr />
+<h1 id="30-null">30. NULL</h1>
+<p>NULL means:</p>
+<pre><code class="language-text">unknown / missing / absent value
+</code></pre>
+<p>It is not:</p>
+<pre><code class="language-text">0
+''
+false
+</code></pre>
+<p>Incorrect:</p>
+<pre><code class="language-sql">WHERE email = NULL
+</code></pre>
+<p>Correct:</p>
+<pre><code class="language-sql">WHERE email IS NULL
+</code></pre>
+<hr />
+<h1 id="31-three-valued-logic">31. Three-Valued Logic</h1>
+<p>SQL conditions can evaluate to:</p>
+<pre><code class="language-text">TRUE
+FALSE
+UNKNOWN
+</code></pre>
+<p>NULL participates in this behavior.</p>
+<p>This is why SQL logic can surprise developers coming from Java/JavaScript.</p>
+<hr />
+<h1 id="32-coalesce">32. COALESCE</h1>
+<pre><code class="language-sql">SELECT COALESCE(display_name, 'Unknown')
+FROM users;
+</code></pre>
+<p>Returns the first non-null expression.</p>
+<hr />
+<h1 id="33-case">33. CASE</h1>
+<pre><code class="language-sql">SELECT
+    CASE
+        WHEN status = 'ACTIVE' THEN 'A'
+        ELSE 'I'
+    END
+FROM users;
+</code></pre>
+<p>Useful for conditional projections.</p>
+<hr />
+<h1 id="34-subquery">34. Subquery</h1>
+<pre><code class="language-sql">SELECT *
+FROM users
+WHERE id IN (
+    SELECT user_id
+    FROM orders
+);
+</code></pre>
+<p>Subqueries can appear in:</p>
+<pre><code class="language-text">SELECT
+FROM
+WHERE
+HAVING
+</code></pre>
+<hr />
+<h1 id="35-exists">35. EXISTS</h1>
+<pre><code class="language-sql">SELECT *
+FROM users u
+WHERE EXISTS (
+    SELECT 1
+    FROM orders o
+    WHERE o.user_id = u.id
+);
+</code></pre>
+<p>Useful when you care about existence rather than retrieving matching rows.</p>
+<hr />
+<h1 id="36-correlated-subquery">36. Correlated Subquery</h1>
+<p>A correlated subquery refers to the outer query.</p>
+<pre><code class="language-sql">SELECT *
+FROM users u
+WHERE EXISTS (
+    SELECT 1
+    FROM orders o
+    WHERE o.user_id = u.id
+);
+</code></pre>
+<p>The inner query depends on each outer row conceptually.</p>
+<p>The optimizer may transform the execution strategy.</p>
+<hr />
+<h1 id="37-common-table-expression-cte">37. Common Table Expression — CTE</h1>
+<pre><code class="language-sql">WITH active_users AS (
+    SELECT *
+    FROM users
+    WHERE status = 'ACTIVE'
+)
+SELECT *
+FROM active_users;
+</code></pre>
+<p>CTEs improve readability and can support recursive queries.</p>
+<p>Do not assume a CTE always materializes or always improves performance; behavior depends on database/version/query.</p>
+<hr />
+<h1 id="38-window-functions">38. Window Functions</h1>
+<p>Window functions perform calculations across related rows without collapsing them.</p>
+<p>Example:</p>
+<pre><code class="language-sql">SELECT
+    user_id,
+    amount,
+    ROW_NUMBER() OVER (
+        PARTITION BY user_id
+        ORDER BY created_at DESC
+    ) AS rn
+FROM orders;
+</code></pre>
+<p>Important:</p>
+<pre><code class="language-text">ROW_NUMBER
+RANK
+DENSE_RANK
+LAG
+LEAD
+SUM() OVER
+AVG() OVER
+</code></pre>
+<p>This is a high-value senior SQL topic.</p>
+<hr />
+<h1 id="39-row_number-vs-rank-vs-dense_rank">39. ROW_NUMBER vs RANK vs DENSE_RANK</h1>
+<p>Suppose scores:</p>
+<pre><code class="language-text">100
+100
+90
+</code></pre>
+<p><code>ROW_NUMBER</code>:</p>
+<pre><code class="language-text">1
+2
+3
+</code></pre>
+<p><code>RANK</code>:</p>
+<pre><code class="language-text">1
+1
+3
+</code></pre>
+<p><code>DENSE_RANK</code>:</p>
+<pre><code class="language-text">1
+1
+2
+</code></pre>
+<hr />
+<h1 id="40-sql-execution-order">40. SQL Execution Order</h1>
+<p>Conceptual logical order:</p>
+<pre><code class="language-text">FROM
+JOIN
+WHERE
+GROUP BY
+HAVING
+SELECT
+DISTINCT
+ORDER BY
+LIMIT/OFFSET
+</code></pre>
+<p>This explains why a SELECT alias cannot always be referenced in WHERE.</p>
+<hr />
+<h1 id="41-query-execution-plan">41. Query Execution Plan</h1>
+<p>Use:</p>
+<pre><code class="language-sql">EXPLAIN
+</code></pre>
+<p>or database-specific execution-plan tools.</p>
+<p>Look for:</p>
+<pre><code class="language-text">index scan
+sequential/table scan
+join strategy
+estimated rows
+actual rows
+sort
+hash
+cost
+</code></pre>
+<p>For real performance investigation, inspect actual execution behavior where supported.</p>
+<hr />
+<h1 id="42-index">42. Index</h1>
+<p>An index is an additional data structure that helps the database locate rows more efficiently.</p>
+<p>Without useful index:</p>
+<pre><code class="language-text">table scan
+</code></pre>
+<p>With useful index:</p>
+<pre><code class="language-text">index lookup
+ ↓
+target rows
+</code></pre>
+<p>Indexes are not free.</p>
+<hr />
+<h1 id="43-index-trade-off">43. Index Trade-Off</h1>
+<p>Indexes improve some reads but cost:</p>
+<pre><code class="language-text">storage
+INSERT cost
+UPDATE cost
+DELETE cost
+maintenance
+</code></pre>
+<p>Therefore:</p>
+<blockquote>
+<p>Index based on access patterns, not on every column.</p>
+</blockquote>
+<hr />
+<h1 id="44-b-tree-index">44. B-Tree Index</h1>
+<p>Common default index structure.</p>
+<p>Useful for many:</p>
+<pre><code class="language-text">equality
+range
+ordering
+prefix-related
+</code></pre>
+<p>queries, depending on database and operator.</p>
+<hr />
+<h1 id="45-hash-index">45. Hash Index</h1>
+<p>Hash-based indexes are optimized for equality-style lookups in systems that support them.</p>
+<p>They generally do not provide the same range-ordering behavior as B-tree indexes.</p>
+<p>Do not assume hash indexes are universally faster.</p>
+<hr />
+<h1 id="46-composite-index">46. Composite Index</h1>
+<p>Example:</p>
+<pre><code class="language-sql">CREATE INDEX idx_orders_user_status
+ON orders(user_id, status);
+</code></pre>
+<p>Column order matters.</p>
+<p>Think:</p>
+<pre><code class="language-text">(user_id, status)
+</code></pre>
+<p>is not equivalent to:</p>
+<pre><code class="language-text">(status, user_id)
+</code></pre>
+<p>for every query.</p>
+<hr />
+<h1 id="47-leftmost-prefix">47. Leftmost Prefix</h1>
+<p>For:</p>
+<pre><code class="language-text">INDEX(a, b, c)
+</code></pre>
+<p>queries filtering by:</p>
+<pre><code class="language-text">a
+a,b
+a,b,c
+</code></pre>
+<p>can often use the leading index columns effectively.</p>
+<p>A query only on:</p>
+<pre><code class="language-text">b
+</code></pre>
+<p>may not benefit in the same way.</p>
+<p>Exact optimizer behavior depends on the database.</p>
+<hr />
+<h1 id="48-covering-index">48. Covering Index</h1>
+<p>If an index contains all columns required by a query, the database may be able to answer the query primarily from the index.</p>
+<p>Example:</p>
+<pre><code class="language-sql">CREATE INDEX idx_user_status_name
+ON users(status, name);
+</code></pre>
+<p>Query:</p>
+<pre><code class="language-sql">SELECT name
+FROM users
+WHERE status = 'ACTIVE';
+</code></pre>
+<p>Potential benefit:</p>
+<pre><code class="language-text">less table access
+</code></pre>
+<hr />
+<h1 id="49-selectivity">49. Selectivity</h1>
+<p>An index is generally more useful when it can significantly narrow the candidate rows.</p>
+<p>Example:</p>
+<pre><code class="language-text">email → highly selective
+gender → potentially low selectivity
+</code></pre>
+<p>But selectivity is not the only factor.</p>
+<p>Query shape and workload matter.</p>
+<hr />
+<h1 id="50-sargability">50. Sargability</h1>
+<p>A predicate is more index-friendly when the database can use the indexed column directly.</p>
+<p>Potentially problematic:</p>
+<pre><code class="language-sql">WHERE LOWER(email) = 'alice@example.com'
+</code></pre>
+<p>depending on index design.</p>
+<p>Better options may include:</p>
+<pre><code class="language-text">functional index
+normalized column
+database-specific expression index
+</code></pre>
+<hr />
+<h1 id="51-function-on-indexed-column">51. Function on Indexed Column</h1>
+<p>Example:</p>
+<pre><code class="language-sql">WHERE YEAR(created_at) = 2026
+</code></pre>
+<p>may prevent a normal index on <code>created_at</code> from being used efficiently.</p>
+<p>Often better:</p>
+<pre><code class="language-sql">WHERE created_at &gt;= '2026-01-01'
+  AND created_at &lt; '2027-01-01'
+</code></pre>
+<p>Exact behavior depends on the optimizer.</p>
+<hr />
+<h1 id="52-like-and-indexes">52. LIKE and Indexes</h1>
+<p>Potentially:</p>
+<pre><code class="language-sql">WHERE email LIKE 'alice%'
+</code></pre>
+<p>can use an appropriate B-tree index.</p>
+<p>But:</p>
+<pre><code class="language-sql">WHERE email LIKE '%alice%'
+</code></pre>
+<p>is generally harder for a normal B-tree index.</p>
+<p>For search-heavy requirements, consider:</p>
+<pre><code class="language-text">full-text search
+trigram indexes
+search engines
+</code></pre>
+<p>depending on workload.</p>
+<hr />
+<h1 id="53-indexing-foreign-keys">53. Indexing Foreign Keys</h1>
+<p>Foreign-key columns are often good index candidates because applications frequently:</p>
+<pre><code class="language-text">JOIN
+filter
+delete/update parent-child relationships
+</code></pre>
+<p>But index based on actual queries and database behavior.</p>
+<hr />
+<h1 id="54-acid">54. ACID</h1>
+<pre><code class="language-text">Atomicity
+Consistency
+Isolation
+Durability
+</code></pre>
+<h3 id="atomicity">Atomicity</h3>
+<p>All-or-nothing transaction.</p>
+<h3 id="consistency">Consistency</h3>
+<p>Transaction preserves defined data invariants.</p>
+<h3 id="isolation">Isolation</h3>
+<p>Concurrent transactions should not improperly interfere.</p>
+<h3 id="durability">Durability</h3>
+<p>Committed data survives failures according to the database's durability guarantees.</p>
+<hr />
+<h1 id="55-transaction">55. Transaction</h1>
+<p>Example:</p>
+<pre><code class="language-text">Transfer ₹100
+
+Debit A
+Credit B
+</code></pre>
+<p>Both operations should belong to one transaction.</p>
+<pre><code class="language-text">BEGIN
+ ↓
+debit
+ ↓
+credit
+ ↓
+COMMIT
+</code></pre>
+<p>Failure:</p>
+<pre><code class="language-text">ROLLBACK
+</code></pre>
+<hr />
+<h1 id="56-autocommit">56. Autocommit</h1>
+<p>Many JDBC configurations use autocommit by default.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">each statement
+ ↓
+transaction
+ ↓
+commit
+</code></pre>
+<p>Frameworks such as Spring commonly manage transaction boundaries explicitly.</p>
+<hr />
+<h1 id="57-isolation-levels">57. Isolation Levels</h1>
+<p>Common:</p>
+<pre><code class="language-text">READ UNCOMMITTED
+READ COMMITTED
+REPEATABLE READ
+SERIALIZABLE
+</code></pre>
+<p>Different databases can implement these differently.</p>
+<hr />
+<h1 id="58-dirty-read">58. Dirty Read</h1>
+<p>Transaction A reads data written by transaction B before B commits.</p>
+<pre><code class="language-text">B writes 100
+A reads 100
+B rolls back
+</code></pre>
+<p>A saw data that never committed.</p>
+<hr />
+<h1 id="59-non-repeatable-read">59. Non-Repeatable Read</h1>
+<p>Transaction A reads a row.</p>
+<p>Transaction B changes and commits it.</p>
+<p>Transaction A reads again and gets a different value.</p>
+<pre><code class="language-text">A → 100
+B → 200
+A → 200
+</code></pre>
+<hr />
+<h1 id="60-phantom-read">60. Phantom Read</h1>
+<p>A transaction repeats a range query and sees a different set of rows.</p>
+<pre><code class="language-text">A → 10 matching rows
+B → inserts matching row
+A → 11 rows
+</code></pre>
+<hr />
+<h1 id="61-mvcc">61. MVCC</h1>
+<p>Many modern databases use Multi-Version Concurrency Control.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">multiple row versions
+       ↓
+readers can often avoid blocking writers
+</code></pre>
+<p>Exact implementation differs by database.</p>
+<p>PostgreSQL, for example, has a sophisticated MVCC model.</p>
+<hr />
+<h1 id="62-optimistic-locking">62. Optimistic Locking</h1>
+<p>Common JPA pattern:</p>
+<pre><code class="language-java">@Version
+private Long version;
+</code></pre>
+<p>Database concept:</p>
+<pre><code class="language-text">UPDATE ... WHERE id=? AND version=5
+</code></pre>
+<p>If no row updates:</p>
+<pre><code class="language-text">someone changed it
+</code></pre>
+<p>Useful when conflicts are relatively uncommon.</p>
+<hr />
+<h1 id="63-pessimistic-locking">63. Pessimistic Locking</h1>
+<p>Database locks prevent conflicting operations from proceeding concurrently.</p>
+<p>Examples:</p>
+<pre><code class="language-text">SELECT ... FOR UPDATE
+</code></pre>
+<p>Use carefully because locks can cause:</p>
+<pre><code class="language-text">blocking
+deadlocks
+lower concurrency
+</code></pre>
+<hr />
+<h1 id="64-deadlock">64. Deadlock</h1>
+<p>Example:</p>
+<pre><code class="language-text">Transaction A
+locks row 1
+waits for row 2
+
+Transaction B
+locks row 2
+waits for row 1
+</code></pre>
+<p>Both wait.</p>
+<p>Database detects the cycle and usually aborts one transaction.</p>
+<p>Prevention:</p>
+<pre><code class="language-text">consistent lock ordering
+short transactions
+appropriate indexes
+avoid unnecessary locks
+retry safe transactions
+</code></pre>
+<hr />
+<h1 id="65-lost-update">65. Lost Update</h1>
+<p>Two transactions read the same value:</p>
+<pre><code class="language-text">A reads 100
+B reads 100
+
+A writes 110
+B writes 120
+</code></pre>
+<p>A's update is effectively lost.</p>
+<p>Solutions:</p>
+<pre><code class="language-text">optimistic locking
+pessimistic locking
+atomic SQL update
+appropriate transaction isolation
+</code></pre>
+<hr />
+<h1 id="66-atomic-update">66. Atomic Update</h1>
+<p>Instead of:</p>
+<pre><code class="language-text">read balance
+calculate
+write balance
+</code></pre>
+<p>use:</p>
+<pre><code class="language-sql">UPDATE accounts
+SET balance = balance - 100
+WHERE id = 1
+  AND balance &gt;= 100;
+</code></pre>
+<p>Then inspect affected rows.</p>
+<p>This can avoid race conditions that application-side read-modify-write introduces.</p>
+<hr />
+<h1 id="67-constraint-vs-application-validation">67. Constraint vs Application Validation</h1>
+<p>Suppose two requests create:</p>
+<pre><code class="language-text">email = alice@example.com
+</code></pre>
+<p>Both check:</p>
+<pre><code class="language-text">does email exist?
+→ no
+</code></pre>
+<p>Both insert.</p>
+<p>Without a database uniqueness constraint, duplicates can happen.</p>
+<p>Correct design:</p>
+<pre><code class="language-text">application validation
++
+UNIQUE constraint
+</code></pre>
+<hr />
+<h1 id="68-referential-integrity">68. Referential Integrity</h1>
+<p>Foreign keys can enforce:</p>
+<pre><code class="language-text">child references existing parent
+</code></pre>
+<p>Without database enforcement, application bugs can create orphan records.</p>
+<hr />
+<h1 id="69-cascade-delete">69. Cascade Delete</h1>
+<p>Possible:</p>
+<pre><code class="language-text">delete user
+ ↓
+delete orders
+</code></pre>
+<p>But cascading deletes can become dangerous at scale.</p>
+<p>Always understand:</p>
+<pre><code class="language-text">how many rows?
+locking?
+transaction duration?
+business semantics?
+</code></pre>
+<hr />
+<h1 id="70-stored-procedures">70. Stored Procedures</h1>
+<p>Stored procedures move some logic into the database.</p>
+<p>Potential benefits:</p>
+<pre><code class="language-text">centralized DB logic
+reduced network round trips
+security boundaries
+</code></pre>
+<p>Trade-offs:</p>
+<pre><code class="language-text">deployment complexity
+testing
+portability
+developer tooling
+logic split across layers
+</code></pre>
+<p>Use based on architecture and organizational needs.</p>
+<hr />
+<h1 id="71-views">71. Views</h1>
+<p>A view is a stored query abstraction.</p>
+<pre><code class="language-sql">CREATE VIEW active_users AS
+SELECT *
+FROM users
+WHERE status = 'ACTIVE';
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">abstraction
+reporting
+security boundaries
+query reuse
+</code></pre>
+<p>Materialized views physically store results in databases that support them.</p>
+<hr />
+<h1 id="72-materialized-view">72. Materialized View</h1>
+<p>Instead of computing a complex query every time:</p>
+<pre><code class="language-text">base tables
+ ↓
+materialized result
+</code></pre>
+<p>Queries can be faster.</p>
+<p>But refresh strategy creates:</p>
+<pre><code class="language-text">staleness
+storage
+refresh cost
+</code></pre>
+<hr />
+<h1 id="73-partitioning">73. Partitioning</h1>
+<p>Partitioning divides a large table into smaller physical partitions.</p>
+<p>Example:</p>
+<pre><code class="language-text">orders
+ ├── 2025
+ ├── 2026-01
+ ├── 2026-02
+ └── 2026-03
+</code></pre>
+<p>Potential benefits:</p>
+<pre><code class="language-text">partition pruning
+maintenance
+data lifecycle
+large-table management
+</code></pre>
+<p>Partitioning is not the same as sharding.</p>
+<hr />
+<h1 id="74-sharding">74. Sharding</h1>
+<p>Sharding distributes data across independent database nodes.</p>
+<pre><code class="language-text">Shard 1 → users A-F
+Shard 2 → users G-M
+Shard 3 → users N-Z
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">horizontal storage scaling
+write scaling
+</code></pre>
+<p>Costs:</p>
+<pre><code class="language-text">cross-shard queries
+rebalancing
+transactions
+operational complexity
+</code></pre>
+<hr />
+<h1 id="75-partitioning-vs-sharding">75. Partitioning vs Sharding</h1>
+<pre><code class="language-text">Partitioning
+→ divides data within a database system
+
+Sharding
+→ distributes data across database nodes/instances
+</code></pre>
+<hr />
+<h1 id="76-read-replicas">76. Read Replicas</h1>
+<p>Architecture:</p>
+<pre><code class="language-text">Primary
+ ├── writes
+ └── replication
+      ├── Replica 1
+      └── Replica 2
+</code></pre>
+<p>Read replicas improve read scalability.</p>
+<p>But replication can be asynchronous.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">write primary
+immediately read replica
+</code></pre>
+<p>may return stale data.</p>
+<hr />
+<h1 id="77-read-after-write-consistency">77. Read-After-Write Consistency</h1>
+<p>User:</p>
+<pre><code class="language-text">POST /profile
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-text">GET /profile
+</code></pre>
+<p>If GET goes to a lagging replica:</p>
+<pre><code class="language-text">old data
+</code></pre>
+<p>Possible strategies:</p>
+<pre><code class="language-text">route critical reads to primary
+session/consistency-aware routing
+replication wait
+application-level versioning
+</code></pre>
+<hr />
+<h1 id="78-connection-pool">78. Connection Pool</h1>
+<p>Applications use connection pools such as HikariCP.</p>
+<p>Pool:</p>
+<pre><code class="language-text">Application Threads
+       ↓
+Connection Pool
+ ├── C1
+ ├── C2
+ ├── C3
+ └── C4
+       ↓
+Database
+</code></pre>
+<p>Pool too small:</p>
+<pre><code class="language-text">threads wait
+</code></pre>
+<p>Pool too large:</p>
+<pre><code class="language-text">DB overload
+context switching
+memory usage
+</code></pre>
+<hr />
+<h1 id="79-database-connection-pool-exhaustion">79. Database Connection Pool Exhaustion</h1>
+<p>Symptoms:</p>
+<pre><code class="language-text">connection timeout
+request latency spikes
+threads waiting
+</code></pre>
+<p>Investigate:</p>
+<pre><code class="language-text">slow queries
+long transactions
+connection leaks
+pool size
+DB max connections
+traffic
+</code></pre>
+<p>Do not automatically increase the pool.</p>
+<hr />
+<h1 id="80-sql-injection">80. SQL Injection</h1>
+<p>Bad:</p>
+<pre><code class="language-java">String sql =
+    &quot;SELECT * FROM users WHERE email = '&quot; +
+    email + &quot;'&quot;;
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">PreparedStatement
+parameter binding
+</code></pre>
+<p>ORM frameworks help, but unsafe dynamic SQL can still create injection vulnerabilities.</p>
+<hr />
+<h1 id="81-orm-does-not-replace-sql-knowledge">81. ORM Does Not Replace SQL Knowledge</h1>
+<p>Hibernate/JPA can generate SQL.</p>
+<p>You still need to understand:</p>
+<pre><code class="language-text">joins
+indexes
+execution plans
+transactions
+locks
+query cardinality
+N+1
+pagination
+</code></pre>
+<hr />
+<h1 id="82-sql-performance-debugging">82. SQL Performance Debugging</h1>
+<p>Approach:</p>
+<pre><code class="language-text">1. Identify slow query
+2. Measure actual latency
+3. Inspect execution plan
+4. Check row estimates
+5. Check indexes
+6. Check joins
+7. Check sorting
+8. Check data volume
+9. Check locking
+10. Optimize
+11. Measure again
+</code></pre>
+<p>Do not optimize from intuition alone.</p>
+<hr />
+<h1 id="83-query-cardinality">83. Query Cardinality</h1>
+<p>Cardinality is the number of rows produced by an operation.</p>
+<p>Example:</p>
+<pre><code class="language-text">users = 1M
+orders = 10M
+</code></pre>
+<p>A poorly designed join can generate a huge intermediate result.</p>
+<p>Understanding cardinality is critical for query optimization.</p>
+<hr />
+<h1 id="84-select-n1-problem">84. Select N+1 Problem</h1>
+<p>Application:</p>
+<pre><code class="language-text">SELECT users
+</code></pre>
+<p>then:</p>
+<pre><code class="language-text">SELECT orders WHERE user_id = ?
+</code></pre>
+<p>for every user.</p>
+<p>Example:</p>
+<pre><code class="language-text">1 + 100 = 101 queries
+</code></pre>
+<p>Solutions:</p>
+<pre><code class="language-text">JOIN
+fetch join
+batch query
+projection
+</code></pre>
+<hr />
+<h1 id="85-database-index-does-not-always-improve-query">85. Database Index Does Not Always Improve Query</h1>
+<p>An index may be ignored because:</p>
+<pre><code class="language-text">low selectivity
+small table
+query returns large percentage of rows
+function prevents use
+statistics
+optimizer cost model
+</code></pre>
+<p>The execution plan tells you what happened.</p>
+<hr />
+<h1 id="86-statistics">86. Statistics</h1>
+<p>Query optimizers use statistics to estimate:</p>
+<pre><code class="language-text">row counts
+selectivity
+distribution
+cost
+</code></pre>
+<p>Stale statistics can lead to poor execution plans.</p>
+<hr />
+<h1 id="87-sql-query-question-second-highest-salary">87. SQL Query Question: Second Highest Salary</h1>
+<p>One possible solution:</p>
+<pre><code class="language-sql">SELECT MAX(salary)
+FROM employees
+WHERE salary &lt; (
+    SELECT MAX(salary)
+    FROM employees
+);
+</code></pre>
+<p>But interviewers may follow up:</p>
+<pre><code class="language-text">What about duplicate salaries?
+What if no second salary exists?
+Can you use DENSE_RANK?
+</code></pre>
+<p>Window function:</p>
+<pre><code class="language-sql">SELECT salary
+FROM (
+    SELECT
+        salary,
+        DENSE_RANK() OVER (
+            ORDER BY salary DESC
+        ) AS rnk
+    FROM employees
+) x
+WHERE rnk = 2;
+</code></pre>
+<hr />
+<h1 id="88-sql-query-find-duplicate-emails">88. SQL Query: Find Duplicate Emails</h1>
+<pre><code class="language-sql">SELECT email, COUNT(*)
+FROM users
+GROUP BY email
+HAVING COUNT(*) &gt; 1;
+</code></pre>
+<hr />
+<h1 id="89-sql-query-delete-duplicates">89. SQL Query: Delete Duplicates</h1>
+<p>Do not blindly delete duplicates.</p>
+<p>First identify:</p>
+<pre><code class="language-text">canonical row
+duplicate rows
+business rules
+foreign-key dependencies
+</code></pre>
+<p>A window function can help identify duplicates:</p>
+<pre><code class="language-sql">ROW_NUMBER() OVER (
+    PARTITION BY email
+    ORDER BY id
+)
+</code></pre>
+<p>Then delete rows where:</p>
+<pre><code class="language-text">row_number &gt; 1
+</code></pre>
+<p>with careful transaction/testing.</p>
+<hr />
+<h1 id="90-sql-query-latest-record-per-user">90. SQL Query: Latest Record Per User</h1>
+<pre><code class="language-sql">SELECT *
+FROM (
+    SELECT
+        o.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY user_id
+            ORDER BY created_at DESC
+        ) AS rn
+    FROM orders o
+) x
+WHERE rn = 1;
+</code></pre>
+<p>This is a high-value SQL interview pattern.</p>
+<hr />
+<h1 id="91-sql-query-top-n-per-group">91. SQL Query: Top N Per Group</h1>
+<p>Use:</p>
+<pre><code class="language-text">ROW_NUMBER
+RANK
+DENSE_RANK
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-sql">SELECT *
+FROM (
+    SELECT
+        department,
+        employee,
+        salary,
+        DENSE_RANK() OVER (
+            PARTITION BY department
+            ORDER BY salary DESC
+        ) AS rnk
+    FROM employees
+) x
+WHERE rnk &lt;= 3;
+</code></pre>
+<hr />
+<h1 id="92-sql-query-running-total">92. SQL Query: Running Total</h1>
+<pre><code class="language-sql">SELECT
+    created_at,
+    amount,
+    SUM(amount) OVER (
+        ORDER BY created_at
+    ) AS running_total
+FROM payments;
+</code></pre>
+<hr />
+<h1 id="93-sql-query-consecutive-records">93. SQL Query: Consecutive Records</h1>
+<p>Common approach:</p>
+<pre><code class="language-text">LAG
+LEAD
+ROW_NUMBER
+date arithmetic
+</code></pre>
+<p>The exact solution depends on what "consecutive" means.</p>
+<p>This is a good senior SQL problem because it tests window functions and reasoning.</p>
+<hr />
+<h1 id="94-sql-interview-trap-where-vs-having">94. SQL Interview Trap: WHERE vs HAVING</h1>
+<p>Wrong mental model:</p>
+<pre><code class="language-text">HAVING filters rows
+</code></pre>
+<p>Better:</p>
+<pre><code class="language-text">WHERE → before grouping
+HAVING → after grouping
+</code></pre>
+<hr />
+<h1 id="95-sql-interview-trap-delete-vs-truncate-vs-drop">95. SQL Interview Trap: DELETE vs TRUNCATE vs DROP</h1>
+<h3 id="delete">DELETE</h3>
+<pre><code class="language-text">row-level deletion
+can use WHERE
+transaction behavior depends on DB
+</code></pre>
+<h3 id="truncate">TRUNCATE</h3>
+<pre><code class="language-text">remove table contents efficiently
+usually no WHERE
+database-specific transactional/locking semantics
+</code></pre>
+<h3 id="drop">DROP</h3>
+<pre><code class="language-text">remove the table/object itself
+</code></pre>
+<p>Never claim identical behavior across all databases.</p>
+<hr />
+<h1 id="96-sql-interview-trap-union-vs-union-all">96. SQL Interview Trap: UNION vs UNION ALL</h1>
+<pre><code class="language-text">UNION
+→ removes duplicates
+
+UNION ALL
+→ keeps duplicates
+</code></pre>
+<p>If deduplication is unnecessary:</p>
+<pre><code class="language-text">UNION ALL
+</code></pre>
+<p>is generally preferable.</p>
+<hr />
+<h1 id="97-sql-interview-trap-count">97. SQL Interview Trap: COUNT(*)</h1>
+<p><code>COUNT(*)</code> counts rows.</p>
+<p><code>COUNT(column)</code> ignores NULL values.</p>
+<p>This is frequently asked.</p>
+<hr />
+<h1 id="98-sql-interview-trap-null">98. SQL Interview Trap: NULL</h1>
+<p>Remember:</p>
+<pre><code class="language-sql">NULL = NULL
+</code></pre>
+<p>does not evaluate to TRUE.</p>
+<p>Use:</p>
+<pre><code class="language-sql">IS NULL
+IS NOT NULL
+</code></pre>
+<hr />
+<h1 id="99-sql-interview-trap-left-join-where">99. SQL Interview Trap: LEFT JOIN + WHERE</h1>
+<p>Consider:</p>
+<pre><code class="language-sql">SELECT *
+FROM users u
+LEFT JOIN orders o
+    ON o.user_id = u.id
+WHERE o.status = 'PAID';
+</code></pre>
+<p>The WHERE condition can eliminate NULL-extended rows and make the result behave like an inner join for that condition.</p>
+<p>Moving the predicate:</p>
+<pre><code class="language-sql">LEFT JOIN orders o
+    ON o.user_id = u.id
+   AND o.status = 'PAID'
+</code></pre>
+<p>can preserve users without paid orders.</p>
+<p>This is a classic interview trap.</p>
+<hr />
+<h1 id="100-sql-interview-trap-distinct-as-a-fix">100. SQL Interview Trap: DISTINCT as a Fix</h1>
+<p>Bad approach:</p>
+<pre><code class="language-text">JOIN creates duplicates
+ ↓
+add DISTINCT
+</code></pre>
+<p>First ask:</p>
+<pre><code class="language-text">Why did the join multiply rows?
+</code></pre>
+<p><code>DISTINCT</code> may hide a data-model/query problem and can add cost.</p>
+<hr />
+<h1 id="part-iii-nosql">PART III — NOSQL</h1>
+<h1 id="101-what-is-nosql">101. What is NoSQL?</h1>
+<p>NoSQL databases are non-relational database systems designed around different data models and scaling patterns.</p>
+<p>Major categories:</p>
+<pre><code class="language-text">Document
+Key-value
+Wide-column
+Graph
+</code></pre>
+<p>NoSQL often emphasizes:</p>
+<pre><code class="language-text">flexible schemas
+horizontal scaling
+high throughput
+specific access patterns
+</code></pre>
+<p>But these are not universal properties of every NoSQL database.</p>
+<hr />
+<h1 id="102-why-nosql">102. Why NoSQL?</h1>
+<p>Possible reasons:</p>
+<pre><code class="language-text">very high write volume
+horizontal scaling
+flexible schema
+document-oriented data
+low-latency key access
+large distributed datasets
+specialized query patterns
+</code></pre>
+<p>Choose based on workload.</p>
+<hr />
+<h1 id="103-document-database">103. Document Database</h1>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;_id&quot;: &quot;user-123&quot;,
+  &quot;name&quot;: &quot;Alice&quot;,
+  &quot;email&quot;: &quot;alice@example.com&quot;,
+  &quot;addresses&quot;: [
+    {
+      &quot;city&quot;: &quot;Bangalore&quot;,
+      &quot;type&quot;: &quot;HOME&quot;
+    }
+  ]
+}
+</code></pre>
+<p>MongoDB is a common example.</p>
+<hr />
+<h1 id="104-document-vs-relational">104. Document vs Relational</h1>
+<p>Relational:</p>
+<pre><code class="language-text">users
+addresses
+orders
+</code></pre>
+<p>Document:</p>
+<pre><code class="language-text">user
+ ├── profile
+ ├── addresses
+ └── preferences
+</code></pre>
+<p>Embedding can reduce joins.</p>
+<p>But excessive embedding can create:</p>
+<pre><code class="language-text">large documents
+update complexity
+duplication
+</code></pre>
+<hr />
+<h1 id="105-embed-vs-reference-in-mongodb">105. Embed vs Reference in MongoDB</h1>
+<p>Embed when:</p>
+<pre><code class="language-text">data belongs tightly to parent
+read together
+bounded size
+same lifecycle
+</code></pre>
+<p>Reference when:</p>
+<pre><code class="language-text">large collection
+independent lifecycle
+many-to-many
+frequently updated independently
+</code></pre>
+<hr />
+<h1 id="106-mongodb-indexes">106. MongoDB Indexes</h1>
+<p>MongoDB supports indexes on fields.</p>
+<p>Example conceptually:</p>
+<pre><code class="language-javascript">db.users.createIndex({ email: 1 })
+</code></pre>
+<p>Indexes improve matching/sorting in suitable queries but consume storage and write resources.</p>
+<hr />
+<h1 id="107-mongodb-compound-index">107. MongoDB Compound Index</h1>
+<pre><code class="language-javascript">db.orders.createIndex({
+    userId: 1,
+    createdAt: -1
+})
+</code></pre>
+<p>Field order matters.</p>
+<p>Think about:</p>
+<pre><code class="language-text">equality
+sort
+range
+</code></pre>
+<p>when designing compound indexes.</p>
+<hr />
+<h1 id="108-mongodb-aggregation-pipeline">108. MongoDB Aggregation Pipeline</h1>
+<p>Example conceptual stages:</p>
+<pre><code class="language-text">$match
+ ↓
+$group
+ ↓
+$sort
+ ↓
+$limit
+</code></pre>
+<p>Useful for analytical/document transformations.</p>
+<hr />
+<h1 id="109-mongodb-transactions">109. MongoDB Transactions</h1>
+<p>Modern MongoDB supports transactions.</p>
+<p>But:</p>
+<blockquote>
+<p>The existence of transactions does not mean you should model every relational workload exactly as you would in SQL.</p>
+</blockquote>
+<p>Good document modeling can reduce the need for cross-document transactions.</p>
+<hr />
+<h1 id="110-mongodb-atomicity">110. MongoDB Atomicity</h1>
+<p>MongoDB provides atomicity at the document level.</p>
+<p>For multi-document operations, transaction support exists, but it introduces additional coordination/cost.</p>
+<p>Design documents so common operations can often be handled within one document where practical.</p>
+<hr />
+<h1 id="111-dynamodb">111. DynamoDB</h1>
+<p>DynamoDB is a managed NoSQL key-value/document database.</p>
+<p>Core concepts:</p>
+<pre><code class="language-text">table
+item
+partition key
+sort key
+GSI
+LSI
+provisioned/on-demand capacity
+</code></pre>
+<p>The most important DynamoDB mindset:</p>
+<blockquote>
+<p>Design the table around access patterns, not around normalization.</p>
+</blockquote>
+<hr />
+<h1 id="112-dynamodb-partition-key">112. DynamoDB Partition Key</h1>
+<p>Partition key determines how items are distributed.</p>
+<p>Bad:</p>
+<pre><code class="language-text">partition key = country
+</code></pre>
+<p>if:</p>
+<pre><code class="language-text">90% traffic = India
+</code></pre>
+<p>because it can create a hot partition/key.</p>
+<p>Prefer keys with sufficient distribution.</p>
+<hr />
+<h1 id="113-dynamodb-sort-key">113. DynamoDB Sort Key</h1>
+<p>A composite primary key:</p>
+<pre><code class="language-text">partition key + sort key
+</code></pre>
+<p>can support queries such as:</p>
+<pre><code class="language-text">customerId = 123
+AND orderId begins with &quot;2026&quot;
+</code></pre>
+<p>depending on key design.</p>
+<hr />
+<h1 id="114-gsi-vs-lsi">114. GSI vs LSI</h1>
+<h3 id="gsi">GSI</h3>
+<p>Global Secondary Index:</p>
+<pre><code class="language-text">different partition/sort key
+</code></pre>
+<p>Can be used across partitions and has independent capacity characteristics.</p>
+<h3 id="lsi">LSI</h3>
+<p>Local Secondary Index:</p>
+<pre><code class="language-text">same partition key
+different sort key
+</code></pre>
+<p>Defined as part of table creation.</p>
+<hr />
+<h1 id="115-dynamodb-query-vs-scan">115. DynamoDB Query vs Scan</h1>
+<h3 id="query">Query</h3>
+<p>Targets a specific partition key.</p>
+<p>Generally efficient.</p>
+<h3 id="scan">Scan</h3>
+<p>Reads broadly across the table/index.</p>
+<p>Can be expensive at scale.</p>
+<p>Senior interview rule:</p>
+<blockquote>
+<p>Design access patterns so production requests use Query rather than large Scans.</p>
+</blockquote>
+<hr />
+<h1 id="116-dynamodb-single-table-design">116. DynamoDB Single-Table Design</h1>
+<p>Instead of:</p>
+<pre><code class="language-text">users
+orders
+payments
+</code></pre>
+<p>you may model multiple entity types in one table.</p>
+<p>Example:</p>
+<pre><code class="language-text">PK=USER#123
+SK=PROFILE
+
+PK=USER#123
+SK=ORDER#456
+
+PK=USER#123
+SK=ORDER#789
+</code></pre>
+<p>This is designed around access patterns.</p>
+<hr />
+<h1 id="117-cassandra">117. Cassandra</h1>
+<p>Cassandra is a distributed wide-column database designed for:</p>
+<pre><code class="language-text">high write throughput
+large distributed datasets
+high availability
+horizontal scaling
+</code></pre>
+<p>It uses a partitioned architecture.</p>
+<hr />
+<h1 id="118-cassandra-data-modeling">118. Cassandra Data Modeling</h1>
+<p>Cassandra encourages:</p>
+<blockquote>
+<p>Query-first / access-pattern-first data modeling.</p>
+</blockquote>
+<p>You often create tables specifically for queries.</p>
+<p>This is different from normalized relational modeling.</p>
+<hr />
+<h1 id="119-cassandra-partition-key">119. Cassandra Partition Key</h1>
+<p>Partition key determines which node owns the data.</p>
+<p>Bad partition key:</p>
+<pre><code class="language-text">same key for huge amounts of data
+</code></pre>
+<p>This creates:</p>
+<pre><code class="language-text">hot partition
+large partition
+</code></pre>
+<p>Choose a well-distributed key.</p>
+<hr />
+<h1 id="120-cassandra-clustering-columns">120. Cassandra Clustering Columns</h1>
+<p>Within a partition, clustering columns control ordering and organization.</p>
+<p>Example:</p>
+<pre><code class="language-text">PRIMARY KEY ((user_id), event_time)
+</code></pre>
+<p>means:</p>
+<pre><code class="language-text">partition key = user_id
+clustering column = event_time
+</code></pre>
+<hr />
+<h1 id="121-cassandra-consistency">121. Cassandra Consistency</h1>
+<p>Cassandra supports tunable consistency levels.</p>
+<p>Examples include:</p>
+<pre><code class="language-text">ONE
+QUORUM
+ALL
+LOCAL_QUORUM
+</code></pre>
+<p>Trade-off:</p>
+<pre><code class="language-text">latency
+availability
+consistency
+</code></pre>
+<hr />
+<h1 id="122-cassandra-vs-sql">122. Cassandra vs SQL</h1>
+<p>Cassandra:</p>
+<pre><code class="language-text">distributed writes
+high availability
+query-driven modeling
+limited joins
+denormalization
+</code></pre>
+<p>SQL:</p>
+<pre><code class="language-text">joins
+transactions
+constraints
+rich ad-hoc queries
+relational model
+</code></pre>
+<hr />
+<h1 id="123-redis-as-key-value-store">123. Redis as Key-Value Store</h1>
+<p>Redis:</p>
+<pre><code class="language-text">key → value
+</code></pre>
+<p>with rich data structures.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">cache
+counter
+session
+temporary state
+rate limiting
+locks
+</code></pre>
+<p>Not ideal as the primary system of record for complex relational business data.</p>
+<hr />
+<h1 id="124-nosql-and-cap-theorem">124. NoSQL and CAP Theorem</h1>
+<p>CAP says that during a network partition, a distributed system cannot simultaneously guarantee both:</p>
+<pre><code class="language-text">strong consistency
+and
+availability
+</code></pre>
+<p>while maintaining partition tolerance.</p>
+<p>In distributed systems:</p>
+<pre><code class="language-text">Partition tolerance
+</code></pre>
+<p>is generally unavoidable.</p>
+<p>Therefore the trade-off becomes:</p>
+<pre><code class="language-text">Consistency vs Availability
+</code></pre>
+<p>during partition.</p>
+<hr />
+<h1 id="125-cap-interview-trap">125. CAP Interview Trap</h1>
+<p>Do not say:</p>
+<blockquote>
+<p>"MongoDB is CA."</p>
+</blockquote>
+<p>or:</p>
+<blockquote>
+<p>"Cassandra is AP, so it never provides consistency."</p>
+</blockquote>
+<p>Real systems have configurable and nuanced consistency/availability behavior.</p>
+<p>CAP is about distributed-system guarantees under partition, not a simplistic permanent label.</p>
+<hr />
+<h1 id="126-pacelc">126. PACELC</h1>
+<p>PACELC extends CAP.</p>
+<p>Roughly:</p>
+<pre><code class="language-text">If Partition:
+    choose Availability or Consistency
+
+Else:
+    choose Latency or Consistency
+</code></pre>
+<p>This is useful for discussing real distributed database trade-offs.</p>
+<hr />
+<h1 id="127-eventual-consistency">127. Eventual Consistency</h1>
+<p>Eventually consistent system:</p>
+<pre><code class="language-text">write
+ ↓
+replicas converge
+ ↓
+eventually same state
+</code></pre>
+<p>A read immediately after a write may see stale data depending on architecture.</p>
+<p>This is common in distributed systems.</p>
+<hr />
+<h1 id="128-strong-consistency">128. Strong Consistency</h1>
+<p>A read after a successful write returns the latest committed value according to the database's consistency model.</p>
+<p>Costs can include:</p>
+<pre><code class="language-text">coordination
+latency
+availability trade-offs
+</code></pre>
+<hr />
+<h1 id="129-base">129. BASE</h1>
+<p>Often associated with distributed NoSQL systems:</p>
+<pre><code class="language-text">Basically Available
+Soft state
+Eventually consistent
+</code></pre>
+<p>It is a conceptual contrast to strict ACID thinking, not a universal property of all NoSQL systems.</p>
+<hr />
+<h1 id="130-acid-vs-base">130. ACID vs BASE</h1>
+<table>
+<thead>
+<tr>
+<th>ACID</th>
+<th>BASE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Strong transactional model</td>
+<td>Often relaxed consistency</td>
+</tr>
+<tr>
+<td>Atomicity</td>
+<td>Availability-oriented design</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Soft state</td>
+</tr>
+<tr>
+<td>Isolation</td>
+<td>Eventual convergence</td>
+</tr>
+<tr>
+<td>Durability</td>
+<td>Distributed trade-offs</td>
+</tr>
+</tbody>
+</table>
+<p>Do not treat BASE as "NoSQL transactions do not exist."</p>
+<hr />
+<h1 id="131-nosql-denormalization">131. NoSQL Denormalization</h1>
+<p>Example:</p>
+<p>Instead of:</p>
+<pre><code class="language-text">users
+orders
+</code></pre>
+<p>requiring joins, a document may contain:</p>
+<pre><code class="language-json">{
+  &quot;userId&quot;: &quot;123&quot;,
+  &quot;name&quot;: &quot;Alice&quot;,
+  &quot;recentOrders&quot;: [...]
+}
+</code></pre>
+<p>Benefit:</p>
+<pre><code class="language-text">fast read
+</code></pre>
+<p>Trade-off:</p>
+<pre><code class="language-text">duplicate data
+update consistency
+document growth
+</code></pre>
+<hr />
+<h1 id="132-nosql-access-pattern-design">132. NoSQL Access-Pattern Design</h1>
+<p>Relational mindset:</p>
+<pre><code class="language-text">What entities do I have?
+</code></pre>
+<p>NoSQL mindset:</p>
+<pre><code class="language-text">What queries must I support?
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">Get all orders for customer
+Get latest 20 orders
+Get order by ID
+</code></pre>
+<p>Design keys/indexes around those queries.</p>
+<hr />
+<h1 id="133-nosql-hot-key">133. NoSQL Hot Key</h1>
+<p>If most requests hit:</p>
+<pre><code class="language-text">customerId = 123
+</code></pre>
+<p>that partition/key can become overloaded.</p>
+<p>Solutions depend on database:</p>
+<pre><code class="language-text">better partition key
+sharding/salting
+caching
+request distribution
+precomputation
+</code></pre>
+<hr />
+<h1 id="134-nosql-large-item-document">134. NoSQL Large Item / Document</h1>
+<p>Large documents cause:</p>
+<pre><code class="language-text">network overhead
+serialization cost
+memory pressure
+update cost
+</code></pre>
+<p>Avoid unlimited nested collections.</p>
+<p>Use separate entities/references when necessary.</p>
+<hr />
+<h1 id="135-nosql-secondary-indexes">135. NoSQL Secondary Indexes</h1>
+<p>Secondary indexes improve query flexibility.</p>
+<p>But they can introduce:</p>
+<pre><code class="language-text">write amplification
+storage
+replication overhead
+consistency considerations
+</code></pre>
+<p>Do not create indexes for every possible query.</p>
+<hr />
+<h1 id="136-nosql-failure-modes">136. NoSQL Failure Modes</h1>
+<p>Know:</p>
+<pre><code class="language-text">hot partition
+hot key
+large item
+replica lag
+eventual consistency
+throttling
+partition failure
+network partition
+rebalancing
+schema evolution
+index amplification
+</code></pre>
+<hr />
+<h1 id="part-iv-sql-vs-nosql">PART IV — SQL VS NOSQL</h1>
+<h1 id="137-sql-vs-nosql-comparison">137. SQL vs NoSQL Comparison</h1>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>SQL</th>
+<th>NoSQL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complex joins</td>
+<td>Excellent</td>
+<td>Usually limited</td>
+</tr>
+<tr>
+<td>Strong relational constraints</td>
+<td>Excellent</td>
+<td>Depends</td>
+</tr>
+<tr>
+<td>Flexible document structure</td>
+<td>Less natural</td>
+<td>Excellent for document DBs</td>
+</tr>
+<tr>
+<td>Ad-hoc queries</td>
+<td>Excellent</td>
+<td>Database-dependent</td>
+</tr>
+<tr>
+<td>Horizontal scaling</td>
+<td>Possible</td>
+<td>Often a core design goal</td>
+</tr>
+<tr>
+<td>Multi-row transactions</td>
+<td>Strong</td>
+<td>Varies</td>
+</tr>
+<tr>
+<td>Access-pattern-driven design</td>
+<td>Useful</td>
+<td>Often essential</td>
+</tr>
+<tr>
+<td>Analytics</td>
+<td>Strong</td>
+<td>Depends</td>
+</tr>
+<tr>
+<td>Massive distributed writes</td>
+<td>Possible</td>
+<td>Often strong fit</td>
+</tr>
+<tr>
+<td>Simple key lookup</td>
+<td>Good</td>
+<td>Excellent</td>
+</tr>
+<tr>
+<td>Schema flexibility</td>
+<td>More structured</td>
+<td>Often more flexible</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="138-when-sql-is-usually-better">138. When SQL Is Usually Better</h1>
+<p>Choose SQL when you need:</p>
+<pre><code class="language-text">complex relationships
+joins
+strong constraints
+multi-row transactions
+financial correctness
+ad-hoc querying
+mature reporting
+relational integrity
+</code></pre>
+<p>Examples:</p>
+<pre><code class="language-text">banking
+payments
+order management
+ERP
+financial accounting
+complex transactional systems
+</code></pre>
+<hr />
+<h1 id="139-when-nosql-is-usually-better">139. When NoSQL Is Usually Better</h1>
+<p>Possible fit:</p>
+<pre><code class="language-text">massive scale
+simple predictable access patterns
+document-centric data
+high write throughput
+distributed workloads
+flexible schema
+low-latency key access
+</code></pre>
+<p>Examples:</p>
+<pre><code class="language-text">event metadata
+user sessions
+catalog documents
+telemetry
+high-volume time-oriented data
+distributed counters
+</code></pre>
+<hr />
+<h1 id="140-polyglot-persistence">140. Polyglot Persistence</h1>
+<p>Using multiple databases for different workloads.</p>
+<p>Example:</p>
+<pre><code class="language-text">PostgreSQL
+→ source of truth
+
+Redis
+→ cache
+
+Kafka
+→ event streaming
+
+Elasticsearch
+→ search
+
+S3
+→ large objects
+</code></pre>
+<p>This can be powerful but increases:</p>
+<pre><code class="language-text">operational complexity
+data consistency challenges
+observability requirements
+failure modes
+team knowledge requirements
+</code></pre>
+<p>Do not introduce a database merely because it is popular.</p>
+<hr />
+<h1 id="141-database-as-source-of-truth">141. Database as Source of Truth</h1>
+<p>For a typical transactional application:</p>
+<pre><code class="language-text">PostgreSQL
+   ↓
+Source of truth
+
+Redis
+   ↓
+Cache
+
+Kafka
+   ↓
+Event transport
+
+Search index
+   ↓
+Read optimization
+</code></pre>
+<p>This separation is extremely useful.</p>
+<hr />
+<h1 id="142-database-cache-consistency">142. Database + Cache Consistency</h1>
+<p>Typical flow:</p>
+<pre><code class="language-text">DB update
+ ↓
+cache invalidation
+</code></pre>
+<p>Potential race:</p>
+<pre><code class="language-text">T1 reads old DB
+T2 updates DB
+T2 deletes cache
+T1 writes old data into cache
+</code></pre>
+<p>Solutions require deliberate ordering/versioning/eventing.</p>
+<hr />
+<h1 id="143-database-kafka-consistency">143. Database + Kafka Consistency</h1>
+<p>Bad:</p>
+<pre><code class="language-text">DB update
+ ↓
+Kafka publish
+</code></pre>
+<p>If publish fails:</p>
+<pre><code class="language-text">DB = changed
+Kafka = unchanged
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">transactional outbox
+</code></pre>
+<hr />
+<h1 id="144-kafka-nosql">144. Kafka + NoSQL</h1>
+<p>Example:</p>
+<pre><code class="language-text">Kafka
+ ↓
+Consumer
+ ↓
+Cassandra
+</code></pre>
+<p>Good for:</p>
+<pre><code class="language-text">high-volume event ingestion
+time-oriented workloads
+distributed writes
+</code></pre>
+<p>Design Cassandra tables around queries.</p>
+<hr />
+<h1 id="145-kafka-mongodb">145. Kafka + MongoDB</h1>
+<p>Example:</p>
+<pre><code class="language-text">Kafka
+ ↓
+MongoDB consumer
+ ↓
+document projection
+</code></pre>
+<p>Kafka acts as event transport.</p>
+<p>MongoDB acts as a queryable materialized/read model.</p>
+<hr />
+<h1 id="146-redis-sql">146. Redis + SQL</h1>
+<p>Typical:</p>
+<pre><code class="language-text">GET /product/123
+ ↓
+Redis
+ ↓ miss
+PostgreSQL
+ ↓
+Redis SET
+ ↓
+response
+</code></pre>
+<p>Database remains authoritative.</p>
+<hr />
+<h1 id="147-database-replication">147. Database Replication</h1>
+<p>Primary/replica architecture:</p>
+<pre><code class="language-text">             ┌── Replica A
+Primary ─────┼── Replica B
+             └── Replica C
+</code></pre>
+<p>Potential uses:</p>
+<pre><code class="language-text">read scaling
+failover
+backup
+analytics
+</code></pre>
+<p>Replication lag must be understood.</p>
+<hr />
+<h1 id="148-failover">148. Failover</h1>
+<p>When primary fails:</p>
+<pre><code class="language-text">Primary failure
+ ↓
+detect
+ ↓
+promote replica
+ ↓
+redirect traffic
+</code></pre>
+<p>Potential problems:</p>
+<pre><code class="language-text">data loss depending on replication
+split brain
+stale replicas
+connection recovery
+application retries
+</code></pre>
+<hr />
+<h1 id="149-database-backup-vs-replication">149. Database Backup vs Replication</h1>
+<p>Replication:</p>
+<pre><code class="language-text">availability
+read scaling
+</code></pre>
+<p>Backup:</p>
+<pre><code class="language-text">recovery from corruption/deletion
+</code></pre>
+<p>Replication does not replace backups.</p>
+<p>If bad data is replicated:</p>
+<pre><code class="language-text">primary corrupted
+ ↓
+replicas corrupted
+</code></pre>
+<p>Backups provide a different recovery capability.</p>
+<hr />
+<h1 id="150-disaster-recovery">150. Disaster Recovery</h1>
+<p>Know:</p>
+<pre><code class="language-text">RPO
+RTO
+</code></pre>
+<h3 id="rpo">RPO</h3>
+<p>How much data loss is acceptable?</p>
+<h3 id="rto">RTO</h3>
+<p>How long can recovery take?</p>
+<p>Example:</p>
+<pre><code class="language-text">RPO = 5 minutes
+RTO = 30 minutes
+</code></pre>
+<p>Architecture should be designed around these requirements.</p>
+<hr />
+<h1 id="151-database-security">151. Database Security</h1>
+<p>Important:</p>
+<pre><code class="language-text">least privilege
+TLS
+encryption at rest
+secret management
+credential rotation
+auditing
+parameterized queries
+network isolation
+backup encryption
+</code></pre>
+<p>Never put database passwords directly into source code.</p>
+<hr />
+<h1 id="152-schema-migration">152. Schema Migration</h1>
+<p>Tools:</p>
+<pre><code class="language-text">Flyway
+Liquibase
+</code></pre>
+<p>Production migration principles:</p>
+<pre><code class="language-text">backward compatibility
+small incremental changes
+expand/contract
+avoid long locks
+test migration
+rollback strategy
+</code></pre>
+<hr />
+<h1 id="153-expand-and-contract-migration">153. Expand-and-Contract Migration</h1>
+<p>Example:</p>
+<h3 id="phase-1">Phase 1</h3>
+<p>Add new column:</p>
+<pre><code class="language-text">new_name
+</code></pre>
+<p>Keep old column.</p>
+<h3 id="phase-2">Phase 2</h3>
+<p>Application writes both.</p>
+<h3 id="phase-3">Phase 3</h3>
+<p>Application reads new column.</p>
+<h3 id="phase-4">Phase 4</h3>
+<p>Stop writing old column.</p>
+<h3 id="phase-5">Phase 5</h3>
+<p>Remove old column.</p>
+<p>This avoids breaking old and new application versions during rolling deployments.</p>
+<hr />
+<h1 id="154-zero-downtime-schema-changes">154. Zero-Downtime Schema Changes</h1>
+<p>Avoid:</p>
+<pre><code class="language-text">deploy DB-breaking schema
+then deploy application
+</code></pre>
+<p>Prefer:</p>
+<pre><code class="language-text">backward-compatible schema
+ ↓
+deploy application
+ ↓
+migrate data
+ ↓
+remove old schema later
+</code></pre>
+<hr />
+<h1 id="155-database-observability">155. Database Observability</h1>
+<p>Monitor:</p>
+<pre><code class="language-text">query latency
+QPS
+error rate
+connections
+pool utilization
+locks
+deadlocks
+CPU
+memory
+disk I/O
+storage
+replication lag
+cache hit ratio
+slow queries
+</code></pre>
+<hr />
+<h1 id="156-slow-query-investigation">156. Slow Query Investigation</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Is query actually slow?
+Or waiting for lock?
+Or waiting for connection?
+Or waiting on I/O?
+</code></pre>
+<p>This distinction is important.</p>
+<p>A request can be slow even when SQL execution itself is fast.</p>
+<hr />
+<h1 id="157-connection-wait-vs-query-time">157. Connection Wait vs Query Time</h1>
+<p>Example:</p>
+<pre><code class="language-text">Request latency = 500ms
+
+Connection acquisition = 300ms
+DB query = 20ms
+serialization = 10ms
+other = 170ms
+</code></pre>
+<p>Optimizing the SQL alone would barely help.</p>
+<p>Always break latency into components.</p>
+<hr />
+<h1 id="158-database-lock-investigation">158. Database Lock Investigation</h1>
+<p>Look for:</p>
+<pre><code class="language-text">long transactions
+blocking sessions
+deadlocks
+lock waits
+hot rows
+</code></pre>
+<p>A query that appears fast in isolation may be slow under concurrency because of locking.</p>
+<hr />
+<h1 id="159-database-scaling-strategies">159. Database Scaling Strategies</h1>
+<p>Vertical:</p>
+<pre><code class="language-text">more CPU
+more RAM
+faster storage
+</code></pre>
+<p>Horizontal:</p>
+<pre><code class="language-text">read replicas
+sharding
+partitioning
+distributed databases
+</code></pre>
+<p>Application-level:</p>
+<pre><code class="language-text">caching
+CQRS/read models
+async processing
+batching
+</code></pre>
+<hr />
+<h1 id="160-cqrs">160. CQRS</h1>
+<p>Command Query Responsibility Segregation:</p>
+<pre><code class="language-text">Write Model
+    ↓
+Commands
+
+Read Model
+    ↓
+Queries
+</code></pre>
+<p>Could use:</p>
+<pre><code class="language-text">PostgreSQL
+</code></pre>
+<p>for writes and:</p>
+<pre><code class="language-text">Redis / Elasticsearch / MongoDB
+</code></pre>
+<p>for read optimization.</p>
+<p>Trade-off:</p>
+<pre><code class="language-text">eventual consistency
+multiple models
+operational complexity
+</code></pre>
+<p>Do not use CQRS for every CRUD application.</p>
+<hr />
+<h1 id="161-database-per-service">161. Database-per-Service</h1>
+<p>In microservices, a service may own its database:</p>
+<pre><code class="language-text">Order Service
+ → Order DB
+
+Payment Service
+ → Payment DB
+
+Inventory Service
+ → Inventory DB
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">ownership
+independent scaling
+service isolation
+</code></pre>
+<p>Trade-offs:</p>
+<pre><code class="language-text">distributed transactions
+cross-service queries
+data duplication
+eventual consistency
+</code></pre>
+<hr />
+<h1 id="162-shared-database-anti-pattern">162. Shared Database Anti-Pattern</h1>
+<p>Multiple services directly modify the same tables.</p>
+<p>Problems:</p>
+<pre><code class="language-text">tight coupling
+schema coordination
+hidden dependencies
+deployment coupling
+ownership ambiguity
+</code></pre>
+<p>A shared database may be acceptable in some systems, but it weakens service autonomy.</p>
+<hr />
+<h1 id="163-cross-service-join">163. Cross-Service Join</h1>
+<p>Bad mental model:</p>
+<pre><code class="language-text">Order DB JOIN Payment DB JOIN User DB
+</code></pre>
+<p>In distributed systems, databases may be independent.</p>
+<p>Possible alternatives:</p>
+<pre><code class="language-text">API composition
+events
+materialized views
+denormalized read models
+data warehouse
+</code></pre>
+<hr />
+<h1 id="164-distributed-transaction">164. Distributed Transaction</h1>
+<p>If:</p>
+<pre><code class="language-text">Order DB
++
+Payment DB
+</code></pre>
+<p>must atomically commit:</p>
+<pre><code class="language-text">distributed transaction
+</code></pre>
+<p>is complex.</p>
+<p>Often prefer:</p>
+<pre><code class="language-text">Saga
+outbox
+idempotency
+compensation
+event-driven workflow
+</code></pre>
+<hr />
+<h1 id="part-v-senior-scenarios">PART V — SENIOR SCENARIOS</h1>
+<h1 id="165-scenario-payment-system">165. Scenario: Payment System</h1>
+<p>Requirements:</p>
+<pre><code class="language-text">correctness
+idempotency
+transactional integrity
+auditability
+high availability
+</code></pre>
+<p>Potential architecture:</p>
+<pre><code class="language-text">REST
+ ↓
+Payment Service
+ ↓
+PostgreSQL
+ ↓
+Outbox
+ ↓
+Kafka
+ ↓
+Notification / Ledger / Analytics
+</code></pre>
+<p>Redis:</p>
+<pre><code class="language-text">idempotency lookup
+rate limiting
+short-lived state
+</code></pre>
+<p>Do not make Redis the payment source of truth.</p>
+<hr />
+<h1 id="166-scenario-product-catalog">166. Scenario: Product Catalog</h1>
+<p>Potential:</p>
+<pre><code class="language-text">PostgreSQL
+→ authoritative catalog
+
+Redis
+→ hot product cache
+
+Search engine
+→ search/filter
+
+Kafka
+→ catalog change events
+</code></pre>
+<p>Why multiple systems?</p>
+<p>Each optimizes a different access pattern.</p>
+<hr />
+<h1 id="167-scenario-massive-event-ingestion">167. Scenario: Massive Event Ingestion</h1>
+<p>Requirements:</p>
+<pre><code class="language-text">millions of events
+high write throughput
+replay
+distributed processing
+</code></pre>
+<p>Possible:</p>
+<pre><code class="language-text">Producers
+ ↓
+Kafka
+ ↓
+Consumer Groups
+ ↓
+Cassandra / Data Lake / Analytics
+</code></pre>
+<p>Redis may be used for:</p>
+<pre><code class="language-text">hot aggregates
+rate limits
+short-lived state
+</code></pre>
+<hr />
+<h1 id="168-scenario-user-profile">168. Scenario: User Profile</h1>
+<p>If profile data is:</p>
+<pre><code class="language-text">simple
+frequently retrieved
+document-shaped
+</code></pre>
+<p>MongoDB can be reasonable.</p>
+<p>If profile participates in:</p>
+<pre><code class="language-text">many relational constraints
+transactions
+complex joins
+</code></pre>
+<p>PostgreSQL may be better.</p>
+<hr />
+<h1 id="169-scenario-leaderboard">169. Scenario: Leaderboard</h1>
+<p>Redis Sorted Set is a natural candidate:</p>
+<pre><code class="language-text">ZADD leaderboard score user
+ZREVRANGE leaderboard ...
+</code></pre>
+<p>Why?</p>
+<pre><code class="language-text">score-based ordering
+fast ranking operations
+low latency
+</code></pre>
+<hr />
+<h1 id="170-scenario-rate-limiter">170. Scenario: Rate Limiter</h1>
+<p>Redis is often a strong fit:</p>
+<pre><code class="language-text">request
+ ↓
+Redis atomic operation
+ ↓
+allow/deny
+</code></pre>
+<p>Kafka is not the natural per-request state store.</p>
+<hr />
+<h1 id="171-scenario-audit-log">171. Scenario: Audit Log</h1>
+<p>Kafka is a strong candidate:</p>
+<pre><code class="language-text">Application
+ ↓
+Kafka
+ ↓
+Audit consumers
+</code></pre>
+<p>For long-term immutable archival:</p>
+<pre><code class="language-text">Kafka
+ ↓
+Object storage / data lake
+</code></pre>
+<p>may be used.</p>
+<hr />
+<h1 id="172-scenario-search">172. Scenario: Search</h1>
+<p>Do not use PostgreSQL blindly for every search requirement.</p>
+<p>Possible:</p>
+<pre><code class="language-text">PostgreSQL
+→ transactional source
+
+Elasticsearch/OpenSearch
+→ full-text search
+</code></pre>
+<p>Synchronize using:</p>
+<pre><code class="language-text">outbox
+events
+CDC
+</code></pre>
+<hr />
+<h1 id="173-scenario-user-read-api-is-slow">173. Scenario: User Read API Is Slow</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">DB query
+index
+N+1
+connection pool
+serialization
+network
+cache hit ratio
+</code></pre>
+<p>Potential solution:</p>
+<pre><code class="language-text">Redis cache
+</code></pre>
+<p>But first establish whether caching is actually appropriate.</p>
+<hr />
+<h1 id="174-scenario-db-is-overloaded-after-introducing-redis">174. Scenario: DB Is Overloaded After Introducing Redis</h1>
+<p>Possible cause:</p>
+<pre><code class="language-text">Redis failure
+ ↓
+all traffic falls through to DB
+</code></pre>
+<p>This is a cache failure amplification problem.</p>
+<p>Use:</p>
+<pre><code class="language-text">circuit breaker
+local fallback
+rate limiting
+request coalescing
+load shedding
+</code></pre>
+<hr />
+<h1 id="175-scenario-cassandra-partition-is-huge">175. Scenario: Cassandra Partition Is Huge</h1>
+<p>Symptoms:</p>
+<pre><code class="language-text">slow reads
+high memory
+uneven load
+timeouts
+</code></pre>
+<p>Root cause:</p>
+<pre><code class="language-text">poor partition-key design
+</code></pre>
+<p>Solution requires data-model redesign, not merely more hardware.</p>
+<hr />
+<h1 id="176-scenario-dynamodb-is-throttling">176. Scenario: DynamoDB Is Throttling</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">hot partition key
+capacity
+traffic distribution
+item size
+access pattern
+GSI bottleneck
+</code></pre>
+<p>Do not immediately increase capacity without finding the hot key.</p>
+<hr />
+<h1 id="177-scenario-mongodb-document-is-huge">177. Scenario: MongoDB Document Is Huge</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Is embedded collection unbounded?
+Is data always read together?
+Can it be separated?
+</code></pre>
+<p>Potential solution:</p>
+<pre><code class="language-text">reference child documents
+bucket data
+pagination
+separate collection
+</code></pre>
+<hr />
+<h1 id="178-scenario-sql-table-has-1-billion-rows">178. Scenario: SQL Table Has 1 Billion Rows</h1>
+<p>Do not immediately say:</p>
+<pre><code class="language-text">add index
+</code></pre>
+<p>Consider:</p>
+<pre><code class="language-text">partitioning
+archival
+indexes
+query patterns
+read replicas
+sharding
+data lifecycle
+hot/cold storage
+pagination
+</code></pre>
+<hr />
+<h1 id="179-scenario-duplicate-payment">179. Scenario: Duplicate Payment</h1>
+<p>Possible race:</p>
+<pre><code class="language-text">Request A → payment
+Request B → same payment
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">idempotency key
+unique constraint
+transaction
+state machine
+</code></pre>
+<p>Redis can accelerate idempotency checks, but durable correctness should not depend solely on an evictable cache.</p>
+<hr />
+<h1 id="180-scenario-inventory-overselling">180. Scenario: Inventory Overselling</h1>
+<p>Bad:</p>
+<pre><code class="language-text">read stock = 1
+ ↓
+two requests both see 1
+ ↓
+both decrement
+</code></pre>
+<p>Use atomic database operations:</p>
+<pre><code class="language-sql">UPDATE inventory
+SET quantity = quantity - 1
+WHERE product_id = ?
+  AND quantity &gt; 0;
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-text">affected rows = 1
+→ reservation succeeded
+
+affected rows = 0
+→ sold out
+</code></pre>
+<p>This is often safer than a distributed lock.</p>
+<hr />
+<h1 id="181-scenario-order-creation">181. Scenario: Order Creation</h1>
+<p>Possible transaction:</p>
+<pre><code class="language-text">BEGIN
+ ↓
+validate
+ ↓
+create order
+ ↓
+reserve inventory
+ ↓
+insert outbox event
+ ↓
+COMMIT
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-text">Outbox
+ ↓
+Kafka
+ ↓
+Payment / Notification / Analytics
+</code></pre>
+<hr />
+<h1 id="182-scenario-read-heavy-api">182. Scenario: Read-Heavy API</h1>
+<p>Possible:</p>
+<pre><code class="language-text">Client
+ ↓
+API
+ ↓
+Redis
+ ↓ miss
+PostgreSQL
+ ↓
+Redis
+</code></pre>
+<p>Need to decide:</p>
+<pre><code class="language-text">TTL
+invalidation
+serialization
+cache key
+stampede protection
+fallback
+</code></pre>
+<hr />
+<h1 id="183-scenario-write-heavy-api">183. Scenario: Write-Heavy API</h1>
+<p>Avoid unnecessary cache writes.</p>
+<p>Consider:</p>
+<pre><code class="language-text">batching
+asynchronous processing
+Kafka
+database partitioning
+sharding
+write-optimized NoSQL
+</code></pre>
+<p>Choose based on consistency requirements.</p>
+<hr />
+<h1 id="184-scenario-need-strong-transactions-flexible-json">184. Scenario: Need Strong Transactions + Flexible JSON</h1>
+<p>PostgreSQL can often provide both:</p>
+<pre><code class="language-text">relational tables
++
+JSON/JSONB
++
+ACID transactions
+</code></pre>
+<p>Do not assume you need MongoDB simply because the payload is JSON-shaped.</p>
+<hr />
+<h1 id="185-scenario-need-millions-of-writes-per-second">185. Scenario: Need Millions of Writes per Second</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Can SQL scale enough?
+What is write pattern?
+Do we need ordering?
+Do we need transactions?
+Can data be partitioned?
+What consistency is required?
+</code></pre>
+<p>Potential technologies:</p>
+<pre><code class="language-text">Kafka
+Cassandra
+DynamoDB
+distributed SQL
+sharded relational DB
+</code></pre>
+<p>Technology choice follows requirements.</p>
+<hr />
+<h1 id="part-vi-interview-question-bank">PART VI — INTERVIEW QUESTION BANK</h1>
+<h1 id="186-database-fundamentals-questions">186. Database Fundamentals Questions</h1>
+<ol>
+<li>What is a database?</li>
+<li>DBMS vs database?</li>
+<li>SQL vs NoSQL?</li>
+<li>What are the major NoSQL categories?</li>
+<li>How do you choose a database?</li>
+<li>What is a primary key?</li>
+<li>What is a foreign key?</li>
+<li>What is a unique constraint?</li>
+<li>What is normalization?</li>
+<li>What is denormalization?</li>
+<li>What is ACID?</li>
+<li>What is BASE?</li>
+<li>What is CAP?</li>
+<li>What is PACELC?</li>
+<li>Strong vs eventual consistency?</li>
+<li>What is MVCC?</li>
+<li>What is a transaction?</li>
+<li>What is a deadlock?</li>
+<li>What is optimistic locking?</li>
+<li>What is pessimistic locking?</li>
+</ol>
+<hr />
+<h1 id="187-sql-questions">187. SQL Questions</h1>
+<ol>
+<li>WHERE vs HAVING?</li>
+<li>INNER JOIN vs LEFT JOIN?</li>
+<li>JOIN vs subquery?</li>
+<li>UNION vs UNION ALL?</li>
+<li>COUNT(*) vs COUNT(column)?</li>
+<li>NULL behavior?</li>
+<li>What is GROUP BY?</li>
+<li>What is DISTINCT?</li>
+<li>What is a CTE?</li>
+<li>What is a window function?</li>
+<li>ROW_NUMBER vs RANK vs DENSE_RANK?</li>
+<li>What is LAG/LEAD?</li>
+<li>What is a correlated subquery?</li>
+<li>What is EXISTS?</li>
+<li>What is a recursive CTE?</li>
+<li>What is query execution order?</li>
+<li>What is EXPLAIN?</li>
+<li>What is an execution plan?</li>
+<li>What is an index?</li>
+<li>B-tree vs hash index?</li>
+<li>What is a composite index?</li>
+<li>What is the leftmost-prefix rule?</li>
+<li>What is a covering index?</li>
+<li>What is selectivity?</li>
+<li>What is sargability?</li>
+<li>Why can functions on indexed columns hurt performance?</li>
+<li>How does LIKE interact with indexes?</li>
+<li>What is an index-only scan?</li>
+<li>What is partitioning?</li>
+<li>What is sharding?</li>
+<li>Read replica?</li>
+<li>Replication lag?</li>
+<li>Read-after-write consistency?</li>
+<li>What causes deadlocks?</li>
+<li>How do you prevent deadlocks?</li>
+<li>What is a lost update?</li>
+<li>How do you prevent lost updates?</li>
+<li>What is SQL injection?</li>
+<li>How does PreparedStatement prevent injection?</li>
+<li>How do you debug a slow query?</li>
+<li>How do you find duplicate rows?</li>
+<li>Find second-highest salary?</li>
+<li>Latest record per group?</li>
+<li>Top N per group?</li>
+<li>Running total?</li>
+<li>Consecutive records?</li>
+<li>Delete duplicates safely?</li>
+<li>Find users with no orders?</li>
+<li>Find duplicate emails?</li>
+<li>Find employees above department average?</li>
+</ol>
+<hr />
+<h1 id="188-nosql-questions">188. NoSQL Questions</h1>
+<ol>
+<li>What is NoSQL?</li>
+<li>Why use NoSQL?</li>
+<li>Document database?</li>
+<li>Key-value database?</li>
+<li>Wide-column database?</li>
+<li>Graph database?</li>
+<li>SQL vs NoSQL?</li>
+<li>MongoDB?</li>
+<li>Embed vs reference?</li>
+<li>MongoDB indexing?</li>
+<li>MongoDB aggregation?</li>
+<li>MongoDB transactions?</li>
+<li>DynamoDB?</li>
+<li>Partition key?</li>
+<li>Sort key?</li>
+<li>GSI vs LSI?</li>
+<li>Query vs Scan?</li>
+<li>Single-table design?</li>
+<li>Cassandra?</li>
+<li>Cassandra partition key?</li>
+<li>Cassandra clustering columns?</li>
+<li>Cassandra consistency levels?</li>
+<li>Redis as NoSQL?</li>
+<li>Hot key?</li>
+<li>Hot partition?</li>
+<li>Large document/item?</li>
+<li>Secondary indexes?</li>
+<li>Eventual consistency?</li>
+<li>Strong consistency?</li>
+<li>BASE?</li>
+<li>NoSQL data modeling?</li>
+<li>Query-first modeling?</li>
+<li>Why denormalize?</li>
+<li>NoSQL failure modes?</li>
+</ol>
+<hr />
+<h1 id="189-database-architecture-questions">189. Database Architecture Questions</h1>
+<ol>
+<li>Primary vs replica?</li>
+<li>Read replicas?</li>
+<li>Database failover?</li>
+<li>Replication vs backup?</li>
+<li>RPO?</li>
+<li>RTO?</li>
+<li>Connection pooling?</li>
+<li>Connection pool exhaustion?</li>
+<li>Database observability?</li>
+<li>Slow query investigation?</li>
+<li>Lock investigation?</li>
+<li>Database partitioning?</li>
+<li>Database sharding?</li>
+<li>Sharding key?</li>
+<li>Hot shard?</li>
+<li>Database migration?</li>
+<li>Flyway/Liquibase?</li>
+<li>Expand/contract migration?</li>
+<li>Zero-downtime migration?</li>
+<li>Database security?</li>
+<li>Encryption at rest?</li>
+<li>Encryption in transit?</li>
+<li>Least privilege?</li>
+<li>Secret management?</li>
+</ol>
+<hr />
+<h1 id="190-spring-boot-database-questions">190. Spring Boot + Database Questions</h1>
+<ol>
+<li>JdbcTemplate vs JPA?</li>
+<li>JPA vs Hibernate?</li>
+<li>Persistence context?</li>
+<li>Dirty checking?</li>
+<li>First-level cache?</li>
+<li>N+1?</li>
+<li>Fetch join?</li>
+<li>EntityGraph?</li>
+<li>Lazy vs eager?</li>
+<li>@Transactional?</li>
+<li>Transaction propagation?</li>
+<li>Isolation?</li>
+<li>Optimistic locking?</li>
+<li>Pessimistic locking?</li>
+<li>HikariCP?</li>
+<li>Connection pool sizing?</li>
+<li>SQL logging?</li>
+<li>How do you diagnose slow Spring DB calls?</li>
+<li>How do you handle transaction + Kafka?</li>
+<li>Outbox pattern?</li>
+<li>Idempotency?</li>
+<li>Redis cache with Spring?</li>
+<li>Cache invalidation?</li>
+<li>How would you use Redis and PostgreSQL together?</li>
+</ol>
+<hr />
+<h1 id="part-vii-sql-query-practice">PART VII — SQL QUERY PRACTICE</h1>
+<h1 id="191-find-users-with-no-orders">191. Find Users With No Orders</h1>
+<pre><code class="language-sql">SELECT u.*
+FROM users u
+LEFT JOIN orders o
+    ON o.user_id = u.id
+WHERE o.id IS NULL;
+</code></pre>
+<p>Alternative:</p>
+<pre><code class="language-sql">SELECT *
+FROM users u
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM orders o
+    WHERE o.user_id = u.id
+);
+</code></pre>
+<p>Know why both can be valid.</p>
+<hr />
+<h1 id="192-find-customers-with-more-than-5-orders">192. Find Customers With More Than 5 Orders</h1>
+<pre><code class="language-sql">SELECT user_id, COUNT(*) AS order_count
+FROM orders
+GROUP BY user_id
+HAVING COUNT(*) &gt; 5;
+</code></pre>
+<hr />
+<h1 id="193-latest-order-per-customer">193. Latest Order Per Customer</h1>
+<pre><code class="language-sql">SELECT *
+FROM (
+    SELECT
+        o.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY user_id
+            ORDER BY created_at DESC
+        ) AS rn
+    FROM orders o
+) x
+WHERE rn = 1;
+</code></pre>
+<hr />
+<h1 id="194-top-3-salaries-per-department">194. Top 3 Salaries Per Department</h1>
+<pre><code class="language-sql">SELECT *
+FROM (
+    SELECT
+        department_id,
+        employee_id,
+        salary,
+        DENSE_RANK() OVER (
+            PARTITION BY department_id
+            ORDER BY salary DESC
+        ) AS rnk
+    FROM employees
+) x
+WHERE rnk &lt;= 3;
+</code></pre>
+<hr />
+<h1 id="195-running-revenue">195. Running Revenue</h1>
+<pre><code class="language-sql">SELECT
+    created_at,
+    amount,
+    SUM(amount) OVER (
+        ORDER BY created_at
+    ) AS running_revenue
+FROM payments;
+</code></pre>
+<hr />
+<h1 id="196-find-duplicate-emails">196. Find Duplicate Emails</h1>
+<pre><code class="language-sql">SELECT email, COUNT(*)
+FROM users
+GROUP BY email
+HAVING COUNT(*) &gt; 1;
+</code></pre>
+<hr />
+<h1 id="197-find-employees-above-department-average">197. Find Employees Above Department Average</h1>
+<pre><code class="language-sql">SELECT e.*
+FROM employees e
+WHERE e.salary &gt; (
+    SELECT AVG(e2.salary)
+    FROM employees e2
+    WHERE e2.department_id = e.department_id
+);
+</code></pre>
+<p>Another approach can use window functions.</p>
+<hr />
+<h1 id="198-find-missing-numbers">198. Find Missing Numbers</h1>
+<p>This is database-specific and can be solved with:</p>
+<pre><code class="language-text">generate_series
+recursive CTE
+numbers table
+window functions
+</code></pre>
+<p>Do not memorize one universal solution because SQL dialects differ.</p>
+<hr />
+<h1 id="199-find-consecutive-login-days">199. Find Consecutive Login Days</h1>
+<p>Typical approach:</p>
+<pre><code class="language-text">LAG()
+date arithmetic
+grouping
+</code></pre>
+<p>The important interview skill is explaining the reasoning, not memorizing one query.</p>
+<hr />
+<h1 id="200-sql-interview-strategy">200. SQL Interview Strategy</h1>
+<p>When given a query problem:</p>
+<pre><code class="language-text">1. Clarify requirements
+2. Understand schema
+3. Identify expected output
+4. Start with correct query
+5. Consider NULL
+6. Consider duplicates
+7. Consider indexes
+8. Consider cardinality
+9. Consider execution plan
+10. Discuss edge cases
+</code></pre>
+<p>Do not jump immediately into syntax.</p>
+<hr />
+<h1 id="part-viii-senior-database-mental-models">PART VIII — SENIOR DATABASE MENTAL MODELS</h1>
+<h1 id="201-source-of-truth-model">201. Source of Truth Model</h1>
+<p>A strong architecture often looks like:</p>
+<pre><code class="language-text">PostgreSQL
+   ↓
+Authoritative business state
+
+Redis
+   ↓
+Fast cached state
+
+Kafka
+   ↓
+Durable event stream
+
+Search Engine
+   ↓
+Search-optimized read model
+</code></pre>
+<p>Each system has a purpose.</p>
+<hr />
+<h1 id="202-cache-model">202. Cache Model</h1>
+<pre><code class="language-text">Database
+   ↓
+Source of Truth
+
+Redis
+   ↓
+Performance Optimization
+</code></pre>
+<p>Ask:</p>
+<pre><code class="language-text">What happens if Redis is empty?
+What happens if Redis is stale?
+What happens if Redis is unavailable?
+</code></pre>
+<p>A resilient design can recover from cache failure.</p>
+<hr />
+<h1 id="203-event-model">203. Event Model</h1>
+<pre><code class="language-text">Database
+   ↓
+Outbox
+   ↓
+Kafka
+   ↓
+Consumers
+</code></pre>
+<p>Ask:</p>
+<pre><code class="language-text">What if publishing fails?
+What if consumer crashes?
+What if event is duplicated?
+What if events arrive out of order?
+</code></pre>
+<hr />
+<h1 id="204-consistency-model">204. Consistency Model</h1>
+<p>For every distributed system, ask:</p>
+<pre><code class="language-text">Do I need strong consistency?
+Can I tolerate stale reads?
+How long can stale data exist?
+What happens during network failure?
+</code></pre>
+<p>This question often determines the technology choice.</p>
+<hr />
+<h1 id="205-scaling-model">205. Scaling Model</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Can I scale vertically?
+Can I add replicas?
+Can I partition?
+Can I shard?
+Can I cache?
+Can I process asynchronously?
+Can I denormalize?
+</code></pre>
+<p>Scaling is usually a combination of techniques.</p>
+<hr />
+<h1 id="206-read-vs-write-optimization">206. Read vs Write Optimization</h1>
+<p>Read-heavy:</p>
+<pre><code class="language-text">cache
+read replicas
+indexes
+materialized views
+denormalized read models
+</code></pre>
+<p>Write-heavy:</p>
+<pre><code class="language-text">batching
+partitioning
+sharding
+asynchronous processing
+write-optimized storage
+</code></pre>
+<p>Always consider consistency implications.</p>
+<hr />
+<h1 id="207-latency-breakdown">207. Latency Breakdown</h1>
+<p>A 500ms request may be:</p>
+<pre><code class="language-text">20ms network
+100ms connection wait
+50ms DB
+200ms external API
+50ms serialization
+80ms application
+</code></pre>
+<p>Therefore:</p>
+<blockquote>
+<p>"The database is slow" is not a diagnosis.</p>
+</blockquote>
+<p>Measure each component.</p>
+<hr />
+<h1 id="208-failure-oriented-design">208. Failure-Oriented Design</h1>
+<p>For every database dependency, ask:</p>
+<pre><code class="language-text">What if it is slow?
+What if it is unavailable?
+What if it returns stale data?
+What if it loses data?
+What if connection pool is exhausted?
+What if replication lags?
+What if a query locks rows?
+</code></pre>
+<p>This is the difference between basic and senior-level database thinking.</p>
+<hr />
+<h1 id="209-final-golden-rules">209. Final Golden Rules</h1>
+<ol>
+<li>Database choice follows access patterns.</li>
+<li>SQL knowledge remains essential even when using Hibernate.</li>
+<li>Indexes are not free.</li>
+<li>Always inspect execution plans for serious performance problems.</li>
+<li>Do not assume a query is slow just because the request is slow.</li>
+<li>Distinguish connection wait, lock wait, query execution, and network latency.</li>
+<li>Use database constraints to protect important invariants.</li>
+<li>Application validation alone cannot guarantee uniqueness under concurrency.</li>
+<li>Transactions do not automatically include external systems.</li>
+<li>Replication does not replace backups.</li>
+<li>Read replicas can be stale.</li>
+<li>Partitioning is not the same as sharding.</li>
+<li>Normalize for correctness; denormalize for deliberate performance/access patterns.</li>
+<li>NoSQL should be modeled around access patterns.</li>
+<li>Hot partitions are often data-model problems.</li>
+<li>More hardware does not automatically fix a bad partition key.</li>
+<li>Redis is often a cache/state layer, not the business source of truth.</li>
+<li>Kafka is an event log, not a relational database.</li>
+<li>Exactly-once processing does not automatically make external side effects exactly-once.</li>
+<li>Idempotency is one of the most important distributed-system concepts.</li>
+<li>Outbox solves an important database-to-event reliability problem.</li>
+<li>Inbox/deduplication solves an important event-to-database reliability problem.</li>
+<li>Cache invalidation requires explicit design.</li>
+<li>Large documents and large Kafka messages are usually warning signs.</li>
+<li>More indexes are not automatically better.</li>
+<li>More partitions are not automatically better.</li>
+<li>More database connections are not automatically better.</li>
+<li>More replicas are not automatically better.</li>
+<li>Strong consistency is not automatically better.</li>
+<li>The best database is the one whose guarantees and access model fit the workload.</li>
+</ol>
+<hr />
+<h1 id="210-final-self-test">210. Final Self-Test</h1>
+<p>You should be able to explain without notes:</p>
+<pre><code class="language-text">SQL
+NoSQL
+Relational model
+Normalization
+Denormalization
+Primary key
+Foreign key
+Constraints
+JOIN
+GROUP BY
+HAVING
+Subquery
+EXISTS
+CTE
+Window functions
+ROW_NUMBER
+RANK
+DENSE_RANK
+NULL
+Three-valued logic
+Indexes
+B-tree
+Composite index
+Covering index
+Selectivity
+Sargability
+Execution plan
+EXPLAIN
+Transactions
+ACID
+Isolation
+Dirty read
+Non-repeatable read
+Phantom read
+MVCC
+Deadlock
+Lost update
+Optimistic locking
+Pessimistic locking
+Connection pooling
+Read replicas
+Replication lag
+Partitioning
+Sharding
+CAP
+PACELC
+Eventual consistency
+Strong consistency
+MongoDB
+DynamoDB
+Cassandra
+Redis
+Document modeling
+Embed vs reference
+Partition key
+Sort key
+GSI
+LSI
+Cassandra clustering columns
+Hot partition
+Hot key
+Polyglot persistence
+CQRS
+Outbox
+Inbox
+Idempotency
+Schema migration
+Zero-downtime deployment
+RPO
+RTO
+</code></pre>
+<hr />
+<h1 id="211-final-interview-framework">211. Final Interview Framework</h1>
+<p>When asked:</p>
+<blockquote>
+<p>"SQL or NoSQL?"</p>
+</blockquote>
+<p>Never answer with a technology preference.</p>
+<p>Answer through:</p>
+<pre><code class="language-text">Data model
+ ↓
+Access patterns
+ ↓
+Consistency
+ ↓
+Transaction requirements
+ ↓
+Read/write ratio
+ ↓
+Scale
+ ↓
+Latency
+ ↓
+Availability
+ ↓
+Operational complexity
+ ↓
+Cost
+</code></pre>
+<p>Then make the choice.</p>
+<p>Example:</p>
+<pre><code class="language-text">Payment ledger
+→ relational DB
+
+Product document/catalog
+→ relational or document DB depending on access patterns
+
+Session/cache
+→ Redis
+
+Massive event stream
+→ Kafka
+
+High-volume distributed time-oriented writes
+→ Cassandra/DynamoDB may fit
+
+Full-text search
+→ search engine
+</code></pre>
+<p>The strongest database interview answer is rarely:</p>
+<blockquote>
+<p>"Use X."</p>
+</blockquote>
+<p>It is:</p>
+<blockquote>
+<p>"Given these requirements, I would choose X because..., and I would accept these trade-offs..."</p>
+</blockquote></main>
+</div>
+</body>
+</html>

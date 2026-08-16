@@ -1,0 +1,27 @@
+{
+  "title": "Java Notes",
+  "categories": {
+    "modern-java-jvm.md": "Core Java & JVM",
+    "java-threads.md": "Core Java & JVM",
+    "java-collections.md": "Core Java & JVM",
+
+    "spring-boot-jdbc-hibernate-security-rest.md": "Spring & Data Access",
+
+    "sql-nosql.md": "Data Stores & Messaging",
+    "redis-kafka.md": "Data Stores & Messaging",
+
+    "microservices.md": "Architecture & Distributed Systems",
+
+    "docker-kubernetes-maven-cicd.md": "DevOps & Deployment"
+  },
+  "stars": {
+    "modern-java-jvm.md": 3,
+    "java-threads.md": 3,
+    "java-collections.md": 3,
+    "spring-boot-jdbc-hibernate-security-rest.md": 3,
+    "sql-nosql.md": 3,
+    "redis-kafka.md": 3,
+    "microservices.md": 3,
+    "docker-kubernetes-maven-cicd.md": 2
+  }
+}

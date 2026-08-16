@@ -1,0 +1,1963 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker + Kubernetes + Maven + CI/CD — Interview Preparation — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: Docker + Kubernetes + Maven + CI/CD — Interview Preparation
+tags:
+  - docker
+  - kubernetes
+  - maven
+  - cicd
+  - devops
+  - spring-boot
+  - java
+  - interview</p>
+<hr />
+<h1 id="docker-kubernetes-maven-cicd-interview-preparation">Docker + Kubernetes + Maven + CI/CD — Interview Preparation</h1>
+<blockquote>
+<p>[!note]
+This note is designed for a Java/Spring Boot full-stack developer.</p>
+<p>You do NOT need to become a DevOps/SRE specialist for a typical full-stack interview.
+You should, however, be able to explain how a Spring Boot application is built, packaged, containerized, deployed, scaled, monitored, and safely released.</p>
+<p>Core mental model:</p>
+<p><strong>Code → Maven → Tests → Artifact → Docker Image → Registry → Kubernetes → Traffic → Observability → Rollout/Rollback</strong></p>
+</blockquote>
+<hr />
+<h1 id="part-i-docker">PART I — DOCKER</h1>
+<h1 id="1-what-is-docker">1. What Is Docker?</h1>
+<p>Docker packages an application and its runtime dependencies into a container image.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Application
++
+Runtime
++
+Dependencies
++
+Configuration
+        ↓
+     Image
+        ↓
+   Container
+</code></pre>
+<p>A container is an isolated process environment sharing the host kernel.</p>
+<hr />
+<h1 id="2-image-vs-container">2. Image vs Container</h1>
+<p>Image:</p>
+<pre><code class="language-text">immutable-ish package/template
+</code></pre>
+<p>Container:</p>
+<pre><code class="language-text">running instance of an image
+</code></pre>
+<p>One image can create many containers:</p>
+<pre><code class="language-text">             Spring Boot Image
+              /      |      \
+             ↓       ↓       ↓
+          Pod/Container instances
+</code></pre>
+<hr />
+<h1 id="3-dockerfile">3. Dockerfile</h1>
+<p>Example Spring Boot Dockerfile:</p>
+<pre><code class="language-dockerfile">FROM eclipse-temurin:21-jre
+
+WORKDIR /app
+
+COPY target/app.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT [&quot;java&quot;, &quot;-jar&quot;, &quot;app.jar&quot;]
+</code></pre>
+<p>Flow:</p>
+<pre><code class="language-text">Dockerfile
+   ↓
+docker build
+   ↓
+Image
+   ↓
+docker run
+   ↓
+Container
+</code></pre>
+<hr />
+<h1 id="4-cmd-vs-entrypoint">4. CMD vs ENTRYPOINT</h1>
+<p><code>ENTRYPOINT</code> defines the primary executable.</p>
+<pre><code class="language-dockerfile">ENTRYPOINT [&quot;java&quot;, &quot;-jar&quot;, &quot;app.jar&quot;]
+</code></pre>
+<p><code>CMD</code> provides default arguments/command that can be overridden more easily.</p>
+<p>Example:</p>
+<pre><code class="language-dockerfile">CMD [&quot;--server.port=8080&quot;]
+</code></pre>
+<p>A common production pattern is:</p>
+<pre><code class="language-dockerfile">ENTRYPOINT [&quot;java&quot;, &quot;-jar&quot;, &quot;app.jar&quot;]
+</code></pre>
+<p>with runtime configuration supplied through environment variables/arguments.</p>
+<hr />
+<h1 id="5-why-use-multi-stage-builds">5. Why Use Multi-Stage Builds?</h1>
+<p>Without multi-stage:</p>
+<pre><code class="language-text">JDK
+Maven
+source code
+dependencies
+build tools
+application
+</code></pre>
+<p>may all remain in the final image.</p>
+<p>Multi-stage:</p>
+<pre><code class="language-text">Build image
+ ├── JDK
+ ├── Maven
+ └── source
+       ↓
+     build
+       ↓
+Runtime image
+ └── JRE/runtime
+     + application
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">smaller image
+smaller attack surface
+faster deployment
+less unnecessary tooling
+</code></pre>
+<hr />
+<h1 id="6-multi-stage-spring-boot-example">6. Multi-Stage Spring Boot Example</h1>
+<pre><code class="language-dockerfile">FROM maven:3.9-eclipse-temurin-21 AS build
+
+WORKDIR /app
+
+COPY pom.xml .
+COPY src ./src
+
+RUN mvn -B package -DskipTests
+
+FROM eclipse-temurin:21-jre
+
+WORKDIR /app
+
+COPY --from=build /app/target/*.jar app.jar
+
+ENTRYPOINT [&quot;java&quot;, &quot;-jar&quot;, &quot;app.jar&quot;]
+</code></pre>
+<p>For production, use appropriate pinned/versioned images rather than casually relying on mutable tags.</p>
+<hr />
+<h1 id="7-docker-layers">7. Docker Layers</h1>
+<p>Docker images are built from layers.</p>
+<pre><code class="language-text">Layer 1 → base image
+Layer 2 → dependencies
+Layer 3 → application
+</code></pre>
+<p>Docker can reuse unchanged layers.</p>
+<p>Therefore Dockerfile ordering matters.</p>
+<p>Bad:</p>
+<pre><code class="language-dockerfile">COPY . .
+RUN mvn package
+</code></pre>
+<p>Every source change can invalidate large portions of the build.</p>
+<p>Better:</p>
+<pre><code class="language-dockerfile">COPY pom.xml .
+download dependencies
+
+COPY src ./src
+build application
+</code></pre>
+<p>This can improve build caching.</p>
+<hr />
+<h1 id="8-dockerignore">8. .dockerignore</h1>
+<p>Use <code>.dockerignore</code> to prevent unnecessary files from entering the build context.</p>
+<p>Example:</p>
+<pre><code class="language-text">.git
+.idea
+target
+node_modules
+*.log
+.env
+</code></pre>
+<p>Never casually send secrets into the Docker build context.</p>
+<hr />
+<h1 id="9-docker-image-tags">9. Docker Image Tags</h1>
+<p>Example:</p>
+<pre><code class="language-text">orders:1.4.2
+orders:2026-08-17
+orders:git-sha
+</code></pre>
+<p>Avoid relying on:</p>
+<pre><code class="language-text">latest
+</code></pre>
+<p>for production deployment identity.</p>
+<p>Immutable identifiers such as commit SHA or release version are safer.</p>
+<hr />
+<h1 id="10-docker-registry">10. Docker Registry</h1>
+<p>Typical flow:</p>
+<pre><code class="language-text">Developer
+   ↓
+docker build
+   ↓
+Image
+   ↓
+docker push
+   ↓
+Container Registry
+</code></pre>
+<p>Examples:</p>
+<pre><code class="language-text">Amazon ECR
+Google Artifact Registry
+Azure Container Registry
+GitHub Container Registry
+Docker Hub
+</code></pre>
+<hr />
+<h1 id="11-port-mapping">11. Port Mapping</h1>
+<p>Container:</p>
+<pre><code class="language-text">8080
+</code></pre>
+<p>Host:</p>
+<pre><code class="language-text">8080
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-bash">docker run -p 8080:8080 app
+</code></pre>
+<p>The mapping means:</p>
+<pre><code class="language-text">host:8080
+    ↓
+container:8080
+</code></pre>
+<hr />
+<h1 id="12-environment-variables">12. Environment Variables</h1>
+<p>Do not bake environment-specific secrets into the image.</p>
+<p>Instead:</p>
+<pre><code class="language-text">Image
+ ↓
+runtime environment
+ ↓
+configuration
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-bash">docker run \
+  -e DB_HOST=db \
+  -e DB_USER=app \
+  app
+</code></pre>
+<hr />
+<h1 id="13-secrets-in-docker">13. Secrets in Docker</h1>
+<p>Do NOT put:</p>
+<pre><code class="language-text">password
+API key
+private key
+database credential
+</code></pre>
+<p>directly into:</p>
+<pre><code class="language-text">Dockerfile
+Git repository
+image layers
+</code></pre>
+<p>Use a proper secrets mechanism.</p>
+<p>Kubernetes Secrets, cloud secret managers, and CI/CD secret stores are common approaches.</p>
+<hr />
+<h1 id="14-docker-networking">14. Docker Networking</h1>
+<p>Containers can communicate through Docker networks.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Spring container
+      ↓
+Docker network
+      ↓
+Redis container
+</code></pre>
+<p>Do not hard-code container IP addresses.</p>
+<p>Use service/container DNS provided by the networking environment.</p>
+<hr />
+<h1 id="15-container-is-not-a-vm">15. Container Is Not a VM</h1>
+<p>VM:</p>
+<pre><code class="language-text">Application
+ ↓
+Guest OS
+ ↓
+Hypervisor
+ ↓
+Host OS
+</code></pre>
+<p>Container:</p>
+<pre><code class="language-text">Application
+ ↓
+Container isolation
+ ↓
+Host kernel
+</code></pre>
+<p>Containers are generally lighter and faster to start.</p>
+<hr />
+<h1 id="16-container-process-model">16. Container Process Model</h1>
+<p>A container generally runs around a primary process.</p>
+<p>For Spring Boot:</p>
+<pre><code class="language-text">PID 1
+ ↓
+java -jar app.jar
+</code></pre>
+<p>Signal handling and graceful shutdown therefore matter.</p>
+<hr />
+<h1 id="17-sigterm-and-graceful-shutdown">17. SIGTERM and Graceful Shutdown</h1>
+<p>Deployment system may send:</p>
+<pre><code class="language-text">SIGTERM
+</code></pre>
+<p>Application should:</p>
+<pre><code class="language-text">stop accepting new work
+finish in-flight work
+close resources
+exit
+</code></pre>
+<p>Spring Boot supports graceful shutdown configuration.</p>
+<hr />
+<h1 id="18-docker-healthcheck">18. Docker Healthcheck</h1>
+<p>Docker can define:</p>
+<pre><code class="language-dockerfile">HEALTHCHECK ...
+</code></pre>
+<p>But in Kubernetes, readiness/liveness/startup probes are generally the more important deployment-level mechanism.</p>
+<hr />
+<h1 id="19-docker-resource-limits">19. Docker Resource Limits</h1>
+<p>Containers can be constrained by:</p>
+<pre><code class="language-text">CPU
+memory
+PIDs
+</code></pre>
+<p>If memory is exhausted, the process/container can be killed.</p>
+<p>Important:</p>
+<pre><code class="language-text">JVM heap
+≠
+total container memory
+</code></pre>
+<p>The JVM also uses:</p>
+<pre><code class="language-text">metaspace
+thread stacks
+direct memory
+native memory
+JIT/code cache
+</code></pre>
+<hr />
+<h1 id="20-docker-security">20. Docker Security</h1>
+<p>Important practices:</p>
+<pre><code class="language-text">minimal base image
+non-root user
+patched dependencies
+image scanning
+read-only filesystem where appropriate
+drop unnecessary Linux capabilities
+do not embed secrets
+pin trusted base images
+</code></pre>
+<hr />
+<h1 id="21-docker-interview-trap">21. Docker Interview Trap</h1>
+<p>Question:</p>
+<blockquote>
+<p>If the Docker image contains everything, why does the application still depend on environment configuration?</p>
+</blockquote>
+<p>Because:</p>
+<pre><code class="language-text">application artifact
+</code></pre>
+<p>should be portable while:</p>
+<pre><code class="language-text">database
+credentials
+URLs
+feature flags
+environment-specific behavior
+</code></pre>
+<p>vary by environment.</p>
+<hr />
+<h1 id="part-ii-maven">PART II — MAVEN</h1>
+<h1 id="22-what-is-maven">22. What Is Maven?</h1>
+<p>Maven is a build and dependency-management tool commonly used in Java projects.</p>
+<p>It handles:</p>
+<pre><code class="language-text">dependency management
+compilation
+testing
+packaging
+plugins
+repositories
+build lifecycle
+</code></pre>
+<hr />
+<h1 id="23-pomxml">23. pom.xml</h1>
+<p>Typical:</p>
+<pre><code class="language-xml">&lt;project&gt;
+    &lt;groupId&gt;com.example&lt;/groupId&gt;
+    &lt;artifactId&gt;orders&lt;/artifactId&gt;
+    &lt;version&gt;1.0.0&lt;/version&gt;
+
+    &lt;dependencies&gt;
+        ...
+    &lt;/dependencies&gt;
+
+    &lt;build&gt;
+        &lt;plugins&gt;
+            ...
+        &lt;/plugins&gt;
+    &lt;/build&gt;
+&lt;/project&gt;
+</code></pre>
+<hr />
+<h1 id="24-maven-coordinates">24. Maven Coordinates</h1>
+<p>A Maven artifact is commonly identified by:</p>
+<pre><code class="language-text">groupId
+artifactId
+version
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">com.company
+orders-service
+1.4.2
+</code></pre>
+<p>Together they identify a dependency/artifact.</p>
+<hr />
+<h1 id="25-maven-repositories">25. Maven Repositories</h1>
+<p>Common repositories:</p>
+<pre><code class="language-text">Local repository
+      ↓
+Remote repository
+</code></pre>
+<p>Local:</p>
+<pre><code class="language-text">~/.m2/repository
+</code></pre>
+<p>Remote:</p>
+<pre><code class="language-text">Maven Central
+Nexus
+Artifactory
+cloud/private repositories
+</code></pre>
+<hr />
+<h1 id="26-maven-dependency">26. Maven Dependency</h1>
+<p>Example:</p>
+<pre><code class="language-xml">&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+&lt;/dependency&gt;
+</code></pre>
+<p>Maven resolves:</p>
+<pre><code class="language-text">direct dependency
+ ↓
+transitive dependencies
+</code></pre>
+<hr />
+<h1 id="27-transitive-dependencies">27. Transitive Dependencies</h1>
+<p>If:</p>
+<pre><code class="language-text">A → B
+B → C
+</code></pre>
+<p>and your project depends on A:</p>
+<pre><code class="language-text">A
+ ↓
+B
+ ↓
+C
+</code></pre>
+<p>C can become a transitive dependency.</p>
+<p>This is convenient but can cause version conflicts.</p>
+<hr />
+<h1 id="28-dependency-scope">28. Dependency Scope</h1>
+<p>Important Maven scopes:</p>
+<pre><code class="language-text">compile
+provided
+runtime
+test
+</code></pre>
+<p>High-level:</p>
+<pre><code class="language-text">compile → needed to compile and generally runtime
+provided → provided by environment
+runtime → needed at runtime, not compile
+test → tests only
+</code></pre>
+<hr />
+<h1 id="29-maven-dependency-conflict">29. Maven Dependency Conflict</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">A → X 1.0
+B → X 2.0
+</code></pre>
+<p>Maven must choose a version.</p>
+<p>Understand:</p>
+<pre><code class="language-text">dependency mediation
+dependency tree
+explicit dependency management
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-bash">mvn dependency:tree
+</code></pre>
+<p>to investigate.</p>
+<hr />
+<h1 id="30-dependencymanagement">30. dependencyManagement</h1>
+<p><code>dependencyManagement</code> controls versions for dependencies used by modules without necessarily adding those dependencies automatically.</p>
+<p>This is particularly useful in multi-module projects.</p>
+<p>Spring Boot's dependency management/BOM approach is heavily used here.</p>
+<hr />
+<h1 id="31-maven-bom">31. Maven BOM</h1>
+<p>BOM:</p>
+<pre><code class="language-text">Bill of Materials
+</code></pre>
+<p>defines a compatible set of dependency versions.</p>
+<p>Spring Boot manages many dependency versions so developers don't need to specify every version independently.</p>
+<hr />
+<h1 id="32-maven-lifecycle">32. Maven Lifecycle</h1>
+<p>Important lifecycle phases:</p>
+<pre><code class="language-text">validate
+compile
+test
+package
+verify
+install
+deploy
+</code></pre>
+<p>The exact phase invokes earlier required phases.</p>
+<p>Example:</p>
+<pre><code class="language-bash">mvn package
+</code></pre>
+<p>runs the lifecycle through packaging.</p>
+<hr />
+<h1 id="33-mvn-clean-package">33. mvn clean package</h1>
+<pre><code class="language-bash">mvn clean package
+</code></pre>
+<p><code>clean</code> removes previous build output.</p>
+<p><code>package</code>:</p>
+<pre><code class="language-text">compile
+test
+package
+</code></pre>
+<p>subject to lifecycle/plugin configuration.</p>
+<hr />
+<h1 id="34-mvn-install">34. mvn install</h1>
+<pre><code class="language-bash">mvn install
+</code></pre>
+<p>builds the project and installs the artifact into the local Maven repository.</p>
+<p>It is useful when another local project/module needs the artifact.</p>
+<hr />
+<h1 id="35-mvn-deploy">35. mvn deploy</h1>
+<pre><code class="language-bash">mvn deploy
+</code></pre>
+<p>publishes the artifact to a configured remote repository.</p>
+<p>Do not confuse:</p>
+<pre><code class="language-text">install → local repository
+deploy  → remote repository
+</code></pre>
+<hr />
+<h1 id="36-maven-plugins">36. Maven Plugins</h1>
+<p>Maven itself relies heavily on plugins.</p>
+<p>Examples:</p>
+<pre><code class="language-text">maven-compiler-plugin
+maven-surefire-plugin
+maven-failsafe-plugin
+maven-jar-plugin
+spring-boot-maven-plugin
+</code></pre>
+<p>Plugins perform much of the actual build work.</p>
+<hr />
+<h1 id="37-surefire-vs-failsafe">37. Surefire vs Failsafe</h1>
+<p>Common interview question:</p>
+<pre><code class="language-text">Surefire
+→ unit tests during test phase
+
+Failsafe
+→ integration tests during integration-test/verify lifecycle
+</code></pre>
+<p>Typical naming:</p>
+<pre><code class="language-text">*Test
+</code></pre>
+<p>vs:</p>
+<pre><code class="language-text">*IT
+</code></pre>
+<p>depending on configuration.</p>
+<hr />
+<h1 id="38-maven-profiles">38. Maven Profiles</h1>
+<p>Profiles allow environment/build-specific configuration.</p>
+<p>Example:</p>
+<pre><code class="language-text">dev
+test
+prod
+</code></pre>
+<p>But avoid using Maven profiles as a substitute for runtime application configuration.</p>
+<p>A common principle:</p>
+<pre><code class="language-text">Build artifact should remain environment-independent.
+</code></pre>
+<hr />
+<h1 id="39-maven-wrapper">39. Maven Wrapper</h1>
+<p>Files:</p>
+<pre><code class="language-text">mvnw
+mvnw.cmd
+.mvn/
+</code></pre>
+<p>allow the project to use a defined Maven version without requiring developers to install the exact Maven version globally.</p>
+<hr />
+<h1 id="40-maven-multi-module-project">40. Maven Multi-Module Project</h1>
+<p>Example:</p>
+<pre><code class="language-text">parent
+├── common
+├── order-service
+├── payment-service
+└── notification-service
+</code></pre>
+<p>A parent POM can manage:</p>
+<pre><code class="language-text">versions
+plugins
+shared configuration
+modules
+</code></pre>
+<hr />
+<h1 id="41-maven-interview-trap">41. Maven Interview Trap</h1>
+<p>Question:</p>
+<blockquote>
+<p>Does Maven download a dependency every time you run the build?</p>
+</blockquote>
+<p>No.</p>
+<p>Maven uses the local repository/cache when the required artifact is already available and resolution rules permit it.</p>
+<hr />
+<h1 id="part-iii-cicd">PART III — CI/CD</h1>
+<h1 id="42-what-is-ci">42. What Is CI?</h1>
+<p>Continuous Integration means frequently integrating changes into a shared codebase with automated validation.</p>
+<p>Typical:</p>
+<pre><code class="language-text">git push
+ ↓
+build
+ ↓
+unit tests
+ ↓
+static analysis
+ ↓
+integration tests
+</code></pre>
+<p>Goal:</p>
+<pre><code class="language-text">find problems early
+</code></pre>
+<hr />
+<h1 id="43-what-is-cd">43. What Is CD?</h1>
+<p>CD can mean:</p>
+<pre><code class="language-text">Continuous Delivery
+</code></pre>
+<p>or:</p>
+<pre><code class="language-text">Continuous Deployment
+</code></pre>
+<p>Continuous Delivery:</p>
+<pre><code class="language-text">software is always in a deployable state
+</code></pre>
+<p>Continuous Deployment:</p>
+<pre><code class="language-text">validated changes automatically reach production
+</code></pre>
+<hr />
+<h1 id="44-cicd-pipeline">44. CI/CD Pipeline</h1>
+<p>Typical Spring Boot pipeline:</p>
+<pre><code class="language-text">Developer
+   ↓
+Git push
+   ↓
+CI
+   ↓
+Checkout
+   ↓
+Maven build
+   ↓
+Unit tests
+   ↓
+Integration tests
+   ↓
+Static analysis
+   ↓
+Security scan
+   ↓
+Package JAR
+   ↓
+Docker build
+   ↓
+Image scan
+   ↓
+Push image
+   ↓
+Deploy
+   ↓
+Health checks
+   ↓
+Monitor
+</code></pre>
+<hr />
+<h1 id="45-build-once-deploy-many">45. Build Once, Deploy Many</h1>
+<p>Important principle:</p>
+<pre><code class="language-text">Build artifact once
+        ↓
+same artifact
+        ↓
+dev
+        ↓
+staging
+        ↓
+production
+</code></pre>
+<p>Do not rebuild different binaries for each environment.</p>
+<p>Otherwise you lose confidence that the tested artifact is the deployed artifact.</p>
+<hr />
+<h1 id="46-artifact-vs-docker-image">46. Artifact vs Docker Image</h1>
+<p>Artifact:</p>
+<pre><code class="language-text">app.jar
+</code></pre>
+<p>Container image:</p>
+<pre><code class="language-text">runtime
++
+app.jar
+</code></pre>
+<p>Pipeline can:</p>
+<pre><code class="language-text">Maven → JAR
+JAR → Docker image
+Image → registry
+</code></pre>
+<hr />
+<h1 id="47-ci-pipeline-stages">47. CI Pipeline Stages</h1>
+<p>Good pipeline structure:</p>
+<pre><code class="language-text">Fast checks
+ ↓
+Unit tests
+ ↓
+Build
+ ↓
+Integration tests
+ ↓
+Security/static analysis
+ ↓
+Package
+ ↓
+Image
+ ↓
+Deployment
+</code></pre>
+<p>Keep fast feedback early.</p>
+<hr />
+<h1 id="48-unit-tests-vs-integration-tests">48. Unit Tests vs Integration Tests</h1>
+<p>Unit:</p>
+<pre><code class="language-text">fast
+isolated
+mock dependencies where appropriate
+</code></pre>
+<p>Integration:</p>
+<pre><code class="language-text">real components
+database
+Kafka
+Redis
+HTTP
+</code></pre>
+<p>For Java/Spring:</p>
+<pre><code class="language-text">JUnit
+Mockito
+Spring Boot Test
+Testcontainers
+</code></pre>
+<p>are common.</p>
+<hr />
+<h1 id="49-testcontainers-in-ci">49. Testcontainers in CI</h1>
+<p>Testcontainers can start real dependencies in containers:</p>
+<pre><code class="language-text">CI
+ ↓
+Testcontainers
+ ├── PostgreSQL
+ ├── Kafka
+ └── Redis
+</code></pre>
+<p>This can make integration tests much more realistic than mocking infrastructure.</p>
+<hr />
+<h1 id="50-static-analysis">50. Static Analysis</h1>
+<p>Examples:</p>
+<pre><code class="language-text">SonarQube
+Checkstyle
+SpotBugs
+PMD
+</code></pre>
+<p>Depending on the organization.</p>
+<p>Detect:</p>
+<pre><code class="language-text">bugs
+code smells
+style violations
+security issues
+</code></pre>
+<hr />
+<h1 id="51-dependency-security-scanning">51. Dependency Security Scanning</h1>
+<p>Scan dependencies for known vulnerabilities.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">pom.xml
+ ↓
+dependency graph
+ ↓
+CVE database
+ ↓
+report
+</code></pre>
+<p>Do not treat a scan as perfect security; it is one layer.</p>
+<hr />
+<h1 id="52-container-image-scanning">52. Container Image Scanning</h1>
+<p>After Docker build:</p>
+<pre><code class="language-text">image
+ ↓
+scanner
+ ↓
+OS/package/library vulnerabilities
+</code></pre>
+<p>Only trusted, scanned images should move toward production according to organizational policy.</p>
+<hr />
+<h1 id="53-secrets-in-cicd">53. Secrets in CI/CD</h1>
+<p>Never hard-code:</p>
+<pre><code class="language-text">AWS keys
+database passwords
+private keys
+production tokens
+</code></pre>
+<p>into:</p>
+<pre><code class="language-text">pom.xml
+Dockerfile
+Git repository
+pipeline YAML
+</code></pre>
+<p>Use the CI/CD platform's secret store or a dedicated secret manager.</p>
+<hr />
+<h1 id="54-environment-variables-in-cicd">54. Environment Variables in CI/CD</h1>
+<p>Typical:</p>
+<pre><code class="language-text">CI
+ ↓
+deploy
+ ↓
+environment-specific configuration
+</code></pre>
+<p>Application image stays the same.</p>
+<p>Example:</p>
+<pre><code class="language-text">DB_HOST
+DB_PORT
+SPRING_PROFILES_ACTIVE
+</code></pre>
+<p>Secrets should be injected securely rather than exposed in logs.</p>
+<hr />
+<h1 id="55-deployment-strategies">55. Deployment Strategies</h1>
+<p>Important:</p>
+<pre><code class="language-text">Rolling
+Blue-Green
+Canary
+</code></pre>
+<hr />
+<h1 id="56-rolling-deployment">56. Rolling Deployment</h1>
+<p>Replace instances gradually.</p>
+<pre><code class="language-text">v1 v1 v1
+ ↓
+v2 v1 v1
+ ↓
+v2 v2 v1
+ ↓
+v2 v2 v2
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">no full outage
+lower infrastructure cost
+</code></pre>
+<p>Risks:</p>
+<pre><code class="language-text">old/new versions coexist
+compatibility required
+</code></pre>
+<hr />
+<h1 id="57-blue-green">57. Blue-Green</h1>
+<pre><code class="language-text">Blue  → production
+Green → new version
+</code></pre>
+<p>Validate Green, then switch traffic.</p>
+<p>Benefits:</p>
+<pre><code class="language-text">fast rollback
+clean environment separation
+</code></pre>
+<p>Cost:</p>
+<pre><code class="language-text">extra capacity
+</code></pre>
+<hr />
+<h1 id="58-canary">58. Canary</h1>
+<pre><code class="language-text">95% → v1
+5%  → v2
+</code></pre>
+<p>Monitor:</p>
+<pre><code class="language-text">errors
+latency
+business metrics
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-text">5%
+ ↓
+20%
+ ↓
+50%
+ ↓
+100%
+</code></pre>
+<hr />
+<h1 id="59-feature-flags">59. Feature Flags</h1>
+<p>Feature deployment and feature release can be separated.</p>
+<pre><code class="language-text">code deployed
+ ↓
+feature disabled
+ ↓
+enable for 1%
+ ↓
+10%
+ ↓
+100%
+</code></pre>
+<p>Benefits:</p>
+<pre><code class="language-text">controlled rollout
+fast disable
+experimentation
+</code></pre>
+<hr />
+<h1 id="60-rollback">60. Rollback</h1>
+<p>If release is unhealthy:</p>
+<pre><code class="language-text">new version
+ ↓
+metrics degrade
+ ↓
+rollback
+</code></pre>
+<p>Good rollback requires:</p>
+<pre><code class="language-text">previous artifact/image
+backward-compatible DB
+automated deployment
+</code></pre>
+<hr />
+<h1 id="61-database-migration-problem">61. Database Migration Problem</h1>
+<p>Suppose v2 needs:</p>
+<pre><code class="language-text">new_column
+</code></pre>
+<p>But old v1 instances still run.</p>
+<p>Unsafe:</p>
+<pre><code class="language-text">remove old_column immediately
+</code></pre>
+<p>Better expand/contract:</p>
+<pre><code class="language-text">Phase 1
+add new column
+
+Phase 2
+deploy code writing both
+
+Phase 3
+migrate/read from new
+
+Phase 4
+remove old column later
+</code></pre>
+<p>This is a major zero-downtime deployment concept.</p>
+<hr />
+<h1 id="62-cicd-and-database-migrations">62. CI/CD and Database Migrations</h1>
+<p>Common migration tools:</p>
+<pre><code class="language-text">Flyway
+Liquibase
+</code></pre>
+<p>Pipeline:</p>
+<pre><code class="language-text">migration
+ ↓
+application compatibility
+ ↓
+deployment
+</code></pre>
+<p>Be careful with destructive migrations.</p>
+<hr />
+<h1 id="63-kubernetes-deployment-pipeline">63. Kubernetes Deployment Pipeline</h1>
+<p>Typical:</p>
+<pre><code class="language-text">Git
+ ↓
+CI
+ ↓
+Maven
+ ↓
+Tests
+ ↓
+Docker
+ ↓
+Registry
+ ↓
+Kubernetes manifest/Helm
+ ↓
+Deployment
+ ↓
+Readiness
+ ↓
+Traffic
+</code></pre>
+<hr />
+<h1 id="64-helm">64. Helm</h1>
+<p>Helm is commonly used to package/manage Kubernetes application deployments.</p>
+<p>It can template:</p>
+<pre><code class="language-text">Deployment
+Service
+ConfigMap
+Ingress
+HPA
+</code></pre>
+<p>Example conceptual:</p>
+<pre><code class="language-text">values-dev.yaml
+values-prod.yaml
+       ↓
+Helm chart
+       ↓
+Kubernetes manifests
+</code></pre>
+<hr />
+<h1 id="65-kubernetes-configmap">65. Kubernetes ConfigMap</h1>
+<p>Used for non-secret configuration.</p>
+<p>Example:</p>
+<pre><code class="language-text">SPRING_PROFILES_ACTIVE=prod
+LOG_LEVEL=INFO
+</code></pre>
+<p>Do not use ConfigMap as a secret store.</p>
+<hr />
+<h1 id="66-kubernetes-secret">66. Kubernetes Secret</h1>
+<p>Used for sensitive configuration such as:</p>
+<pre><code class="language-text">password
+token
+credential
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Kubernetes Secret is not automatically equivalent to a fully secure external secrets manager. Understand encryption-at-rest, RBAC, access paths, and your cluster's configuration.</p>
+</blockquote>
+<hr />
+<h1 id="67-kubernetes-deployment">67. Kubernetes Deployment</h1>
+<p>A Deployment manages replicated Pods.</p>
+<p>Conceptually:</p>
+<pre><code class="language-yaml">spec:
+  replicas: 3
+</code></pre>
+<p>means Kubernetes attempts to maintain three replicas.</p>
+<hr />
+<h1 id="68-pod">68. Pod</h1>
+<p>Pod is the basic deployable unit in Kubernetes.</p>
+<p>Usually:</p>
+<pre><code class="language-text">1 application container
+</code></pre>
+<p>but can contain sidecars.</p>
+<p>Pods are ephemeral.</p>
+<p>Do not treat Pod IPs as permanent identities.</p>
+<hr />
+<h1 id="69-service">69. Service</h1>
+<p>Kubernetes Service provides stable networking to Pods.</p>
+<pre><code class="language-text">Client
+ ↓
+Service
+ ↓
+Pod
+Pod
+Pod
+</code></pre>
+<p>Pods can come and go while the Service remains the stable access point.</p>
+<hr />
+<h1 id="70-ingress">70. Ingress</h1>
+<p>Ingress provides HTTP/HTTPS routing into services.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Internet
+ ↓
+Ingress
+ ├── /orders → order-service
+ ├── /users  → user-service
+ └── /pay    → payment-service
+</code></pre>
+<p>Modern Kubernetes environments may also use Gateway API depending on the platform.</p>
+<hr />
+<h1 id="71-readiness-probe">71. Readiness Probe</h1>
+<p>Readiness asks:</p>
+<pre><code class="language-text">Can this Pod receive traffic?
+</code></pre>
+<p>If not ready:</p>
+<pre><code class="language-text">Pod remains running
+but is removed from ready endpoints
+</code></pre>
+<hr />
+<h1 id="72-liveness-probe">72. Liveness Probe</h1>
+<p>Liveness asks:</p>
+<pre><code class="language-text">Is the application still alive?
+</code></pre>
+<p>If liveness repeatedly fails:</p>
+<pre><code class="language-text">Kubernetes may restart the container
+</code></pre>
+<p>Do not make liveness depend on every downstream system.</p>
+<hr />
+<h1 id="73-startup-probe">73. Startup Probe</h1>
+<p>Useful for slow-starting applications.</p>
+<pre><code class="language-text">container starts
+ ↓
+startup probe
+ ↓
+application initialization
+ ↓
+startup succeeds
+ ↓
+liveness/readiness become active
+</code></pre>
+<p>This prevents liveness from killing an application while it is still starting.</p>
+<hr />
+<h1 id="74-hpa">74. HPA</h1>
+<p>Horizontal Pod Autoscaler changes replica count based on metrics.</p>
+<pre><code class="language-text">load increases
+ ↓
+HPA
+ ↓
+3 pods → 6 pods
+</code></pre>
+<p>Scaling a service does not automatically solve:</p>
+<pre><code class="language-text">database bottleneck
+Kafka partition limit
+external API limit
+connection pool bottleneck
+</code></pre>
+<hr />
+<h1 id="75-kubernetes-resource-requests-and-limits">75. Kubernetes Resource Requests and Limits</h1>
+<p>Requests:</p>
+<pre><code class="language-text">resource amount used for scheduling
+</code></pre>
+<p>Limits:</p>
+<pre><code class="language-text">maximum resource constraint
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-yaml">resources:
+  requests:
+    cpu: &quot;500m&quot;
+    memory: &quot;512Mi&quot;
+  limits:
+    cpu: &quot;1&quot;
+    memory: &quot;1Gi&quot;
+</code></pre>
+<p>Misconfigured resources can cause:</p>
+<pre><code class="language-text">CPU throttling
+OOMKilled
+poor scheduling
+</code></pre>
+<hr />
+<h1 id="76-cicd-kubernetes-failure-scenario">76. CI/CD + Kubernetes Failure Scenario</h1>
+<p>Deployment says:</p>
+<pre><code class="language-text">success
+</code></pre>
+<p>but users receive errors.</p>
+<p>Investigate:</p>
+<pre><code class="language-text">Pod status
+readiness
+logs
+events
+Service endpoints
+Ingress
+image version
+configuration
+secrets
+DB connectivity
+dependency health
+</code></pre>
+<p>Never assume "deployment succeeded" means "application is healthy."</p>
+<hr />
+<h1 id="part-iv-advanced-interview-scenarios">PART IV — ADVANCED INTERVIEW SCENARIOS</h1>
+<h1 id="77-build-is-green-but-production-fails">77. Build Is Green but Production Fails</h1>
+<p>Possible reasons:</p>
+<pre><code class="language-text">environment configuration
+missing secret
+different database
+network policy
+dependency version
+resource limits
+startup timing
+migration problem
+</code></pre>
+<p>CI validates only what the pipeline actually validates.</p>
+<hr />
+<h1 id="78-docker-build-is-very-slow">78. Docker Build Is Very Slow</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">build context
+Dockerfile layer ordering
+dependency downloads
+cache usage
+large COPY
+node_modules
+target/
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">.dockerignore
+multi-stage builds
+dependency caching
+BuildKit
+</code></pre>
+<hr />
+<h1 id="79-image-is-huge">79. Image Is Huge</h1>
+<p>Possible causes:</p>
+<pre><code class="language-text">full JDK runtime
+build tools
+source code
+package caches
+logs
+unnecessary OS packages
+</code></pre>
+<p>Solutions:</p>
+<pre><code class="language-text">multi-stage build
+smaller runtime image
+.dockerignore
+remove build caches
+minimal dependencies
+</code></pre>
+<hr />
+<h1 id="80-container-starts-but-application-is-unreachable">80. Container Starts but Application Is Unreachable</h1>
+<p>Check:</p>
+<pre><code class="language-text">application listening port
+container port
+Service port
+targetPort
+Ingress
+network policy
+readiness
+</code></pre>
+<p>Common mistake:</p>
+<pre><code class="language-text">EXPOSE 8080
+</code></pre>
+<p>does not itself publish the port.</p>
+<hr />
+<h1 id="81-kubernetes-pod-keeps-restarting">81. Kubernetes Pod Keeps Restarting</h1>
+<p>Check:</p>
+<pre><code class="language-text">kubectl describe pod
+kubectl logs
+previous logs
+events
+liveness probe
+startup probe
+OOMKilled
+application exception
+configuration
+secret
+</code></pre>
+<p>Possible causes:</p>
+<pre><code class="language-text">crash
+bad configuration
+liveness failure
+OOM
+dependency startup
+</code></pre>
+<hr />
+<h1 id="82-pod-is-running-but-receives-no-traffic">82. Pod Is Running but Receives No Traffic</h1>
+<p>Likely investigate:</p>
+<pre><code class="language-text">readiness probe
+Service selector
+Service endpoints
+Ingress
+labels
+port/targetPort
+</code></pre>
+<p>"Running" does not mean "Ready."</p>
+<hr />
+<h1 id="83-application-is-oomkilled">83. Application Is OOMKilled</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">container memory limit
+JVM heap
+metaspace
+direct memory
+thread count
+native memory
+allocation rate
+heap dump
+GC
+</code></pre>
+<p>Do not simply increase <code>-Xmx</code> until the container limit is exhausted.</p>
+<hr />
+<h1 id="84-cpu-is-throttled">84. CPU Is Throttled</h1>
+<p>Possible:</p>
+<pre><code class="language-text">CPU limit too low
+CPU-heavy workload
+GC
+serialization
+compression
+bad algorithm
+traffic spike
+</code></pre>
+<p>Check:</p>
+<pre><code class="language-text">CPU usage
+throttling metrics
+profiling
+request rate
+</code></pre>
+<hr />
+<h1 id="85-deployment-causes-errors">85. Deployment Causes Errors</h1>
+<p>Classic cause:</p>
+<pre><code class="language-text">v1 + v2
+</code></pre>
+<p>are running simultaneously.</p>
+<p>If v2 changes an API/database schema incompatibly:</p>
+<pre><code class="language-text">v1 → breaks
+</code></pre>
+<p>Therefore design:</p>
+<pre><code class="language-text">backward-compatible APIs
+expand/contract DB migrations
+</code></pre>
+<hr />
+<h1 id="86-pipeline-takes-30-minutes">86. Pipeline Takes 30 Minutes</h1>
+<p>Optimize:</p>
+<pre><code class="language-text">parallel tests
+dependency caching
+Maven cache
+Docker layer cache
+test categorization
+faster feedback stages
+</code></pre>
+<p>Do not blindly remove tests.</p>
+<hr />
+<h1 id="87-tests-pass-locally-but-fail-in-ci">87. Tests Pass Locally but Fail in CI</h1>
+<p>Common causes:</p>
+<pre><code class="language-text">timezone
+locale
+environment variables
+port collision
+dependency versions
+filesystem assumptions
+race conditions
+Docker availability
+database state
+</code></pre>
+<p>Use reproducible environments.</p>
+<hr />
+<h1 id="88-maven-build-works-locally-but-not-ci">88. Maven Build Works Locally but Not CI</h1>
+<p>Check:</p>
+<pre><code class="language-text">Java version
+Maven version
+Maven wrapper
+environment variables
+credentials
+private repository
+dependency cache
+OS assumptions
+</code></pre>
+<p>Use Maven Wrapper where practical.</p>
+<hr />
+<h1 id="89-dependency-works-locally-but-ci-downloads-different-version">89. Dependency Works Locally but CI Downloads Different Version</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">pom.xml
+dependencyManagement
+repository configuration
+snapshot dependencies
+local cache
+</code></pre>
+<p>Avoid mutable/reproducibility-sensitive dependency practices.</p>
+<hr />
+<h1 id="90-security-scan-blocks-deployment">90. Security Scan Blocks Deployment</h1>
+<p>Process:</p>
+<pre><code class="language-text">identify vulnerability
+ ↓
+determine actual exploitability
+ ↓
+upgrade dependency/base image
+ ↓
+test compatibility
+ ↓
+rescan
+</code></pre>
+<p>Do not blindly suppress every vulnerability.</p>
+<hr />
+<h1 id="91-cicd-pipeline-security">91. CI/CD Pipeline Security</h1>
+<p>Protect:</p>
+<pre><code class="language-text">source code
+artifact repository
+container registry
+deployment credentials
+secrets
+production environment
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">least privilege
+short-lived credentials
+secret managers
+branch protections
+approval gates
+audit logs
+</code></pre>
+<hr />
+<h1 id="92-supply-chain-security">92. Supply Chain Security</h1>
+<p>Modern software delivery should consider:</p>
+<pre><code class="language-text">dependency vulnerabilities
+malicious packages
+compromised base images
+artifact tampering
+CI credential theft
+</code></pre>
+<p>Useful concepts:</p>
+<pre><code class="language-text">SBOM
+dependency scanning
+image signing
+provenance
+trusted builders
+</code></pre>
+<hr />
+<h1 id="93-sbom">93. SBOM</h1>
+<p>Software Bill of Materials describes components included in an artifact/image.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">vulnerability response
+compliance
+dependency visibility
+supply-chain security
+</code></pre>
+<hr />
+<h1 id="94-artifact-promotion">94. Artifact Promotion</h1>
+<p>A mature pipeline can promote the same artifact:</p>
+<pre><code class="language-text">Build once
+ ↓
+artifact/image
+ ↓
+Dev
+ ↓
+Test
+ ↓
+Staging
+ ↓
+Production
+</code></pre>
+<p>rather than rebuilding each time.</p>
+<hr />
+<h1 id="95-immutable-infrastructure">95. Immutable Infrastructure</h1>
+<p>Prefer replacing deployed artifacts/containers rather than manually modifying running instances.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">old image
+ ↓
+new image
+ ↓
+new deployment
+</code></pre>
+<p>rather than:</p>
+<pre><code class="language-text">SSH into server
+ ↓
+manually modify
+</code></pre>
+<hr />
+<h1 id="96-gitops">96. GitOps</h1>
+<p>In GitOps-style workflows:</p>
+<pre><code class="language-text">Git
+ ↓
+desired deployment state
+ ↓
+controller
+ ↓
+Kubernetes
+</code></pre>
+<p>The repository becomes an important source of truth for deployment configuration.</p>
+<p>Tools may include:</p>
+<pre><code class="language-text">Argo CD
+Flux
+</code></pre>
+<p>depending on the organization.</p>
+<hr />
+<h1 id="97-ci-vs-cd-vs-gitops">97. CI vs CD vs GitOps</h1>
+<p>CI:</p>
+<pre><code class="language-text">validate/build
+</code></pre>
+<p>CD:</p>
+<pre><code class="language-text">deliver/deploy
+</code></pre>
+<p>GitOps:</p>
+<pre><code class="language-text">deployment desired state represented in Git
+and reconciled by automation
+</code></pre>
+<p>They can be used together.</p>
+<hr />
+<h1 id="part-v-important-interview-questions">PART V — IMPORTANT INTERVIEW QUESTIONS</h1>
+<h1 id="98-docker-questions">98. Docker Questions</h1>
+<ol>
+<li>What is Docker?</li>
+<li>Image vs container?</li>
+<li>Container vs VM?</li>
+<li>What is a Dockerfile?</li>
+<li>CMD vs ENTRYPOINT?</li>
+<li>What is a Docker layer?</li>
+<li>Why does Dockerfile ordering matter?</li>
+<li>What is multi-stage build?</li>
+<li>Why use .dockerignore?</li>
+<li>Why avoid <code>latest</code> in production?</li>
+<li>How do containers communicate?</li>
+<li>How do you inject configuration?</li>
+<li>How do you handle secrets?</li>
+<li>What is a Docker registry?</li>
+<li>What does <code>EXPOSE</code> actually do?</li>
+<li>How does container networking work?</li>
+<li>Why should containers avoid running as root?</li>
+<li>Why can container memory exceed JVM heap?</li>
+<li>How do you reduce image size?</li>
+<li>How do you debug a container that exits immediately?</li>
+</ol>
+<hr />
+<h1 id="99-maven-questions">99. Maven Questions</h1>
+<ol>
+<li>What is Maven?</li>
+<li>What is pom.xml?</li>
+<li>What are Maven coordinates?</li>
+<li>What is a transitive dependency?</li>
+<li>What is dependency scope?</li>
+<li>compile vs runtime vs test?</li>
+<li>What is dependencyManagement?</li>
+<li>What is a BOM?</li>
+<li>What is Maven lifecycle?</li>
+<li><code>mvn package</code> vs <code>mvn install</code>?</li>
+<li><code>mvn install</code> vs <code>mvn deploy</code>?</li>
+<li>What are Maven plugins?</li>
+<li>Surefire vs Failsafe?</li>
+<li>What is Maven Wrapper?</li>
+<li>What is a Maven profile?</li>
+<li>How do you inspect dependency conflicts?</li>
+<li>What does <code>mvn dependency:tree</code> show?</li>
+<li>How do you make builds reproducible?</li>
+<li>What is a multi-module Maven project?</li>
+<li>How does Spring Boot dependency management work?</li>
+</ol>
+<hr />
+<h1 id="100-cicd-questions">100. CI/CD Questions</h1>
+<ol>
+<li>What is CI?</li>
+<li>Continuous Delivery vs Continuous Deployment?</li>
+<li>What does a typical Java CI pipeline look like?</li>
+<li>Why build once and deploy many?</li>
+<li>Artifact vs Docker image?</li>
+<li>Unit vs integration testing?</li>
+<li>Why use Testcontainers?</li>
+<li>What is static analysis?</li>
+<li>What is dependency scanning?</li>
+<li>What is image scanning?</li>
+<li>How do you handle secrets in CI?</li>
+<li>What is rolling deployment?</li>
+<li>Blue-green vs canary?</li>
+<li>What is a feature flag?</li>
+<li>How do you rollback?</li>
+<li>How do you perform zero-downtime DB migrations?</li>
+<li>What is expand-and-contract migration?</li>
+<li>What is artifact promotion?</li>
+<li>What is immutable infrastructure?</li>
+<li>What is GitOps?</li>
+</ol>
+<hr />
+<h1 id="101-kubernetes-questions">101. Kubernetes Questions</h1>
+<ol>
+<li>What is Kubernetes?</li>
+<li>What is a Pod?</li>
+<li>What is a Deployment?</li>
+<li>What is a Service?</li>
+<li>What is Ingress?</li>
+<li>What is ConfigMap?</li>
+<li>What is Secret?</li>
+<li>What is HPA?</li>
+<li>What are resource requests and limits?</li>
+<li>Readiness vs liveness?</li>
+<li>What is a startup probe?</li>
+<li>What happens when a Pod is terminated?</li>
+<li>How does Kubernetes perform rolling deployment?</li>
+<li>How does Service discovery work?</li>
+<li>What happens when a Pod crashes?</li>
+<li>Why are Pod IPs not stable identities?</li>
+<li>How do you debug CrashLoopBackOff?</li>
+<li>How do you debug OOMKilled?</li>
+<li>Why can a running Pod receive no traffic?</li>
+<li>How do you scale a Spring Boot application in Kubernetes?</li>
+</ol>
+<hr />
+<h1 id="102-senior-scenario-questions">102. Senior Scenario Questions</h1>
+<ol>
+<li>Design a CI/CD pipeline for a Spring Boot service.</li>
+<li>How would you deploy the same service to dev, staging, and production?</li>
+<li>How would you ensure the artifact tested in staging is exactly the one in production?</li>
+<li>How would you implement zero-downtime deployment?</li>
+<li>How would you roll back a bad release?</li>
+<li>How would you handle database schema changes during rolling deployment?</li>
+<li>How would you debug a Pod that is running but not receiving traffic?</li>
+<li>How would you debug CrashLoopBackOff?</li>
+<li>How would you debug OOMKilled?</li>
+<li>How would you debug high CPU?</li>
+<li>How would you reduce a 2 GB Docker image?</li>
+<li>How would you secure a CI/CD pipeline?</li>
+<li>How would you handle a critical dependency CVE?</li>
+<li>How would you design a canary release?</li>
+<li>How would you prevent secrets from leaking into logs?</li>
+<li>How would you make Maven builds reproducible?</li>
+<li>How would you speed up a slow CI pipeline?</li>
+<li>How would you handle a failed deployment halfway through?</li>
+<li>How would you design Kubernetes autoscaling for a Spring Boot API?</li>
+<li>How would you deploy a Kafka-consuming Spring Boot application safely?</li>
+</ol>
+<hr />
+<h1 id="part-vi-practical-spring-boot-deployment">PART VI — PRACTICAL SPRING BOOT DEPLOYMENT</h1>
+<h1 id="103-from-code-to-production">103. From Code to Production</h1>
+<p>Complete mental model:</p>
+<pre><code class="language-text">Developer
+   │
+   ▼
+Git
+   │
+   ▼
+CI Pipeline
+   │
+   ├── Maven compile
+   ├── Unit tests
+   ├── Integration tests
+   ├── Static analysis
+   └── Security scan
+   │
+   ▼
+app.jar
+   │
+   ▼
+Docker build
+   │
+   ▼
+Container Image
+   │
+   ▼
+Image Registry
+   │
+   ▼
+Kubernetes
+   │
+   ├── Deployment
+   ├── Pods
+   ├── Service
+   ├── ConfigMap
+   ├── Secret
+   ├── Ingress
+   └── HPA
+   │
+   ▼
+Users
+</code></pre>
+<hr />
+<h1 id="104-production-configuration">104. Production Configuration</h1>
+<p>Keep:</p>
+<pre><code class="language-text">application code
+</code></pre>
+<p>separate from:</p>
+<pre><code class="language-text">environment configuration
+</code></pre>
+<p>Typical Spring Boot configuration:</p>
+<pre><code class="language-text">application.yml
+environment variables
+ConfigMap
+Secret
+external configuration system
+</code></pre>
+<hr />
+<h1 id="105-spring-boot-health">105. Spring Boot Health</h1>
+<p>Kubernetes commonly needs:</p>
+<pre><code class="language-text">startup
+readiness
+liveness
+</code></pre>
+<p>Spring Boot Actuator can expose health information.</p>
+<p>But health endpoints should be designed carefully.</p>
+<p>For example:</p>
+<pre><code class="language-text">liveness
+</code></pre>
+<p>should generally indicate whether the application process is fundamentally alive, not whether every downstream dependency is available.</p>
+<hr />
+<h1 id="106-kafka-consumer-deployment">106. Kafka Consumer Deployment</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">Kafka topic
+ ↓
+3 partitions
+</code></pre>
+<p>and:</p>
+<pre><code class="language-text">6 consumer instances
+</code></pre>
+<p>Only up to the partition count can have active consumers in a consumer group for that topic at one time.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">3 partitions
+≈
+maximum 3 active consumers for that partition set
+</code></pre>
+<p>Additional instances may remain idle for that topic/group.</p>
+<hr />
+<h1 id="107-database-connection-pool-kubernetes">107. Database Connection Pool + Kubernetes</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">10 Pods
+</code></pre>
+<p>and each has:</p>
+<pre><code class="language-text">HikariCP maxPoolSize = 20
+</code></pre>
+<p>Potential maximum:</p>
+<pre><code class="language-text">10 × 20
+=
+200 DB connections
+</code></pre>
+<p>Scaling Pods can therefore overload the database.</p>
+<p>This is a very important production interview scenario.</p>
+<hr />
+<h1 id="108-hpa-database-bottleneck">108. HPA + Database Bottleneck</h1>
+<p>Bad reasoning:</p>
+<pre><code class="language-text">CPU high
+ ↓
+increase replicas
+</code></pre>
+<p>But if the actual bottleneck is:</p>
+<pre><code class="language-text">database
+</code></pre>
+<p>then:</p>
+<pre><code class="language-text">more Pods
+ ↓
+more DB connections
+ ↓
+more DB load
+ ↓
+worse performance
+</code></pre>
+<p>Autoscaling must consider the true bottleneck.</p>
+<hr />
+<h1 id="109-kubernetes-redis">109. Kubernetes + Redis</h1>
+<p>Multiple Pods:</p>
+<pre><code class="language-text">Pod A ─┐
+Pod B ─┼──→ Redis
+Pod C ─┘
+</code></pre>
+<p>Redis provides shared cache/state across replicas.</p>
+<p>Local in-memory cache:</p>
+<pre><code class="language-text">Pod A → cache A
+Pod B → cache B
+</code></pre>
+<p>can become inconsistent across instances.</p>
+<hr />
+<h1 id="110-kubernetes-kafka">110. Kubernetes + Kafka</h1>
+<p>Multiple replicas of the same consumer group:</p>
+<pre><code class="language-text">Pod A ─┐
+Pod B ─┼──→ Kafka
+Pod C ─┘
+</code></pre>
+<p>Partitions are distributed among consumers.</p>
+<p>Scaling consumers is constrained by:</p>
+<pre><code class="language-text">partition count
+</code></pre>
+<p>and processing capacity.</p>
+<hr />
+<h1 id="111-final-architecture">111. Final Architecture</h1>
+<pre><code class="language-text">                    ┌─────────────┐
+                    │    Git      │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ CI Pipeline │
+                    │ Maven       │
+                    │ Tests       │
+                    │ Scan        │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ Docker      │
+                    │ Image       │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │ Registry    │
+                    └──────┬──────┘
+                           │
+                           ▼
+                 ┌─────────────────────┐
+                 │     Kubernetes      │
+                 │                     │
+                 │ Deployment          │
+                 │  ├─ Pod             │
+                 │  ├─ Pod             │
+                 │  └─ Pod             │
+                 │                     │
+                 │ Service             │
+                 │ Ingress             │
+                 │ ConfigMap           │
+                 │ Secret              │
+                 │ HPA                 │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                         Users
+</code></pre>
+<p>Cross-cutting:</p>
+<pre><code class="language-text">Security
+Observability
+Secrets
+Autoscaling
+Resilience
+Rollback
+</code></pre>
+<hr />
+<h1 id="112-golden-rules">112. Golden Rules</h1>
+<ol>
+<li>An image is a package; a container is a running instance.</li>
+<li>Containers are not lightweight VMs in the architectural sense; they share the host kernel.</li>
+<li>Use multi-stage builds for smaller production images.</li>
+<li>Dockerfile layer ordering affects build-cache efficiency.</li>
+<li><code>.dockerignore</code> prevents unnecessary build context.</li>
+<li>Do not put secrets into Docker images.</li>
+<li>Avoid mutable production tags such as <code>latest</code>.</li>
+<li><code>EXPOSE</code> does not publish a port by itself.</li>
+<li>Maven manages dependencies and builds artifacts.</li>
+<li><code>install</code> means local repository; <code>deploy</code> means remote repository.</li>
+<li>Understand transitive dependency conflicts.</li>
+<li>Use Maven Wrapper for reproducible developer/CI tooling.</li>
+<li>CI validates changes; CD delivers/deploys them.</li>
+<li>Build once and promote the same artifact/image.</li>
+<li>Do not rebuild separately for every environment.</li>
+<li>Keep fast checks early in the pipeline.</li>
+<li>Unit tests and integration tests solve different problems.</li>
+<li>Testcontainers can make infrastructure integration tests realistic.</li>
+<li>Never store production credentials in Git.</li>
+<li>Rolling deployments require backward compatibility.</li>
+<li>Blue-green deployments simplify rollback but require more capacity.</li>
+<li>Canary deployments reduce blast radius.</li>
+<li>Database migrations must be compatible with old and new application versions during rollout.</li>
+<li>Expand-and-contract is a powerful zero-downtime migration strategy.</li>
+<li>Kubernetes Pods are ephemeral.</li>
+<li>Kubernetes Services provide stable networking to Pods.</li>
+<li>Running is not the same as ready.</li>
+<li>Readiness controls traffic; liveness controls restart decisions.</li>
+<li>Startup probes protect slow-starting applications.</li>
+<li>Resource limits must account for total process memory, not only JVM heap.</li>
+<li>HPA cannot fix a database bottleneck.</li>
+<li>More Pods can create more DB connections.</li>
+<li>More Kafka consumers do not help beyond available partitions.</li>
+<li>CI/CD success does not prove application health.</li>
+<li>Production debugging requires logs, metrics, events, traces, and resource data.</li>
+<li>Security belongs throughout the pipeline, not only at deployment.</li>
+<li>Prefer least privilege for CI/CD credentials.</li>
+<li>Immutable artifacts make releases safer.</li>
+<li>GitOps represents desired deployment state declaratively.</li>
+<li>The goal of CI/CD is fast, repeatable, observable, and reversible delivery.</li>
+</ol>
+<hr />
+<h1 id="113-interview-answer-framework">113. Interview Answer Framework</h1>
+<p>When asked:</p>
+<blockquote>
+<p>"How would you deploy your Spring Boot application to production?"</p>
+</blockquote>
+<p>Answer:</p>
+<pre><code class="language-text">1. Code is pushed to Git.
+2. CI checks out the repository.
+3. Maven compiles and runs tests.
+4. Integration tests validate infrastructure behavior.
+5. Static/security checks run.
+6. Maven creates the JAR.
+7. Docker creates an immutable image.
+8. Image is scanned and pushed to a registry.
+9. Kubernetes Deployment references that image.
+10. ConfigMap/Secrets provide runtime configuration.
+11. Readiness/startup/liveness probes protect traffic.
+12. Service exposes Pods.
+13. Ingress/API Gateway routes external traffic.
+14. HPA can scale replicas.
+15. Metrics/logs/traces monitor the rollout.
+16. Canary/rolling/blue-green strategy controls blast radius.
+17. Rollback uses the previous known-good image.
+18. Database changes follow expand-and-contract compatibility rules.
+</code></pre>
+<p>Then discuss trade-offs.</p>
+<p>That is a much stronger interview answer than:</p>
+<blockquote>
+<p>"We use Docker and Kubernetes."</p>
+</blockquote>
+<hr />
+<h1 id="114-final-self-test">114. Final Self-Test</h1>
+<p>You should be able to explain from memory:</p>
+<pre><code class="language-text">Docker
+Image
+Container
+Dockerfile
+Layers
+Multi-stage builds
+.dockerignore
+Registry
+Container networking
+Secrets
+Resource limits
+
+Maven
+pom.xml
+Coordinates
+Dependencies
+Transitive dependencies
+Scopes
+BOM
+dependencyManagement
+Lifecycle
+Plugins
+Surefire
+Failsafe
+Wrapper
+Profiles
+Multi-module builds
+
+CI/CD
+CI
+Continuous Delivery
+Continuous Deployment
+Build once
+Artifact promotion
+Testing
+Security scanning
+Image scanning
+Secrets
+Rolling
+Blue-Green
+Canary
+Feature flags
+Rollback
+Database migration
+Expand/Contract
+
+Kubernetes
+Pod
+Deployment
+Service
+Ingress
+ConfigMap
+Secret
+HPA
+Requests
+Limits
+Readiness
+Liveness
+Startup
+Graceful shutdown
+Rolling updates
+Service discovery
+Helm
+
+Production
+JVM + container memory
+DB connection pools
+Kafka partitions
+Redis
+Autoscaling
+Observability
+Security
+Supply chain
+GitOps
+</code></pre>
+<p>If you can explain the above and connect it to:</p>
+<pre><code class="language-text">Spring Boot
+SQL
+Hibernate
+Redis
+Kafka
+Microservices
+</code></pre>
+<p>you have the level of infrastructure knowledge expected from a strong full-stack engineer without needing to become a dedicated DevOps engineer.</p></main>
+</div>
+</body>
+</html>

@@ -1,0 +1,3061 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring Boot + JDBC + Hibernate/JPA + REST + Security — Interview Preparation — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: Spring Boot + JDBC + Hibernate/JPA + REST + Security — Interview Preparation
+tags:
+  - spring
+  - spring-boot
+  - spring-core
+  - spring-mvc
+  - rest-api
+  - jdbc
+  - jpa
+  - hibernate
+  - spring-data-jpa
+  - spring-security
+  - jwt
+  - oauth2
+  - transactions
+  - testing
+  - interview</p>
+<hr />
+<h1 id="spring-boot-jdbc-hibernatejpa-rest-security-interview-preparation">Spring Boot + JDBC + Hibernate/JPA + REST + Security — Interview Preparation</h1>
+<blockquote>
+<p>[!note]
+This note is designed for senior/full-stack/Java + Spring Boot interviews.</p>
+<p>The goal is not to memorize annotations.</p>
+<p>Learn each topic as:</p>
+<p><strong>What → Why → How → Internals → Production usage → Trade-offs → Interview traps</strong></p>
+</blockquote>
+<hr />
+<h1 id="1-the-spring-mental-model">1. The Spring Mental Model</h1>
+<p>A typical Spring Boot request can be understood as:</p>
+<pre><code class="language-text">Client
+  ↓
+Load Balancer / API Gateway
+  ↓
+Embedded Server
+  ↓
+Spring Security Filter Chain
+  ↓
+DispatcherServlet
+  ↓
+Controller
+  ↓
+Validation / DTO mapping
+  ↓
+Service
+  ↓
+Transaction boundary
+  ↓
+Repository
+  ↓
+JPA/Hibernate OR JDBC
+  ↓
+Database
+  ↓
+Result mapping
+  ↓
+Service
+  ↓
+DTO
+  ↓
+Jackson
+  ↓
+JSON Response
+</code></pre>
+<p>The most important interview skill is being able to explain what happens at every boundary.</p>
+<hr />
+<h1 id="2-spring-vs-spring-boot">2. Spring vs Spring Boot</h1>
+<h2 id="q1-what-is-spring">Q1. What is Spring?</h2>
+<p>Spring is an application framework centered around:</p>
+<ul>
+<li>Dependency Injection</li>
+<li>Inversion of Control</li>
+<li>Modular infrastructure</li>
+<li>Transaction management</li>
+<li>Web development</li>
+<li>Data access</li>
+<li>Security</li>
+<li>Testing</li>
+</ul>
+<p>The core idea is:</p>
+<pre><code class="language-text">Your application objects
+        ↓
+Spring creates/manages/wires them
+</code></pre>
+<h2 id="q2-what-is-spring-boot">Q2. What is Spring Boot?</h2>
+<p>Spring Boot simplifies Spring application development by providing:</p>
+<ul>
+<li>Auto-configuration</li>
+<li>Starter dependencies</li>
+<li>Embedded servers</li>
+<li>Externalized configuration</li>
+<li>Production-ready features</li>
+<li>Sensible defaults</li>
+</ul>
+<p>Spring Boot does not replace Spring. It uses Spring underneath.</p>
+<h2 id="q3-spring-framework-vs-spring-boot">Q3. Spring Framework vs Spring Boot</h2>
+<table>
+<thead>
+<tr>
+<th>Spring</th>
+<th>Spring Boot</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core framework</td>
+<td>Opinionated layer over Spring</td>
+</tr>
+<tr>
+<td>More explicit configuration</td>
+<td>Auto-configuration</td>
+</tr>
+<tr>
+<td>More setup</td>
+<td>Faster bootstrap</td>
+</tr>
+<tr>
+<td>Infrastructure configured manually more often</td>
+<td>Embedded server and starters</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="3-ioc-and-dependency-injection">3. IoC and Dependency Injection</h1>
+<h2 id="q4-what-is-ioc">Q4. What is IoC?</h2>
+<p>Inversion of Control means application code does not manually control creation and wiring of every dependency.</p>
+<p>Without IoC:</p>
+<pre><code class="language-java">class OrderService {
+    private PaymentService paymentService =
+        new PaymentService();
+}
+</code></pre>
+<p>With Spring:</p>
+<pre><code class="language-java">class OrderService {
+    private final PaymentService paymentService;
+
+    OrderService(PaymentService paymentService) {
+        this.paymentService = paymentService;
+    }
+}
+</code></pre>
+<p>Spring provides the dependency.</p>
+<h2 id="q5-what-is-dependency-injection">Q5. What is Dependency Injection?</h2>
+<p>Dependency Injection is providing an object's dependencies from outside the object.</p>
+<p>Common forms:</p>
+<pre><code class="language-text">Constructor injection
+Setter injection
+Field injection
+</code></pre>
+<p>Preferred:</p>
+<pre><code class="language-java">@Service
+class OrderService {
+
+    private final PaymentRepository repository;
+
+    OrderService(PaymentRepository repository) {
+        this.repository = repository;
+    }
+}
+</code></pre>
+<h2 id="q6-why-prefer-constructor-injection">Q6. Why prefer constructor injection?</h2>
+<ul>
+<li>Dependencies are explicit</li>
+<li>Object can be immutable</li>
+<li>Easier unit testing</li>
+<li>Works naturally with <code>final</code></li>
+<li>Partially initialized objects are harder to create</li>
+<li>Circular dependencies become easier to detect</li>
+</ul>
+<hr />
+<h1 id="4-spring-bean-lifecycle">4. Spring Bean Lifecycle</h1>
+<p>Simplified:</p>
+<pre><code class="language-text">Bean definition
+      ↓
+Instantiate
+      ↓
+Dependency injection
+      ↓
+Aware callbacks
+      ↓
+BeanPostProcessor before initialization
+      ↓
+@PostConstruct
+      ↓
+InitializingBean
+      ↓
+BeanPostProcessor after initialization
+      ↓
+Bean ready
+      ↓
+Application uses bean
+      ↓
+@PreDestroy
+      ↓
+Bean destroyed
+</code></pre>
+<p>Important interview concept:</p>
+<p><code>BeanPostProcessor</code> can modify or wrap beans and is heavily involved in Spring infrastructure.</p>
+<hr />
+<h1 id="5-bean-scopes">5. Bean Scopes</h1>
+<p>Important scopes:</p>
+<pre><code class="language-text">singleton
+prototype
+request
+session
+application
+websocket
+</code></pre>
+<p>Default:</p>
+<pre><code class="language-text">singleton
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Spring singleton means one bean instance per Spring ApplicationContext, not one object for the entire JVM.</p>
+</blockquote>
+<p>A singleton bean is also not automatically thread-safe.</p>
+<hr />
+<h1 id="6-stereotype-annotations">6. Stereotype Annotations</h1>
+<p>Conceptually:</p>
+<pre><code class="language-text">@Component
+   ├── @Service
+   ├── @Repository
+   └── @Controller
+</code></pre>
+<pre><code class="language-text">@Component → generic Spring component
+@Service   → service/business layer
+@Repository → persistence layer
+@Controller → MVC controller
+</code></pre>
+<p><code>@Repository</code> also participates in persistence exception translation.</p>
+<hr />
+<h1 id="7-bean-vs-component">7. @Bean vs @Component</h1>
+<p><code>@Component</code>:</p>
+<pre><code class="language-java">@Component
+class PaymentClient {
+}
+</code></pre>
+<p>Spring discovers it through component scanning.</p>
+<p><code>@Bean</code>:</p>
+<pre><code class="language-java">@Configuration
+class AppConfig {
+
+    @Bean
+    PaymentClient paymentClient() {
+        return new PaymentClient();
+    }
+}
+</code></pre>
+<p>Use <code>@Bean</code> when you need explicit construction/configuration, especially for third-party classes.</p>
+<hr />
+<h1 id="8-configuration-and-proxies">8. @Configuration and Proxies</h1>
+<pre><code class="language-java">@Configuration
+class AppConfig {
+
+    @Bean
+    ServiceA serviceA() {
+        return new ServiceA(serviceB());
+    }
+
+    @Bean
+    ServiceB serviceB() {
+        return new ServiceB();
+    }
+}
+</code></pre>
+<p>Spring can intercept configuration methods to preserve bean semantics.</p>
+<p>Modern Spring also supports:</p>
+<pre><code class="language-java">@Configuration(proxyBeanMethods = false)
+</code></pre>
+<p>when inter-bean method interception is unnecessary.</p>
+<hr />
+<h1 id="9-component-scanning">9. Component Scanning</h1>
+<p>A Spring Boot application commonly starts component scanning from the package containing the main application class.</p>
+<pre><code class="language-java">@SpringBootApplication
+public class Application {
+}
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">@SpringBootApplication
+       ↓
+@Configuration
+@EnableAutoConfiguration
+@ComponentScan
+</code></pre>
+<hr />
+<h1 id="10-auto-configuration">10. Auto-Configuration</h1>
+<p>One of the most important Spring Boot concepts.</p>
+<p>Auto-configuration uses:</p>
+<ul>
+<li>Classpath</li>
+<li>Existing beans</li>
+<li>Properties</li>
+<li>Environment</li>
+<li>Conditional configuration</li>
+</ul>
+<p>Conceptually:</p>
+<pre><code class="language-text">Classpath
+   +
+Properties
+   +
+Existing beans
+   ↓
+Conditional configuration
+   ↓
+Auto-configured beans
+</code></pre>
+<p>Important conditions:</p>
+<pre><code class="language-text">@ConditionalOnClass
+@ConditionalOnMissingBean
+@ConditionalOnProperty
+@ConditionalOnBean
+@ConditionalOnWebApplication
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">@Bean
+@ConditionalOnMissingBean
+PaymentClient paymentClient() {
+    return new PaymentClient();
+}
+</code></pre>
+<hr />
+<h1 id="11-spring-boot-starters">11. Spring Boot Starters</h1>
+<p>Examples:</p>
+<pre><code class="language-text">spring-boot-starter-web
+spring-boot-starter-data-jpa
+spring-boot-starter-jdbc
+spring-boot-starter-security
+spring-boot-starter-validation
+spring-boot-starter-test
+</code></pre>
+<p>A starter is primarily a convenient dependency bundle.</p>
+<hr />
+<h1 id="12-configuration-and-profiles">12. Configuration and Profiles</h1>
+<p>Common sources:</p>
+<pre><code class="language-text">application.properties
+application.yml
+environment variables
+command-line arguments
+external configuration
+profile-specific configuration
+</code></pre>
+<p>Profiles:</p>
+<pre><code class="language-text">application-dev.yml
+application-test.yml
+application-prod.yml
+</code></pre>
+<p>Activate a profile with:</p>
+<pre><code class="language-text">spring.profiles.active=prod
+</code></pre>
+<p>Secrets should not be hard-coded into application source.</p>
+<hr />
+<h1 id="13-value-vs-configurationproperties">13. @Value vs @ConfigurationProperties</h1>
+<p>Simple property:</p>
+<pre><code class="language-java">@Value(&quot;${payment.timeout}&quot;)
+private Duration timeout;
+</code></pre>
+<p>Grouped configuration:</p>
+<pre><code class="language-java">@ConfigurationProperties(prefix = &quot;payment&quot;)
+public class PaymentProperties {
+    private Duration timeout;
+    private URI endpoint;
+}
+</code></pre>
+<p><code>@ConfigurationProperties</code> is generally better for structured configuration because it is type-safe, testable, and easier to validate.</p>
+<hr />
+<h1 id="14-rest-api-fundamentals">14. REST API Fundamentals</h1>
+<p>A REST API exposes resources through HTTP.</p>
+<pre><code class="language-text">GET    /users
+GET    /users/{id}
+POST   /users
+PUT    /users/{id}
+PATCH  /users/{id}
+DELETE /users/{id}
+</code></pre>
+<p>Think:</p>
+<pre><code class="language-text">Resource
++
+HTTP method
++
+representation
++
+status code
+</code></pre>
+<hr />
+<h1 id="15-restcontroller">15. @RestController</h1>
+<pre><code class="language-java">@RestController
+@RequestMapping(&quot;/users&quot;)
+class UserController {
+
+    @GetMapping(&quot;/{id}&quot;)
+    UserResponse getUser(@PathVariable Long id) {
+        return service.getUser(id);
+    }
+}
+</code></pre>
+<p><code>@RestController</code> effectively combines:</p>
+<pre><code class="language-java">@Controller
+@ResponseBody
+</code></pre>
+<hr />
+<h1 id="16-requestparam-vs-pathvariable-vs-requestbody">16. @RequestParam vs @PathVariable vs @RequestBody</h1>
+<p>Path:</p>
+<pre><code class="language-http">GET /users/42
+</code></pre>
+<pre><code class="language-java">@GetMapping(&quot;/{id}&quot;)
+User get(@PathVariable Long id)
+</code></pre>
+<p>Query parameter:</p>
+<pre><code class="language-http">GET /users?status=ACTIVE
+</code></pre>
+<pre><code class="language-java">@GetMapping
+List&lt;User&gt; get(@RequestParam String status)
+</code></pre>
+<p>Request body:</p>
+<pre><code class="language-http">POST /users
+Content-Type: application/json
+
+{
+  &quot;name&quot;: &quot;Alice&quot;
+}
+</code></pre>
+<pre><code class="language-java">@PostMapping
+User create(@RequestBody CreateUserRequest request) {
+    ...
+}
+</code></pre>
+<hr />
+<h1 id="17-dtos">17. DTOs</h1>
+<p>Prefer:</p>
+<pre><code class="language-text">Entity
+  ↓
+Service
+  ↓
+DTO
+  ↓
+JSON
+</code></pre>
+<p>rather than automatically exposing JPA entities.</p>
+<p>Benefits:</p>
+<ul>
+<li>API contract isolation</li>
+<li>Prevent persistence details leaking into API</li>
+<li>Control serialized fields</li>
+<li>Avoid accidental sensitive-field exposure</li>
+<li>Easier API evolution</li>
+</ul>
+<hr />
+<h1 id="18-jackson">18. Jackson</h1>
+<p>Spring Boot commonly uses Jackson.</p>
+<pre><code class="language-text">Java Object
+    ↓
+Jackson
+    ↓
+JSON
+</code></pre>
+<p>and:</p>
+<pre><code class="language-text">JSON
+ ↓
+Jackson
+ ↓
+Java Object
+</code></pre>
+<p>Important:</p>
+<pre><code class="language-text">ObjectMapper
+@JsonProperty
+@JsonIgnore
+@JsonFormat
+@JsonInclude
+@JsonCreator
+</code></pre>
+<hr />
+<h1 id="19-http-status-codes">19. HTTP Status Codes</h1>
+<p>Important:</p>
+<pre><code class="language-text">200 OK
+201 Created
+202 Accepted
+204 No Content
+
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+409 Conflict
+422 Unprocessable Content
+429 Too Many Requests
+
+500 Internal Server Error
+502 Bad Gateway
+503 Service Unavailable
+</code></pre>
+<p>Important distinction:</p>
+<pre><code class="language-text">401 → authentication missing/invalid
+403 → authenticated but not allowed
+</code></pre>
+<hr />
+<h1 id="20-rest-error-handling">20. REST Error Handling</h1>
+<p>Centralize errors:</p>
+<pre><code class="language-java">@RestControllerAdvice
+class GlobalExceptionHandler {
+
+    @ExceptionHandler(UserNotFoundException.class)
+    ResponseEntity&lt;ApiError&gt; handle(
+            UserNotFoundException ex) {
+
+        return ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
+            .body(new ApiError(&quot;USER_NOT_FOUND&quot;));
+    }
+}
+</code></pre>
+<p>For modern Spring applications, also understand <code>ProblemDetail</code>.</p>
+<hr />
+<h1 id="21-validation">21. Validation</h1>
+<p>Use:</p>
+<pre><code class="language-text">spring-boot-starter-validation
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">record CreateUserRequest(
+    @NotBlank String name,
+    @Email String email,
+    @Min(18) int age
+) {}
+</code></pre>
+<pre><code class="language-java">@PostMapping
+UserResponse create(
+    @Valid @RequestBody CreateUserRequest request) {
+    ...
+}
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">@NotNull
+@NotBlank
+@NotEmpty
+@Size
+@Min
+@Max
+@Positive
+@Email
+@Pattern
+</code></pre>
+<hr />
+<h1 id="22-custom-validation">22. Custom Validation</h1>
+<p>Use:</p>
+<pre><code class="language-text">@Constraint
+ConstraintValidator
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">startDate &lt; endDate
+password == confirmPassword
+</code></pre>
+<hr />
+<h1 id="23-jdbc-fundamentals">23. JDBC Fundamentals</h1>
+<p>JDBC is Java's low-level relational database API.</p>
+<pre><code class="language-text">Application
+   ↓
+JDBC API
+   ↓
+JDBC Driver
+   ↓
+Database
+</code></pre>
+<p>Important:</p>
+<pre><code class="language-text">Connection
+PreparedStatement
+Statement
+ResultSet
+DataSource
+</code></pre>
+<hr />
+<h1 id="24-statement-vs-preparedstatement">24. Statement vs PreparedStatement</h1>
+<p>Avoid:</p>
+<pre><code class="language-java">Statement statement = connection.createStatement();
+
+statement.executeQuery(
+    &quot;SELECT * FROM users WHERE id = &quot; + id
+);
+</code></pre>
+<p>Prefer:</p>
+<pre><code class="language-java">PreparedStatement ps =
+    connection.prepareStatement(
+        &quot;SELECT * FROM users WHERE id = ?&quot;
+    );
+
+ps.setLong(1, id);
+</code></pre>
+<p>Benefits:</p>
+<ul>
+<li>Parameter binding</li>
+<li>SQL injection protection when used correctly</li>
+<li>Cleaner SQL</li>
+<li>Potential statement reuse</li>
+</ul>
+<hr />
+<h1 id="25-datasource-and-connection-pool">25. DataSource and Connection Pool</h1>
+<p>Application code generally obtains connections through:</p>
+<pre><code class="language-text">DataSource
+   ↓
+Connection
+</code></pre>
+<p>Production applications commonly use a pool such as HikariCP.</p>
+<pre><code class="language-text">Application threads
+       ↓
+Connection Pool
+  ┌────┬────┬────┐
+  │ C1 │ C2 │ C3 │
+  └────┴────┴────┘
+       ↓
+     Database
+</code></pre>
+<p>Important tuning:</p>
+<pre><code class="language-text">maximum pool size
+connection timeout
+idle timeout
+max lifetime
+leak detection
+</code></pre>
+<p>A huge pool is not automatically better.</p>
+<hr />
+<h1 id="26-spring-jdbc-jdbctemplate">26. Spring JDBC / JdbcTemplate</h1>
+<p><code>JdbcTemplate</code> removes much repetitive JDBC plumbing.</p>
+<pre><code class="language-java">List&lt;User&gt; users =
+    jdbcTemplate.query(
+        &quot;SELECT id, name FROM users&quot;,
+        (rs, rowNum) -&gt;
+            new User(
+                rs.getLong(&quot;id&quot;),
+                rs.getString(&quot;name&quot;)
+            )
+    );
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">query()
+queryForObject()
+queryForList()
+update()
+batchUpdate()
+execute()
+</code></pre>
+<hr />
+<h1 id="27-jdbc-batch-operations">27. JDBC Batch Operations</h1>
+<pre><code class="language-java">jdbcTemplate.batchUpdate(
+    &quot;INSERT INTO users(name) VALUES (?)&quot;,
+    users,
+    users.size(),
+    (ps, user) -&gt; ps.setString(1, user.name())
+);
+</code></pre>
+<p>Batching can reduce database round trips.</p>
+<p>Measure actual driver/database behavior.</p>
+<hr />
+<h1 id="28-jdbc-transactions">28. JDBC Transactions</h1>
+<p>A transaction groups operations into an atomic unit.</p>
+<pre><code class="language-text">BEGIN
+  ↓
+operation A
+  ↓
+operation B
+  ↓
+COMMIT
+</code></pre>
+<p>Failure:</p>
+<pre><code class="language-text">ROLLBACK
+</code></pre>
+<p>ACID:</p>
+<pre><code class="language-text">Atomicity
+Consistency
+Isolation
+Durability
+</code></pre>
+<hr />
+<h1 id="29-jpa-vs-hibernate">29. JPA vs Hibernate</h1>
+<p>Critical distinction:</p>
+<pre><code class="language-text">JPA
+→ specification/API
+
+Hibernate
+→ implementation/provider
+</code></pre>
+<p>JPA defines concepts such as:</p>
+<pre><code class="language-text">@Entity
+@Id
+@OneToMany
+@ManyToOne
+EntityManager
+</code></pre>
+<p>Hibernate implements JPA and adds its own capabilities.</p>
+<hr />
+<h1 id="30-spring-data-jpa">30. Spring Data JPA</h1>
+<p>Stack:</p>
+<pre><code class="language-text">Spring Data JPA
+       ↓
+JPA
+       ↓
+Hibernate
+       ↓
+JDBC
+       ↓
+Database
+</code></pre>
+<p>Know what each layer contributes.</p>
+<hr />
+<h1 id="31-entity">31. Entity</h1>
+<pre><code class="language-java">@Entity
+@Table(name = &quot;users&quot;)
+class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+}
+</code></pre>
+<p>An entity represents persistent state managed by a persistence context.</p>
+<hr />
+<h1 id="32-entity-lifecycle">32. Entity Lifecycle</h1>
+<p>Important states:</p>
+<pre><code class="language-text">Transient
+   ↓ persist
+Managed
+   ↓ detach/clear
+Detached
+   ↓ remove
+Removed
+</code></pre>
+<p>Managed entities are tracked by the persistence context.</p>
+<hr />
+<h1 id="33-persistence-context">33. Persistence Context</h1>
+<p>Think of the persistence context as:</p>
+<pre><code class="language-text">identity map
++
+change tracking
++
+first-level cache
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">User a = entityManager.find(User.class, 1L);
+User b = entityManager.find(User.class, 1L);
+</code></pre>
+<p>Within the same persistence context, <code>a == b</code> can be true.</p>
+<hr />
+<h1 id="34-dirty-checking">34. Dirty Checking</h1>
+<p>One of Hibernate's most important concepts.</p>
+<pre><code class="language-java">@Transactional
+public void updateUser(Long id) {
+
+    User user = repository.findById(id).orElseThrow();
+
+    user.setName(&quot;Bob&quot;);
+}
+</code></pre>
+<p>For a managed entity, explicit <code>save()</code> is not necessarily required for the update.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Load entity
+   ↓
+snapshot
+   ↓
+modify entity
+   ↓
+dirty checking
+   ↓
+SQL UPDATE
+   ↓
+flush
+</code></pre>
+<hr />
+<h1 id="35-flush-vs-commit">35. Flush vs Commit</h1>
+<p>Not identical.</p>
+<pre><code class="language-text">flush
+→ synchronize persistence-context changes with DB
+
+commit
+→ finalize database transaction
+</code></pre>
+<p>A flush can occur before commit.</p>
+<hr />
+<h1 id="36-persist-vs-merge">36. persist vs merge</h1>
+<p>JPA:</p>
+<pre><code class="language-text">persist()
+→ make a new entity managed
+
+merge()
+→ copy state from a detached entity into a managed instance
+</code></pre>
+<p>Important:</p>
+<p>The object passed to <code>merge()</code> does not necessarily become the managed instance.</p>
+<hr />
+<h1 id="37-spring-data-save">37. Spring Data save()</h1>
+<pre><code class="language-java">repository.save(entity);
+</code></pre>
+<p>Do not describe <code>save()</code> as "always insert."</p>
+<p>Depending on entity state and repository implementation, Spring Data JPA can use <code>persist()</code> or <code>merge()</code>.</p>
+<hr />
+<h1 id="38-entitymanager">38. EntityManager</h1>
+<p>Important operations:</p>
+<pre><code class="language-text">persist()
+find()
+merge()
+remove()
+refresh()
+detach()
+clear()
+flush()
+</code></pre>
+<hr />
+<h1 id="39-repository-interfaces">39. Repository Interfaces</h1>
+<p>Common hierarchy:</p>
+<pre><code class="language-text">Repository
+CrudRepository
+PagingAndSortingRepository
+JpaRepository
+</code></pre>
+<p>Typical:</p>
+<pre><code class="language-java">interface UserRepository
+        extends JpaRepository&lt;User, Long&gt; {
+}
+</code></pre>
+<hr />
+<h1 id="40-derived-query-methods">40. Derived Query Methods</h1>
+<pre><code class="language-java">List&lt;User&gt; findByStatus(Status status);
+</code></pre>
+<p>Multiple conditions:</p>
+<pre><code class="language-java">List&lt;User&gt; findByStatusAndAgeGreaterThan(
+    Status status,
+    int age
+);
+</code></pre>
+<p>Use derived queries for simple, readable cases. Very long method names become difficult to maintain.</p>
+<hr />
+<h1 id="41-jpql">41. JPQL</h1>
+<p>JPQL works with entities rather than raw database tables.</p>
+<pre><code class="language-java">@Query(&quot;&quot;&quot;
+    select u
+    from User u
+    where u.status = :status
+&quot;&quot;&quot;)
+List&lt;User&gt; findActive(@Param(&quot;status&quot;) Status status);
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">JPQL → entity model
+SQL  → database model
+</code></pre>
+<hr />
+<h1 id="42-native-sql">42. Native SQL</h1>
+<pre><code class="language-java">@Query(
+    value = &quot;SELECT * FROM users WHERE status = :status&quot;,
+    nativeQuery = true
+)
+</code></pre>
+<p>Useful for:</p>
+<ul>
+<li>Database-specific features</li>
+<li>Complex SQL</li>
+<li>Exact SQL tuning</li>
+<li>Existing SQL reuse</li>
+</ul>
+<p>Trade-off:</p>
+<pre><code class="language-text">less database portability
+</code></pre>
+<hr />
+<h1 id="43-pagination">43. Pagination</h1>
+<p>Avoid loading millions of rows.</p>
+<pre><code class="language-java">Page&lt;User&gt; findByStatus(
+    Status status,
+    Pageable pageable
+);
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">Page
+Slice
+Pageable
+Sort
+</code></pre>
+<p><code>Page</code> generally requires total-count information. <code>Slice</code> can avoid a count query when only "has next" behavior is required.</p>
+<hr />
+<h1 id="44-n1-query-problem">44. N+1 Query Problem</h1>
+<p>Example:</p>
+<pre><code class="language-text">1 query → users
+
+then for every user:
+1 query → orders
+</code></pre>
+<p>100 users can produce:</p>
+<pre><code class="language-text">1 + 100 = 101 queries
+</code></pre>
+<p>This is N+1.</p>
+<hr />
+<h1 id="45-solving-n1">45. Solving N+1</h1>
+<p>Possible strategies:</p>
+<pre><code class="language-text">fetch join
+EntityGraph
+batch fetching
+DTO projection
+explicit query design
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">@Query(&quot;&quot;&quot;
+    select distinct u
+    from User u
+    left join fetch u.orders
+&quot;&quot;&quot;)
+List&lt;User&gt; findUsersWithOrders();
+</code></pre>
+<p>Do not blindly make every relationship <code>EAGER</code>.</p>
+<hr />
+<h1 id="46-lazy-vs-eager">46. LAZY vs EAGER</h1>
+<pre><code class="language-text">LAZY
+→ association loaded when needed
+
+EAGER
+→ association is intended to be available eagerly
+</code></pre>
+<p>Production principle:</p>
+<blockquote>
+<p>Prefer deliberate fetch plans rather than globally making relationships eager.</p>
+</blockquote>
+<hr />
+<h1 id="47-lazyinitializationexception">47. LazyInitializationException</h1>
+<p>Common scenario:</p>
+<pre><code class="language-text">transaction ends
+     ↓
+persistence context closes
+     ↓
+lazy association accessed
+     ↓
+LazyInitializationException
+</code></pre>
+<p>Better solutions:</p>
+<pre><code class="language-text">proper transaction boundaries
+fetch required data explicitly
+DTO projections
+fetch joins
+EntityGraph
+</code></pre>
+<p>Do not solve it by blindly making everything EAGER.</p>
+<hr />
+<h1 id="48-entity-relationships">48. Entity Relationships</h1>
+<p>Important:</p>
+<pre><code class="language-text">@OneToOne
+@OneToMany
+@ManyToOne
+@ManyToMany
+</code></pre>
+<p>Most common practical relationship:</p>
+<pre><code class="language-java">@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = &quot;department_id&quot;)
+private Department department;
+</code></pre>
+<hr />
+<h1 id="49-owning-side-and-mappedby">49. Owning Side and mappedBy</h1>
+<p>Owning side controls the foreign-key mapping.</p>
+<pre><code class="language-java">@ManyToOne
+@JoinColumn(name = &quot;department_id&quot;)
+private Department department;
+</code></pre>
+<p>Inverse side:</p>
+<pre><code class="language-java">@OneToMany(mappedBy = &quot;department&quot;)
+private List&lt;User&gt; users;
+</code></pre>
+<p><code>mappedBy</code> says the relationship is mapped by the other field.</p>
+<hr />
+<h1 id="50-cascade">50. Cascade</h1>
+<p>Important cascade types:</p>
+<pre><code class="language-text">PERSIST
+MERGE
+REMOVE
+REFRESH
+DETACH
+ALL
+</code></pre>
+<p>Cascade means an operation propagates to associated entities.</p>
+<p>Cascade is not the same thing as orphan removal.</p>
+<hr />
+<h1 id="51-orphanremoval">51. orphanRemoval</h1>
+<pre><code class="language-java">@OneToMany(
+    mappedBy = &quot;order&quot;,
+    orphanRemoval = true
+)
+private List&lt;OrderItem&gt; items;
+</code></pre>
+<p>Removing a child from a managed collection can cause the child row to be deleted.</p>
+<p>Use deliberately.</p>
+<hr />
+<h1 id="52-entity-equalshashcode">52. Entity equals/hashCode</h1>
+<p>Entity equality is tricky because an entity may have:</p>
+<pre><code class="language-text">database identity
+business identity
+provider/session identity
+</code></pre>
+<p>Do not blindly generate equality/hash code across all mutable fields or associations.</p>
+<p>Design it deliberately.</p>
+<hr />
+<h1 id="53-optimistic-locking">53. Optimistic Locking</h1>
+<pre><code class="language-java">@Version
+private Long version;
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">Read version = 5
+     ↓
+Modify
+     ↓
+UPDATE ... WHERE version = 5
+     ↓
+version becomes 6
+</code></pre>
+<p>If another transaction already changed it:</p>
+<pre><code class="language-text">UPDATE affects 0 rows
+      ↓
+optimistic locking failure
+</code></pre>
+<p>Useful when conflicts are relatively rare.</p>
+<hr />
+<h1 id="54-pessimistic-locking">54. Pessimistic Locking</h1>
+<p>Examples:</p>
+<pre><code class="language-text">PESSIMISTIC_READ
+PESSIMISTIC_WRITE
+</code></pre>
+<p>Useful when database locking is appropriate under contention.</p>
+<p>Trade-offs:</p>
+<pre><code class="language-text">blocking
+deadlocks
+lower concurrency
+database resource usage
+</code></pre>
+<hr />
+<h1 id="55-transactions-with-transactional">55. Transactions with @Transactional</h1>
+<pre><code class="language-java">@Transactional
+public void transfer(
+    Long from,
+    Long to,
+    BigDecimal amount) {
+
+    debit(from, amount);
+    credit(to, amount);
+}
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">method enters
+   ↓
+transaction starts
+   ↓
+business operations
+   ↓
+method returns
+   ↓
+commit
+
+exception
+   ↓
+rollback
+</code></pre>
+<hr />
+<h1 id="56-transaction-propagation">56. Transaction Propagation</h1>
+<p>Important:</p>
+<pre><code class="language-text">REQUIRED
+REQUIRES_NEW
+SUPPORTS
+MANDATORY
+NOT_SUPPORTED
+NEVER
+NESTED
+</code></pre>
+<h3 id="required">REQUIRED</h3>
+<p>Join an existing transaction or create one.</p>
+<h3 id="requires_new">REQUIRES_NEW</h3>
+<p>Suspend existing transaction and create a new transaction.</p>
+<p>Classic example:</p>
+<pre><code class="language-text">outer transaction
+     ↓
+auditService.save()
+     ↓
+REQUIRES_NEW
+</code></pre>
+<p>The audit transaction can commit independently.</p>
+<hr />
+<h1 id="57-transaction-isolation">57. Transaction Isolation</h1>
+<p>Common:</p>
+<pre><code class="language-text">READ_UNCOMMITTED
+READ_COMMITTED
+REPEATABLE_READ
+SERIALIZABLE
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">Dirty read
+Non-repeatable read
+Phantom read
+</code></pre>
+<p>Actual behavior depends on database and configuration.</p>
+<hr />
+<h1 id="58-rollback-rules">58. Rollback Rules</h1>
+<p>Do not memorize:</p>
+<blockquote>
+<p>"All exceptions cause rollback."</p>
+</blockquote>
+<p>Spring's default rollback behavior primarily covers unchecked exceptions and errors.</p>
+<p>Checked exceptions generally do not cause rollback by default.</p>
+<p>Customize:</p>
+<pre><code class="language-java">@Transactional(
+    rollbackFor = SomeCheckedException.class
+)
+</code></pre>
+<hr />
+<h1 id="59-transactional-self-invocation">59. @Transactional Self-Invocation</h1>
+<p>Classic trap:</p>
+<pre><code class="language-java">@Service
+class PaymentService {
+
+    public void outer() {
+        inner();
+    }
+
+    @Transactional
+    public void inner() {
+    }
+}
+</code></pre>
+<p>External call:</p>
+<pre><code class="language-text">Caller
+  ↓
+Spring proxy
+  ↓
+transaction interceptor
+  ↓
+target
+</code></pre>
+<p>Self-call:</p>
+<pre><code class="language-text">target
+  ↓
+this.inner()
+</code></pre>
+<p>does not necessarily pass through the proxy.</p>
+<hr />
+<h1 id="60-spring-aop">60. Spring AOP</h1>
+<p>Spring uses proxies for many cross-cutting features.</p>
+<p>Examples:</p>
+<pre><code class="language-text">@Transactional
+@Cacheable
+@Async
+method security
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">Caller
+  ↓
+Proxy
+  ↓
+Interceptor
+  ↓
+Target
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">JDK dynamic proxy
+CGLIB/class-based proxy
+</code></pre>
+<hr />
+<h1 id="61-spring-security-architecture">61. Spring Security Architecture</h1>
+<p>Important flow:</p>
+<pre><code class="language-text">HTTP Request
+     ↓
+Security Filter Chain
+     ↓
+Authentication
+     ↓
+SecurityContext
+     ↓
+Authorization
+     ↓
+Controller
+</code></pre>
+<p>Security is not simply a controller annotation.</p>
+<hr />
+<h1 id="62-authentication-vs-authorization">62. Authentication vs Authorization</h1>
+<p>Authentication:</p>
+<pre><code class="language-text">Who are you?
+</code></pre>
+<p>Authorization:</p>
+<pre><code class="language-text">What are you allowed to do?
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">Authentication
+→ user = Alice
+
+Authorization
+→ role = ADMIN
+→ may access /admin
+</code></pre>
+<hr />
+<h1 id="63-securityfilterchain">63. SecurityFilterChain</h1>
+<p>Modern configuration commonly uses:</p>
+<pre><code class="language-java">@Bean
+SecurityFilterChain securityFilterChain(
+        HttpSecurity http) throws Exception {
+
+    return http
+        .authorizeHttpRequests(auth -&gt; auth
+            .requestMatchers(&quot;/public/**&quot;).permitAll()
+            .anyRequest().authenticated()
+        )
+        .build();
+}
+</code></pre>
+<p>The exact DSL evolves, but the filter-chain mental model is fundamental.</p>
+<hr />
+<h1 id="64-userdetailsservice">64. UserDetailsService</h1>
+<p><code>UserDetailsService</code> loads user information for username/password authentication.</p>
+<pre><code class="language-text">username
+   ↓
+UserDetailsService
+   ↓
+UserDetails
+   ↓
+Authentication
+</code></pre>
+<hr />
+<h1 id="65-passwordencoder">65. PasswordEncoder</h1>
+<p>Never store plaintext passwords.</p>
+<p>Use:</p>
+<pre><code class="language-java">PasswordEncoder
+</code></pre>
+<p>Common choice:</p>
+<pre><code class="language-text">BCrypt
+</code></pre>
+<p>or another appropriate adaptive password hashing algorithm.</p>
+<p>Password hashing should be intentionally expensive enough to resist brute-force attacks.</p>
+<hr />
+<h1 id="66-jwt-authentication">66. JWT Authentication</h1>
+<p>Typical stateless flow:</p>
+<pre><code class="language-text">Login
+ ↓
+username/password
+ ↓
+authenticate
+ ↓
+issue JWT
+ ↓
+client sends JWT
+ ↓
+Authorization header
+ ↓
+security filter validates token
+ ↓
+SecurityContext
+ ↓
+Controller
+</code></pre>
+<p>Header:</p>
+<pre><code class="language-http">Authorization: Bearer &lt;token&gt;
+</code></pre>
+<hr />
+<h1 id="67-jwt-structure">67. JWT Structure</h1>
+<pre><code class="language-text">header.payload.signature
+</code></pre>
+<p>Claims can include:</p>
+<pre><code class="language-text">sub
+iat
+exp
+roles
+scope
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>JWT payload is encoded, not automatically encrypted.</p>
+</blockquote>
+<p>Never put secrets into ordinary JWT claims.</p>
+<hr />
+<h1 id="68-jwt-pros-and-cons">68. JWT Pros and Cons</h1>
+<p>Advantages:</p>
+<pre><code class="language-text">stateless validation
+easy horizontal scaling
+no server-side session lookup for each request
+</code></pre>
+<p>Trade-offs:</p>
+<pre><code class="language-text">revocation complexity
+token theft risk
+payload visibility
+token size
+key management
+refresh-token design
+</code></pre>
+<p>JWT is not automatically better than sessions.</p>
+<hr />
+<h1 id="69-session-based-authentication">69. Session-Based Authentication</h1>
+<p>Flow:</p>
+<pre><code class="language-text">Login
+ ↓
+server creates session
+ ↓
+session ID returned
+ ↓
+client sends session ID
+ ↓
+server looks up session
+</code></pre>
+<p>Comparison:</p>
+<table>
+<thead>
+<tr>
+<th>Session</th>
+<th>JWT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Server-side state</td>
+<td>Usually stateless access token</td>
+</tr>
+<tr>
+<td>Easier revocation</td>
+<td>More complex revocation</td>
+</tr>
+<tr>
+<td>Session store at scale</td>
+<td>Easier horizontal scaling</td>
+</tr>
+<tr>
+<td>Small client identifier</td>
+<td>Claims carried by token</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1 id="70-oauth-20">70. OAuth 2.0</h1>
+<p>OAuth is primarily an authorization framework.</p>
+<p>Roles:</p>
+<pre><code class="language-text">Resource Owner
+Client
+Authorization Server
+Resource Server
+</code></pre>
+<p>Authorization Code flow:</p>
+<pre><code class="language-text">User
+ ↓
+Client
+ ↓
+Authorization Server
+ ↓
+Authorization Code
+ ↓
+Client
+ ↓
+Token Endpoint
+ ↓
+Access Token
+ ↓
+Resource Server
+</code></pre>
+<hr />
+<h1 id="71-openid-connect">71. OpenID Connect</h1>
+<p>OIDC builds authentication/identity on OAuth 2.0.</p>
+<pre><code class="language-text">OAuth 2.0
+→ authorization
+
+OpenID Connect
+→ authentication + identity
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">ID Token
+Access Token
+Refresh Token
+</code></pre>
+<hr />
+<h1 id="72-csrf">72. CSRF</h1>
+<p>CSRF exploits authenticated browser requests where credentials are automatically attached.</p>
+<p>Important:</p>
+<blockquote>
+<p>CSRF and CORS are different problems.</p>
+</blockquote>
+<p>CSRF is especially relevant to cookie/session-based authentication.</p>
+<p>For bearer-token APIs, the threat model is different. Do not blindly disable CSRF without understanding how credentials are transported.</p>
+<hr />
+<h1 id="73-cors">73. CORS</h1>
+<p>CORS controls whether browser JavaScript can make cross-origin requests.</p>
+<p>Example:</p>
+<pre><code class="language-text">frontend.example.com
+       ↓
+api.example.com
+</code></pre>
+<p>CORS is not authentication.</p>
+<hr />
+<h1 id="74-method-security">74. Method Security</h1>
+<p>Examples:</p>
+<pre><code class="language-java">@PreAuthorize(&quot;hasRole('ADMIN')&quot;)
+</code></pre>
+<p>or:</p>
+<pre><code class="language-java">@PreAuthorize(
+    &quot;#userId == authentication.principal.id&quot;
+)
+</code></pre>
+<p>Use method security when authorization naturally belongs at the business-operation boundary.</p>
+<hr />
+<h1 id="75-roles-vs-authorities">75. Roles vs Authorities</h1>
+<p>Think:</p>
+<pre><code class="language-text">Role
+→ coarse-grained grouping
+
+Authority
+→ permission
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">ROLE_ADMIN
+
+USER_READ
+USER_WRITE
+PAYMENT_REFUND
+</code></pre>
+<p>For complex authorization, fine-grained authorities can be more expressive than creating huge numbers of roles.</p>
+<hr />
+<h1 id="76-securitycontext">76. SecurityContext</h1>
+<p>After authentication:</p>
+<pre><code class="language-text">SecurityContext
+      ↓
+Authentication
+      ↓
+Principal
+Authorities
+</code></pre>
+<p>The context is commonly accessed through:</p>
+<pre><code class="language-java">SecurityContextHolder
+</code></pre>
+<p>Do not assume ordinary thread-local context automatically follows every asynchronous or reactive execution model.</p>
+<hr />
+<h1 id="77-rest-api-security-checklist">77. REST API Security Checklist</h1>
+<p>Consider:</p>
+<pre><code class="language-text">TLS
+authentication
+authorization
+input validation
+rate limiting
+secure password storage
+token expiry
+refresh-token strategy
+CORS
+CSRF where applicable
+security headers
+audit logging
+secret management
+least privilege
+safe error responses
+</code></pre>
+<hr />
+<h1 id="78-spring-transactions-jdbc-jpa">78. Spring Transactions + JDBC + JPA</h1>
+<p>Can JDBC and JPA participate in the same Spring transaction?</p>
+<p>Yes, when compatible transaction infrastructure and resource configuration allow both to participate in the same underlying database transaction.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">@Transactional
+      ↓
+Spring transaction manager
+      ↓
+Database transaction
+      ├── JPA/Hibernate
+      └── JDBC
+</code></pre>
+<p>Do not assume unrelated databases/resources automatically become one atomic transaction.</p>
+<hr />
+<h1 id="79-jdbctemplate-vs-jpahibernate">79. JdbcTemplate vs JPA/Hibernate</h1>
+<p>Use JDBC when:</p>
+<pre><code class="language-text">SQL control is important
+simple queries
+bulk operations
+reporting
+database-specific SQL
+predictable SQL
+</code></pre>
+<p>Use JPA/Hibernate when:</p>
+<pre><code class="language-text">domain entities
+object relationships
+unit-of-work
+dirty checking
+identity management
+ORM productivity
+</code></pre>
+<p>Many real applications use both.</p>
+<hr />
+<h1 id="80-hibernate-first-level-cache">80. Hibernate First-Level Cache</h1>
+<p>The first-level cache belongs to the persistence context.</p>
+<pre><code class="language-text">EntityManager / Persistence Context
+          ↓
+First-level cache
+</code></pre>
+<p>Within one persistence context:</p>
+<pre><code class="language-text">find(User, 1)
+find(User, 1)
+</code></pre>
+<p>does not necessarily cause two database queries.</p>
+<hr />
+<h1 id="81-second-level-cache">81. Second-Level Cache</h1>
+<p>Hibernate can support a second-level cache.</p>
+<pre><code class="language-text">Persistence Context
+      ↓
+First-level cache
+
+Shared across sessions
+      ↓
+Second-level cache
+</code></pre>
+<p>Use carefully because stale data and invalidation can become correctness problems.</p>
+<hr />
+<h1 id="82-query-cache">82. Query Cache</h1>
+<p>Query caching is different from entity caching.</p>
+<pre><code class="language-text">query
+ ↓
+cached result information
+</code></pre>
+<p>It requires careful invalidation and workload analysis.</p>
+<p>Do not enable it just because "cache = faster."</p>
+<hr />
+<h1 id="83-fetch-join">83. Fetch Join</h1>
+<p>Example:</p>
+<pre><code class="language-java">@Query(&quot;&quot;&quot;
+    select distinct u
+    from User u
+    left join fetch u.orders
+&quot;&quot;&quot;)
+List&lt;User&gt; findUsersWithOrders();
+</code></pre>
+<p>Fetch joins can eliminate N+1 for a specific response shape.</p>
+<p>Multiple collection fetches can cause row multiplication and may hit Hibernate-specific limitations, so use deliberately.</p>
+<hr />
+<h1 id="84-entitygraph">84. EntityGraph</h1>
+<p>Example:</p>
+<pre><code class="language-java">@EntityGraph(attributePaths = {&quot;orders&quot;})
+Optional&lt;User&gt; findById(Long id);
+</code></pre>
+<p>Useful for expressing fetch plans without writing fetch joins for every repository method.</p>
+<hr />
+<h1 id="85-projections">85. Projections</h1>
+<p>Instead of loading full entities:</p>
+<pre><code class="language-java">interface UserSummary {
+    Long getId();
+    String getName();
+}
+</code></pre>
+<p>Or use DTO queries.</p>
+<p>Benefits:</p>
+<pre><code class="language-text">less data
+less memory
+less entity management
+better read-model performance
+</code></pre>
+<hr />
+<h1 id="86-hibernate-performance">86. Hibernate Performance</h1>
+<p>Important tools:</p>
+<pre><code class="language-text">indexes
+fetch strategy
+batch fetching
+JDBC batching
+DTO projections
+pagination
+read-only transactions
+query analysis
+SQL logging
+database execution plans
+connection pool sizing
+</code></pre>
+<p>Always inspect generated SQL when debugging ORM performance.</p>
+<hr />
+<h1 id="87-sql-knowledge">87. SQL Knowledge</h1>
+<p>Know:</p>
+<pre><code class="language-text">SELECT
+WHERE
+JOIN
+GROUP BY
+HAVING
+ORDER BY
+LIMIT/OFFSET
+subqueries
+CTEs
+window functions
+indexes
+transactions
+locking
+normalization
+</code></pre>
+<p>Spring Boot does not eliminate the need to understand SQL.</p>
+<hr />
+<h1 id="88-database-indexes">88. Database Indexes</h1>
+<p>Example:</p>
+<pre><code class="language-text">SELECT * FROM users WHERE email = ?
+</code></pre>
+<p>with:</p>
+<pre><code class="language-text">INDEX(email)
+</code></pre>
+<p>can improve lookup.</p>
+<p>But indexes cost:</p>
+<pre><code class="language-text">storage
+write overhead
+maintenance
+cache pressure
+</code></pre>
+<p>Do not index every column.</p>
+<hr />
+<h1 id="89-composite-index">89. Composite Index</h1>
+<p>Example:</p>
+<pre><code class="language-text">INDEX(status, created_at)
+</code></pre>
+<p>Column order matters.</p>
+<p>Understand the database's index rules and verify with <code>EXPLAIN</code> / execution plans.</p>
+<hr />
+<h1 id="90-spring-caching">90. Spring Caching</h1>
+<p>Important:</p>
+<pre><code class="language-text">@Cacheable
+@CachePut
+@CacheEvict
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">@Cacheable(&quot;users&quot;)
+public User getUser(Long id) {
+    return repository.findById(id).orElseThrow();
+}
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">request
+ ↓
+cache lookup
+ ↓
+hit → return
+miss
+ ↓
+DB
+ ↓
+cache
+ ↓
+return
+</code></pre>
+<hr />
+<h1 id="91-redis">91. Redis</h1>
+<p>Common use cases:</p>
+<pre><code class="language-text">cache
+session store
+distributed locks
+rate limiting
+counters
+short-lived data
+</code></pre>
+<p>Know:</p>
+<pre><code class="language-text">TTL
+eviction
+cache stampede
+cache penetration
+cache avalanche
+</code></pre>
+<p>A cache introduces consistency and invalidation problems.</p>
+<hr />
+<h1 id="92-async-processing">92. Async Processing</h1>
+<p>Spring supports asynchronous execution:</p>
+<pre><code class="language-java">@Async
+public void sendEmail() {
+}
+</code></pre>
+<p>Understand:</p>
+<pre><code class="language-text">Executor
+thread pool
+queue
+rejection policy
+backpressure
+</code></pre>
+<p>Proxy-based features such as <code>@Async</code> can be affected by self-invocation.</p>
+<p>Do not create unbounded thread pools casually.</p>
+<hr />
+<h1 id="93-scheduling">93. Scheduling</h1>
+<pre><code class="language-java">@Scheduled(fixedRate = 60000)
+public void process() {
+}
+</code></pre>
+<p>Production questions:</p>
+<pre><code class="language-text">What happens with multiple application instances?
+Can the job run twice?
+Do we need distributed locking?
+What happens after restart?
+</code></pre>
+<hr />
+<h1 id="94-spring-events">94. Spring Events</h1>
+<pre><code class="language-text">ApplicationEventPublisher
+@EventListener
+</code></pre>
+<p>Useful for decoupling internal components.</p>
+<p>Important:</p>
+<pre><code class="language-text">in-process Spring event
+≠
+durable distributed message
+</code></pre>
+<p>For reliable cross-service communication, messaging infrastructure may be more appropriate.</p>
+<hr />
+<h1 id="95-kafka-with-spring">95. Kafka with Spring</h1>
+<p>Know:</p>
+<pre><code class="language-text">Producer
+Consumer
+Topic
+Partition
+Offset
+Consumer Group
+Broker
+</code></pre>
+<p>Flow:</p>
+<pre><code class="language-text">Spring Service
+    ↓
+Kafka Producer
+    ↓
+Topic / Partition
+    ↓
+Kafka Consumer
+    ↓
+Spring Service
+</code></pre>
+<p>Important:</p>
+<pre><code class="language-text">at-least-once delivery
+idempotency
+consumer offsets
+partition ordering
+rebalancing
+retry
+dead-letter topics
+</code></pre>
+<hr />
+<h1 id="96-observability">96. Observability</h1>
+<p>Production applications need:</p>
+<pre><code class="language-text">logs
+metrics
+traces
+health checks
+</code></pre>
+<p>Spring Boot Actuator provides operational visibility.</p>
+<p>Know:</p>
+<pre><code class="language-text">health
+readiness
+liveness
+metrics
+info
+</code></pre>
+<p>Do not expose sensitive management endpoints publicly.</p>
+<hr />
+<h1 id="97-micrometer">97. Micrometer</h1>
+<p>Micrometer provides metrics instrumentation.</p>
+<pre><code class="language-text">Application
+    ↓
+Micrometer
+    ↓
+Metrics backend
+</code></pre>
+<p>Useful metrics:</p>
+<pre><code class="language-text">request latency
+request count
+error count
+JVM memory
+database pool usage
+</code></pre>
+<hr />
+<h1 id="98-distributed-tracing">98. Distributed Tracing</h1>
+<p>Typical flow:</p>
+<pre><code class="language-text">Request
+ ↓
+Service A
+ ↓
+Service B
+ ↓
+Database
+</code></pre>
+<p>Tracing correlates work using:</p>
+<pre><code class="language-text">trace
+span
+trace ID
+span ID
+context propagation
+sampling
+</code></pre>
+<hr />
+<h1 id="99-logging">99. Logging</h1>
+<p>Use structured logging where possible.</p>
+<p>Useful context:</p>
+<pre><code class="language-text">request ID
+trace ID
+operation
+duration
+result
+safe business identifiers
+</code></pre>
+<p>Never log:</p>
+<pre><code class="language-text">passwords
+tokens
+API secrets
+private keys
+sensitive personal data
+</code></pre>
+<hr />
+<h1 id="100-testing-pyramid">100. Testing Pyramid</h1>
+<pre><code class="language-text">        E2E
+       /   \
+ Integration
+   /         \
+Unit Tests
+</code></pre>
+<p>Spring testing:</p>
+<pre><code class="language-text">unit tests
+@WebMvcTest
+@DataJpaTest
+@SpringBootTest
+integration tests
+Testcontainers
+</code></pre>
+<hr />
+<h1 id="101-springboottest">101. @SpringBootTest</h1>
+<p>Loads a broad Spring application context.</p>
+<p>Useful for integration testing.</p>
+<p>Trade-off:</p>
+<pre><code class="language-text">realistic
+but slower
+</code></pre>
+<p>Do not use it for every small unit test.</p>
+<hr />
+<h1 id="102-webmvctest">102. @WebMvcTest</h1>
+<p>Focuses on MVC/controller behavior.</p>
+<p>Test:</p>
+<pre><code class="language-text">Controller
+MockMvc
+validation
+serialization
+exception handling
+security
+</code></pre>
+<p>Mock service dependencies rather than loading the whole application.</p>
+<hr />
+<h1 id="103-datajpatest">103. @DataJpaTest</h1>
+<p>Focused on persistence.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">repositories
+entity mappings
+queries
+database behavior
+</code></pre>
+<hr />
+<h1 id="104-mockmvc">104. MockMvc</h1>
+<pre><code class="language-java">mockMvc.perform(
+    get(&quot;/users/1&quot;)
+)
+.andExpect(status().isOk());
+</code></pre>
+<p>Test:</p>
+<pre><code class="language-text">status
+headers
+JSON
+validation
+security
+</code></pre>
+<hr />
+<h1 id="105-testcontainers">105. Testcontainers</h1>
+<p>Useful for realistic integration testing against:</p>
+<pre><code class="language-text">PostgreSQL
+MySQL
+Redis
+Kafka
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">Test
+ ↓
+real dependency in container
+ ↓
+test
+</code></pre>
+<p>This catches issues mocks cannot.</p>
+<hr />
+<h1 id="106-unit-vs-integration-testing">106. Unit vs Integration Testing</h1>
+<p>Unit:</p>
+<pre><code class="language-text">one class
+isolated dependencies
+fast
+</code></pre>
+<p>Integration:</p>
+<pre><code class="language-text">multiple components
+real framework/infrastructure
+slower
+</code></pre>
+<p>Strong systems use both.</p>
+<hr />
+<h1 id="107-production-architecture">107. Production Architecture</h1>
+<p>A common structure:</p>
+<pre><code class="language-text">controller/
+service/
+repository/
+entity/
+dto/
+mapper/
+exception/
+config/
+security/
+client/
+</code></pre>
+<p>The important boundaries are:</p>
+<pre><code class="language-text">API
+Business Logic
+Persistence
+Infrastructure
+</code></pre>
+<hr />
+<h1 id="108-typical-request-flow">108. Typical Request Flow</h1>
+<pre><code class="language-text">POST /orders
+      ↓
+Controller
+      ↓
+validate DTO
+      ↓
+Service
+      ↓
+business rules
+      ↓
+@Transactional
+      ↓
+Repository
+      ↓
+JPA/JDBC
+      ↓
+Database
+      ↓
+DTO mapping
+      ↓
+201 Created
+</code></pre>
+<hr />
+<h1 id="109-common-anti-patterns">109. Common Anti-Patterns</h1>
+<p>Avoid:</p>
+<pre><code class="language-text">fat controllers
+business logic inside repositories
+entities exposed directly as public API contracts
+field injection everywhere
+catching Exception everywhere
+returning 500 for validation errors
+N+1 queries
+EAGER relationships everywhere
+huge transactions
+database calls inside loops
+unbounded thread pools
+hard-coded secrets
+logging tokens/passwords
+blindly using JWT
+blindly using Redis
+blindly using ConcurrentHashMap
+</code></pre>
+<hr />
+<h1 id="110-singleton-is-not-thread-safe">110. Singleton Is Not Thread-Safe</h1>
+<p>Critical interview trap:</p>
+<pre><code class="language-java">@Service
+class CounterService {
+
+    private int count;
+}
+</code></pre>
+<p>Singleton means many requests can share the same object.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">singleton
++
+mutable state
++
+multiple request threads
+=
+potential race condition
+</code></pre>
+<p>Prefer stateless services where possible.</p>
+<hr />
+<h1 id="111-transactional-does-not-solve-everything">111. @Transactional Does Not Solve Everything</h1>
+<p>Transactions provide atomicity/isolation according to configuration and database behavior.</p>
+<p>They do not automatically solve:</p>
+<pre><code class="language-text">race conditions
+distributed transactions
+external API failures
+duplicate messages
+idempotency
+</code></pre>
+<hr />
+<h1 id="112-external-api-database-transaction">112. External API + Database Transaction</h1>
+<p>Bad assumption:</p>
+<pre><code class="language-text">BEGIN DB TX
+ ↓
+DB update
+ ↓
+call payment API
+ ↓
+COMMIT
+</code></pre>
+<p>If the external API succeeds but DB commit fails:</p>
+<pre><code class="language-text">inconsistent state
+</code></pre>
+<p>A database transaction does not roll back an ordinary external HTTP request.</p>
+<p>Possible patterns:</p>
+<pre><code class="language-text">outbox
+saga
+idempotency
+retry
+compensation
+</code></pre>
+<hr />
+<h1 id="113-idempotency">113. Idempotency</h1>
+<p>An operation is idempotent when repeating it produces the same intended result.</p>
+<p>Important for:</p>
+<pre><code class="language-text">payments
+orders
+webhooks
+retries
+message consumers
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-http">POST /payments
+Idempotency-Key: abc123
+</code></pre>
+<p>Store the key/result so retries do not accidentally create duplicate effects.</p>
+<hr />
+<h1 id="114-outbox-pattern">114. Outbox Pattern</h1>
+<p>For reliable DB + event publishing:</p>
+<pre><code class="language-text">Transaction
+ ├── update business data
+ └── insert outbox event
+        ↓
+Commit
+        ↓
+Outbox publisher
+        ↓
+Kafka
+</code></pre>
+<p>Avoids:</p>
+<pre><code class="language-text">DB commit succeeds
+event publish fails
+</code></pre>
+<hr />
+<h1 id="115-api-versioning">115. API Versioning</h1>
+<p>Common:</p>
+<pre><code class="language-text">/v1/users
+/v2/users
+</code></pre>
+<p>or header/media-type versioning.</p>
+<p>Version APIs deliberately and avoid accidental breaking changes.</p>
+<hr />
+<h1 id="116-api-pagination">116. API Pagination</h1>
+<p>Offset:</p>
+<pre><code class="language-text">?page=10&amp;size=50
+</code></pre>
+<p>Simple, but can become inefficient/inconsistent for very large or high-churn datasets.</p>
+<p>Cursor/keyset:</p>
+<pre><code class="language-text">?after=&lt;cursor&gt;
+</code></pre>
+<p>Often better for large datasets.</p>
+<hr />
+<h1 id="117-rate-limiting">117. Rate Limiting</h1>
+<p>Common algorithms:</p>
+<pre><code class="language-text">fixed window
+sliding window
+token bucket
+leaky bucket
+</code></pre>
+<p>Distributed rate limiting often needs shared infrastructure such as Redis or an API gateway.</p>
+<hr />
+<h1 id="118-http-caching">118. HTTP Caching</h1>
+<p>Know:</p>
+<pre><code class="language-text">Cache-Control
+ETag
+Last-Modified
+If-None-Match
+If-Modified-Since
+</code></pre>
+<p>Different layers solve different problems:</p>
+<pre><code class="language-text">HTTP cache
+application cache
+database/cache layer
+</code></pre>
+<hr />
+<h1 id="119-put-vs-patch">119. PUT vs PATCH</h1>
+<p>PUT generally represents replacement semantics.</p>
+<p>PATCH represents partial modification.</p>
+<pre><code class="language-http">PATCH /users/1
+
+{
+  &quot;name&quot;: &quot;Bob&quot;
+}
+</code></pre>
+<p>Define API semantics clearly.</p>
+<hr />
+<h1 id="120-rest-idempotency">120. REST Idempotency</h1>
+<p>Typically:</p>
+<pre><code class="language-text">GET    idempotent
+PUT    idempotent
+DELETE idempotent
+POST   not inherently idempotent
+</code></pre>
+<p>This concerns intended state semantics.</p>
+<hr />
+<h1 id="121-spring-boot-startup">121. Spring Boot Startup</h1>
+<p>High-level:</p>
+<pre><code class="language-text">main()
+ ↓
+SpringApplication.run()
+ ↓
+ApplicationContext created
+ ↓
+Environment prepared
+ ↓
+Bean definitions discovered
+ ↓
+Auto-configuration
+ ↓
+Beans instantiated
+ ↓
+Embedded server starts
+ ↓
+Application ready
+</code></pre>
+<hr />
+<h1 id="122-actuator">122. Actuator</h1>
+<p>Useful operational features:</p>
+<pre><code class="language-text">health
+metrics
+info
+loggers
+mappings
+beans
+</code></pre>
+<p>Expose only what is appropriate.</p>
+<hr />
+<h1 id="123-graceful-shutdown">123. Graceful Shutdown</h1>
+<pre><code class="language-text">shutdown signal
+ ↓
+stop accepting new traffic
+ ↓
+finish in-flight work where possible
+ ↓
+close resources
+ ↓
+exit
+</code></pre>
+<p>Important for containers and Kubernetes.</p>
+<hr />
+<h1 id="124-docker-spring-boot">124. Docker + Spring Boot</h1>
+<p>Production concerns:</p>
+<pre><code class="language-text">small image
+non-root user
+JVM memory limits
+health checks
+graceful shutdown
+externalized configuration
+secret management
+</code></pre>
+<hr />
+<h1 id="125-kubernetes-concepts">125. Kubernetes Concepts</h1>
+<p>Know:</p>
+<pre><code class="language-text">Pod
+Deployment
+Service
+ConfigMap
+Secret
+Readiness probe
+Liveness probe
+Horizontal Pod Autoscaler
+</code></pre>
+<p>Important:</p>
+<pre><code class="language-text">liveness
+→ should container be restarted?
+
+readiness
+→ should traffic be sent to it?
+</code></pre>
+<hr />
+<h1 id="126-resilience">126. Resilience</h1>
+<p>For external dependencies:</p>
+<pre><code class="language-text">timeouts
+retries
+circuit breakers
+bulkheads
+rate limits
+fallbacks
+</code></pre>
+<p>Retry only failures that are actually retryable.</p>
+<p>Retries without backoff can amplify outages.</p>
+<hr />
+<h1 id="127-timeout-design">127. Timeout Design</h1>
+<p>Every network call should have intentional timeouts.</p>
+<p>Think:</p>
+<pre><code class="language-text">connect timeout
+read/response timeout
+overall deadline
+</code></pre>
+<p>Avoid infinite waits.</p>
+<hr />
+<h1 id="128-circuit-breaker">128. Circuit Breaker</h1>
+<pre><code class="language-text">Closed
+  ↓ failures
+Open
+  ↓ timeout
+Half-Open
+  ↓ success
+Closed
+</code></pre>
+<p>Purpose:</p>
+<pre><code class="language-text">prevent repeated calls to unhealthy dependency
+</code></pre>
+<p>Circuit breakers are not substitutes for timeouts.</p>
+<hr />
+<h1 id="129-bulkhead">129. Bulkhead</h1>
+<p>Bulkhead isolation prevents one workload from consuming all shared resources.</p>
+<pre><code class="language-text">Payment calls
+   ↓
+Pool A
+
+Email calls
+   ↓
+Pool B
+</code></pre>
+<p>If email becomes unhealthy, payment processing can continue.</p>
+<hr />
+<h1 id="130-spring-microservices">130. Spring + Microservices</h1>
+<p>Important:</p>
+<pre><code class="language-text">service boundaries
+REST/gRPC
+service discovery
+API gateway
+configuration
+authentication
+distributed tracing
+timeouts
+retries
+circuit breakers
+messaging
+idempotency
+distributed transactions
+observability
+</code></pre>
+<p>Do not choose microservices merely because Spring Boot makes them easy.</p>
+<hr />
+<h1 id="131-most-important-spring-core-questions">131. Most Important Spring Core Questions</h1>
+<ol>
+<li>What is IoC?</li>
+<li>What is dependency injection?</li>
+<li>Constructor vs setter vs field injection?</li>
+<li>Why prefer constructor injection?</li>
+<li>What is a Spring bean?</li>
+<li>What is ApplicationContext?</li>
+<li>BeanFactory vs ApplicationContext?</li>
+<li>Bean lifecycle?</li>
+<li>Bean scopes?</li>
+<li>Singleton bean thread safety?</li>
+<li><code>@Component</code> vs <code>@Bean</code>?</li>
+<li><code>@Component</code> vs <code>@Service</code> vs <code>@Repository</code>?</li>
+<li>What is <code>@Configuration</code>?</li>
+<li>Component scanning?</li>
+<li><code>@Primary</code> vs <code>@Qualifier</code>?</li>
+<li>Circular dependencies?</li>
+<li>BeanPostProcessor?</li>
+<li>Spring AOP?</li>
+<li>JDK proxy vs CGLIB?</li>
+<li>How do Spring proxies affect method calls?</li>
+</ol>
+<hr />
+<h1 id="132-spring-boot-questions">132. Spring Boot Questions</h1>
+<ol>
+<li>Spring vs Spring Boot?</li>
+<li>What does <code>@SpringBootApplication</code> contain?</li>
+<li>Auto-configuration?</li>
+<li>How does Boot decide what to configure?</li>
+<li>Conditional beans?</li>
+<li>Starters?</li>
+<li>Externalized configuration?</li>
+<li>Profiles?</li>
+<li><code>@Value</code> vs <code>@ConfigurationProperties</code>?</li>
+<li>How do you override auto-configuration?</li>
+<li>Embedded server startup?</li>
+<li>Actuator?</li>
+<li>Health vs readiness vs liveness?</li>
+<li>How do you diagnose startup failure?</li>
+<li>How do you inspect auto-configuration?</li>
+<li>Production configuration strategy?</li>
+</ol>
+<hr />
+<h1 id="133-rest-questions">133. REST Questions</h1>
+<ol>
+<li>What makes an API RESTful?</li>
+<li>GET vs POST vs PUT vs PATCH vs DELETE?</li>
+<li>Path variable vs query parameter?</li>
+<li><code>@RequestBody</code>?</li>
+<li><code>@RestController</code>?</li>
+<li>DTO vs entity?</li>
+<li>HTTP status codes?</li>
+<li>401 vs 403?</li>
+<li>400 vs 422?</li>
+<li>Global exception handling?</li>
+<li><code>@ControllerAdvice</code> vs <code>@RestControllerAdvice</code>?</li>
+<li><code>ProblemDetail</code>?</li>
+<li>Validation?</li>
+<li>Custom validation?</li>
+<li>Jackson serialization?</li>
+<li>API versioning?</li>
+<li>Pagination?</li>
+<li>Offset vs cursor pagination?</li>
+<li>Idempotency?</li>
+<li>Rate limiting?</li>
+<li>CORS?</li>
+<li>CSRF?</li>
+<li>HTTP caching?</li>
+<li>ETag?</li>
+<li>How do you secure REST APIs?</li>
+</ol>
+<hr />
+<h1 id="134-jdbc-questions">134. JDBC Questions</h1>
+<ol>
+<li>What is JDBC?</li>
+<li>JDBC driver?</li>
+<li>Connection?</li>
+<li>Statement vs PreparedStatement?</li>
+<li>SQL injection?</li>
+<li>ResultSet?</li>
+<li>DataSource?</li>
+<li>Connection pooling?</li>
+<li>HikariCP?</li>
+<li>JdbcTemplate?</li>
+<li><code>query()</code> vs <code>queryForObject()</code>?</li>
+<li><code>update()</code>?</li>
+<li>Batch updates?</li>
+<li>JDBC transactions?</li>
+<li>Auto-commit?</li>
+<li>Connection leaks?</li>
+<li>How do you debug slow JDBC calls?</li>
+</ol>
+<hr />
+<h1 id="135-jpahibernate-questions">135. JPA/Hibernate Questions</h1>
+<ol>
+<li>JPA vs Hibernate?</li>
+<li>Spring Data JPA vs JPA?</li>
+<li>What is an entity?</li>
+<li>Entity lifecycle?</li>
+<li>Persistence context?</li>
+<li>First-level cache?</li>
+<li>Second-level cache?</li>
+<li>Dirty checking?</li>
+<li>Flush vs commit?</li>
+<li>persist vs merge?</li>
+<li>EntityManager?</li>
+<li>JpaRepository?</li>
+<li>Derived queries?</li>
+<li>JPQL?</li>
+<li>Native query?</li>
+<li>Lazy vs eager?</li>
+<li>N+1 problem?</li>
+<li>Fetch join?</li>
+<li>EntityGraph?</li>
+<li>DTO projection?</li>
+<li>One-to-many?</li>
+<li>Many-to-one?</li>
+<li>Owning side?</li>
+<li><code>mappedBy</code>?</li>
+<li>Cascade?</li>
+<li>orphanRemoval?</li>
+<li><code>@Version</code>?</li>
+<li>Optimistic locking?</li>
+<li>Pessimistic locking?</li>
+<li>LazyInitializationException?</li>
+<li>How does Hibernate generate SQL?</li>
+<li>How do you optimize Hibernate?</li>
+<li>How do indexes affect ORM performance?</li>
+<li>How do you inspect generated SQL?</li>
+</ol>
+<hr />
+<h1 id="136-transaction-questions">136. Transaction Questions</h1>
+<ol>
+<li>What is <code>@Transactional</code>?</li>
+<li>Where should transaction boundaries live?</li>
+<li>Propagation?</li>
+<li>REQUIRED vs REQUIRES_NEW?</li>
+<li>Isolation levels?</li>
+<li>Dirty read?</li>
+<li>Non-repeatable read?</li>
+<li>Phantom read?</li>
+<li>Rollback rules?</li>
+<li>Checked vs unchecked exception rollback?</li>
+<li>Self-invocation trap?</li>
+<li>Proxy-based transaction management?</li>
+<li>Read-only transaction?</li>
+<li>Nested transaction?</li>
+<li>What happens if external API fails inside transaction?</li>
+<li>Distributed transactions?</li>
+<li>Outbox pattern?</li>
+<li>Saga?</li>
+</ol>
+<hr />
+<h1 id="137-spring-security-questions">137. Spring Security Questions</h1>
+<ol>
+<li>Authentication vs authorization?</li>
+<li>What is SecurityFilterChain?</li>
+<li>Request flow through Spring Security?</li>
+<li>Authentication object?</li>
+<li>SecurityContext?</li>
+<li>UserDetails?</li>
+<li>UserDetailsService?</li>
+<li>PasswordEncoder?</li>
+<li>BCrypt?</li>
+<li>Session vs JWT?</li>
+<li>JWT structure?</li>
+<li>JWT signing vs encryption?</li>
+<li>Access token vs refresh token?</li>
+<li>JWT revocation?</li>
+<li>OAuth 2.0?</li>
+<li>OpenID Connect?</li>
+<li>Authorization Code flow?</li>
+<li>CSRF?</li>
+<li>CORS?</li>
+<li>Roles vs authorities?</li>
+<li><code>@PreAuthorize</code>?</li>
+<li>RBAC?</li>
+<li>Service-to-service authentication?</li>
+<li>Key rotation?</li>
+<li>Refresh-token security?</li>
+<li>What happens if a JWT is stolen?</li>
+</ol>
+<hr />
+<h1 id="138-production-questions">138. Production Questions</h1>
+<ol>
+<li>How would you diagnose high API latency?</li>
+<li>How would you diagnose high DB CPU?</li>
+<li>How would you diagnose connection pool exhaustion?</li>
+<li>How would you diagnose memory growth?</li>
+<li>How would you diagnose N+1?</li>
+<li>How would you handle downstream timeout?</li>
+<li>How would you prevent retry storms?</li>
+<li>How would you design idempotent APIs?</li>
+<li>How would you handle duplicate Kafka messages?</li>
+<li>How would you implement distributed rate limiting?</li>
+<li>How would you make an API horizontally scalable?</li>
+<li>How would you handle graceful shutdown?</li>
+<li>What metrics would you monitor?</li>
+<li>What should readiness check?</li>
+<li>How do you trace a request across services?</li>
+<li>How do you handle secrets?</li>
+<li>How do you safely deploy database schema changes?</li>
+</ol>
+<hr />
+<h1 id="139-high-value-follow-up-chains">139. High-Value Follow-Up Chains</h1>
+<h2 id="chain-1-dependency-injection">Chain 1 — Dependency Injection</h2>
+<pre><code class="language-text">What is IoC?
+   ↓
+What is DI?
+   ↓
+How does Spring create beans?
+   ↓
+ApplicationContext
+   ↓
+Component scanning
+   ↓
+Constructor injection
+   ↓
+Bean lifecycle
+   ↓
+BeanPostProcessor
+   ↓
+Spring proxies
+</code></pre>
+<h2 id="chain-2-auto-configuration">Chain 2 — Auto-Configuration</h2>
+<pre><code class="language-text">Spring Boot
+   ↓
+@SpringBootApplication
+   ↓
+Auto-configuration
+   ↓
+Starters
+   ↓
+Classpath
+   ↓
+Conditional beans
+   ↓
+@ConditionalOnClass
+   ↓
+@ConditionalOnMissingBean
+   ↓
+Override auto-config
+</code></pre>
+<h2 id="chain-3-rest-request">Chain 3 — REST Request</h2>
+<pre><code class="language-text">HTTP request
+   ↓
+Security filters
+   ↓
+DispatcherServlet
+   ↓
+HandlerMapping
+   ↓
+Controller
+   ↓
+Validation
+   ↓
+Service
+   ↓
+Repository
+   ↓
+Database
+   ↓
+DTO
+   ↓
+Jackson
+   ↓
+HTTP response
+</code></pre>
+<h2 id="chain-4-jpa-query">Chain 4 — JPA Query</h2>
+<pre><code class="language-text">Repository method
+   ↓
+Spring Data
+   ↓
+EntityManager
+   ↓
+Hibernate
+   ↓
+JPQL / SQL generation
+   ↓
+JDBC
+   ↓
+Connection pool
+   ↓
+Database
+   ↓
+ResultSet
+   ↓
+Hibernate mapping
+   ↓
+Entity
+</code></pre>
+<h2 id="chain-5-n1">Chain 5 — N+1</h2>
+<pre><code class="language-text">Load parent list
+   ↓
+Access lazy association
+   ↓
+One query per parent
+   ↓
+N+1
+   ↓
+Inspect generated SQL
+   ↓
+Fetch join / EntityGraph / projection
+   ↓
+Measure again
+</code></pre>
+<h2 id="chain-6-transactional">Chain 6 — @Transactional</h2>
+<pre><code class="language-text">Caller
+   ↓
+Spring proxy
+   ↓
+Transaction interceptor
+   ↓
+Begin transaction
+   ↓
+Service method
+   ↓
+Repository
+   ↓
+Flush
+   ↓
+Commit
+</code></pre>
+<p>Then ask:</p>
+<pre><code class="language-text">What if exception?
+What if checked exception?
+What if self-invocation?
+What if REQUIRES_NEW?
+What if external API?
+</code></pre>
+<h2 id="chain-7-spring-security">Chain 7 — Spring Security</h2>
+<pre><code class="language-text">HTTP request
+   ↓
+SecurityFilterChain
+   ↓
+Authentication
+   ↓
+UserDetails / JWT
+   ↓
+SecurityContext
+   ↓
+Authorization
+   ↓
+Controller
+</code></pre>
+<hr />
+<h1 id="140-scenario-based-questions">140. Scenario-Based Questions</h1>
+<h2 id="q174-api-latency-increased-from-200ms-to-2-seconds-what-do-you-investigate">Q174. API latency increased from 200ms to 2 seconds. What do you investigate?</h2>
+<p>Break down:</p>
+<pre><code class="language-text">Client
+ ↓
+network
+ ↓
+gateway
+ ↓
+security
+ ↓
+controller
+ ↓
+service
+ ↓
+DB
+ ↓
+external APIs
+ ↓
+serialization
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-text">metrics
+logs
+distributed tracing
+DB execution plans
+connection-pool metrics
+generated SQL
+profiling
+</code></pre>
+<p>Do not immediately blame Spring.</p>
+<hr />
+<h2 id="q175-api-gets-db-connection-timeout-errors">Q175. API gets DB connection timeout errors.</h2>
+<p>Investigate:</p>
+<pre><code class="language-text">connection pool size
+active connections
+idle connections
+connection acquisition time
+long-running queries
+unclosed connections
+DB max connections
+traffic spike
+transaction duration
+</code></pre>
+<p>A common mistake is simply increasing pool size.</p>
+<hr />
+<h2 id="q176-endpoint-returns-10000-users-and-becomes-slow">Q176. Endpoint returns 10,000 users and becomes slow.</h2>
+<p>Potential fixes:</p>
+<pre><code class="language-text">pagination
+projection
+database indexes
+select only required columns
+compression
+HTTP caching where appropriate
+cursor pagination
+</code></pre>
+<hr />
+<h2 id="q177-loading-users-triggers-one-query-per-user">Q177. Loading users triggers one query per user.</h2>
+<p>Diagnosis:</p>
+<pre><code class="language-text">N+1
+</code></pre>
+<p>Possible fixes:</p>
+<pre><code class="language-text">fetch join
+EntityGraph
+batch fetching
+projection
+</code></pre>
+<p>Choose based on response shape and cardinality.</p>
+<hr />
+<h2 id="q178-two-users-update-the-same-record">Q178. Two users update the same record.</h2>
+<p>Consider:</p>
+<pre><code class="language-text">optimistic locking
+pessimistic locking
+application-level conflict handling
+</code></pre>
+<p>Ask whether conflicts are rare or frequent.</p>
+<hr />
+<h2 id="q179-payment-api-receives-the-same-request-twice">Q179. Payment API receives the same request twice.</h2>
+<p>Use:</p>
+<pre><code class="language-text">idempotency key
+persistent request state
+unique database constraint
+safe retry semantics
+</code></pre>
+<p>Do not rely on POST being magically deduplicated.</p>
+<hr />
+<h2 id="q180-db-transaction-succeeds-but-kafka-publish-fails">Q180. DB transaction succeeds but Kafka publish fails.</h2>
+<p>Consider:</p>
+<pre><code class="language-text">transactional outbox
+</code></pre>
+<p>rather than assuming one ordinary database transaction can atomically include Kafka.</p>
+<hr />
+<h2 id="q181-jwt-is-stolen">Q181. JWT is stolen.</h2>
+<p>Possible defenses:</p>
+<pre><code class="language-text">short access-token lifetime
+secure refresh-token handling
+token rotation
+key rotation
+TLS
+revocation/deny-list strategy where needed
+least privilege
+session/device controls
+</code></pre>
+<p>A valid stolen bearer token remains dangerous until it expires or is otherwise invalidated.</p>
+<hr />
+<h1 id="141-architecture-mental-model">141. Architecture Mental Model</h1>
+<pre><code class="language-text">                    CLIENT
+                       │
+                       ▼
+                API Gateway / LB
+                       │
+                       ▼
+              Spring Security
+                       │
+                       ▼
+                REST Controller
+                       │
+                 DTO + Validation
+                       │
+                       ▼
+                    Service
+                       │
+                  Transaction
+                       │
+            ┌──────────┴──────────┐
+            │                     │
+            ▼                     ▼
+       Spring Data JPA        JdbcTemplate
+            │                     │
+            ▼                     ▼
+         Hibernate               JDBC
+            │                     │
+            └──────────┬──────────┘
+                       ▼
+                    Database
+</code></pre>
+<p>Around the application:</p>
+<pre><code class="language-text">Redis
+Kafka
+External APIs
+Metrics
+Tracing
+Logging
+Secrets
+Docker
+Kubernetes
+</code></pre>
+<hr />
+<h1 id="142-golden-rules">142. Golden Rules</h1>
+<h3 id="rule-1">Rule 1</h3>
+<p>Prefer constructor injection.</p>
+<h3 id="rule-2">Rule 2</h3>
+<p>Keep controllers thin.</p>
+<h3 id="rule-3">Rule 3</h3>
+<p>Keep business logic in services.</p>
+<h3 id="rule-4">Rule 4</h3>
+<p>Treat transactions as business-operation boundaries.</p>
+<h3 id="rule-5">Rule 5</h3>
+<p>Understand Spring proxies before explaining AOP behavior.</p>
+<h3 id="rule-6">Rule 6</h3>
+<p>Never expose JPA entities blindly from public APIs.</p>
+<h3 id="rule-7">Rule 7</h3>
+<p>Inspect generated SQL when debugging ORM performance.</p>
+<h3 id="rule-8">Rule 8</h3>
+<p>Do not solve N+1 by making everything EAGER.</p>
+<h3 id="rule-9">Rule 9</h3>
+<p>Do not assume <code>@Transactional</code> protects external systems.</p>
+<h3 id="rule-10">Rule 10</h3>
+<p>Do not assume JWT is automatically superior to sessions.</p>
+<h3 id="rule-11">Rule 11</h3>
+<p>Authentication and authorization are different.</p>
+<h3 id="rule-12">Rule 12</h3>
+<p>CORS and CSRF are different.</p>
+<h3 id="rule-13">Rule 13</h3>
+<p>Do not store passwords; store password hashes.</p>
+<h3 id="rule-14">Rule 14</h3>
+<p>Do not blindly increase connection-pool size.</p>
+<h3 id="rule-15">Rule 15</h3>
+<p>Every network call needs an intentional timeout.</p>
+<h3 id="rule-16">Rule 16</h3>
+<p>Retries require backoff and idempotency awareness.</p>
+<h3 id="rule-17">Rule 17</h3>
+<p>Do not use Redis/Kafka/microservices merely because they are available.</p>
+<h3 id="rule-18">Rule 18</h3>
+<p>Measure before optimizing.</p>
+<h3 id="rule-19">Rule 19</h3>
+<p>Use DTOs to define API contracts.</p>
+<h3 id="rule-20">Rule 20</h3>
+<p>Think about concurrency whenever a Spring singleton contains mutable state.</p>
+<hr />
+<h1 id="143-study-order">143. Study Order</h1>
+<p>Recommended:</p>
+<pre><code class="language-text">1. Spring fundamentals
+2. IoC / DI
+3. Beans / lifecycle / scopes
+4. AOP / proxies
+5. Spring Boot
+6. Configuration / profiles
+7. REST / HTTP
+8. DTOs / Jackson
+9. Validation / exception handling
+10. JDBC
+11. DataSource / HikariCP
+12. JdbcTemplate
+13. SQL fundamentals
+14. Transactions
+15. JPA
+16. Hibernate
+17. Persistence context
+18. Dirty checking
+19. Relationships
+20. Lazy/eager fetching
+21. N+1
+22. JPQL / native SQL
+23. Pagination / projections
+24. Optimistic/pessimistic locking
+25. Spring Data JPA
+26. Spring Security
+27. Sessions
+28. JWT
+29. OAuth2 / OIDC
+30. CORS / CSRF
+31. Method security
+32. Testing
+33. Actuator / observability
+34. Redis / caching
+35. Kafka / messaging
+36. Resilience
+37. Docker / Kubernetes basics
+38. Production troubleshooting
+39. System-design scenarios
+40. Interview self-test
+</code></pre>
+<hr />
+<h1 id="144-final-interview-framework">144. Final Interview Framework</h1>
+<p>When asked:</p>
+<blockquote>
+<p>"What is X?"</p>
+</blockquote>
+<p>Answer:</p>
+<pre><code class="language-text">1. Definition
+      ↓
+2. Why it exists
+      ↓
+3. How it works
+      ↓
+4. Small example
+      ↓
+5. Internal mechanism
+      ↓
+6. Production use
+      ↓
+7. Trade-offs
+      ↓
+8. Common trap
+</code></pre>
+<p>Example:</p>
+<blockquote>
+<p>"What is @Transactional?"</p>
+</blockquote>
+<p>Do not stop at:</p>
+<blockquote>
+<p>"It manages database transactions."</p>
+</blockquote>
+<p>Instead:</p>
+<pre><code class="language-text">@Transactional
+   ↓
+Spring proxy
+   ↓
+transaction interceptor
+   ↓
+transaction manager
+   ↓
+DB transaction
+   ↓
+service/repository operations
+   ↓
+flush
+   ↓
+commit/rollback
+</code></pre>
+<p>Then discuss:</p>
+<pre><code class="language-text">propagation
+isolation
+rollback rules
+self-invocation
+read-only
+external API limitations
+</code></pre>
+<hr />
+<h1 id="145-final-self-test">145. Final Self-Test</h1>
+<p>You should eventually be able to explain, without notes:</p>
+<pre><code class="language-text">1. IoC
+2. Dependency Injection
+3. ApplicationContext
+4. Bean lifecycle
+5. Singleton scope
+6. Constructor injection
+7. @Component vs @Bean
+8. @Service vs @Repository
+9. BeanPostProcessor
+10. Spring AOP
+11. JDK proxy vs CGLIB
+
+12. Spring Boot
+13. @SpringBootApplication
+14. Auto-configuration
+15. Starters
+16. Conditional beans
+17. Profiles
+18. ConfigurationProperties
+19. Actuator
+
+20. REST
+21. HTTP methods
+22. Status codes
+23. DTO
+24. Jackson
+25. Validation
+26. Global exception handling
+27. Pagination
+28. Idempotency
+29. CORS
+30. HTTP caching
+
+31. JDBC
+32. PreparedStatement
+33. DataSource
+34. HikariCP
+35. JdbcTemplate
+36. Batch operations
+37. JDBC transactions
+
+38. JPA vs Hibernate
+39. Spring Data JPA
+40. Entity lifecycle
+41. Persistence context
+42. First-level cache
+43. Dirty checking
+44. Flush vs commit
+45. persist vs merge
+46. Lazy vs eager
+47. N+1
+48. Fetch join
+49. EntityGraph
+50. Projections
+51. Relationships
+52. mappedBy
+53. Cascade
+54. orphanRemoval
+55. Optimistic locking
+56. Pessimistic locking
+57. LazyInitializationException
+
+58. @Transactional
+59. Propagation
+60. Isolation
+61. Rollback rules
+62. Self-invocation
+63. External API + DB transaction
+64. Outbox
+65. Saga
+
+66. Spring Security
+67. SecurityFilterChain
+68. Authentication
+69. Authorization
+70. SecurityContext
+71. UserDetailsService
+72. PasswordEncoder
+73. JWT
+74. Sessions
+75. OAuth2
+76. OIDC
+77. CSRF
+78. CORS
+79. Roles/Authorities
+80. Method security
+
+81. Unit testing
+82. @WebMvcTest
+83. @DataJpaTest
+84. @SpringBootTest
+85. Testcontainers
+
+86. Redis
+87. Kafka
+88. Timeouts
+89. Retries
+90. Circuit breakers
+91. Bulkheads
+92. Observability
+93. Metrics
+94. Tracing
+95. Actuator
+96. Graceful shutdown
+97. Docker
+98. Kubernetes
+99. Production troubleshooting
+100. Distributed-system failure scenarios
+</code></pre>
+<hr />
+<h1 id="final-rule-for-spring-interviews">Final Rule for Spring Interviews</h1>
+<p>When the interviewer asks:</p>
+<blockquote>
+<p>"How does Spring Boot work?"</p>
+</blockquote>
+<p>Do not answer with annotations.</p>
+<p>Think:</p>
+<pre><code class="language-text">HTTP
+ ↓
+Security
+ ↓
+DispatcherServlet
+ ↓
+Controller
+ ↓
+DTO / Validation
+ ↓
+Service
+ ↓
+Transaction
+ ↓
+Repository
+ ↓
+JPA / Hibernate / JDBC
+ ↓
+Connection Pool
+ ↓
+Database
+ ↓
+SQL
+ ↓
+Result
+ ↓
+Entity
+ ↓
+DTO
+ ↓
+Jackson
+ ↓
+HTTP Response
+</code></pre>
+<p>Then connect the cross-cutting systems:</p>
+<pre><code class="language-text">AOP
+Security
+Transactions
+Caching
+Messaging
+Observability
+Resilience
+Testing
+Deployment
+</code></pre>
+<p>That is the real Spring Boot skill.</p></main>
+</div>
+</body>
+</html>

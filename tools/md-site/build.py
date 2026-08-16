@@ -25,6 +25,12 @@ ACRONYM_OVERRIDES = {
     "cdn": "CDN",
     "v8": "V8",
     "nextjs": "Next.js",
+    "jvm": "JVM",
+    "sql": "SQL",
+    "nosql": "NoSQL",
+    "jdbc": "JDBC",
+    "rest": "REST",
+    "cicd": "CI/CD",
 }
 
 

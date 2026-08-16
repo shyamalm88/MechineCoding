@@ -1,0 +1,1794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modern Java + JVM — Interview Preparation — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: Modern Java + JVM — Interview Preparation
+tags:
+  - java
+  - modern-java
+  - jvm
+  - gc
+  - concurrency
+  - java-8
+  - java-17
+  - java-21
+  - virtual-threads
+  - interview</p>
+<hr />
+<h1 id="modern-java-jvm-interview-preparation">Modern Java + JVM — Interview Preparation</h1>
+<blockquote>
+<p>[!note]
+This note is designed for a Java/Spring Boot full-stack developer preparing for senior interviews.</p>
+<p>The goal is not to memorize Java features. Learn:</p>
+<p><strong>What → Why → How → Runtime behavior → Trade-offs → Production implications → Interview traps</strong></p>
+</blockquote>
+<hr />
+<h1 id="part-i-modern-java">PART I — MODERN JAVA</h1>
+<h1 id="1-what-does-modern-java-mean">1. What Does "Modern Java" Mean?</h1>
+<p>For interview preparation, think of modern Java as the evolution from Java 8 onward:</p>
+<pre><code class="language-text">Java 8
+├── Lambda
+├── Functional Interfaces
+├── Stream API
+├── Optional
+└── java.time
+
+Java 9–11
+├── Module system
+├── var
+├── HTTP Client
+├── String improvements
+└── Collection factory methods
+
+Java 12–17
+├── Switch expressions
+├── Text blocks
+├── Records
+├── Pattern matching
+├── Sealed classes
+└── Stronger language/runtime improvements
+
+Java 21+
+├── Virtual threads
+├── Pattern matching
+├── Record patterns
+├── Sequenced collections
+└── Structured concurrency APIs / modern concurrency evolution
+</code></pre>
+<p>Always distinguish:</p>
+<pre><code class="language-text">feature introduced
+vs
+feature finalized / standardized
+vs
+feature available in the Java version used by the company
+</code></pre>
+<hr />
+<h1 id="2-lambda-expressions">2. Lambda Expressions</h1>
+<p>Before Java 8:</p>
+<pre><code class="language-java">Runnable r = new Runnable() {
+    @Override
+    public void run() {
+        System.out.println(&quot;Hello&quot;);
+    }
+};
+</code></pre>
+<p>Lambda:</p>
+<pre><code class="language-java">Runnable r = () -&gt; System.out.println(&quot;Hello&quot;);
+</code></pre>
+<p>A lambda is behavior that can be passed as a value where a compatible functional interface is expected.</p>
+<hr />
+<h1 id="3-functional-interface">3. Functional Interface</h1>
+<p>A functional interface has exactly one abstract method.</p>
+<p>Example:</p>
+<pre><code class="language-java">@FunctionalInterface
+interface Calculator {
+    int add(int a, int b);
+}
+</code></pre>
+<p>Usage:</p>
+<pre><code class="language-java">Calculator c = (a, b) -&gt; a + b;
+</code></pre>
+<p>Common built-in interfaces:</p>
+<pre><code class="language-text">Predicate&lt;T&gt;      → T → boolean
+Function&lt;T,R&gt;     → T → R
+Consumer&lt;T&gt;       → T → void
+Supplier&lt;T&gt;       → () → T
+UnaryOperator&lt;T&gt;  → T → T
+BinaryOperator&lt;T&gt; → (T,T) → T
+</code></pre>
+<hr />
+<h1 id="4-predicate-vs-function-vs-consumer-vs-supplier">4. Predicate vs Function vs Consumer vs Supplier</h1>
+<pre><code class="language-java">Predicate&lt;User&gt;
+</code></pre>
+<p>asks:</p>
+<pre><code class="language-text">Is this user valid?
+</code></pre>
+<pre><code class="language-java">Function&lt;User, String&gt;
+</code></pre>
+<p>maps:</p>
+<pre><code class="language-text">User → name
+</code></pre>
+<pre><code class="language-java">Consumer&lt;User&gt;
+</code></pre>
+<p>performs an action:</p>
+<pre><code class="language-text">User → side effect
+</code></pre>
+<pre><code class="language-java">Supplier&lt;User&gt;
+</code></pre>
+<p>produces a value:</p>
+<pre><code class="language-text">() → User
+</code></pre>
+<p>Interview trick:</p>
+<blockquote>
+<p><code>Function</code> transforms; <code>Predicate</code> tests; <code>Consumer</code> consumes; <code>Supplier</code> supplies.</p>
+</blockquote>
+<hr />
+<h1 id="5-method-references">5. Method References</h1>
+<p>Instead of:</p>
+<pre><code class="language-java">users.forEach(user -&gt; System.out.println(user));
+</code></pre>
+<p>you can use:</p>
+<pre><code class="language-java">users.forEach(System.out::println);
+</code></pre>
+<p>Forms:</p>
+<pre><code class="language-text">object::instanceMethod
+Class::staticMethod
+Class::instanceMethod
+Class::new
+</code></pre>
+<p>Method references are syntactic sugar for compatible lambdas, not a completely different execution model.</p>
+<hr />
+<h1 id="6-stream-api">6. Stream API</h1>
+<p>A Stream is a pipeline for processing elements.</p>
+<pre><code class="language-java">users.stream()
+    .filter(User::isActive)
+    .map(User::getName)
+    .sorted()
+    .toList();
+</code></pre>
+<p>Think:</p>
+<pre><code class="language-text">Source
+ ↓
+Intermediate operations
+ ↓
+Terminal operation
+</code></pre>
+<hr />
+<h1 id="7-intermediate-vs-terminal-operations">7. Intermediate vs Terminal Operations</h1>
+<p>Intermediate:</p>
+<pre><code class="language-text">filter
+map
+flatMap
+sorted
+distinct
+peek
+limit
+skip
+</code></pre>
+<p>Terminal:</p>
+<pre><code class="language-text">collect
+toList
+forEach
+reduce
+count
+findFirst
+findAny
+anyMatch
+allMatch
+noneMatch
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Intermediate operations are generally lazy.</p>
+</blockquote>
+<hr />
+<h1 id="8-stream-laziness">8. Stream Laziness</h1>
+<p>This:</p>
+<pre><code class="language-java">users.stream()
+    .filter(...)
+    .map(...);
+</code></pre>
+<p>does not necessarily execute the pipeline immediately.</p>
+<p>Execution happens when a terminal operation requests results.</p>
+<p>Why?</p>
+<p>Because the Stream API can optimize how elements flow through the pipeline.</p>
+<hr />
+<h1 id="9-map-vs-flatmap">9. map vs flatMap</h1>
+<p><code>map</code>:</p>
+<pre><code class="language-text">A → B
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">users.stream()
+    .map(User::getAddress);
+</code></pre>
+<p><code>flatMap</code>:</p>
+<pre><code class="language-text">A → Stream&lt;B&gt;
+</code></pre>
+<p>and flattens the result.</p>
+<p>Example:</p>
+<pre><code class="language-java">users.stream()
+    .flatMap(user -&gt; user.getOrders().stream());
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">map
+[A, B, C] → [X, Y, Z]
+
+flatMap
+[A → [X,Y], B → [Z], C → [P,Q]]
+→ [X,Y,Z,P,Q]
+</code></pre>
+<hr />
+<h1 id="10-filter">10. filter</h1>
+<pre><code class="language-java">users.stream()
+    .filter(User::isActive)
+    .toList();
+</code></pre>
+<p>It keeps elements matching a predicate.</p>
+<hr />
+<h1 id="11-reduce">11. reduce</h1>
+<p>Used to combine elements into one result.</p>
+<pre><code class="language-java">int total = numbers.stream()
+    .reduce(0, Integer::sum);
+</code></pre>
+<p>Mental model:</p>
+<pre><code class="language-text">many values
+ ↓
+combine
+ ↓
+one result
+</code></pre>
+<p>For simple numeric aggregations, specialized operations such as <code>sum()</code> may be clearer.</p>
+<hr />
+<h1 id="12-collect">12. collect</h1>
+<p>Collectors support:</p>
+<pre><code class="language-text">toList
+toSet
+toMap
+groupingBy
+partitioningBy
+joining
+counting
+mapping
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">Map&lt;String, List&lt;User&gt;&gt; byCity =
+    users.stream()
+        .collect(Collectors.groupingBy(User::getCity));
+</code></pre>
+<hr />
+<h1 id="13-tomap-trap">13. toMap Trap</h1>
+<p>This can throw if duplicate keys exist:</p>
+<pre><code class="language-java">Collectors.toMap(
+    User::getId,
+    User::getName
+);
+</code></pre>
+<p>If duplicate IDs are possible, provide a merge function:</p>
+<pre><code class="language-java">Collectors.toMap(
+    User::getId,
+    User::getName,
+    (oldValue, newValue) -&gt; newValue
+);
+</code></pre>
+<p>Classic interview trap.</p>
+<hr />
+<h1 id="14-stream-vs-collection">14. Stream vs Collection</h1>
+<p>Collection:</p>
+<pre><code class="language-text">stores data
+</code></pre>
+<p>Stream:</p>
+<pre><code class="language-text">processes data
+</code></pre>
+<p>A Stream generally does not own the underlying data.</p>
+<hr />
+<h1 id="15-stream-reuse">15. Stream Reuse</h1>
+<p>A Stream is generally single-use.</p>
+<pre><code class="language-java">Stream&lt;String&gt; s = names.stream();
+
+s.count();
+s.count(); // IllegalStateException
+</code></pre>
+<p>Create a new Stream when needed.</p>
+<hr />
+<h1 id="16-parallel-streams">16. Parallel Streams</h1>
+<pre><code class="language-java">numbers.parallelStream()
+</code></pre>
+<p>can execute operations in parallel.</p>
+<p>But:</p>
+<blockquote>
+<p><code>parallelStream()</code> is not automatically faster.</p>
+</blockquote>
+<p>Potential problems:</p>
+<pre><code class="language-text">small workload
+blocking I/O
+shared mutable state
+common ForkJoinPool contention
+ordering requirements
+CPU saturation
+</code></pre>
+<p>Use deliberately.</p>
+<hr />
+<h1 id="17-optional">17. Optional</h1>
+<p><code>Optional&lt;T&gt;</code> represents:</p>
+<pre><code class="language-text">value present
+or
+value absent
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">Optional&lt;User&gt; user = repository.findById(id);
+</code></pre>
+<p>Avoid:</p>
+<pre><code class="language-java">if (optional.isPresent()) {
+    ...
+}
+</code></pre>
+<p>when a direct operation expresses intent better:</p>
+<pre><code class="language-java">optional.map(...)
+        .orElse(...)
+</code></pre>
+<hr />
+<h1 id="18-optional-anti-patterns">18. Optional Anti-Patterns</h1>
+<p>Avoid generally:</p>
+<pre><code class="language-java">Optional&lt;User&gt; field;
+</code></pre>
+<p>and:</p>
+<pre><code class="language-java">Optional&lt;User&gt; methodParameter;
+</code></pre>
+<p>Optional is primarily useful as a return-value signal.</p>
+<p>Also avoid:</p>
+<pre><code class="language-java">optional.get()
+</code></pre>
+<p>without establishing presence.</p>
+<hr />
+<h1 id="19-orelse-vs-orelseget">19. orElse vs orElseGet</h1>
+<p>This is a classic interview question.</p>
+<pre><code class="language-java">optional.orElse(expensiveOperation());
+</code></pre>
+<p>The argument may be evaluated even when the Optional contains a value.</p>
+<pre><code class="language-java">optional.orElseGet(() -&gt; expensiveOperation());
+</code></pre>
+<p>The supplier is evaluated only when needed.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">orElse     → eager argument evaluation
+orElseGet  → lazy supplier evaluation
+</code></pre>
+<hr />
+<h1 id="20-modern-datetime-api">20. Modern Date/Time API</h1>
+<p>Use:</p>
+<pre><code class="language-text">LocalDate
+LocalTime
+LocalDateTime
+Instant
+ZonedDateTime
+OffsetDateTime
+Duration
+Period
+DateTimeFormatter
+</code></pre>
+<p>Prefer <code>java.time</code> over legacy:</p>
+<pre><code class="language-text">Date
+Calendar
+SimpleDateFormat
+</code></pre>
+<hr />
+<h1 id="21-instant-vs-localdatetime">21. Instant vs LocalDateTime</h1>
+<p><code>Instant</code> represents a point on the global timeline.</p>
+<pre><code class="language-java">Instant.now()
+</code></pre>
+<p><code>LocalDateTime</code> has no timezone/offset.</p>
+<pre><code class="language-java">LocalDateTime.now()
+</code></pre>
+<p>For distributed systems, timestamps representing actual events are often better represented as <code>Instant</code>.</p>
+<hr />
+<h1 id="22-zoneddatetime">22. ZonedDateTime</h1>
+<p>Represents date/time with a time zone.</p>
+<pre><code class="language-java">ZonedDateTime.now(ZoneId.of(&quot;Asia/Kolkata&quot;));
+</code></pre>
+<p>Useful when business behavior depends on local time zones.</p>
+<hr />
+<h1 id="23-records">23. Records</h1>
+<p>Java records provide concise immutable-style data carriers.</p>
+<pre><code class="language-java">public record UserDto(
+    Long id,
+    String name
+) {}
+</code></pre>
+<p>The compiler provides:</p>
+<pre><code class="language-text">constructor
+accessors
+equals
+hashCode
+toString
+</code></pre>
+<p>Accessor syntax:</p>
+<pre><code class="language-java">dto.name()
+</code></pre>
+<p>not:</p>
+<pre><code class="language-java">dto.getName()
+</code></pre>
+<hr />
+<h1 id="24-record-limitations">24. Record Limitations</h1>
+<p>Records are not simply "immutable classes."</p>
+<p>The record components are final, but referenced objects can still be mutable.</p>
+<p>Example:</p>
+<pre><code class="language-java">record User(List&lt;String&gt; roles) {}
+</code></pre>
+<p>The <code>roles</code> list itself can still be mutable.</p>
+<p>This is called shallow immutability.</p>
+<hr />
+<h1 id="25-records-and-jpa">25. Records and JPA</h1>
+<p>A record is generally not a drop-in replacement for a JPA entity.</p>
+<p>JPA entities commonly require:</p>
+<pre><code class="language-text">no-arg constructor
+non-final entity class/fields in many provider configurations
+identity/lifecycle management
+</code></pre>
+<p>Records are excellent candidates for:</p>
+<pre><code class="language-text">DTOs
+API responses
+value objects
+immutable data carriers
+</code></pre>
+<hr />
+<h1 id="26-sealed-classes">26. Sealed Classes</h1>
+<p>Sealed classes restrict which classes may extend/implement a type.</p>
+<pre><code class="language-java">public sealed interface Payment
+    permits CardPayment, BankPayment {
+}
+</code></pre>
+<p>This helps model a closed hierarchy.</p>
+<hr />
+<h1 id="27-sealed-classes-pattern-matching">27. Sealed Classes + Pattern Matching</h1>
+<p>A sealed hierarchy can make exhaustive branching clearer.</p>
+<p>Conceptually:</p>
+<pre><code class="language-java">switch (payment) {
+    case CardPayment c -&gt; ...
+    case BankPayment b -&gt; ...
+}
+</code></pre>
+<p>This is useful for domain modeling where the set of variants is controlled.</p>
+<hr />
+<h1 id="28-switch-expressions">28. Switch Expressions</h1>
+<p>Modern Java allows:</p>
+<pre><code class="language-java">String result = switch (status) {
+    case ACTIVE -&gt; &quot;A&quot;;
+    case INACTIVE -&gt; &quot;I&quot;;
+    default -&gt; &quot;UNKNOWN&quot;;
+};
+</code></pre>
+<p>Compared with older switch statements, switch expressions produce values directly.</p>
+<hr />
+<h1 id="29-yield">29. yield</h1>
+<p>For multi-statement switch branches:</p>
+<pre><code class="language-java">String result = switch (status) {
+    case ACTIVE -&gt; {
+        log();
+        yield &quot;A&quot;;
+    }
+    default -&gt; &quot;UNKNOWN&quot;;
+};
+</code></pre>
+<hr />
+<h1 id="30-pattern-matching-for-instanceof">30. Pattern Matching for instanceof</h1>
+<p>Old:</p>
+<pre><code class="language-java">if (obj instanceof String) {
+    String s = (String) obj;
+}
+</code></pre>
+<p>Modern:</p>
+<pre><code class="language-java">if (obj instanceof String s) {
+    System.out.println(s.length());
+}
+</code></pre>
+<p>The variable is conditionally pattern-bound.</p>
+<hr />
+<h1 id="31-pattern-matching-for-switch">31. Pattern Matching for switch</h1>
+<p>Modern Java supports richer switch pattern matching.</p>
+<p>Conceptually:</p>
+<pre><code class="language-java">switch (value) {
+    case String s -&gt; ...
+    case Integer i -&gt; ...
+    default -&gt; ...
+}
+</code></pre>
+<p>Use according to the Java version used by the project.</p>
+<hr />
+<h1 id="32-text-blocks">32. Text Blocks</h1>
+<p>Instead of escaping large strings:</p>
+<pre><code class="language-java">String json = &quot;&quot;&quot;
+    {
+      &quot;name&quot;: &quot;Alice&quot;
+    }
+    &quot;&quot;&quot;;
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">JSON
+SQL
+HTML
+multi-line text
+</code></pre>
+<hr />
+<h1 id="33-var">33. var</h1>
+<p>Local variable type inference:</p>
+<pre><code class="language-java">var users = repository.findAll();
+</code></pre>
+<p>The compiler still knows the static type.</p>
+<p>Important:</p>
+<blockquote>
+<p><code>var</code> is not dynamic typing.</p>
+</blockquote>
+<p>Avoid using it when it significantly reduces readability.</p>
+<hr />
+<h1 id="34-immutable-collection-factory-methods">34. Immutable Collection Factory Methods</h1>
+<p>Modern Java supports:</p>
+<pre><code class="language-java">List.of(...)
+Set.of(...)
+Map.of(...)
+</code></pre>
+<p>These produce unmodifiable collections.</p>
+<p>Trap:</p>
+<pre><code class="language-java">List&lt;String&gt; x = List.of(&quot;A&quot;);
+x.add(&quot;B&quot;); // UnsupportedOperationException
+</code></pre>
+<hr />
+<h1 id="35-sequenced-collections">35. Sequenced Collections</h1>
+<p>Modern Java introduces common interfaces/APIs for collections with defined encounter order, including operations conceptually around:</p>
+<pre><code class="language-text">first
+last
+reversed
+</code></pre>
+<p>This helps reduce inconsistencies between collection APIs.</p>
+<p>Know the feature at a high level if interviewing on a recent Java version.</p>
+<hr />
+<h1 id="36-virtual-threads">36. Virtual Threads</h1>
+<p>Virtual threads are lightweight Java threads designed to make high-concurrency blocking workloads easier to scale.</p>
+<p>Traditional:</p>
+<pre><code class="language-text">OS thread
+ ↓
+Java thread
+</code></pre>
+<p>Virtual:</p>
+<pre><code class="language-text">many virtual threads
+        ↓
+fewer carrier OS threads
+</code></pre>
+<hr />
+<h1 id="37-why-virtual-threads-matter">37. Why Virtual Threads Matter</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">100,000 concurrent HTTP requests
+</code></pre>
+<p>Most spend time waiting for:</p>
+<pre><code class="language-text">DB
+HTTP
+file
+network
+</code></pre>
+<p>Platform threads are expensive compared with virtual threads.</p>
+<p>Virtual threads allow many blocking tasks to be represented more efficiently.</p>
+<hr />
+<h1 id="38-virtual-threads-are-not-faster-cpus">38. Virtual Threads Are Not Faster CPUs</h1>
+<p>Important interview trap:</p>
+<blockquote>
+<p>Virtual threads do not make CPU-heavy code execute faster.</p>
+</blockquote>
+<p>They improve scalability for workloads with lots of blocking/waiting.</p>
+<p>If work is:</p>
+<pre><code class="language-text">CPU-heavy
+</code></pre>
+<p>you still have limited CPU cores.</p>
+<hr />
+<h1 id="39-creating-virtual-threads">39. Creating Virtual Threads</h1>
+<p>Modern Java:</p>
+<pre><code class="language-java">Thread.startVirtualThread(() -&gt; {
+    // task
+});
+</code></pre>
+<p>or:</p>
+<pre><code class="language-java">try (var executor =
+         Executors.newVirtualThreadPerTaskExecutor()) {
+
+    executor.submit(() -&gt; callService());
+}
+</code></pre>
+<hr />
+<h1 id="40-virtual-threads-spring-boot">40. Virtual Threads + Spring Boot</h1>
+<p>Modern Spring Boot applications can use virtual threads where supported/configured by the Java/Spring version.</p>
+<p>Typical benefit:</p>
+<pre><code class="language-text">request
+ ↓
+blocking DB/HTTP call
+ ↓
+virtual thread yields
+ ↓
+carrier thread can execute other work
+</code></pre>
+<p>But downstream capacity still limits throughput.</p>
+<hr />
+<h1 id="41-virtual-threads-database-pools">41. Virtual Threads + Database Pools</h1>
+<p>Critical trap:</p>
+<pre><code class="language-text">1,000 virtual threads
+        ↓
+10 DB connections
+</code></pre>
+<p>Only around the available DB connections can make progress on DB operations.</p>
+<p>Therefore:</p>
+<blockquote>
+<p>Virtual threads remove thread scarcity, not database connection scarcity.</p>
+</blockquote>
+<hr />
+<h1 id="42-virtual-thread-pinning">42. Virtual Thread Pinning</h1>
+<p>A virtual thread can become pinned to its carrier in situations such as certain synchronized/native execution paths.</p>
+<p>Classic concern:</p>
+<pre><code class="language-java">synchronized (lock) {
+    blockingOperation();
+}
+</code></pre>
+<p>If the virtual thread is pinned while blocking, scalability benefits can be reduced.</p>
+<p>Modern Java versions have improved pinning behavior, so always verify the exact JDK version and current documentation rather than repeating an oversimplified "synchronized always pins" rule.</p>
+<hr />
+<h1 id="43-virtual-threads-and-threadlocal">43. Virtual Threads and ThreadLocal</h1>
+<p>Virtual threads still support <code>ThreadLocal</code>, but do not assume ThreadLocal state behaves like a scarce platform-thread pool.</p>
+<p>Important concepts remain:</p>
+<pre><code class="language-text">context propagation
+cleanup
+memory retention
+request boundaries
+</code></pre>
+<p>For structured request context in Spring, understand how:</p>
+<pre><code class="language-text">SecurityContextHolder
+RequestContextHolder
+MDC
+</code></pre>
+<p>are propagated and cleared.</p>
+<hr />
+<h1 id="44-structured-concurrency">44. Structured Concurrency</h1>
+<p>Structured concurrency treats related concurrent tasks as one logical operation.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Request
+ ├── call service A
+ ├── call service B
+ └── call service C
+
+wait for related tasks
+ ↓
+combine result
+</code></pre>
+<p>This improves:</p>
+<pre><code class="language-text">lifecycle management
+cancellation
+error propagation
+observability
+</code></pre>
+<p>The exact API status depends on the JDK version; understand the concept and the current JDK API status separately.</p>
+<hr />
+<h1 id="45-completablefuture">45. CompletableFuture</h1>
+<p>Used for asynchronous composition.</p>
+<pre><code class="language-java">CompletableFuture&lt;User&gt; user =
+    getUser();
+
+CompletableFuture&lt;List&lt;Order&gt;&gt; orders =
+    getOrders();
+
+CompletableFuture&lt;Result&gt; result =
+    user.thenCombine(
+        orders,
+        Result::new
+    );
+</code></pre>
+<p>Important methods:</p>
+<pre><code class="language-text">thenApply
+thenCompose
+thenCombine
+thenAccept
+exceptionally
+handle
+whenComplete
+allOf
+anyOf
+</code></pre>
+<hr />
+<h1 id="46-thenapply-vs-thencompose">46. thenApply vs thenCompose</h1>
+<p><code>thenApply</code>:</p>
+<pre><code class="language-text">T → U
+</code></pre>
+<p><code>thenCompose</code>:</p>
+<pre><code class="language-text">T → CompletableFuture&lt;U&gt;
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">getUser()
+    .thenCompose(user -&gt; getOrders(user.id()));
+</code></pre>
+<p>Think:</p>
+<pre><code class="language-text">map       → transform value
+compose   → flatten async future
+</code></pre>
+<hr />
+<h1 id="47-completablefuture-exception-handling">47. CompletableFuture Exception Handling</h1>
+<pre><code class="language-java">future.exceptionally(ex -&gt; fallback());
+</code></pre>
+<p>or:</p>
+<pre><code class="language-java">future.handle((result, ex) -&gt; ...);
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>Exceptions in asynchronous pipelines can otherwise be hidden until a terminal observation such as <code>join()</code>/<code>get()</code>.</p>
+</blockquote>
+<hr />
+<h1 id="48-completablefuture-vs-virtual-threads">48. CompletableFuture vs Virtual Threads</h1>
+<p>These solve different problems.</p>
+<p>CompletableFuture:</p>
+<pre><code class="language-text">asynchronous composition
+</code></pre>
+<p>Virtual threads:</p>
+<pre><code class="language-text">cheap concurrent blocking tasks
+</code></pre>
+<p>You do not automatically need CompletableFuture just because an operation is concurrent.</p>
+<p>For straightforward request-per-task code with blocking I/O, virtual threads can make synchronous-looking code attractive.</p>
+<hr />
+<h1 id="49-executorservice">49. ExecutorService</h1>
+<p>ExecutorService manages task execution.</p>
+<p>Important:</p>
+<pre><code class="language-text">submit
+execute
+shutdown
+shutdownNow
+awaitTermination
+</code></pre>
+<p>Production code must manage lifecycle.</p>
+<hr />
+<h1 id="50-executors-factory-trap">50. Executors Factory Trap</h1>
+<p>Be careful with:</p>
+<pre><code class="language-java">Executors.newFixedThreadPool(...)
+</code></pre>
+<p>The default queue is unbounded.</p>
+<p>If producers submit work faster than workers process it:</p>
+<pre><code class="language-text">tasks accumulate
+ ↓
+memory growth
+</code></pre>
+<p>For bounded workloads, constructing <code>ThreadPoolExecutor</code> explicitly with an appropriate queue and rejection policy can be safer.</p>
+<hr />
+<h1 id="51-interrupts">51. Interrupts</h1>
+<p><code>Thread.interrupt()</code> is a cooperative cancellation signal.</p>
+<p>It does not forcibly kill a thread.</p>
+<p>Blocking methods may throw:</p>
+<pre><code class="language-java">InterruptedException
+</code></pre>
+<p>Bad:</p>
+<pre><code class="language-java">catch (InterruptedException e) {
+}
+</code></pre>
+<p>Better:</p>
+<pre><code class="language-java">catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+    throw new CancellationException();
+}
+</code></pre>
+<p>Exact handling depends on the application contract.</p>
+<hr />
+<h1 id="52-semaphore">52. Semaphore</h1>
+<p>Semaphore limits concurrent access.</p>
+<p>Example:</p>
+<pre><code class="language-java">Semaphore semaphore = new Semaphore(10);
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">100 tasks
+ ↓
+Semaphore(10)
+ ↓
+10 concurrent operations
+</code></pre>
+<p>Useful for:</p>
+<pre><code class="language-text">bounded concurrency
+external API limits
+database-protection gates
+</code></pre>
+<hr />
+<h1 id="53-countdownlatch">53. CountDownLatch</h1>
+<p>A CountDownLatch allows one or more threads to wait until a count reaches zero.</p>
+<pre><code class="language-text">start
+ ↓
+workers
+ ├── done
+ ├── done
+ └── done
+ ↓
+count = 0
+ ↓
+continue
+</code></pre>
+<p>One-time synchronization mechanism.</p>
+<hr />
+<h1 id="54-cyclicbarrier">54. CyclicBarrier</h1>
+<p>Allows a group of threads to wait for one another at a barrier.</p>
+<p>Unlike CountDownLatch, it can be reused.</p>
+<p>Think:</p>
+<pre><code class="language-text">Phase 1
+ ├── worker A
+ ├── worker B
+ └── worker C
+       ↓
+    barrier
+       ↓
+Phase 2
+</code></pre>
+<hr />
+<h1 id="55-modern-java-interview-traps">55. Modern Java Interview Traps</h1>
+<ol>
+<li><code>var</code> is not dynamic typing.</li>
+<li>Streams are not collections.</li>
+<li>Streams are generally single-use.</li>
+<li>Intermediate stream operations are lazy.</li>
+<li><code>parallelStream()</code> is not automatically faster.</li>
+<li><code>map</code> and <code>flatMap</code> are different.</li>
+<li><code>orElse</code> can eagerly evaluate its argument.</li>
+<li><code>Optional.get()</code> is not a safe default.</li>
+<li>Records are not deeply immutable.</li>
+<li>Records are generally not JPA entities.</li>
+<li>Virtual threads do not make CPU-heavy work faster.</li>
+<li>Virtual threads do not remove DB connection limits.</li>
+<li>CompletableFuture and virtual threads solve different problems.</li>
+<li><code>Executors.newFixedThreadPool()</code> uses an unbounded queue by default.</li>
+<li>Interrupt is cooperative cancellation.</li>
+<li>Swallowing InterruptedException is usually a bug.</li>
+<li><code>synchronized</code>/native blocking interactions with virtual threads require JDK-version-aware understanding.</li>
+<li>Structured concurrency is version-sensitive; know the JDK you are discussing.</li>
+</ol>
+<hr />
+<h1 id="part-ii-jvm">PART II — JVM</h1>
+<h1 id="56-what-is-the-jvm">56. What Is the JVM?</h1>
+<p>JVM executes Java bytecode.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Java source
+   ↓
+javac
+   ↓
+.class bytecode
+   ↓
+JVM
+   ↓
+machine instructions
+</code></pre>
+<p>The JVM provides:</p>
+<pre><code class="language-text">execution
+memory management
+garbage collection
+security/runtime checks
+JIT compilation
+threading
+</code></pre>
+<hr />
+<h1 id="57-jdk-vs-jre-vs-jvm">57. JDK vs JRE vs JVM</h1>
+<p>JVM:</p>
+<pre><code class="language-text">executes bytecode
+</code></pre>
+<p>JRE historically:</p>
+<pre><code class="language-text">JVM + runtime libraries
+</code></pre>
+<p>JDK:</p>
+<pre><code class="language-text">development tools
++
+runtime
+</code></pre>
+<p>Modern JDK distributions are the primary installation model; don't over-focus on the old "install JRE separately" model.</p>
+<hr />
+<h1 id="58-java-compilation">58. Java Compilation</h1>
+<pre><code class="language-text">.java
+ ↓
+javac
+ ↓
+.class
+ ↓
+bytecode
+</code></pre>
+<p>Bytecode is platform-independent.</p>
+<p>The JVM implementation is platform-specific.</p>
+<p>This gives:</p>
+<pre><code class="language-text">write once
+run on a compatible JVM
+</code></pre>
+<hr />
+<h1 id="59-jvm-architecture">59. JVM Architecture</h1>
+<p>Conceptually:</p>
+<pre><code class="language-text">              JVM
+               │
+     ┌─────────┴─────────┐
+     │                   │
+Runtime Data Areas     Execution Engine
+     │                   │
+     │             ┌─────┴─────┐
+     │             │           │
+     │          Interpreter   JIT
+     │
+     ├── Heap
+     ├── JVM Stacks
+     ├── Metaspace
+     ├── PC Registers
+     └── Native Method Stacks
+</code></pre>
+<hr />
+<h1 id="60-heap">60. Heap</h1>
+<p>Objects are generally allocated in the heap.</p>
+<pre><code class="language-java">User user = new User();
+</code></pre>
+<p>The <code>User</code> object lives in managed heap memory.</p>
+<p>Heap is shared among JVM threads.</p>
+<hr />
+<h1 id="61-jvm-stack">61. JVM Stack</h1>
+<p>Each thread has its own JVM stack.</p>
+<p>Each method invocation creates a stack frame containing things such as:</p>
+<pre><code class="language-text">local variables
+operand stack
+return information
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">Thread
+ ↓
+Stack
+ ├── frame: main()
+ ├── frame: service()
+ └── frame: repository()
+</code></pre>
+<hr />
+<h1 id="62-stack-vs-heap">62. Stack vs Heap</h1>
+<pre><code class="language-text">Stack
+→ per-thread
+→ method execution frames
+→ local references/primitive values as applicable
+
+Heap
+→ shared
+→ objects/arrays
+→ garbage collected
+</code></pre>
+<p>Avoid saying:</p>
+<blockquote>
+<p>"All primitives are on the stack."</p>
+</blockquote>
+<p>Java memory behavior is more nuanced because variables can be optimized by the JVM and escape analysis.</p>
+<hr />
+<h1 id="63-metaspace">63. Metaspace</h1>
+<p>Metaspace stores JVM class metadata outside the traditional Java heap.</p>
+<p>Introduced in Java 8 as a replacement for PermGen.</p>
+<p>Metaspace can grow subject to native-memory/system limits and JVM configuration.</p>
+<hr />
+<h1 id="64-permgen-vs-metaspace">64. PermGen vs Metaspace</h1>
+<p>Before Java 8:</p>
+<pre><code class="language-text">PermGen
+</code></pre>
+<p>Java 8+:</p>
+<pre><code class="language-text">Metaspace
+</code></pre>
+<p>Metaspace uses native memory rather than the traditional fixed-size PermGen area.</p>
+<hr />
+<h1 id="65-class-loading">65. Class Loading</h1>
+<p>JVM loads classes dynamically.</p>
+<p>High-level process:</p>
+<pre><code class="language-text">Loading
+ ↓
+Linking
+ ├── Verification
+ ├── Preparation
+ └── Resolution
+ ↓
+Initialization
+</code></pre>
+<hr />
+<h1 id="66-classloader">66. ClassLoader</h1>
+<p>Common loader hierarchy concepts:</p>
+<pre><code class="language-text">Bootstrap
+   ↓
+Platform
+   ↓
+Application
+</code></pre>
+<p>The exact implementation details are JVM-version dependent.</p>
+<p>Class loaders allow classes to be loaded dynamically and support isolation patterns.</p>
+<hr />
+<h1 id="67-parent-delegation">67. Parent Delegation</h1>
+<p>Typically, a class loader asks its parent to load a class first.</p>
+<p>Why?</p>
+<pre><code class="language-text">avoid duplicate core classes
+security
+consistent type identity
+</code></pre>
+<p>This is called parent delegation.</p>
+<p>Custom class loaders can alter this behavior.</p>
+<hr />
+<h1 id="68-class-identity">68. Class Identity</h1>
+<p>A Java class is identified by:</p>
+<pre><code class="language-text">class name
++
+class loader
+</code></pre>
+<p>Therefore:</p>
+<pre><code class="language-text">same class name
++
+different class loaders
+=
+potentially different types
+</code></pre>
+<p>This matters in:</p>
+<pre><code class="language-text">application servers
+plugins
+containers
+hot reload
+frameworks
+</code></pre>
+<hr />
+<h1 id="69-bytecode">69. Bytecode</h1>
+<p><code>.class</code> files contain JVM bytecode.</p>
+<p>Tools:</p>
+<pre><code class="language-text">javap
+</code></pre>
+<p>can inspect bytecode.</p>
+<p>Example:</p>
+<pre><code class="language-bash">javap -c MyClass
+</code></pre>
+<p>This is useful when understanding:</p>
+<pre><code class="language-text">method invocation
+boxing
+synchronized
+lambda implementation
+</code></pre>
+<hr />
+<h1 id="70-interpreter">70. Interpreter</h1>
+<p>The JVM can interpret bytecode directly.</p>
+<p>This helps startup because the JVM does not need to compile everything immediately.</p>
+<hr />
+<h1 id="71-jit-compiler">71. JIT Compiler</h1>
+<p>Frequently executed code can be compiled into optimized native machine code.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Bytecode
+ ↓
+Interpreter
+ ↓
+hot code detected
+ ↓
+JIT compilation
+ ↓
+optimized machine code
+</code></pre>
+<p>This is why long-running Java applications can become highly optimized.</p>
+<hr />
+<h1 id="72-tiered-compilation">72. Tiered Compilation</h1>
+<p>Modern JVMs use multiple compilation levels to balance:</p>
+<pre><code class="language-text">startup
+profiling
+optimization
+</code></pre>
+<p>The JVM can gradually optimize hot code based on runtime behavior.</p>
+<hr />
+<h1 id="73-deoptimization">73. Deoptimization</h1>
+<p>A JIT compiler makes assumptions based on runtime observations.</p>
+<p>If assumptions become invalid:</p>
+<pre><code class="language-text">optimized code
+ ↓
+assumption invalid
+ ↓
+deoptimization
+ ↓
+fallback/recompile
+</code></pre>
+<p>This is a sophisticated reason why runtime behavior can differ from naive source-code reasoning.</p>
+<hr />
+<h1 id="74-escape-analysis">74. Escape Analysis</h1>
+<p>The JVM can determine whether an object escapes a method/thread.</p>
+<p>This can enable optimizations such as:</p>
+<pre><code class="language-text">scalar replacement
+lock elimination
+allocation optimization
+</code></pre>
+<p>Do not assume every <code>new</code> necessarily becomes a long-lived heap allocation visible exactly as written in source.</p>
+<hr />
+<h1 id="75-garbage-collection">75. Garbage Collection</h1>
+<p>GC automatically reclaims objects that are no longer reachable.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">GC Roots
+ ↓
+reachable objects
+
+unreachable objects
+ ↓
+eligible for collection
+</code></pre>
+<hr />
+<h1 id="76-gc-roots">76. GC Roots</h1>
+<p>Typical GC roots include:</p>
+<pre><code class="language-text">active thread references
+static references
+JNI references
+stack references
+other JVM-managed roots
+</code></pre>
+<p>An object is collectible when it is no longer reachable from GC roots.</p>
+<hr />
+<h1 id="77-reachability">77. Reachability</h1>
+<p>Example:</p>
+<pre><code class="language-java">User u = new User();
+u = null;
+</code></pre>
+<p>If no other reference exists:</p>
+<pre><code class="language-text">User object
+ ↓
+unreachable
+ ↓
+eligible for GC
+</code></pre>
+<p>Eligible does not mean:</p>
+<pre><code class="language-text">immediately collected
+</code></pre>
+<hr />
+<h1 id="78-generational-gc">78. Generational GC</h1>
+<p>Generational hypothesis:</p>
+<blockquote>
+<p>Most objects die young.</p>
+</blockquote>
+<p>Conceptual:</p>
+<pre><code class="language-text">Young Generation
+ ├── Eden
+ └── Survivor areas
+
+Old Generation
+</code></pre>
+<p>Short-lived objects are handled differently from long-lived objects.</p>
+<p>Exact layout depends on the collector.</p>
+<hr />
+<h1 id="79-minor-gc">79. Minor GC</h1>
+<p>Typically refers to collection activity focused on the young generation in generational collectors.</p>
+<p>It is usually more frequent and shorter than major/full collection, but terminology varies by collector/JDK.</p>
+<hr />
+<h1 id="80-major-vs-full-gc">80. Major vs Full GC</h1>
+<p>Do not memorize simplistic definitions.</p>
+<p>Collector terminology differs.</p>
+<p>A Full GC generally involves broader heap processing and is often more disruptive.</p>
+<p>Modern collectors such as G1 and ZGC have different phases and goals.</p>
+<hr />
+<h1 id="81-g1-gc">81. G1 GC</h1>
+<p>G1 (Garbage-First) divides the heap into regions.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Heap
+ ┌──┬──┬──┬──┬──┬──┐
+ │R │R │R │R │R │R │
+ └──┴──┴──┴──┴──┴──┘
+</code></pre>
+<p>G1 attempts to prioritize regions with more reclaimable space while managing pause-time goals.</p>
+<hr />
+<h1 id="82-zgc">82. ZGC</h1>
+<p>ZGC is designed for very low pause times on large heaps.</p>
+<p>It uses concurrent techniques to reduce long application pauses.</p>
+<p>Use it when:</p>
+<pre><code class="language-text">large heap
+latency-sensitive workload
+low-pause requirements
+</code></pre>
+<p>Exact collector selection should be based on workload and JDK version.</p>
+<hr />
+<h1 id="83-serial-vs-parallel-vs-g1-vs-zgc">83. Serial vs Parallel vs G1 vs ZGC</h1>
+<p>Very high-level:</p>
+<pre><code class="language-text">Serial
+→ simple/smaller workloads
+
+Parallel
+→ throughput-oriented
+
+G1
+→ balanced latency/throughput, region-based
+
+ZGC
+→ very low pause goals / large heaps
+</code></pre>
+<p>Do not select a GC based only on a memorized table.</p>
+<p>Measure.</p>
+<hr />
+<h1 id="84-stop-the-world">84. Stop-The-World</h1>
+<p>Some GC phases pause application threads.</p>
+<p>This is called:</p>
+<pre><code class="language-text">Stop-The-World
+</code></pre>
+<p>Modern collectors perform substantial work concurrently, but not all phases are necessarily concurrent.</p>
+<hr />
+<h1 id="85-gc-pause-vs-application-latency">85. GC Pause vs Application Latency</h1>
+<p>Suppose:</p>
+<pre><code class="language-text">API latency = 500ms
+</code></pre>
+<p>Possible causes:</p>
+<pre><code class="language-text">GC pause
+DB wait
+connection pool wait
+network
+CPU
+lock contention
+</code></pre>
+<p>GC is only one possible cause.</p>
+<p>Monitor:</p>
+<pre><code class="language-text">GC pauses
+allocation rate
+heap occupancy
+CPU
+application latency
+</code></pre>
+<hr />
+<h1 id="86-outofmemoryerror">86. OutOfMemoryError</h1>
+<p>Possible causes:</p>
+<pre><code class="language-text">heap exhaustion
+metaspace exhaustion
+direct/native memory exhaustion
+too many threads
+other native resource exhaustion
+</code></pre>
+<p>Therefore:</p>
+<blockquote>
+<p>OutOfMemoryError does not necessarily mean "heap is full."</p>
+</blockquote>
+<hr />
+<h1 id="87-java-heap-space">87. Java Heap Space</h1>
+<p>Example:</p>
+<pre><code class="language-text">java.lang.OutOfMemoryError: Java heap space
+</code></pre>
+<p>Usually indicates the heap cannot satisfy allocation demands.</p>
+<p>Potential causes:</p>
+<pre><code class="language-text">memory leak
+large objects
+unbounded cache
+high allocation rate
+insufficient heap
+</code></pre>
+<hr />
+<h1 id="88-metaspace-oom">88. Metaspace OOM</h1>
+<p>Possible cause:</p>
+<pre><code class="language-text">too many dynamically generated classes
+class-loader leak
+framework/proxy generation
+</code></pre>
+<p>Common in systems with:</p>
+<pre><code class="language-text">dynamic class generation
+redeployment
+plugin loading
+</code></pre>
+<hr />
+<h1 id="89-stackoverflowerror">89. StackOverflowError</h1>
+<p>Usually caused by excessive stack depth, commonly recursive calls:</p>
+<pre><code class="language-java">void recurse() {
+    recurse();
+}
+</code></pre>
+<p>Eventually:</p>
+<pre><code class="language-text">StackOverflowError
+</code></pre>
+<p>This is different from heap exhaustion.</p>
+<hr />
+<h1 id="90-direct-memory">90. Direct Memory</h1>
+<p>Libraries such as NIO can use off-heap/direct memory.</p>
+<p>Examples:</p>
+<pre><code class="language-text">ByteBuffer.allocateDirect(...)
+</code></pre>
+<p>Direct memory is outside the normal Java heap.</p>
+<p>Problems can manifest as native-memory pressure even when heap usage looks reasonable.</p>
+<hr />
+<h1 id="91-native-memory">91. Native Memory</h1>
+<p>The JVM itself and libraries use native memory for:</p>
+<pre><code class="language-text">threads
+class metadata
+code cache
+GC structures
+direct buffers
+JNI
+</code></pre>
+<p>Therefore JVM memory investigation must look beyond heap.</p>
+<hr />
+<h1 id="92-java-memory-leak">92. Java Memory Leak</h1>
+<p>A Java memory leak occurs when objects remain reachable even though the application no longer logically needs them.</p>
+<p>Common causes:</p>
+<pre><code class="language-text">static collections
+unbounded caches
+listeners
+ThreadLocal misuse
+classloader leaks
+long-lived references
+</code></pre>
+<p>Important:</p>
+<blockquote>
+<p>GC cannot collect reachable objects, even if the application has forgotten about them logically.</p>
+</blockquote>
+<hr />
+<h1 id="93-threadlocal-memory-leak">93. ThreadLocal Memory Leak</h1>
+<p>With thread pools:</p>
+<pre><code class="language-text">request A
+ ↓
+ThreadLocal = user A
+ ↓
+thread returns to pool
+ ↓
+request B reuses thread
+</code></pre>
+<p>If the ThreadLocal is not cleared:</p>
+<pre><code class="language-text">request B
+ ↓
+may observe stale context
+</code></pre>
+<p>Use:</p>
+<pre><code class="language-java">try {
+    context.set(value);
+    ...
+} finally {
+    context.remove();
+}
+</code></pre>
+<p>This is especially important for:</p>
+<pre><code class="language-text">MDC
+request context
+security context
+tenant context
+</code></pre>
+<hr />
+<h1 id="94-jvm-monitoring">94. JVM Monitoring</h1>
+<p>Useful tools/metrics:</p>
+<pre><code class="language-text">JMX
+JFR
+jcmd
+jstack
+jmap
+jstat
+GC logs
+heap dumps
+thread dumps
+</code></pre>
+<p>Modern production analysis often favors:</p>
+<pre><code class="language-text">JFR
+jcmd
+observability platform
+</code></pre>
+<p>depending on the incident.</p>
+<hr />
+<h1 id="95-thread-dump">95. Thread Dump</h1>
+<p>Thread dumps help identify:</p>
+<pre><code class="language-text">deadlocks
+blocked threads
+waiting threads
+CPU-heavy threads
+pool starvation
+</code></pre>
+<p>Look for states:</p>
+<pre><code class="language-text">RUNNABLE
+BLOCKED
+WAITING
+TIMED_WAITING
+</code></pre>
+<hr />
+<h1 id="96-heap-dump">96. Heap Dump</h1>
+<p>Heap dumps help identify:</p>
+<pre><code class="language-text">retained memory
+large object graphs
+leaks
+unexpected caches
+classloader leaks
+</code></pre>
+<p>Analyze with tools such as:</p>
+<pre><code class="language-text">Eclipse MAT
+VisualVM
+commercial profilers
+</code></pre>
+<hr />
+<h1 id="97-java-flight-recorder">97. Java Flight Recorder</h1>
+<p>JFR records runtime events with relatively low overhead compared with many traditional profiling approaches.</p>
+<p>Useful for:</p>
+<pre><code class="language-text">CPU
+GC
+allocation
+locks
+threads
+I/O
+JVM behavior
+</code></pre>
+<p>JFR + JMC can be extremely valuable for production investigations.</p>
+<hr />
+<h1 id="98-jit-and-profiling">98. JIT and Profiling</h1>
+<p>The JVM optimizes based on runtime behavior.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">benchmark
+measure
+profile
+</code></pre>
+<p>rather than assuming:</p>
+<pre><code class="language-text">source code A
+must be faster than
+source code B
+</code></pre>
+<p>Use a proper benchmark tool such as JMH for microbenchmarks.</p>
+<hr />
+<h1 id="99-jmh">99. JMH</h1>
+<p>Java Microbenchmark Harness is designed for JVM microbenchmarking.</p>
+<p>Why not simply:</p>
+<pre><code class="language-java">long start = System.nanoTime();
+run();
+long end = System.nanoTime();
+</code></pre>
+<p>Because JVM optimizations include:</p>
+<pre><code class="language-text">JIT compilation
+dead-code elimination
+warmup
+constant folding
+inlining
+GC effects
+</code></pre>
+<p>JMH handles many of these benchmarking concerns.</p>
+<hr />
+<h1 id="100-jvm-flags">100. JVM Flags</h1>
+<p>Examples:</p>
+<pre><code class="language-text">-Xms
+-Xmx
+-Xss
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">-Xms → initial heap size
+-Xmx → maximum heap size
+-Xss → thread stack size
+</code></pre>
+<p>Modern JVMs have many more options, but do not tune flags blindly.</p>
+<hr />
+<h1 id="101-container-awareness">101. Container Awareness</h1>
+<p>Modern JVMs understand container resource limits much better than older Java versions.</p>
+<p>Still verify:</p>
+<pre><code class="language-text">heap sizing
+CPU limits
+memory limits
+GC behavior
+native memory
+</code></pre>
+<p>when running in Docker/Kubernetes.</p>
+<hr />
+<h1 id="102-jvm-kubernetes">102. JVM + Kubernetes</h1>
+<p>Typical:</p>
+<pre><code class="language-text">Pod
+ ↓
+JVM
+ ├── heap
+ ├── metaspace
+ ├── thread stacks
+ ├── direct memory
+ └── native memory
+</code></pre>
+<p>A pod can be OOM-killed even if:</p>
+<pre><code class="language-text">-Xmx
+</code></pre>
+<p>looks safe.</p>
+<p>Why?</p>
+<p>Because total process memory includes more than Java heap.</p>
+<hr />
+<h1 id="103-cpu-limits-and-jvm">103. CPU Limits and JVM</h1>
+<p>If Kubernetes gives:</p>
+<pre><code class="language-text">CPU limit = 1 core
+</code></pre>
+<p>but the application creates many CPU-heavy tasks:</p>
+<pre><code class="language-text">threads
+ ↓
+CPU contention
+</code></pre>
+<p>Virtual threads do not solve this.</p>
+<hr />
+<h1 id="104-classloader-leak-scenario">104. Classloader Leak Scenario</h1>
+<p>Application repeatedly loads classes:</p>
+<pre><code class="language-text">deploy version 1
+ ↓
+deploy version 2
+ ↓
+deploy version 3
+</code></pre>
+<p>If old classloaders remain reachable:</p>
+<pre><code class="language-text">classes
+ ↓
+cannot be unloaded
+ ↓
+metaspace growth
+</code></pre>
+<p>This can cause:</p>
+<pre><code class="language-text">Metaspace OOM
+</code></pre>
+<hr />
+<h1 id="105-jvm-interview-scenario-api-suddenly-has-long-latency">105. JVM Interview Scenario: API Suddenly Has Long Latency</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">1. CPU
+2. GC pauses
+3. allocation rate
+4. thread contention
+5. DB latency
+6. connection pool
+7. external calls
+8. network
+9. locks
+</code></pre>
+<p>Tools:</p>
+<pre><code class="language-text">metrics
+JFR
+thread dump
+GC logs
+APM
+</code></pre>
+<p>Do not immediately increase heap.</p>
+<hr />
+<h1 id="106-jvm-interview-scenario-memory-keeps-growing">106. JVM Interview Scenario: Memory Keeps Growing</h1>
+<p>Ask:</p>
+<pre><code class="language-text">Is heap occupancy after GC growing?
+</code></pre>
+<p>If yes:</p>
+<pre><code class="language-text">possible leak
+</code></pre>
+<p>If no:</p>
+<pre><code class="language-text">high allocation rate
+temporary objects
+GC behavior
+</code></pre>
+<p>Also inspect:</p>
+<pre><code class="language-text">native memory
+metaspace
+direct buffers
+threads
+</code></pre>
+<hr />
+<h1 id="107-jvm-interview-scenario-cpu-is-100">107. JVM Interview Scenario: CPU Is 100%</h1>
+<p>Possible causes:</p>
+<pre><code class="language-text">hot loop
+high request rate
+GC
+serialization
+regex
+compression
+JIT
+busy spin
+</code></pre>
+<p>Take:</p>
+<pre><code class="language-text">thread dump
+CPU profile
+JFR
+</code></pre>
+<p>Identify the actual hot threads.</p>
+<hr />
+<h1 id="108-jvm-interview-scenario-outofmemoryerror-but-heap-looks-fine">108. JVM Interview Scenario: OutOfMemoryError But Heap Looks Fine</h1>
+<p>Investigate:</p>
+<pre><code class="language-text">metaspace
+direct memory
+thread stacks
+native allocations
+memory-mapped files
+container memory limit
+</code></pre>
+<p>This is a classic senior troubleshooting question.</p>
+<hr />
+<h1 id="109-jvm-interview-scenario-many-threads-but-low-cpu">109. JVM Interview Scenario: Many Threads but Low CPU</h1>
+<p>Possible:</p>
+<pre><code class="language-text">threads waiting on DB
+network
+locks
+queues
+sleep
+</code></pre>
+<p>Thread count alone does not indicate CPU utilization.</p>
+<hr />
+<h1 id="110-jvm-interview-scenario-many-virtual-threads-but-slow-requests">110. JVM Interview Scenario: Many Virtual Threads but Slow Requests</h1>
+<p>Ask:</p>
+<pre><code class="language-text">DB connection pool?
+external service?
+CPU?
+lock contention?
+rate limiting?
+downstream capacity?
+</code></pre>
+<p>Virtual threads improve concurrency representation, not downstream capacity.</p>
+<hr />
+<h1 id="111-jvm-interview-scenario-synchronized-virtual-threads">111. JVM Interview Scenario: synchronized + Virtual Threads</h1>
+<p>Question:</p>
+<blockquote>
+<p>Does <code>synchronized</code> always make virtual threads useless?</p>
+</blockquote>
+<p>No.</p>
+<p>The important issue is blocking while a virtual thread is pinned to a carrier in situations where pinning applies.</p>
+<p>Modern JDKs have evolved in this area.</p>
+<p>Answer with:</p>
+<pre><code class="language-text">JDK version
+blocking behavior
+pinning scenario
+actual measurement
+</code></pre>
+<p>rather than an absolute statement.</p>
+<hr />
+<h1 id="112-modern-java-jvm-interview-questions">112. Modern Java + JVM Interview Questions</h1>
+<ol>
+<li>What is a functional interface?</li>
+<li>Predicate vs Function vs Consumer vs Supplier?</li>
+<li>What is a lambda?</li>
+<li>Method reference?</li>
+<li>Stream vs Collection?</li>
+<li>Intermediate vs terminal operation?</li>
+<li>Why are streams lazy?</li>
+<li>map vs flatMap?</li>
+<li>reduce vs collect?</li>
+<li>What happens with duplicate keys in Collectors.toMap?</li>
+<li>Can a Stream be reused?</li>
+<li>parallelStream pitfalls?</li>
+<li>Optional?</li>
+<li>orElse vs orElseGet?</li>
+<li>Why avoid Optional fields?</li>
+<li>Record?</li>
+<li>Are records deeply immutable?</li>
+<li>Why are records usually better suited to DTOs than JPA entities?</li>
+<li>Sealed class?</li>
+<li>Switch expression?</li>
+<li>Pattern matching?</li>
+<li>Text blocks?</li>
+<li>var?</li>
+<li>List.of vs ArrayList?</li>
+<li>What are sequenced collections?</li>
+<li>What are virtual threads?</li>
+<li>What problem do virtual threads solve?</li>
+<li>Are virtual threads faster than platform threads?</li>
+<li>Virtual threads and JDBC?</li>
+<li>Virtual threads and connection pools?</li>
+<li>Virtual thread pinning?</li>
+<li>Virtual threads and ThreadLocal?</li>
+<li>Structured concurrency?</li>
+<li>CompletableFuture vs virtual threads?</li>
+<li>thenApply vs thenCompose?</li>
+<li>CompletableFuture exception handling?</li>
+<li>ExecutorService shutdown?</li>
+<li>Why can newFixedThreadPool be dangerous?</li>
+<li>What is cooperative interruption?</li>
+<li>Why restore interrupt status?</li>
+<li>Semaphore vs CountDownLatch?</li>
+<li>CountDownLatch vs CyclicBarrier?</li>
+<li>What is the JVM?</li>
+<li>JDK vs JRE vs JVM?</li>
+<li>What is bytecode?</li>
+<li>What is the class-loading process?</li>
+<li>What is ClassLoader?</li>
+<li>Parent delegation?</li>
+<li>How does class identity work?</li>
+<li>Heap vs stack?</li>
+<li>What is metaspace?</li>
+<li>PermGen vs Metaspace?</li>
+<li>What is JIT?</li>
+<li>What is tiered compilation?</li>
+<li>What is deoptimization?</li>
+<li>What is escape analysis?</li>
+<li>What is GC?</li>
+<li>What are GC roots?</li>
+<li>What is generational GC?</li>
+<li>What is G1?</li>
+<li>What is ZGC?</li>
+<li>Stop-the-world?</li>
+<li>Minor vs major/full GC?</li>
+<li>What causes Java heap OOM?</li>
+<li>What causes Metaspace OOM?</li>
+<li>What causes StackOverflowError?</li>
+<li>What is direct memory?</li>
+<li>What is a Java memory leak?</li>
+<li>How does ThreadLocal leak memory/context?</li>
+<li>How do you investigate a memory leak?</li>
+<li>How do you investigate high CPU?</li>
+<li>How do you investigate high latency?</li>
+<li>What is a thread dump?</li>
+<li>What is a heap dump?</li>
+<li>What is JFR?</li>
+<li>What is JMH?</li>
+<li>Why are naive microbenchmarks unreliable?</li>
+<li>What happens to JVM memory inside Kubernetes?</li>
+<li>Why can a container OOM while heap looks safe?</li>
+<li>How do you tune JVM memory?</li>
+<li>How do you choose a GC?</li>
+<li>How do you diagnose classloader leaks?</li>
+<li>How do virtual threads interact with downstream bottlenecks?</li>
+<li>How do you investigate a production JVM incident?</li>
+</ol>
+<hr />
+<h1 id="113-final-mental-model">113. Final Mental Model</h1>
+<p>Modern Java:</p>
+<pre><code class="language-text">Language
+ ├── Lambda
+ ├── Functional Interfaces
+ ├── Streams
+ ├── Optional
+ ├── Records
+ ├── Sealed Types
+ ├── Pattern Matching
+ └── Modern Concurrency
+       ├── CompletableFuture
+       ├── Executors
+       ├── Virtual Threads
+       └── Structured Concurrency
+</code></pre>
+<p>JVM:</p>
+<pre><code class="language-text">Source
+ ↓
+Bytecode
+ ↓
+ClassLoader
+ ↓
+Interpreter
+ ↓
+JIT
+ ↓
+Native Code
+
+Runtime
+ ├── Heap
+ ├── Stack
+ ├── Metaspace
+ ├── Native Memory
+ └── GC
+</code></pre>
+<p>Production:</p>
+<pre><code class="language-text">Spring Boot
+ ↓
+JVM
+ ↓
+Threads
+ ↓
+Heap / Native Memory
+ ↓
+GC
+ ↓
+Database / Kafka / Redis
+</code></pre>
+<hr />
+<h1 id="114-golden-rules">114. Golden Rules</h1>
+<ol>
+<li>Streams process data; collections store data.</li>
+<li>Streams are lazy until a terminal operation triggers evaluation.</li>
+<li><code>map</code> transforms; <code>flatMap</code> transforms and flattens.</li>
+<li><code>parallelStream()</code> is not a free performance switch.</li>
+<li><code>orElseGet</code> is lazy; <code>orElse</code> may evaluate eagerly.</li>
+<li>Records provide concise data carriers, not deep immutability.</li>
+<li>Records are generally excellent DTO candidates.</li>
+<li>Virtual threads improve scalability for blocking workloads.</li>
+<li>Virtual threads do not increase CPU capacity.</li>
+<li>Virtual threads do not eliminate database connection limits.</li>
+<li>Async programming and cheap concurrency are different concepts.</li>
+<li>Interrupt is cooperative cancellation.</li>
+<li>Never casually swallow <code>InterruptedException</code>.</li>
+<li><code>newFixedThreadPool</code> uses an unbounded queue by default.</li>
+<li>JVM performance is runtime-driven.</li>
+<li>JIT optimization depends on profiling.</li>
+<li>Heap is only one part of JVM memory.</li>
+<li>GC cannot collect reachable objects.</li>
+<li>A Java memory leak means unwanted reachability, not absence of GC.</li>
+<li>Metaspace, direct memory, stacks, and native allocations can cause memory pressure.</li>
+<li>Do not tune JVM flags without measurements.</li>
+<li>Use JFR, thread dumps, heap dumps, and metrics to diagnose production behavior.</li>
+<li>Use JMH for serious microbenchmarks.</li>
+<li>Always state the JDK version when discussing version-sensitive features.</li>
+<li>For senior interviews, explain runtime behavior—not just language syntax.</li>
+</ol></main>
+</div>
+</body>
+</html>

@@ -1,0 +1,2312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Java Collections Framework — Interview Questions &amp; Answers — Java Notes</title>
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/highlight-theme.css">
+<script src="../assets/sidebar.js" defer></script>
+<script src="../assets/highlight.min.js" defer></script>
+<script src="../assets/mermaid.min.js" defer></script>
+<script src="../assets/diagram-lightbox.js" defer></script>
+<script defer>
+document.addEventListener('DOMContentLoaded', function () {
+  hljs.configure({ cssSelector: 'pre code[class^="language-"]' });
+  hljs.highlightAll();
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#ece9fd',
+      primaryBorderColor: '#5b3df0',
+      primaryTextColor: '#232037',
+      lineColor: '#5b3df0',
+      fontFamily: 'ui-sans-serif, -apple-system, sans-serif',
+      fontSize: '13px'
+    }
+  });
+});
+</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar"></nav>
+<main><hr />
+<p>title: Java Collections Framework — Interview Questions &amp; Answers
+tags:
+  - java
+  - collections
+  - arraylist
+  - hashmap
+  - hashset
+  - concurrenthashmap
+  - interview
+  - backend</p>
+<hr />
+<h1 id="java-collections-framework-interview-questions-answers">Java Collections Framework — Interview Questions &amp; Answers</h1>
+<blockquote>
+<p>[!note]
+This note is designed as <strong>interview preparation</strong>, not a one-line revision sheet.
+Questions progress from basic → intermediate → advanced → tricky → scenario-based.</p>
+<p>The objective is to understand not only <strong>what</strong> a collection does, but <strong>why it exists, how it works internally, its complexity, memory behavior, common mistakes, and when to choose it in production</strong>.</p>
+</blockquote>
+<hr />
+<h1 id="1-collections-framework-fundamentals">1. Collections Framework Fundamentals</h1>
+<h2 id="q1-what-is-the-java-collections-framework">Q1. What is the Java Collections Framework?</h2>
+<p>The Java Collections Framework is a set of interfaces, implementations, algorithms, and utility methods for storing and manipulating groups of objects.</p>
+<p>The framework provides common abstractions such as:</p>
+<pre><code class="language-text">Collection
+├── List
+├── Set
+└── Queue / Deque
+
+Map
+</code></pre>
+<p>Important interfaces include:</p>
+<pre><code class="language-text">List
+Set
+Queue
+Deque
+Map
+</code></pre>
+<p>Common implementations include:</p>
+<pre><code class="language-text">ArrayList
+LinkedList
+HashSet
+LinkedHashSet
+TreeSet
+
+HashMap
+LinkedHashMap
+TreeMap
+ConcurrentHashMap
+
+ArrayDeque
+PriorityQueue
+</code></pre>
+<p>The framework prevents developers from having to build common data structures from scratch.</p>
+<hr />
+<h2 id="q2-what-is-the-difference-between-collection-and-collections">Q2. What is the difference between Collection and Collections?</h2>
+<p>This is a common interview question.</p>
+<h3 id="collection"><code>Collection</code></h3>
+<p><code>Collection</code> is an interface representing a group of objects.</p>
+<p>Examples:</p>
+<pre><code class="language-java">Collection&lt;String&gt; names;
+List&lt;String&gt; names;
+Set&lt;String&gt; names;
+</code></pre>
+<h3 id="collections"><code>Collections</code></h3>
+<p><code>Collections</code> is a utility class containing static methods for operating on collections.</p>
+<p>Examples:</p>
+<pre><code class="language-java">Collections.sort(list);
+Collections.reverse(list);
+Collections.shuffle(list);
+Collections.unmodifiableList(list);
+</code></pre>
+<p>So:</p>
+<pre><code class="language-text">Collection
+→ interface
+
+Collections
+→ utility class
+</code></pre>
+<hr />
+<h2 id="q3-is-map-part-of-the-collection-interface-hierarchy">Q3. Is Map part of the Collection interface hierarchy?</h2>
+<p>No.</p>
+<p>This is an important distinction.</p>
+<p>The hierarchy is conceptually:</p>
+<pre><code class="language-text">Iterable
+   ↓
+Collection
+   ├── List
+   ├── Set
+   └── Queue
+</code></pre>
+<p><code>Map</code> is separate:</p>
+<pre><code class="language-text">Map
+├── HashMap
+├── LinkedHashMap
+├── TreeMap
+└── ConcurrentHashMap
+</code></pre>
+<p>A map stores associations:</p>
+<pre><code class="language-text">key → value
+</code></pre>
+<p>while a <code>Collection</code> represents a group of individual elements.</p>
+<hr />
+<h2 id="q4-what-is-the-difference-between-list-set-and-map">Q4. What is the difference between List, Set, and Map?</h2>
+<h3 id="list">List</h3>
+<ul>
+<li>Ordered</li>
+<li>Allows duplicates</li>
+<li>Index-based access</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-java">List&lt;String&gt; names =
+    new ArrayList&lt;&gt;();
+</code></pre>
+<pre><code class="language-text">[&quot;A&quot;, &quot;B&quot;, &quot;A&quot;]
+</code></pre>
+<h3 id="set">Set</h3>
+<ul>
+<li>Represents unique elements</li>
+<li>Does not generally use index-based access</li>
+<li>Ordering depends on implementation</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-java">Set&lt;String&gt; names =
+    new HashSet&lt;&gt;();
+</code></pre>
+<h3 id="map">Map</h3>
+<ul>
+<li>Stores key-value pairs</li>
+<li>Keys are unique</li>
+<li>Values can generally be duplicated</li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-java">Map&lt;Integer, String&gt; users =
+    new HashMap&lt;&gt;();
+</code></pre>
+<pre><code class="language-text">1 → Alice
+2 → Bob
+</code></pre>
+<hr />
+<h1 id="2-list">2. List</h1>
+<h2 id="q5-what-is-list">Q5. What is List?</h2>
+<p><code>List</code> is an ordered collection that permits duplicate elements.</p>
+<p>Example:</p>
+<pre><code class="language-java">List&lt;String&gt; names =
+    new ArrayList&lt;&gt;();
+
+names.add(&quot;Alice&quot;);
+names.add(&quot;Bob&quot;);
+names.add(&quot;Alice&quot;);
+</code></pre>
+<p>Result:</p>
+<pre><code class="language-text">Alice
+Bob
+Alice
+</code></pre>
+<p>A List supports index-based operations:</p>
+<pre><code class="language-java">names.get(0);
+names.set(1, &quot;Charlie&quot;);
+names.remove(0);
+</code></pre>
+<hr />
+<h2 id="q6-what-are-the-common-list-implementations">Q6. What are the common List implementations?</h2>
+<p>Important implementations:</p>
+<pre><code class="language-text">ArrayList
+LinkedList
+Vector
+Stack
+</code></pre>
+<p>For modern application development, <code>ArrayList</code> is usually the default general-purpose List.</p>
+<p><code>LinkedList</code> has specialized use cases.</p>
+<p><code>Vector</code> and <code>Stack</code> are legacy classes and generally should not be the first choice for new code.</p>
+<hr />
+<h1 id="3-arraylist">3. ArrayList</h1>
+<h2 id="q7-what-is-arraylist">Q7. What is ArrayList?</h2>
+<p><code>ArrayList</code> is a resizable-array implementation of <code>List</code>.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">ArrayList
+   ↓
+Object[]
+   ↓
+[ A ][ B ][ C ][ D ][ ... ]
+</code></pre>
+<p>It provides fast indexed access.</p>
+<pre><code class="language-java">list.get(5);
+</code></pre>
+<p>is generally O(1).</p>
+<hr />
+<h2 id="q8-why-is-arraylist-get-o1">Q8. Why is ArrayList get() O(1)?</h2>
+<p>Because elements are stored in an array-like contiguous structure.</p>
+<p>If the underlying array starts at address <code>base</code> and each element occupies a fixed-size reference slot, the JVM can conceptually calculate the location of index <code>i</code> directly.</p>
+<pre><code class="language-text">index 0
+index 1
+index 2
+index 3
+...
+</code></pre>
+<p>There is no need to traverse previous elements.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">get(index) → O(1)
+set(index) → O(1)
+</code></pre>
+<hr />
+<h2 id="q9-what-is-the-difference-between-size-and-capacity-in-arraylist">Q9. What is the difference between size and capacity in ArrayList?</h2>
+<p>This is a very important concept.</p>
+<h3 id="size">Size</h3>
+<p>Number of actual elements.</p>
+<pre><code class="language-java">List&lt;Integer&gt; list = new ArrayList&lt;&gt;();
+</code></pre>
+<p>After:</p>
+<pre><code class="language-java">list.add(10);
+list.add(20);
+</code></pre>
+<p>size is:</p>
+<pre><code class="language-text">2
+</code></pre>
+<h3 id="capacity">Capacity</h3>
+<p>Number of elements the internal array can currently hold before it needs to grow.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">size ≠ capacity
+</code></pre>
+<p>An ArrayList can have capacity greater than its current size.</p>
+<hr />
+<h2 id="q10-what-happens-internally-when-arraylist-capacity-is-insufficient">Q10. What happens internally when ArrayList capacity is insufficient?</h2>
+<p>Suppose the internal array is full.</p>
+<p>When adding another element:</p>
+<pre><code class="language-text">old array
+[ A ][ B ][ C ][ D ]
+                ↑
+              full
+</code></pre>
+<p>ArrayList needs a larger backing array.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">old array
+   ↓
+allocate larger array
+   ↓
+copy elements
+   ↓
+insert new element
+   ↓
+replace old backing array
+</code></pre>
+<p>The exact growth policy is an implementation detail and should not be relied upon as a contractual API guarantee.</p>
+<h3 id="interview-point">Interview point</h3>
+<p>Appending is usually amortized O(1), but an individual resize can require O(n) copying.</p>
+<hr />
+<h2 id="q11-what-is-amortized-o1-for-arraylist-add">Q11. What is amortized O(1) for ArrayList add()?</h2>
+<p>Most append operations don't require resizing.</p>
+<p>Occasionally, resizing requires copying many elements.</p>
+<p>Across a long sequence of additions, the average cost per append remains amortized O(1).</p>
+<p>So:</p>
+<pre><code class="language-text">Typical add at end → O(1) amortized
+Resize → O(n)
+</code></pre>
+<hr />
+<h2 id="q12-what-is-the-complexity-of-common-arraylist-operations">Q12. What is the complexity of common ArrayList operations?</h2>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th style="text-align: right;">Typical Complexity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get(index)</code></td>
+<td style="text-align: right;">O(1)</td>
+</tr>
+<tr>
+<td><code>set(index)</code></td>
+<td style="text-align: right;">O(1)</td>
+</tr>
+<tr>
+<td><code>add(element)</code> at end</td>
+<td style="text-align: right;">O(1) amortized</td>
+</tr>
+<tr>
+<td><code>add(index, element)</code></td>
+<td style="text-align: right;">O(n)</td>
+</tr>
+<tr>
+<td><code>remove(index)</code></td>
+<td style="text-align: right;">O(n)</td>
+</tr>
+<tr>
+<td><code>contains()</code></td>
+<td style="text-align: right;">O(n)</td>
+</tr>
+<tr>
+<td><code>indexOf()</code></td>
+<td style="text-align: right;">O(n)</td>
+</tr>
+</tbody>
+</table>
+<p>Why is insertion/removal in the middle O(n)?</p>
+<p>Because subsequent elements may need to be shifted.</p>
+<hr />
+<h2 id="q13-why-is-inserting-at-the-beginning-of-arraylist-on">Q13. Why is inserting at the beginning of ArrayList O(n)?</h2>
+<p>Consider:</p>
+<pre><code class="language-text">[A][B][C][D]
+</code></pre>
+<p>Insert <code>X</code> at index 0:</p>
+<pre><code class="language-text">[X][A][B][C][D]
+</code></pre>
+<p>The existing elements must shift.</p>
+<pre><code class="language-text">A → index 1
+B → index 2
+C → index 3
+D → index 4
+</code></pre>
+<p>Therefore:</p>
+<pre><code class="language-text">add(0, value) → O(n)
+</code></pre>
+<hr />
+<h2 id="q14-why-is-arraylist-usually-preferred-over-linkedlist">Q14. Why is ArrayList usually preferred over LinkedList?</h2>
+<p>For many general-purpose workloads, <code>ArrayList</code> provides:</p>
+<ul>
+<li>Better cache locality</li>
+<li>O(1) indexed access</li>
+<li>Efficient iteration</li>
+<li>Lower per-element memory overhead</li>
+<li>Good practical performance</li>
+</ul>
+<p><code>LinkedList</code> can have O(1) insertion/removal once you already have the relevant node/position, but finding the position can itself take O(n).</p>
+<p>Therefore the simplistic statement:</p>
+<blockquote>
+<p>"LinkedList is better for insertion."</p>
+</blockquote>
+<p>is incomplete.</p>
+<hr />
+<h1 id="4-linkedlist">4. LinkedList</h1>
+<h2 id="q15-what-is-linkedlist">Q15. What is LinkedList?</h2>
+<p>Java's <code>LinkedList</code> is a doubly linked list.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Node A
+  ↕
+Node B
+  ↕
+Node C
+  ↕
+Node D
+</code></pre>
+<p>Each node contains links to neighboring nodes.</p>
+<p>It implements both:</p>
+<pre><code class="language-text">List
+Deque
+</code></pre>
+<hr />
+<h2 id="q16-why-can-linkedlist-insertion-be-o1">Q16. Why can LinkedList insertion be O(1)?</h2>
+<p>If you already have the relevant node/position, changing the neighboring links can be O(1).</p>
+<p>But if you first need to find index 500,000:</p>
+<pre><code class="language-text">find position → O(n)
+insert         → O(1)
+</code></pre>
+<p>Overall:</p>
+<pre><code class="language-text">O(n)
+</code></pre>
+<p>This is why saying:</p>
+<blockquote>
+<p>"LinkedList insertion is O(1)."</p>
+</blockquote>
+<p>is an incomplete interview answer.</p>
+<hr />
+<h2 id="q17-why-is-linkedlist-often-slower-in-real-applications-despite-o1-insertion">Q17. Why is LinkedList often slower in real applications despite O(1) insertion?</h2>
+<p>Because Big-O isn't the whole story.</p>
+<p>Linked lists involve:</p>
+<ul>
+<li>Node objects</li>
+<li>More references</li>
+<li>Pointer chasing</li>
+<li>Poorer cache locality</li>
+<li>More object overhead</li>
+<li>More allocations</li>
+</ul>
+<p>Array-backed structures often benefit from CPU cache locality.</p>
+<p>Therefore <code>ArrayList</code> can outperform <code>LinkedList</code> even when a theoretical operation appears to favor <code>LinkedList</code>.</p>
+<hr />
+<h1 id="5-vector-and-stack">5. Vector and Stack</h1>
+<h2 id="q18-what-is-vector">Q18. What is Vector?</h2>
+<p><code>Vector</code> is a legacy synchronized List implementation.</p>
+<p>It predates much of the modern Collections Framework.</p>
+<p>For new application code, <code>ArrayList</code> is generally preferred when synchronization isn't required.</p>
+<p>If concurrent access is required, choose a collection based on the actual concurrency requirement rather than automatically choosing <code>Vector</code>.</p>
+<hr />
+<h2 id="q19-what-is-stack">Q19. What is Stack?</h2>
+<p><code>Stack</code> is a legacy class extending <code>Vector</code>.</p>
+<p>It represents LIFO behavior:</p>
+<pre><code class="language-text">Last In
+   ↓
+First Out
+</code></pre>
+<p>For stack behavior in modern Java, <code>ArrayDeque</code> is generally preferred.</p>
+<p>Example:</p>
+<pre><code class="language-java">Deque&lt;Integer&gt; stack =
+    new ArrayDeque&lt;&gt;();
+
+stack.push(10);
+stack.push(20);
+
+stack.pop(); // 20
+</code></pre>
+<hr />
+<h1 id="6-set">6. Set</h1>
+<h2 id="q20-what-is-set">Q20. What is Set?</h2>
+<p>A <code>Set</code> represents a collection that does not allow duplicate elements according to its equality semantics.</p>
+<p>Example:</p>
+<pre><code class="language-java">Set&lt;String&gt; names =
+    new HashSet&lt;&gt;();
+
+names.add(&quot;Alice&quot;);
+names.add(&quot;Bob&quot;);
+names.add(&quot;Alice&quot;);
+</code></pre>
+<p>The set contains only:</p>
+<pre><code class="language-text">Alice
+Bob
+</code></pre>
+<p>Different Set implementations provide different ordering and performance characteristics.</p>
+<hr />
+<h1 id="7-hashset">7. HashSet</h1>
+<h2 id="q21-what-is-hashset">Q21. What is HashSet?</h2>
+<p><code>HashSet</code> is a hash-table-based Set implementation.</p>
+<p>Conceptually, it uses hashing to efficiently determine whether an element is already present.</p>
+<pre><code class="language-text">element
+   ↓
+hashCode()
+   ↓
+bucket
+   ↓
+compare equality
+</code></pre>
+<p>Average-case membership operations are typically O(1), assuming a good hash distribution and appropriate implementation behavior.</p>
+<hr />
+<h2 id="q22-how-does-hashset-ensure-uniqueness">Q22. How does HashSet ensure uniqueness?</h2>
+<p>HashSet relies on hashing and equality.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">add(element)
+     ↓
+hashCode()
+     ↓
+bucket
+     ↓
+compare with existing elements
+     ↓
+equals()
+     ↓
+already present?
+</code></pre>
+<p>If an equal element is already present, the new element isn't added.</p>
+<p>Therefore <code>equals()</code> and <code>hashCode()</code> must follow their contract.</p>
+<hr />
+<h2 id="q23-can-hashset-contain-null">Q23. Can HashSet contain null?</h2>
+<p>Yes.</p>
+<p>A HashSet can contain a single <code>null</code> element.</p>
+<hr />
+<h1 id="8-linkedhashset">8. LinkedHashSet</h1>
+<h2 id="q24-what-is-linkedhashset">Q24. What is LinkedHashSet?</h2>
+<p><code>LinkedHashSet</code> combines hash-based lookup with predictable insertion-order iteration.</p>
+<p>Example:</p>
+<pre><code class="language-java">Set&lt;String&gt; set =
+    new LinkedHashSet&lt;&gt;();
+
+set.add(&quot;B&quot;);
+set.add(&quot;A&quot;);
+set.add(&quot;C&quot;);
+</code></pre>
+<p>Iteration is predictably:</p>
+<pre><code class="language-text">B
+A
+C
+</code></pre>
+<p>This is useful when you want:</p>
+<pre><code class="language-text">uniqueness
++
+insertion-order iteration
+</code></pre>
+<hr />
+<h1 id="9-treeset">9. TreeSet</h1>
+<h2 id="q25-what-is-treeset">Q25. What is TreeSet?</h2>
+<p><code>TreeSet</code> is a sorted Set implementation based on a tree structure.</p>
+<p>It maintains elements according to their natural ordering or a supplied <code>Comparator</code>.</p>
+<p>Example:</p>
+<pre><code class="language-java">Set&lt;Integer&gt; numbers =
+    new TreeSet&lt;&gt;();
+
+numbers.add(30);
+numbers.add(10);
+numbers.add(20);
+</code></pre>
+<p>Iteration:</p>
+<pre><code class="language-text">10
+20
+30
+</code></pre>
+<p>Typical operations are O(log n).</p>
+<hr />
+<h2 id="q26-hashset-vs-linkedhashset-vs-treeset">Q26. HashSet vs LinkedHashSet vs TreeSet?</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>HashSet</th>
+<th>LinkedHashSet</th>
+<th>TreeSet</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Uniqueness</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Insertion order</td>
+<td>No guarantee</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Sorted order</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Typical lookup</td>
+<td>O(1) avg</td>
+<td>O(1) avg</td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>Null</td>
+<td>Allows one</td>
+<td>Allows one</td>
+<td>Generally does not support null with natural ordering</td>
+</tr>
+</tbody>
+</table>
+<p>Choose based on the requirement, not just performance.</p>
+<hr />
+<h1 id="10-map-fundamentals">10. Map Fundamentals</h1>
+<h2 id="q27-what-is-map">Q27. What is Map?</h2>
+<p>A Map stores key-value associations:</p>
+<pre><code class="language-text">key → value
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">Map&lt;Integer, String&gt; users =
+    new HashMap&lt;&gt;();
+
+users.put(1, &quot;Alice&quot;);
+users.put(2, &quot;Bob&quot;);
+</code></pre>
+<p>Keys are unique.</p>
+<p>Values don't have to be unique.</p>
+<hr />
+<h2 id="q28-can-a-map-contain-duplicate-keys">Q28. Can a Map contain duplicate keys?</h2>
+<p>No.</p>
+<p>If:</p>
+<pre><code class="language-java">map.put(&quot;A&quot;, 100);
+map.put(&quot;A&quot;, 200);
+</code></pre>
+<p>the second <code>put()</code> replaces the value associated with <code>"A"</code>.</p>
+<p>Final mapping:</p>
+<pre><code class="language-text">A → 200
+</code></pre>
+<hr />
+<h1 id="11-hashmap">11. HashMap</h1>
+<h2 id="q29-what-is-hashmap">Q29. What is HashMap?</h2>
+<p><code>HashMap</code> is a hash-table-based implementation of <code>Map</code>.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">put(key, value)
+      ↓
+key.hashCode()
+      ↓
+hash calculation
+      ↓
+bucket index
+      ↓
+store/find entry
+</code></pre>
+<p>Average-case lookup and insertion are typically O(1), assuming good hashing and normal conditions.</p>
+<hr />
+<h2 id="q30-how-does-hashmap-work-internally">Q30. How does HashMap work internally?</h2>
+<p>A simplified model:</p>
+<pre><code class="language-text">put(key, value)
+      ↓
+hashCode()
+      ↓
+hash spreading
+      ↓
+calculate bucket index
+      ↓
+bucket
+   ├── empty → insert
+   └── occupied
+          ↓
+       compare keys
+          ↓
+       equals()
+          ↓
+      same key?
+       ├── yes → replace value
+       └── no  → collision handling
+</code></pre>
+<p>Modern Java implementations can represent heavily collided buckets using tree structures under certain conditions.</p>
+<p>The exact internal implementation is version-specific and should not be treated as API contract.</p>
+<hr />
+<h2 id="q31-why-are-hashcode-and-equals-important-for-hashmap">Q31. Why are hashCode() and equals() important for HashMap?</h2>
+<p>HashMap uses the key's hash information to find a candidate bucket and equality to determine whether a key matches an existing entry.</p>
+<p>The contract requires:</p>
+<blockquote>
+<p>If two objects are equal according to <code>equals()</code>, they must return the same <code>hashCode()</code>.</p>
+</blockquote>
+<p>If this contract is violated, hash-based collections can behave incorrectly.</p>
+<hr />
+<h2 id="q32-what-happens-when-two-keys-have-the-same-hashcode">Q32. What happens when two keys have the same hashCode?</h2>
+<p>This is a collision.</p>
+<p>Example:</p>
+<pre><code class="language-text">Key A → hash 100
+Key B → hash 100
+</code></pre>
+<p>They may map to the same bucket.</p>
+<p>HashMap then needs to distinguish them using equality.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Bucket
+ ├── Entry(A)
+ └── Entry(B)
+</code></pre>
+<p>The fact that two objects have the same hash code does <strong>not</strong> mean they are equal.</p>
+<hr />
+<h2 id="q33-can-two-unequal-objects-have-the-same-hashcode">Q33. Can two unequal objects have the same hashCode?</h2>
+<p>Yes.</p>
+<p>This is called a hash collision.</p>
+<p>The <code>hashCode()</code> contract does not require different objects to have different hashes.</p>
+<p>It requires:</p>
+<pre><code class="language-text">equal objects
+→ same hash code
+</code></pre>
+<p>but:</p>
+<pre><code class="language-text">same hash code
+↛ equal objects
+</code></pre>
+<hr />
+<h2 id="q34-why-should-hashmap-keys-be-immutable">Q34. Why should HashMap keys be immutable?</h2>
+<p>Suppose:</p>
+<pre><code class="language-java">class UserKey {
+    String id;
+
+    @Override
+    public int hashCode() {
+        return id.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        // compares id
+    }
+}
+</code></pre>
+<p>You insert:</p>
+<pre><code class="language-java">UserKey key = new UserKey(&quot;A&quot;);
+map.put(key, &quot;value&quot;);
+</code></pre>
+<p>Then mutate:</p>
+<pre><code class="language-java">key.id = &quot;B&quot;;
+</code></pre>
+<p>The key's hash-based location was determined using the previous state.</p>
+<p>Now a lookup using the mutated key may fail even though the object is physically still present in the map.</p>
+<h3 id="interview-principle">Interview principle</h3>
+<p>Keys used in hash-based collections should generally be immutable with respect to the fields used by <code>equals()</code> and <code>hashCode()</code>.</p>
+<hr />
+<h1 id="12-hashmap-capacity-and-load-factor">12. HashMap Capacity and Load Factor</h1>
+<h2 id="q35-what-is-load-factor-in-hashmap">Q35. What is load factor in HashMap?</h2>
+<p>Load factor determines how full the hash table is allowed to become before resizing.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">threshold = capacity × loadFactor
+</code></pre>
+<p>When the number of entries exceeds the threshold, HashMap resizes.</p>
+<p>The commonly used default load factor in Java's HashMap implementation is <code>0.75</code>.</p>
+<h3 id="why-not-10">Why not 1.0?</h3>
+<p>A lower load factor can reduce collision pressure at the cost of more memory.</p>
+<p>This is a trade-off between:</p>
+<pre><code class="language-text">memory
+vs
+hash-table density
+</code></pre>
+<hr />
+<h2 id="q36-what-happens-when-hashmap-resizes">Q36. What happens when HashMap resizes?</h2>
+<p>When the map grows beyond its threshold, the table is expanded and entries are redistributed into the new table.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Old table
+[ ][A][ ][B][C]
+
+        ↓ resize
+
+New table
+[ ][ ][A][ ][ ][B][C]
+</code></pre>
+<p>The exact implementation details have evolved across Java versions, but resizing remains potentially expensive.</p>
+<p>Therefore, if you know approximately how many entries you need, choosing a sensible initial capacity can reduce repeated resizing.</p>
+<hr />
+<h2 id="q37-why-is-hashmap-capacity-often-related-to-powers-of-two">Q37. Why is HashMap capacity often related to powers of two?</h2>
+<p>Modern Java HashMap implementations use table sizing and index calculations optimized around powers of two.</p>
+<p>This allows efficient bucket-index calculations and predictable resizing behavior.</p>
+<p>You should understand the design reason, but don't treat the implementation as an API guarantee.</p>
+<hr />
+<h1 id="13-hashmap-null-and-ordering">13. HashMap Null and Ordering</h1>
+<h2 id="q38-can-hashmap-contain-null">Q38. Can HashMap contain null?</h2>
+<p>Yes.</p>
+<p>A standard HashMap permits:</p>
+<pre><code class="language-text">one null key
+multiple null values
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">map.put(null, &quot;value&quot;);
+map.put(&quot;A&quot;, null);
+</code></pre>
+<hr />
+<h2 id="q39-does-hashmap-maintain-insertion-order">Q39. Does HashMap maintain insertion order?</h2>
+<p>No.</p>
+<p>You should not rely on HashMap iteration order.</p>
+<p>If you require insertion order, use:</p>
+<pre><code class="language-java">LinkedHashMap
+</code></pre>
+<p>If you require sorted key order, use:</p>
+<pre><code class="language-java">TreeMap
+</code></pre>
+<hr />
+<h1 id="14-linkedhashmap">14. LinkedHashMap</h1>
+<h2 id="q40-what-is-linkedhashmap">Q40. What is LinkedHashMap?</h2>
+<p><code>LinkedHashMap</code> combines hash-based lookup with a linked structure that provides predictable iteration order.</p>
+<p>By default, iteration order is insertion order.</p>
+<p>It can also be configured for access-order behavior.</p>
+<pre><code class="language-java">LinkedHashMap&lt;K, V&gt; map =
+    new LinkedHashMap&lt;&gt;(16, 0.75f, true);
+</code></pre>
+<p>Access-order is useful for implementing LRU-style caches.</p>
+<hr />
+<h2 id="q41-how-can-linkedhashmap-be-used-for-an-lru-cache">Q41. How can LinkedHashMap be used for an LRU cache?</h2>
+<p>A common pattern is:</p>
+<pre><code class="language-java">LinkedHashMap&lt;K, V&gt; cache =
+    new LinkedHashMap&lt;&gt;(16, 0.75f, true) {
+
+        @Override
+        protected boolean removeEldestEntry(
+                Map.Entry&lt;K, V&gt; eldest) {
+            return size() &gt; 100;
+        }
+    };
+</code></pre>
+<p>With access-order enabled:</p>
+<pre><code class="language-text">least recently used
+        ↓
+eldest entry
+        ↓
+can be removed
+</code></pre>
+<p>This is a classic interview example.</p>
+<hr />
+<h1 id="15-treemap">15. TreeMap</h1>
+<h2 id="q42-what-is-treemap">Q42. What is TreeMap?</h2>
+<p><code>TreeMap</code> is a sorted Map implementation.</p>
+<p>Keys are maintained according to:</p>
+<ul>
+<li>Natural ordering, or</li>
+<li>A supplied <code>Comparator</code></li>
+</ul>
+<p>Typical operations:</p>
+<pre><code class="language-text">put
+get
+remove
+containsKey
+</code></pre>
+<p>are O(log n).</p>
+<hr />
+<h2 id="q43-hashmap-vs-treemap">Q43. HashMap vs TreeMap?</h2>
+<h3 id="hashmap">HashMap</h3>
+<pre><code class="language-text">Typical lookup → O(1) average
+Ordering → no guaranteed iteration order
+</code></pre>
+<h3 id="treemap">TreeMap</h3>
+<pre><code class="language-text">Lookup → O(log n)
+Keys → sorted
+</code></pre>
+<p>Use TreeMap when sorted ordering or ordered navigation is actually required.</p>
+<hr />
+<h1 id="16-hashtable">16. Hashtable</h1>
+<h2 id="q44-what-is-hashtable">Q44. What is Hashtable?</h2>
+<p><code>Hashtable</code> is a legacy synchronized Map implementation.</p>
+<p>It predates the modern Collections Framework.</p>
+<p>Important differences from HashMap include:</p>
+<ul>
+<li>Hashtable is synchronized</li>
+<li>Hashtable does not allow null keys or null values</li>
+<li>HashMap allows a null key and null values</li>
+</ul>
+<p>For new concurrent code, <code>ConcurrentHashMap</code> is generally a more appropriate choice than Hashtable.</p>
+<hr />
+<h1 id="17-concurrenthashmap">17. ConcurrentHashMap</h1>
+<h2 id="q45-what-is-concurrenthashmap">Q45. What is ConcurrentHashMap?</h2>
+<p><code>ConcurrentHashMap</code> is a Map implementation designed for concurrent access.</p>
+<p>It provides thread-safe operations without requiring one global lock around the entire map for ordinary access.</p>
+<p>It is designed to allow high levels of concurrent reads and updates.</p>
+<hr />
+<h2 id="q46-hashmap-vs-concurrenthashmap">Q46. HashMap vs ConcurrentHashMap?</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>HashMap</th>
+<th>ConcurrentHashMap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Thread-safe</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Null key</td>
+<td>Allows one</td>
+<td>Does not allow</td>
+</tr>
+<tr>
+<td>Null values</td>
+<td>Allows</td>
+<td>Does not allow</td>
+</tr>
+<tr>
+<td>Concurrent access</td>
+<td>Unsafe without external coordination</td>
+<td>Designed for it</td>
+</tr>
+<tr>
+<td>Typical use</td>
+<td>Single-threaded / externally synchronized</td>
+<td>Shared concurrent access</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="q47-why-doesnt-concurrenthashmap-allow-null-keys-or-values">Q47. Why doesn't ConcurrentHashMap allow null keys or values?</h2>
+<p>A key reason is that <code>null</code> can make concurrent lookup semantics ambiguous.</p>
+<p>For example:</p>
+<pre><code class="language-java">map.get(key)
+</code></pre>
+<p>returning <code>null</code> could mean:</p>
+<pre><code class="language-text">key does not exist
+OR
+key exists with null value
+</code></pre>
+<p>ConcurrentHashMap avoids that ambiguity by disallowing null keys and values.</p>
+<hr />
+<h2 id="q48-is-concurrenthashmap-completely-lock-free">Q48. Is ConcurrentHashMap completely lock-free?</h2>
+<p>No.</p>
+<p>Do not say:</p>
+<blockquote>
+<p>ConcurrentHashMap has no locks.</p>
+</blockquote>
+<p>Its implementation uses sophisticated combinations of synchronization and atomic operations depending on the operation and contention.</p>
+<p>The important property is that it avoids a single global lock for normal access and is designed for high concurrency.</p>
+<hr />
+<h1 id="18-queue-and-deque">18. Queue and Deque</h1>
+<h2 id="q49-what-is-queue">Q49. What is Queue?</h2>
+<p>A Queue generally represents FIFO processing:</p>
+<pre><code class="language-text">First In
+   ↓
+First Out
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-text">A → B → C
+
+remove()
+↓
+A
+</code></pre>
+<p>Java's Queue abstraction has several implementations with different behaviors.</p>
+<hr />
+<h2 id="q50-what-is-deque">Q50. What is Deque?</h2>
+<p>Deque means <strong>Double-Ended Queue</strong>.</p>
+<p>Elements can be inserted and removed from both ends.</p>
+<pre><code class="language-text">front ← [ A ][ B ][ C ] → rear
+</code></pre>
+<p>Java provides:</p>
+<pre><code class="language-java">Deque&lt;Integer&gt; deque =
+    new ArrayDeque&lt;&gt;();
+</code></pre>
+<p>It can be used as both:</p>
+<pre><code class="language-text">Queue
++
+Stack
+</code></pre>
+<hr />
+<h1 id="19-arraydeque">19. ArrayDeque</h1>
+<h2 id="q51-why-is-arraydeque-often-preferred-over-stack">Q51. Why is ArrayDeque often preferred over Stack?</h2>
+<p><code>ArrayDeque</code> is a modern deque implementation and generally provides better semantics and performance for stack/queue usage than the legacy <code>Stack</code> class.</p>
+<p>Stack usage:</p>
+<pre><code class="language-java">Deque&lt;Integer&gt; stack =
+    new ArrayDeque&lt;&gt;();
+
+stack.push(10);
+stack.push(20);
+
+stack.pop(); // 20
+</code></pre>
+<p>Queue usage:</p>
+<pre><code class="language-java">Deque&lt;Integer&gt; queue =
+    new ArrayDeque&lt;&gt;();
+
+queue.offer(10);
+queue.offer(20);
+
+queue.poll(); // 10
+</code></pre>
+<hr />
+<h2 id="q52-can-arraydeque-contain-null">Q52. Can ArrayDeque contain null?</h2>
+<p>No.</p>
+<p><code>ArrayDeque</code> does not permit null elements.</p>
+<p>This can help distinguish "empty/no element" semantics from a legitimate stored value.</p>
+<hr />
+<h1 id="20-priorityqueue">20. PriorityQueue</h1>
+<h2 id="q53-what-is-priorityqueue">Q53. What is PriorityQueue?</h2>
+<p><code>PriorityQueue</code> processes elements according to priority rather than insertion order.</p>
+<p>By default, the smallest element according to natural ordering has highest priority.</p>
+<pre><code class="language-java">PriorityQueue&lt;Integer&gt; queue =
+    new PriorityQueue&lt;&gt;();
+
+queue.offer(30);
+queue.offer(10);
+queue.offer(20);
+
+queue.poll(); // 10
+</code></pre>
+<p>Internally it uses a heap structure.</p>
+<hr />
+<h2 id="q54-is-priorityqueue-sorted-when-you-iterate-over-it">Q54. Is PriorityQueue sorted when you iterate over it?</h2>
+<p>No.</p>
+<p>This is a common trap.</p>
+<p>The priority queue guarantees that the element returned by operations such as <code>peek()</code>/<code>poll()</code> has the appropriate priority.</p>
+<p>Iteration does not mean:</p>
+<pre><code class="language-text">10
+20
+30
+</code></pre>
+<p>in fully sorted order.</p>
+<hr />
+<h2 id="q55-what-is-the-complexity-of-priorityqueue-operations">Q55. What is the complexity of PriorityQueue operations?</h2>
+<p>Typical complexities:</p>
+<pre><code class="language-text">offer() → O(log n)
+poll()  → O(log n)
+peek()  → O(1)
+</code></pre>
+<p>Building or bulk construction can have different complexity depending on the constructor/operation used.</p>
+<hr />
+<h1 id="21-blockingqueue">21. BlockingQueue</h1>
+<h2 id="q56-what-is-blockingqueue">Q56. What is BlockingQueue?</h2>
+<p><code>BlockingQueue</code> is designed for producer-consumer scenarios.</p>
+<p>A producer can insert work.</p>
+<p>A consumer can remove work.</p>
+<p>If the queue is full or empty, operations can block.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Producer
+   ↓
+BlockingQueue
+   ↓
+Consumer
+</code></pre>
+<p>Examples include:</p>
+<pre><code class="language-text">ArrayBlockingQueue
+LinkedBlockingQueue
+PriorityBlockingQueue
+</code></pre>
+<p>This is heavily used in concurrent applications.</p>
+<hr />
+<h1 id="22-iterator">22. Iterator</h1>
+<h2 id="q57-what-is-iterator">Q57. What is Iterator?</h2>
+<p><code>Iterator</code> provides a standard way to traverse a collection.</p>
+<pre><code class="language-java">Iterator&lt;String&gt; iterator =
+    list.iterator();
+
+while (iterator.hasNext()) {
+    String value = iterator.next();
+}
+</code></pre>
+<p>It abstracts traversal away from the underlying collection implementation.</p>
+<hr />
+<h2 id="q58-what-is-fail-fast-behavior">Q58. What is fail-fast behavior?</h2>
+<p>Many standard collection iterators are designed to detect structural modifications made outside the iterator while iteration is in progress.</p>
+<p>Example:</p>
+<pre><code class="language-java">for (String value : list) {
+    list.remove(value);
+}
+</code></pre>
+<p>This commonly results in <code>ConcurrentModificationException</code>.</p>
+<p>The exact behavior is best understood as <strong>best-effort detection</strong>, not a synchronization guarantee.</p>
+<hr />
+<h2 id="q59-how-can-you-safely-remove-elements-while-iterating">Q59. How can you safely remove elements while iterating?</h2>
+<p>Use the iterator's own <code>remove()</code>:</p>
+<pre><code class="language-java">Iterator&lt;String&gt; iterator =
+    list.iterator();
+
+while (iterator.hasNext()) {
+
+    String value = iterator.next();
+
+    if (value.equals(&quot;A&quot;)) {
+        iterator.remove();
+    }
+}
+</code></pre>
+<p>Or use collection operations such as:</p>
+<pre><code class="language-java">list.removeIf(value -&gt; value.equals(&quot;A&quot;));
+</code></pre>
+<p>depending on the requirement.</p>
+<hr />
+<h2 id="q60-what-is-listiterator">Q60. What is ListIterator?</h2>
+<p><code>ListIterator</code> is a specialized iterator for Lists.</p>
+<p>It supports:</p>
+<ul>
+<li>Forward traversal</li>
+<li>Backward traversal</li>
+<li><code>add()</code></li>
+<li><code>set()</code></li>
+<li><code>remove()</code></li>
+</ul>
+<p>Example:</p>
+<pre><code class="language-java">ListIterator&lt;String&gt; iterator =
+    list.listIterator();
+</code></pre>
+<p>It is more powerful than a standard <code>Iterator</code>, but only applies to Lists.</p>
+<hr />
+<h1 id="23-comparable-and-comparator">23. Comparable and Comparator</h1>
+<h2 id="q61-what-is-comparable">Q61. What is Comparable?</h2>
+<p><code>Comparable</code> defines an object's natural ordering.</p>
+<pre><code class="language-java">class Employee
+        implements Comparable&lt;Employee&gt; {
+
+    private int age;
+
+    @Override
+    public int compareTo(Employee other) {
+        return Integer.compare(
+            this.age,
+            other.age
+        );
+    }
+}
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-java">Collections.sort(employees);
+</code></pre>
+<p>can use that natural ordering.</p>
+<hr />
+<h2 id="q62-what-is-comparator">Q62. What is Comparator?</h2>
+<p><code>Comparator</code> defines an external/custom ordering.</p>
+<p>Example:</p>
+<pre><code class="language-java">employees.sort(
+    Comparator.comparing(Employee::getName)
+);
+</code></pre>
+<p>You can create multiple orderings without changing the class itself.</p>
+<hr />
+<h2 id="q63-comparable-vs-comparator">Q63. Comparable vs Comparator?</h2>
+<table>
+<thead>
+<tr>
+<th>Comparable</th>
+<th>Comparator</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Natural ordering</td>
+<td>Custom/external ordering</td>
+</tr>
+<tr>
+<td><code>compareTo()</code></td>
+<td><code>compare()</code></td>
+</tr>
+<tr>
+<td>Usually implemented by the class</td>
+<td>Separate object/function</td>
+</tr>
+<tr>
+<td>Typically one primary ordering</td>
+<td>Can define many orderings</td>
+</tr>
+</tbody>
+</table>
+<p>Example:</p>
+<pre><code class="language-text">Employee natural order → ID
+
+Comparator 1 → name
+Comparator 2 → salary
+Comparator 3 → joining date
+</code></pre>
+<hr />
+<h1 id="24-equals-and-hashcode">24. equals() and hashCode()</h1>
+<h2 id="q64-why-are-equals-and-hashcode-important-for-collections">Q64. Why are equals() and hashCode() important for collections?</h2>
+<p>Hash-based collections rely on both.</p>
+<p>For objects:</p>
+<pre><code class="language-java">a.equals(b) == true
+</code></pre>
+<p>the contract requires:</p>
+<pre><code class="language-java">a.hashCode() == b.hashCode()
+</code></pre>
+<p>If the contract is violated, collections such as:</p>
+<pre><code class="language-text">HashMap
+HashSet
+LinkedHashMap
+LinkedHashSet
+</code></pre>
+<p>may behave incorrectly.</p>
+<hr />
+<h2 id="q65-what-happens-if-equals-is-overridden-but-hashcode-isnt">Q65. What happens if equals() is overridden but hashCode() isn't?</h2>
+<p>You can break hash-based collection behavior.</p>
+<p>Example:</p>
+<pre><code class="language-java">class User {
+
+    String id;
+
+    @Override
+    public boolean equals(Object obj) {
+        // compares id
+    }
+
+    // hashCode not overridden
+}
+</code></pre>
+<p>Two logically equal User objects may have different hash codes.</p>
+<p>A HashSet may then treat them as separate entries because they can land in different buckets.</p>
+<h3 id="rule">Rule</h3>
+<blockquote>
+<p>Whenever you override <code>equals()</code>, you should normally override <code>hashCode()</code> consistently.</p>
+</blockquote>
+<hr />
+<h2 id="q66-can-hashcode-be-unique-for-every-object">Q66. Can hashCode() be unique for every object?</h2>
+<p>It can be, but it is not required.</p>
+<p>The contract allows collisions.</p>
+<p>The important requirement is:</p>
+<pre><code class="language-text">equal objects
+→ same hashCode
+</code></pre>
+<p>not:</p>
+<pre><code class="language-text">different objects
+→ different hashCode
+</code></pre>
+<hr />
+<h1 id="25-generics-and-collections">25. Generics and Collections</h1>
+<h2 id="q67-why-do-collections-use-generics">Q67. Why do collections use generics?</h2>
+<p>Generics provide compile-time type safety.</p>
+<p>Without generics:</p>
+<pre><code class="language-java">List list = new ArrayList();
+
+list.add(&quot;Hello&quot;);
+list.add(10);
+</code></pre>
+<p>Retrieval requires casts.</p>
+<p>With generics:</p>
+<pre><code class="language-java">List&lt;String&gt; list =
+    new ArrayList&lt;&gt;();
+
+list.add(&quot;Hello&quot;);
+</code></pre>
+<p>The compiler prevents:</p>
+<pre><code class="language-java">list.add(10);
+</code></pre>
+<p>Generics reduce runtime casting errors and improve readability.</p>
+<hr />
+<h2 id="q68-what-is-the-difference-between-list-and-list">Q68. What is the difference between List&lt;?&gt; and List<Object>?</h2>
+<p>This is an important generics question.</p>
+<h3 id="listobject"><code>List&lt;Object&gt;</code></h3>
+<p>Means:</p>
+<blockquote>
+<p>A List whose element type is exactly Object.</p>
+</blockquote>
+<p>You can add any Object:</p>
+<pre><code class="language-java">List&lt;Object&gt; list = new ArrayList&lt;&gt;();
+
+list.add(&quot;Hello&quot;);
+list.add(10);
+</code></pre>
+<h3 id="list_1"><code>List&lt;?&gt;</code></h3>
+<p>Means:</p>
+<blockquote>
+<p>A List of some unknown type.</p>
+</blockquote>
+<pre><code class="language-java">List&lt;?&gt; list = new ArrayList&lt;String&gt;();
+</code></pre>
+<p>You can safely read elements as <code>Object</code>, but you generally cannot add arbitrary values.</p>
+<hr />
+<h2 id="q69-what-is-pecs">Q69. What is PECS?</h2>
+<blockquote>
+<p><strong>Cross-reference:</strong> Comparable/Comparator and PECS are intentionally kept
+in this Collections note because they are heavily exercised through the
+Collections APIs. The Core Java note only needs a short cross-reference
+rather than duplicating the full treatment.</p>
+</blockquote>
+<p>PECS means:</p>
+<blockquote>
+<p><strong>Producer Extends, Consumer Super</strong></p>
+</blockquote>
+<p>For a producer:</p>
+<pre><code class="language-java">List&lt;? extends Number&gt;
+</code></pre>
+<p>you can safely read Number values.</p>
+<p>For a consumer:</p>
+<pre><code class="language-java">List&lt;? super Integer&gt;
+</code></pre>
+<p>you can safely add Integer values.</p>
+<p>A common mental model:</p>
+<pre><code class="language-text">Producer → extends
+Consumer → super
+</code></pre>
+<hr />
+<h1 id="26-immutable-and-unmodifiable-collections">26. Immutable and Unmodifiable Collections</h1>
+<h2 id="q70-what-is-the-difference-between-immutable-and-unmodifiable-collections">Q70. What is the difference between immutable and unmodifiable collections?</h2>
+<p>An <strong>unmodifiable view</strong> prevents modification through that particular reference but may reflect changes made through another reference.</p>
+<p>Example:</p>
+<pre><code class="language-java">List&lt;String&gt; original =
+    new ArrayList&lt;&gt;();
+
+List&lt;String&gt; view =
+    Collections.unmodifiableList(original);
+</code></pre>
+<p><code>view</code> cannot be modified directly, but changes to <code>original</code> can be visible through <code>view</code>.</p>
+<p>An immutable collection does not allow its state to be changed after creation.</p>
+<p>Modern Java also provides factory methods such as:</p>
+<pre><code class="language-java">List.of(...)
+Set.of(...)
+Map.of(...)
+</code></pre>
+<p>which create unmodifiable collections.</p>
+<hr />
+<h2 id="q71-can-listof-contain-null">Q71. Can List.of() contain null?</h2>
+<p>No.</p>
+<p>For example:</p>
+<pre><code class="language-java">List.of(&quot;A&quot;, null, &quot;B&quot;);
+</code></pre>
+<p>throws <code>NullPointerException</code>.</p>
+<p>This is a useful interview detail.</p>
+<hr />
+<h1 id="27-collections-utility-methods">27. Collections Utility Methods</h1>
+<h2 id="q72-what-is-collectionssort">Q72. What is Collections.sort()?</h2>
+<p>It sorts a List according to natural ordering or a supplied Comparator.</p>
+<pre><code class="language-java">Collections.sort(numbers);
+</code></pre>
+<p>Modern Java often uses:</p>
+<pre><code class="language-java">numbers.sort(Comparator.naturalOrder());
+</code></pre>
+<p>or:</p>
+<pre><code class="language-java">numbers.sort(Comparator.comparing(...));
+</code></pre>
+<hr />
+<h2 id="q73-what-is-the-difference-between-arrayssort-and-collectionssort">Q73. What is the difference between Arrays.sort() and Collections.sort()?</h2>
+<p><code>Arrays.sort()</code> is used for arrays.</p>
+<pre><code class="language-java">Arrays.sort(array);
+</code></pre>
+<p><code>Collections.sort()</code> works on Lists.</p>
+<pre><code class="language-java">Collections.sort(list);
+</code></pre>
+<p>The underlying algorithms and implementation details depend on the type and Java version.</p>
+<hr />
+<h1 id="28-important-collection-traps-and-specialized-apis">28. Important Collection Traps and Specialized APIs</h1>
+<h2 id="q74-what-is-arraysaslist">Q74. What is <code>Arrays.asList()</code>?</h2>
+<p><code>Arrays.asList()</code> creates a <strong>fixed-size List backed by the supplied array</strong>.</p>
+<pre><code class="language-java">String[] array = {&quot;A&quot;, &quot;B&quot;, &quot;C&quot;};
+List&lt;String&gt; list = Arrays.asList(array);
+</code></pre>
+<p>You can replace existing elements:</p>
+<pre><code class="language-java">list.set(0, &quot;X&quot;);
+</code></pre>
+<p>and the backing array is affected:</p>
+<pre><code class="language-text">array → [X, B, C]
+list  → [X, B, C]
+</code></pre>
+<p>But you cannot change the List's size:</p>
+<pre><code class="language-java">list.add(&quot;D&quot;);
+list.remove(&quot;B&quot;);
+</code></pre>
+<p>These throw <code>UnsupportedOperationException</code>.</p>
+<h3 id="interview-distinction">Interview distinction</h3>
+<pre><code class="language-text">Arrays.asList()
+→ fixed-size
+→ backed by original array
+→ set() allowed
+→ add()/remove() not allowed
+</code></pre>
+<p>For a resizable independent List:</p>
+<pre><code class="language-java">List&lt;String&gt; copy =
+    new ArrayList&lt;&gt;(Arrays.asList(&quot;A&quot;, &quot;B&quot;, &quot;C&quot;));
+</code></pre>
+<hr />
+<h2 id="q75-what-is-the-primitive-array-trap-with-arraysaslist">Q75. What is the primitive-array trap with <code>Arrays.asList()</code>?</h2>
+<p>This is a classic interview trap.</p>
+<pre><code class="language-java">int[] numbers = {1, 2, 3};
+List&lt;int[]&gt; list = Arrays.asList(numbers);
+</code></pre>
+<p>The entire <code>int[]</code> is treated as <strong>one element</strong>:</p>
+<pre><code class="language-text">List
+ └── int[] {1, 2, 3}
+</code></pre>
+<p>It does not become <code>[1, 2, 3]</code> because the primitive array is passed as one
+varargs argument.</p>
+<p>If you want a <code>List&lt;Integer&gt;</code>:</p>
+<pre><code class="language-java">List&lt;Integer&gt; list =
+    Arrays.stream(numbers)
+          .boxed()
+          .toList();
+</code></pre>
+<p>If you need it mutable:</p>
+<pre><code class="language-java">List&lt;Integer&gt; mutable =
+    new ArrayList&lt;&gt;(
+        Arrays.stream(numbers)
+              .boxed()
+              .toList()
+    );
+</code></pre>
+<h3 id="memory-rule">Memory rule</h3>
+<pre><code class="language-text">Object[] / String[] / Integer[]
+→ List of the array elements
+
+int[] / long[] / double[]
+→ primitive array becomes one List element
+</code></pre>
+<hr />
+<h2 id="q76-what-is-navigablemap">Q76. What is NavigableMap?</h2>
+<p><code>NavigableMap</code> extends <code>SortedMap</code> and provides navigation around keys.</p>
+<p>Important methods:</p>
+<pre><code class="language-java">floorKey(key)    // greatest key &lt;= key
+ceilingKey(key)  // smallest key &gt;= key
+lowerKey(key)    // greatest key &lt; key
+higherKey(key)   // smallest key &gt; key
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">NavigableMap&lt;Integer, String&gt; map = new TreeMap&lt;&gt;();
+map.put(10, &quot;A&quot;);
+map.put(20, &quot;B&quot;);
+map.put(30, &quot;C&quot;);
+map.put(40, &quot;D&quot;);
+</code></pre>
+<p>For <code>key = 25</code>:</p>
+<pre><code class="language-text">lowerKey(25)    → 20
+floorKey(25)    → 20
+ceilingKey(25)  → 30
+higherKey(25)   → 30
+</code></pre>
+<p>This is a major reason to choose <code>TreeMap</code> over <code>HashMap</code> when ordered
+navigation is required.</p>
+<hr />
+<h2 id="q77-what-range-view-methods-does-navigablemap-provide">Q77. What range-view methods does NavigableMap provide?</h2>
+<p>Important methods include:</p>
+<pre><code class="language-java">headMap(toKey)
+tailMap(fromKey)
+subMap(fromKey, toKey)
+</code></pre>
+<p>There are also overloads controlling endpoint inclusiveness:</p>
+<pre><code class="language-java">headMap(toKey, inclusive)
+tailMap(fromKey, inclusive)
+subMap(fromKey, fromInclusive, toKey, toInclusive)
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">map.subMap(20, true, 40, false);
+</code></pre>
+<p>represents:</p>
+<pre><code class="language-text">20 ≤ key &lt; 40
+</code></pre>
+<h3 id="interview-mental-model">Interview mental model</h3>
+<pre><code class="language-text">HashMap
+→ fast lookup
+
+TreeMap
+→ sorted keys
+
+NavigableMap
+→ sorted keys + navigation/range queries
+</code></pre>
+<hr />
+<h2 id="q78-what-is-navigableset">Q78. What is NavigableSet?</h2>
+<p><code>NavigableSet</code> is the Set counterpart of <code>NavigableMap</code>.</p>
+<p>Important methods:</p>
+<pre><code class="language-java">lower(value)
+floor(value)
+ceiling(value)
+higher(value)
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">NavigableSet&lt;Integer&gt; set =
+    new TreeSet&lt;&gt;(List.of(10, 20, 30, 40));
+</code></pre>
+<pre><code class="language-java">set.floor(25);   // 20
+set.ceiling(25); // 30
+set.lower(20);   // 10
+set.higher(20);  // 30
+</code></pre>
+<p>It also provides range views such as <code>headSet()</code>, <code>tailSet()</code>, and <code>subSet()</code>
+with overloads controlling endpoint inclusiveness.</p>
+<hr />
+<h2 id="q79-how-does-concurrenthashmap-iteration-differ-from-hashmap-iteration">Q79. How does ConcurrentHashMap iteration differ from HashMap iteration?</h2>
+<p>A regular <code>HashMap</code> iterator is generally <strong>fail-fast on detected structural
+modification</strong>:</p>
+<pre><code class="language-text">iterate HashMap
+      ↓
+structural modification elsewhere
+      ↓
+may throw ConcurrentModificationException
+</code></pre>
+<p><code>ConcurrentHashMap</code> uses <strong>weakly consistent iterators</strong>.</p>
+<p>They:</p>
+<ul>
+<li>do not throw <code>ConcurrentModificationException</code> merely because the map is concurrently modified</li>
+<li>may reflect some modifications made during iteration</li>
+<li>are not guaranteed to represent one instantaneous snapshot</li>
+<li>continue safely while concurrent updates occur</li>
+</ul>
+<p>Conceptually:</p>
+<pre><code class="language-text">Thread A → iterating
+Thread B → modifying
+             ↓
+ConcurrentHashMap iterator
+             ↓
+continues safely
+             ↓
+may or may not observe B's changes
+</code></pre>
+<h3 id="interview-distinction_1">Interview distinction</h3>
+<pre><code class="language-text">HashMap iterator
+→ fail-fast best-effort detection
+
+ConcurrentHashMap iterator
+→ weakly consistent
+→ safe under concurrent access
+→ no snapshot guarantee
+</code></pre>
+<p>Do not describe a <code>ConcurrentHashMap</code> iterator as a fully immutable snapshot.</p>
+<hr />
+<h2 id="q80-what-are-enumset-and-enummap">Q80. What are EnumSet and EnumMap?</h2>
+<p><code>EnumSet</code> and <code>EnumMap</code> are specialized collections for enum types.</p>
+<pre><code class="language-java">enum Permission {
+    READ, WRITE, DELETE
+}
+</code></pre>
+<p>Use <code>EnumSet</code> when the elements are enum constants:</p>
+<pre><code class="language-java">EnumSet&lt;Permission&gt; permissions =
+    EnumSet.of(Permission.READ, Permission.WRITE);
+</code></pre>
+<p>Use <code>EnumMap</code> when enum constants are the keys:</p>
+<pre><code class="language-java">EnumMap&lt;Permission, String&gt; descriptions =
+    new EnumMap&lt;&gt;(Permission.class);
+</code></pre>
+<p>They are specialized for enum keys/elements and can be more compact and
+efficient than general-purpose hash-based alternatives.</p>
+<h3 id="mental-model">Mental model</h3>
+<pre><code class="language-text">Enum values as a Set
+→ EnumSet
+
+Enum values as keys
+→ EnumMap
+</code></pre>
+<hr />
+<h2 id="q81-how-do-you-perform-set-union-intersection-and-difference">Q81. How do you perform set union, intersection, and difference?</h2>
+<p>Existing <code>Set</code> methods make these operations straightforward.</p>
+<h3 id="union">Union</h3>
+<pre><code class="language-java">Set&lt;Integer&gt; union = new HashSet&lt;&gt;(a);
+union.addAll(b);
+</code></pre>
+<h3 id="intersection">Intersection</h3>
+<pre><code class="language-java">Set&lt;Integer&gt; intersection = new HashSet&lt;&gt;(a);
+intersection.retainAll(b);
+</code></pre>
+<h3 id="difference">Difference</h3>
+<pre><code class="language-java">Set&lt;Integer&gt; difference = new HashSet&lt;&gt;(a);
+difference.removeAll(b);
+</code></pre>
+<p>For example, if:</p>
+<pre><code class="language-text">a = {1, 2, 3}
+b = {3, 4, 5}
+</code></pre>
+<p>then:</p>
+<pre><code class="language-text">addAll()    → {1, 2, 3, 4, 5}
+retainAll() → {3}
+removeAll() → {1, 2}
+</code></pre>
+<p>These methods mutate the receiving Set, so copy first when the original must
+remain unchanged.</p>
+<h3 id="memory-trick">Memory trick</h3>
+<pre><code class="language-text">addAll()
+→ union
+
+retainAll()
+→ intersection
+
+removeAll()
+→ difference
+</code></pre>
+<hr />
+<h2 id="q82-what-is-weakhashmap">Q82. What is WeakHashMap?</h2>
+<p><code>WeakHashMap</code> is a Map implementation whose keys are held using weak
+references.</p>
+<p>The important consequence is:</p>
+<pre><code class="language-text">Key has no strong reference elsewhere
+        ↓
+key becomes eligible for GC
+        ↓
+entry can disappear from WeakHashMap
+</code></pre>
+<p>If the application's strong reference disappears, garbage collection may
+make the key eligible for removal and the corresponding entry can disappear.</p>
+<p>This can be useful for certain cache/metadata patterns where the map should
+not keep keys alive indefinitely.</p>
+<h3 id="important-interview-warning">Important interview warning</h3>
+<p>Do not describe <code>WeakHashMap</code> as a normal cache with deterministic eviction.
+Garbage collection determines when keys become eligible for removal, so this
+is fundamentally different from an LRU cache.</p>
+<h3 id="cross-document-connection">Cross-document connection</h3>
+<p>See the Core Java note's garbage-collection section for the underlying
+strong-reference vs weak-reference model.</p>
+<hr />
+<h2 id="q83-how-should-equals-and-hashcode-be-implemented-idiomatically">Q83. How should equals() and hashCode() be implemented idiomatically?</h2>
+<p>When equality depends on fields such as <code>id</code> and <code>name</code>, modern Java code can
+use <code>Objects.equals()</code> and <code>Objects.hash()</code>.</p>
+<pre><code class="language-java">@Override
+public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof User other)) return false;
+
+    return Objects.equals(id, other.id)
+        &amp;&amp; Objects.equals(name, other.name);
+}
+
+@Override
+public int hashCode() {
+    return Objects.hash(id, name);
+}
+</code></pre>
+<p><code>Objects.equals(a, b)</code> is null-safe, while <code>Objects.hash(...)</code> is a convenient
+way to combine the fields participating in the hash.</p>
+<p>The contract remains:</p>
+<pre><code class="language-text">a.equals(b) == true
+        ↓
+a.hashCode() == b.hashCode()
+</code></pre>
+<p>And fields participating in equality/hashCode should not be mutated while an
+object is being used as a hash-based collection key.</p>
+<hr />
+<h1 id="28-important-collection-comparisons">28. Important Collection Comparisons</h1>
+<h2 id="q84-arraylist-vs-linkedlist">Q84. ArrayList vs LinkedList?</h2>
+<h3 id="arraylist">ArrayList</h3>
+<p>Best general-purpose List choice in many cases.</p>
+<pre><code class="language-text">get(index) → O(1)
+append → O(1) amortized
+middle insertion → O(n)
+</code></pre>
+<h3 id="linkedlist">LinkedList</h3>
+<pre><code class="language-text">get(index) → O(n)
+</code></pre>
+<p>Insertion/removal can be O(1) once the node/position is known, but finding that position may cost O(n).</p>
+<h3 id="practical-answer">Practical answer</h3>
+<blockquote>
+<p>I would default to ArrayList unless I have a specific access pattern that makes LinkedList appropriate.</p>
+</blockquote>
+<hr />
+<h2 id="q85-hashmap-vs-linkedhashmap">Q85. HashMap vs LinkedHashMap?</h2>
+<p><code>HashMap</code>:</p>
+<pre><code class="language-text">Hash-based
+No guaranteed iteration order
+</code></pre>
+<p><code>LinkedHashMap</code>:</p>
+<pre><code class="language-text">Hash-based
+Predictable insertion/access order
+</code></pre>
+<p>Use LinkedHashMap when iteration order matters.</p>
+<hr />
+<h2 id="q86-hashmap-vs-treemap">Q86. HashMap vs TreeMap?</h2>
+<pre><code class="language-text">HashMap
+→ average O(1) lookup
+→ no guaranteed ordering
+
+TreeMap
+→ O(log n)
+→ sorted keys
+</code></pre>
+<p>Choose TreeMap when ordered navigation is part of the requirement.</p>
+<hr />
+<h2 id="q87-hashset-vs-treeset">Q87. HashSet vs TreeSet?</h2>
+<pre><code class="language-text">HashSet
+→ uniqueness
+→ average O(1) lookup
+→ no ordering guarantee
+
+TreeSet
+→ uniqueness
+→ sorted elements
+→ O(log n)
+</code></pre>
+<hr />
+<h2 id="q88-hashmap-vs-concurrenthashmap">Q88. HashMap vs ConcurrentHashMap?</h2>
+<pre><code class="language-text">HashMap
+→ not thread-safe
+
+ConcurrentHashMap
+→ designed for concurrent access
+→ no null keys/values
+</code></pre>
+<p>Don't use ConcurrentHashMap merely because "threads might exist." Use it when shared concurrent map access is actually required.</p>
+<hr />
+<h2 id="q89-arraydeque-vs-stack">Q89. ArrayDeque vs Stack?</h2>
+<p>Prefer:</p>
+<pre><code class="language-java">Deque&lt;T&gt; stack = new ArrayDeque&lt;&gt;();
+</code></pre>
+<p>over legacy:</p>
+<pre><code class="language-java">Stack&lt;T&gt;
+</code></pre>
+<p>for modern stack behavior.</p>
+<p>ArrayDeque is a general-purpose deque and can support both stack and queue operations.</p>
+<hr />
+<h1 id="29-tricky-interview-questions">29. Tricky Interview Questions</h1>
+<h2 id="q90-what-happens-with-this-code">Q90. What happens with this code?</h2>
+<pre><code class="language-java">List&lt;Integer&gt; numbers =
+    new ArrayList&lt;&gt;();
+
+numbers.add(10);
+numbers.add(20);
+
+numbers.remove(1);
+</code></pre>
+<p>Which element is removed?</p>
+<p>Because the argument is an <code>int</code>, this invokes:</p>
+<pre><code class="language-java">remove(int index)
+</code></pre>
+<p>Therefore element at index <code>1</code> is removed:</p>
+<pre><code class="language-text">20
+</code></pre>
+<p>If you want to remove the Integer value <code>1</code>:</p>
+<pre><code class="language-java">numbers.remove(Integer.valueOf(1));
+</code></pre>
+<p>This is a classic autoboxing/overload interview trap.</p>
+<hr />
+<h2 id="q91-what-happens-if-you-modify-a-hashmap-key-after-inserting-it">Q91. What happens if you modify a HashMap key after inserting it?</h2>
+<p>Example:</p>
+<pre><code class="language-java">UserKey key = new UserKey(&quot;A&quot;);
+
+map.put(key, &quot;value&quot;);
+
+key.setId(&quot;B&quot;);
+</code></pre>
+<p>If <code>equals()</code> and <code>hashCode()</code> depend on <code>id</code>, the key may no longer be found using the expected lookup.</p>
+<p>The entry may still physically exist inside the map, but its new hash may point to a different bucket.</p>
+<h3 id="rule_1">Rule</h3>
+<p>Do not mutate fields used by a hash-based key's equality/hash contract while the key is being used as a key.</p>
+<hr />
+<h2 id="q92-does-hashmap-use-equals-before-hashcode">Q92. Does HashMap use equals() before hashCode()?</h2>
+<p>No.</p>
+<p>Hash-based lookup first uses hash information to identify candidate buckets/entries and then equality checks candidate keys.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">hashCode()
+    ↓
+candidate bucket
+    ↓
+equals()
+</code></pre>
+<p>This is why both methods matter.</p>
+<hr />
+<h2 id="q93-can-two-objects-with-the-same-hashcode-be-stored-in-hashmap">Q93. Can two objects with the same hashCode be stored in HashMap?</h2>
+<p>Yes.</p>
+<p>Hash collisions are allowed.</p>
+<p>HashMap uses equality checks to distinguish different keys that land in the same bucket.</p>
+<hr />
+<h2 id="q94-does-treeset-use-equals-to-determine-duplicates">Q94. Does TreeSet use equals() to determine duplicates?</h2>
+<p>This is a subtle and important question.</p>
+<p>TreeSet determines ordering and uniqueness based on comparison.</p>
+<p>If:</p>
+<pre><code class="language-java">compareTo(a, b) == 0
+</code></pre>
+<p>the TreeSet considers the elements equivalent for set purposes, even if:</p>
+<pre><code class="language-java">a.equals(b) == false
+</code></pre>
+<p>This is why a comparison function used with sorted collections should generally be consistent with equality when possible.</p>
+<hr />
+<h2 id="q95-can-hashset-contain-two-objects-with-the-same-hashcode">Q95. Can HashSet contain two objects with the same hashCode?</h2>
+<p>Yes.</p>
+<p>Same hash code does not mean equality.</p>
+<p>If:</p>
+<pre><code class="language-text">hashCode(A) == hashCode(B)
+</code></pre>
+<p>but:</p>
+<pre><code class="language-text">A.equals(B) == false
+</code></pre>
+<p>both can exist in the HashSet.</p>
+<hr />
+<h2 id="q96-does-arraylist-allow-null">Q96. Does ArrayList allow null?</h2>
+<p>Yes.</p>
+<pre><code class="language-java">List&lt;String&gt; list =
+    new ArrayList&lt;&gt;();
+
+list.add(null);
+</code></pre>
+<p>Multiple null elements can be stored.</p>
+<hr />
+<h2 id="q97-does-treeset-allow-null">Q97. Does TreeSet allow null?</h2>
+<p>With natural ordering, TreeSet generally does not support null because comparison requires an ordering relationship.</p>
+<p>With custom comparators, behavior depends on the comparator and its handling of null, but relying on null ordering should be deliberate.</p>
+<hr />
+<h2 id="q98-is-collectionssynchronizedlist-the-same-as-copyonwritearraylist">Q98. Is Collections.synchronizedList() the same as CopyOnWriteArrayList?</h2>
+<p>No.</p>
+<h3 id="synchronizedlist">synchronizedList</h3>
+<p>Wraps a List with synchronization around operations.</p>
+<h3 id="copyonwritearraylist">CopyOnWriteArrayList</h3>
+<p>Creates a new backing array for each mutating operation.</p>
+<p>Therefore:</p>
+<pre><code class="language-text">Many reads
+Few writes
+→ CopyOnWriteArrayList can be useful
+</code></pre>
+<p>But frequent writes can make CopyOnWriteArrayList expensive.</p>
+<hr />
+<h1 id="30-concurrent-collections">30. Concurrent Collections</h1>
+<h2 id="q99-what-is-copyonwritearraylist">Q99. What is CopyOnWriteArrayList?</h2>
+<p><code>CopyOnWriteArrayList</code> is a thread-safe List designed for workloads with many reads and relatively few writes.</p>
+<p>On modification, it creates a new copy of the underlying array.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Read → shared array
+
+Write
+ ↓
+new array
+ ↓
+copy
+ ↓
+replace reference
+</code></pre>
+<p>This makes reads efficient and iteration predictable, but writes are expensive.</p>
+<hr />
+<h2 id="q100-when-would-you-use-copyonwritearraylist">Q100. When would you use CopyOnWriteArrayList?</h2>
+<p>Good candidates include data that is:</p>
+<pre><code class="language-text">read frequently
+written rarely
+</code></pre>
+<p>Examples can include:</p>
+<ul>
+<li>Listener lists</li>
+<li>Configuration-like snapshots</li>
+<li>Observer registrations</li>
+</ul>
+<p>It is a poor choice when the list changes frequently.</p>
+<hr />
+<h2 id="q101-what-is-blockingqueue-useful-for">Q101. What is BlockingQueue useful for?</h2>
+<p>Producer-consumer architectures.</p>
+<pre><code class="language-text">Producer
+   ↓
+BlockingQueue
+   ↓
+Consumer
+</code></pre>
+<p>Producer:</p>
+<pre><code class="language-java">queue.put(task);
+</code></pre>
+<p>Consumer:</p>
+<pre><code class="language-java">Task task = queue.take();
+</code></pre>
+<p>If the queue is empty, <code>take()</code> can wait.</p>
+<p>If bounded and full, <code>put()</code> can wait.</p>
+<p>This provides a useful form of backpressure.</p>
+<hr />
+<h1 id="31-performance-and-complexity">31. Performance and Complexity</h1>
+<h2 id="q102-what-collection-should-you-use-for-o1-average-lookup-by-key">Q102. What collection should you use for O(1) average lookup by key?</h2>
+<p>Usually:</p>
+<pre><code class="language-java">HashMap&lt;K, V&gt;
+</code></pre>
+<p>assuming appropriate hashing and normal conditions.</p>
+<p>For concurrent access:</p>
+<pre><code class="language-java">ConcurrentHashMap&lt;K, V&gt;
+</code></pre>
+<p>For sorted keys:</p>
+<pre><code class="language-java">TreeMap&lt;K, V&gt;
+</code></pre>
+<hr />
+<h2 id="q103-what-collection-should-you-use-when-you-need-unique-elements-and-preserve-insertion-order">Q103. What collection should you use when you need unique elements and preserve insertion order?</h2>
+<pre><code class="language-java">LinkedHashSet
+</code></pre>
+<hr />
+<h2 id="q104-what-collection-should-you-use-when-you-need-unique-elements-in-sorted-order">Q104. What collection should you use when you need unique elements in sorted order?</h2>
+<pre><code class="language-java">TreeSet
+</code></pre>
+<hr />
+<h2 id="q105-what-collection-should-you-use-for-a-stack">Q105. What collection should you use for a stack?</h2>
+<p>Prefer:</p>
+<pre><code class="language-java">Deque&lt;T&gt; stack =
+    new ArrayDeque&lt;&gt;();
+</code></pre>
+<hr />
+<h2 id="q106-what-collection-should-you-use-for-a-priority-based-task-scheduler">Q106. What collection should you use for a priority-based task scheduler?</h2>
+<p>Typically:</p>
+<pre><code class="language-java">PriorityQueue
+</code></pre>
+<p>or a concurrent variant such as:</p>
+<pre><code class="language-java">PriorityBlockingQueue
+</code></pre>
+<p>depending on whether concurrent producer/consumer behavior is required.</p>
+<hr />
+<h1 id="32-scenario-based-interview-questions">32. Scenario-Based Interview Questions</h1>
+<h2 id="q107-you-need-to-remove-duplicates-from-a-list-while-preserving-the-original-order-what-would-you-use">Q107. You need to remove duplicates from a List while preserving the original order. What would you use?</h2>
+<p>A simple solution:</p>
+<pre><code class="language-java">List&lt;String&gt; result =
+    new ArrayList&lt;&gt;(
+        new LinkedHashSet&lt;&gt;(input)
+    );
+</code></pre>
+<p>Why?</p>
+<pre><code class="language-text">LinkedHashSet
+→ removes duplicates
+→ preserves insertion order
+</code></pre>
+<hr />
+<h2 id="q108-you-need-to-count-how-many-times-each-word-appears-what-collection-would-you-use">Q108. You need to count how many times each word appears. What collection would you use?</h2>
+<p>Use a Map:</p>
+<pre><code class="language-java">Map&lt;String, Integer&gt; frequency =
+    new HashMap&lt;&gt;();
+</code></pre>
+<p>Conceptually:</p>
+<pre><code class="language-text">word → count
+</code></pre>
+<p>Example:</p>
+<pre><code class="language-java">frequency.merge(word, 1, Integer::sum);
+</code></pre>
+<hr />
+<h2 id="q109-you-need-the-top-10-highest-priority-elements-from-millions-of-records-would-you-sort-everything">Q109. You need the top 10 highest-priority elements from millions of records. Would you sort everything?</h2>
+<p>Not necessarily.</p>
+<p>Sorting all elements costs roughly:</p>
+<pre><code class="language-text">O(n log n)
+</code></pre>
+<p>If you only need the top K elements, a bounded heap can often reduce the work to approximately:</p>
+<pre><code class="language-text">O(n log k)
+</code></pre>
+<p>using a <code>PriorityQueue</code>.</p>
+<p>This is a very useful algorithm + Collections interview connection.</p>
+<hr />
+<h2 id="q110-you-need-a-cache-that-removes-the-least-recently-used-entry-which-collection-could-help">Q110. You need a cache that removes the least recently used entry. Which collection could help?</h2>
+<p><code>LinkedHashMap</code> can implement an LRU-style cache using access-order.</p>
+<p>Conceptually:</p>
+<pre><code class="language-text">Access order
+A → B → C → D
+
+Access B
+
+A → C → D → B
+
+Capacity exceeded
+↓
+remove A
+</code></pre>
+<p>In a real concurrent/distributed application, however, you should consider whether a local cache or Redis is more appropriate.</p>
+<hr />
+<h2 id="q111-you-have-a-map-shared-by-many-threads-which-collection-might-you-use">Q111. You have a Map shared by many threads. Which collection might you use?</h2>
+<p>Potentially:</p>
+<pre><code class="language-java">ConcurrentHashMap
+</code></pre>
+<p>But first establish the access pattern.</p>
+<p>If the data requires atomic compound operations, use the concurrent Map's atomic APIs such as:</p>
+<pre><code class="language-java">compute()
+computeIfAbsent()
+merge()
+putIfAbsent()
+</code></pre>
+<p>rather than assuming:</p>
+<pre><code class="language-java">if (!map.containsKey(key)) {
+    map.put(key, value);
+}
+</code></pre>
+<p>is atomic.</p>
+<hr />
+<h2 id="q112-why-is-this-code-not-necessarily-thread-safe">Q112. Why is this code not necessarily thread-safe?</h2>
+<pre><code class="language-java">if (!map.containsKey(key)) {
+    map.put(key, value);
+}
+</code></pre>
+<p>Even if <code>map</code> is a <code>ConcurrentHashMap</code>, the combination of two operations is not necessarily atomic.</p>
+<p>Another thread can modify the map between:</p>
+<pre><code class="language-text">containsKey()
+</code></pre>
+<p>and:</p>
+<pre><code class="language-text">put()
+</code></pre>
+<p>Prefer:</p>
+<pre><code class="language-java">map.putIfAbsent(key, value);
+</code></pre>
+<p>or:</p>
+<pre><code class="language-java">map.computeIfAbsent(key, k -&gt; createValue(k));
+</code></pre>
+<p>when appropriate.</p>
+<p>This is a very important concurrency + Collections interview concept.</p>
+<hr />
+<h2 id="q113-you-need-to-process-tasks-concurrently-and-block-when-the-queue-is-full-what-would-you-use">Q113. You need to process tasks concurrently and block when the queue is full. What would you use?</h2>
+<p>A bounded <code>BlockingQueue</code>, such as:</p>
+<pre><code class="language-java">BlockingQueue&lt;Task&gt; queue =
+    new ArrayBlockingQueue&lt;&gt;(1000);
+</code></pre>
+<p>A bounded queue can help prevent unlimited memory growth and provides a form of backpressure.</p>
+<hr />
+<h2 id="q114-you-need-sorted-keys-but-also-frequent-lookup-should-you-use-hashmap-and-sort-keys-every-time">Q114. You need sorted keys but also frequent lookup. Should you use HashMap and sort keys every time?</h2>
+<p>If sorted traversal is a core requirement and must be maintained continuously, <code>TreeMap</code> may be more appropriate.</p>
+<p>If sorting is rare and lookup dominates, a <code>HashMap</code> plus occasional sorting may be more efficient.</p>
+<p>The correct answer depends on workload frequency and performance requirements.</p>
+<hr />
+<h1 id="33-advanced-scenario-questions">33. Advanced Scenario Questions</h1>
+<h2 id="q115-you-have-10-million-objects-and-only-need-to-know-whether-an-id-has-already-been-seen-what-collection-might-you-use">Q115. You have 10 million objects and only need to know whether an ID has already been seen. What collection might you use?</h2>
+<p>A <code>HashSet</code> is a natural choice for exact membership testing.</p>
+<pre><code class="language-java">Set&lt;Long&gt; seen =
+    new HashSet&lt;&gt;();
+</code></pre>
+<p>But at 10 million entries, memory becomes an important consideration.</p>
+<p>You should consider:</p>
+<pre><code class="language-text">object overhead
+load factor
+hash table capacity
+primitive-friendly alternatives if available
+external storage if necessary
+Bloom filter if probabilistic membership is acceptable
+</code></pre>
+<p>The best answer is not simply:</p>
+<blockquote>
+<p>HashSet because O(1).</p>
+</blockquote>
+<hr />
+<h2 id="q116-what-is-the-difference-between-lookup-complexity-and-real-world-performance">Q116. What is the difference between lookup complexity and real-world performance?</h2>
+<p>Big-O describes how an operation scales asymptotically, but actual performance also depends on:</p>
+<ul>
+<li>CPU cache locality</li>
+<li>Memory allocation</li>
+<li>Object overhead</li>
+<li>Hash distribution</li>
+<li>Branch prediction</li>
+<li>Contention</li>
+<li>Garbage collection</li>
+<li>Data size</li>
+<li>Constant factors</li>
+</ul>
+<p>This explains why an <code>ArrayList</code> can outperform a theoretically favorable linked structure for many workloads.</p>
+<hr />
+<h2 id="q117-why-might-arraylist-be-better-than-linkedlist-even-when-both-can-perform-an-operation-in-on">Q117. Why might ArrayList be better than LinkedList even when both can perform an operation in O(n)?</h2>
+<p>Big-O hides constant factors.</p>
+<p>ArrayList stores elements in an array-like contiguous structure:</p>
+<pre><code class="language-text">[A][B][C][D][E]
+</code></pre>
+<p>which has good cache locality.</p>
+<p>LinkedList requires following references:</p>
+<pre><code class="language-text">A → B → C → D → E
+</code></pre>
+<p>which can involve pointer chasing and additional object overhead.</p>
+<p>Therefore practical performance can differ substantially despite similar asymptotic complexity for some operations.</p>
+<hr />
+<h1 id="34-interview-trap-choosing-a-collection">34. Interview Trap: Choosing a Collection</h1>
+<h2 id="q118-an-interviewer-asks-which-collection-should-i-use">Q118. An interviewer asks: "Which collection should I use?"</h2>
+<p>Don't immediately answer with a class name.</p>
+<p>Ask:</p>
+<pre><code class="language-text">Do I need duplicates?
+Do I need ordering?
+Do I need sorting?
+Do I need key-value associations?
+Do I need indexed access?
+Do I need concurrent access?
+Do I need blocking?
+Do I need priority ordering?
+How large is the data?
+How frequently is it read?
+How frequently is it modified?
+</code></pre>
+<p>Then choose.</p>
+<p>Example:</p>
+<pre><code class="language-text">Unique + insertion order
+→ LinkedHashSet
+
+Unique + sorted
+→ TreeSet
+
+Key/value + average O(1) lookup
+→ HashMap
+
+Key/value + sorted keys
+→ TreeMap
+
+Concurrent key/value
+→ ConcurrentHashMap
+
+Stack
+→ ArrayDeque
+
+Priority
+→ PriorityQueue
+
+Producer/consumer blocking
+→ BlockingQueue
+</code></pre>
+<p>This is much stronger than memorizing a table.</p>
+<hr />
+<h1 id="35-high-value-interview-follow-up-chains">35. High-Value Interview Follow-Up Chains</h1>
+<h2 id="chain-1-hashmap">Chain 1 — HashMap</h2>
+<pre><code class="language-text">What is HashMap?
+      ↓
+How does put() work?
+      ↓
+How is hashCode() used?
+      ↓
+What is a bucket?
+      ↓
+What is a collision?
+      ↓
+How does equals() participate?
+      ↓
+What is load factor?
+      ↓
+When does resizing happen?
+      ↓
+What happens during resize?
+      ↓
+Why are keys ideally immutable?
+      ↓
+What changed with tree bins?
+      ↓
+HashMap vs ConcurrentHashMap?
+</code></pre>
+<hr />
+<h2 id="chain-2-arraylist">Chain 2 — ArrayList</h2>
+<pre><code class="language-text">What is ArrayList?
+      ↓
+How is it stored?
+      ↓
+Why get() is O(1)?
+      ↓
+What is size vs capacity?
+      ↓
+What happens when capacity is exceeded?
+      ↓
+Why add() is amortized O(1)?
+      ↓
+Why insert at index 0 is O(n)?
+      ↓
+Why ArrayList often beats LinkedList?
+</code></pre>
+<hr />
+<h2 id="chain-3-equalshashcode">Chain 3 — equals/hashCode</h2>
+<pre><code class="language-text">Why does HashMap need hashCode?
+      ↓
+Why does it need equals?
+      ↓
+What is the contract?
+      ↓
+Can unequal objects have same hash?
+      ↓
+What if equals() is overridden without hashCode()?
+      ↓
+What happens if a key is mutated?
+</code></pre>
+<hr />
+<h2 id="chain-4-concurrenthashmap">Chain 4 — ConcurrentHashMap</h2>
+<pre><code class="language-text">Why isn't HashMap thread-safe?
+      ↓
+Why not synchronize the whole map?
+      ↓
+What is ConcurrentHashMap?
+      ↓
+Does it allow null?
+      ↓
+Is it completely lock-free?
+      ↓
+What is putIfAbsent()?
+      ↓
+Why isn't containsKey()+put() atomic?
+      ↓
+What are computeIfAbsent() and merge()?
+</code></pre>
+<hr />
+<h2 id="chain-5-arraysaslist">Chain 5 — Arrays.asList()</h2>
+<pre><code class="language-text">What does Arrays.asList() return?
+      ↓
+Is it resizable?
+      ↓
+Can set() be used?
+      ↓
+What happens with add()/remove()?
+      ↓
+Is it backed by the original array?
+      ↓
+What happens with int[]?
+      ↓
+Arrays.asList() vs List.of()?
+      ↓
+Arrays.asList() vs new ArrayList&lt;&gt;(...)?
+</code></pre>
+<hr />
+<h2 id="chain-6-navigablemap-navigableset">Chain 6 — NavigableMap / NavigableSet</h2>
+<pre><code class="language-text">Why TreeMap?
+      ↓
+What is NavigableMap?
+      ↓
+floorKey() vs ceilingKey()?
+      ↓
+lowerKey() vs higherKey()?
+      ↓
+headMap() / tailMap() / subMap()?
+      ↓
+What is NavigableSet?
+      ↓
+floor() / ceiling() / lower() / higher()?
+</code></pre>
+<hr />
+<h2 id="chain-7-concurrenthashmap-iteration">Chain 7 — ConcurrentHashMap Iteration</h2>
+<pre><code class="language-text">What does ConcurrentHashMap provide?
+      ↓
+Is it completely lock-free?
+      ↓
+What happens while iterating?
+      ↓
+Does it throw ConcurrentModificationException?
+      ↓
+What is a weakly-consistent iterator?
+      ↓
+Does it provide a snapshot?
+</code></pre>
+<hr />
+<h2 id="chain-8-specialized-collections">Chain 8 — Specialized Collections</h2>
+<pre><code class="language-text">Enum keys?
+      ↓
+EnumMap
+
+Enum values as a Set?
+      ↓
+EnumSet
+
+Keys should not keep objects alive?
+      ↓
+WeakHashMap
+</code></pre>
+<hr />
+<h2 id="chain-5-collection-selection">Chain 5 — Collection Selection</h2>
+<pre><code class="language-text">Need a collection
+      ↓
+Duplicates?
+      ↓
+Ordering?
+      ↓
+Sorting?
+      ↓
+Key/value?
+      ↓
+Concurrency?
+      ↓
+Blocking?
+      ↓
+Priority?
+      ↓
+Memory constraints?
+      ↓
+Choose implementation
+</code></pre>
+<hr />
+<h1 id="36-final-self-test">36. Final Self-Test</h1>
+<p>You should eventually be able to answer these without memorizing:</p>
+<ol>
+<li>What is the Collections Framework?</li>
+<li>Collection vs Collections?</li>
+<li>Is Map a Collection?</li>
+<li>List vs Set vs Map?</li>
+<li>ArrayList internals?</li>
+<li>Size vs capacity?</li>
+<li>ArrayList growth?</li>
+<li>Amortized O(1)?</li>
+<li>ArrayList vs LinkedList?</li>
+<li>Why is LinkedList often slower?</li>
+<li>HashSet internals?</li>
+<li>How does HashSet guarantee uniqueness?</li>
+<li>HashSet vs LinkedHashSet?</li>
+<li>HashSet vs TreeSet?</li>
+<li>HashMap internals?</li>
+<li>Hashing and buckets?</li>
+<li>Collision?</li>
+<li>hashCode() vs equals()?</li>
+<li>HashMap load factor?</li>
+<li>HashMap resizing?</li>
+<li>Why are HashMap keys ideally immutable?</li>
+<li>HashMap null behavior?</li>
+<li>HashMap ordering?</li>
+<li>LinkedHashMap?</li>
+<li>LRU cache?</li>
+<li>TreeMap?</li>
+<li>TreeMap vs HashMap?</li>
+<li>Hashtable?</li>
+<li>ConcurrentHashMap?</li>
+<li>Why doesn't ConcurrentHashMap allow null?</li>
+<li>Queue?</li>
+<li>Deque?</li>
+<li>ArrayDeque?</li>
+<li>Stack vs ArrayDeque?</li>
+<li>PriorityQueue?</li>
+<li>Is PriorityQueue iteration sorted?</li>
+<li>BlockingQueue?</li>
+<li>Iterator?</li>
+<li>Fail-fast?</li>
+<li>ListIterator?</li>
+<li>Comparable?</li>
+<li>Comparator?</li>
+<li>Comparable vs Comparator?</li>
+<li>equals/hashCode contract?</li>
+<li>List&lt;?&gt; vs List<Object>?</li>
+<li>PECS?</li>
+<li>Immutable vs unmodifiable?</li>
+<li>CopyOnWriteArrayList?</li>
+<li>synchronizedList vs CopyOnWriteArrayList?</li>
+<li>Collection selection based on requirements?</li>
+<li>What is Arrays.asList()?</li>
+<li>Why is Arrays.asList() fixed-size?</li>
+<li>What happens when Arrays.asList() receives an int[]?</li>
+<li>NavigableMap?</li>
+<li>floorKey() vs ceilingKey()?</li>
+<li>lowerKey() vs higherKey()?</li>
+<li>NavigableMap range views?</li>
+<li>NavigableSet?</li>
+<li>ConcurrentHashMap weakly-consistent iterator?</li>
+<li>Fail-fast vs weakly-consistent iteration?</li>
+<li>EnumSet?</li>
+<li>EnumMap?</li>
+<li>addAll() / retainAll() / removeAll()?</li>
+<li>Union / intersection / difference of Sets?</li>
+<li>WeakHashMap?</li>
+<li>WeakHashMap vs LRU cache?</li>
+<li>Objects.equals()?</li>
+<li>Objects.hash()?</li>
+</ol>
+<hr />
+<h1 id="37-final-mental-model">37. Final Mental Model</h1>
+<p>Do not memorize the Collections Framework as a list of classes.</p>
+<p>Think in terms of <strong>requirements</strong>:</p>
+<pre><code class="language-text">                         DATA
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+          Individual                 Key → Value
+          elements                    mapping
+              │                         │
+       ┌──────┼──────┐           ┌──────┼──────┐
+       │      │      │           │      │      │
+      List   Set   Queue       HashMap TreeMap LinkedHashMap
+       │      │      │
+       │      │      ├── PriorityQueue
+       │      │      └── BlockingQueue
+       │      │
+       │      ├── HashSet
+       │      ├── LinkedHashSet
+       │      └── TreeSet
+       │
+       ├── ArrayList
+       └── LinkedList
+</code></pre>
+<p>Then apply the decision questions:</p>
+<pre><code class="language-text">Duplicates?
+Ordering?
+Sorted?
+Indexed access?
+Fast lookup?
+Key/value?
+Concurrency?
+Blocking?
+Priority?
+Memory?
+Read/write ratio?
+</code></pre>
+<p>The interviewer is rarely testing whether you can recite every Collection class.</p>
+<p>They are testing whether you can answer:</p>
+<blockquote>
+<p><strong>"Given this requirement, which data structure would you choose, why, what is its complexity, and what trade-offs does it introduce?"</strong></p>
+</blockquote>
+<p>That is the level of Collections knowledge expected in a strong Java interview.</p></main>
+</div>
+</body>
+</html>
