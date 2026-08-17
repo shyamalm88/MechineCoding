@@ -1,6 +1,8 @@
 {
   "title": "Java Notes",
   "categories": {
+    "java-spring-boot-backend-superset.md": "Master Reference",
+
     "modern-java-jvm.md": "Core Java & JVM",
     "java-threads.md": "Core Java & JVM",
     "java-collections.md": "Core Java & JVM",
@@ -15,6 +17,7 @@
     "docker-kubernetes-maven-cicd.md": "DevOps & Deployment"
   },
   "stars": {
+    "java-spring-boot-backend-superset.md": 3,
     "modern-java-jvm.md": 3,
     "java-threads.md": 3,
     "java-collections.md": 3,

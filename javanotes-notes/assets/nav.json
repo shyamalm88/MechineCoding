@@ -2,6 +2,16 @@
   "title": "Java Notes",
   "groups": [
     {
+      "category": "Master Reference",
+      "items": [
+        {
+          "slug": "java-spring-boot-backend-superset",
+          "label": "Java Spring Boot Backend Superset",
+          "stars": 3
+        }
+      ]
+    },
+    {
       "category": "Core Java & JVM",
       "items": [
         {
