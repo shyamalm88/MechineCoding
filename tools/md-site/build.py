@@ -61,6 +61,19 @@ def discover_md_files(source_dir):
 
 H1_RE = re.compile(r"^#[ \t]+(\S.*?)\s*$", re.M)
 
+# A leading Jekyll/Obsidian-style YAML frontmatter block (---\n...\n---\n).
+# python-markdown's own "meta" extension only understands single-line
+# "key: value" headers, not YAML lists (tags:\n  - foo), so it leaves those
+# lines behind as a stray bullet list. Since nothing here consumes the
+# frontmatter fields (extract_title() already reads the first H1
+# independently), the simplest correct behavior is to drop the whole block
+# before conversion.
+FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n.*?\n---[ \t]*\n", re.S)
+
+
+def strip_frontmatter(text):
+    return FRONTMATTER_RE.sub("", text, count=1)
+
 
 def extract_title(markdown_text, fallback):
     match = H1_RE.search(markdown_text)
@@ -335,7 +348,7 @@ def render_missing_diagrams(diagrams_by_hash):
 
 def convert_markdown(text, asset_prefix=""):
     body = md_lib.markdown(
-        text,
+        strip_frontmatter(text),
         extensions=["fenced_code", "tables", "toc", "attr_list", "md_in_html"],
     )
 
