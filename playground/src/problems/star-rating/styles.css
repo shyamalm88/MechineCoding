@@ -1,0 +1,14 @@
+.sr-rating { display: flex; align-items: center; gap: 4px; }
+
+.sr-star {
+  font-size: 32px;
+  line-height: 1;
+  color: #4a5163;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s ease;
+}
+
+.sr-star.sr-filled { color: #f5b301; }
+
+.sr-label { margin-left: 14px; font-size: 14px; color: #8b95a9; }
