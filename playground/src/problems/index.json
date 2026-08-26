@@ -24,6 +24,18 @@
     "difficulty": "Easy"
   },
   {
+    "id": "async-composition",
+    "title": "Async pipe, compose and waterfall",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "backpressure-queue",
+    "title": "Async Queue with Backpressure",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "async-utilities",
     "title": "Async Utilities: sleep, retry, timeout, cancel",
     "category": "JavaScript",
@@ -48,10 +60,22 @@
     "difficulty": "Hard"
   },
   {
+    "id": "batch-dispatcher",
+    "title": "Batch API Dispatcher (DataLoader)",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "storage-quotas",
     "title": "Browser Storage Quotas and Eviction",
     "category": "Web Fundamentals",
     "difficulty": "Medium"
+  },
+  {
+    "id": "cache-eviction-policies",
+    "title": "Cache Eviction: LFU and TTL",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "calendar-day-view",
@@ -76,6 +100,12 @@
     "title": "Circle Collision Detection",
     "category": "Machine Coding",
     "difficulty": "Medium"
+  },
+  {
+    "id": "circuit-breaker",
+    "title": "Circuit Breaker",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "closures",
@@ -152,6 +182,12 @@
   {
     "id": "custom-json-stringify",
     "title": "Custom JSON.stringify",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "custom-timers",
+    "title": "Custom Timers and Idle Scheduling",
     "category": "JavaScript",
     "difficulty": "Medium"
   },
@@ -294,6 +330,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "custom-use-effect",
+    "title": "Implement useState and useEffect",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "web-performance-improvements",
     "title": "Improving Web App Performance",
     "category": "Web Fundamentals",
@@ -316,6 +358,12 @@
     "title": "Knight Shortest Path",
     "category": "JavaScript",
     "difficulty": "Hard"
+  },
+  {
+    "id": "leaky-bucket",
+    "title": "Leaky Bucket Rate Limiter",
+    "category": "JavaScript",
+    "difficulty": "Medium"
   },
   {
     "id": "storage-comparison",
@@ -344,6 +392,12 @@
   {
     "id": "memoize",
     "title": "Memoize a Function",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "async-memoization",
+    "title": "Memoizing an Async Function",
     "category": "JavaScript",
     "difficulty": "Medium"
   },
@@ -394,6 +448,12 @@
     "title": "Object Keys Are Coerced to Strings",
     "category": "JavaScript",
     "difficulty": "Medium"
+  },
+  {
+    "id": "observable",
+    "title": "Observable (Mini RxJS)",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "observable-array",
@@ -450,6 +510,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "promisify",
+    "title": "promisify and callbackify",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "prototypes-inheritance",
     "title": "Prototypes, Inheritance and Object Creation",
     "category": "JavaScript",
@@ -486,6 +552,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "redux-create-store",
+    "title": "Redux createStore from Scratch",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "reflow-repaint-compositing",
     "title": "Reflow, Repaint and Compositing",
     "category": "Web Fundamentals",
@@ -495,6 +567,12 @@
     "id": "render-dom",
     "title": "renderDom: Virtual Node to DOM",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "request-deduplication",
+    "title": "Request Dedup and Race Conditions",
+    "category": "JavaScript",
     "difficulty": "Medium"
   },
   {
@@ -514,6 +592,12 @@
     "title": "Rook Shortest Path",
     "category": "JavaScript",
     "difficulty": "Medium"
+  },
+  {
+    "id": "saga-rollback",
+    "title": "Saga Pattern: Async Rollback",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "same-origin-policy",
@@ -648,6 +732,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "trie",
+    "title": "Trie (Prefix Tree)",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "typeahead",
     "title": "Typeahead / Autocomplete",
     "category": "Machine Coding",
@@ -682,6 +772,12 @@
     "title": "Virtual DOM and Why React Is Fast",
     "category": "React",
     "difficulty": "Easy"
+  },
+  {
+    "id": "virtual-dom-diff",
+    "title": "Virtual DOM Tree Diff",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "virtual-list",
