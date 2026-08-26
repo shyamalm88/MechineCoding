@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 
 // problem.md files are authored as standalone documents, so each opens with
@@ -20,7 +21,14 @@ export default function MarkdownView({ markdown }) {
 
   return (
     <div className="markdown-view">
-      <ReactMarkdown rehypePlugins={[rehypeHighlight]} components={DEMOTED_HEADINGS}>
+      {/* remark-gfm adds tables, strikethrough and task lists -- several
+          problem descriptions lean on comparison tables, which plain
+          CommonMark renders as literal pipe characters. */}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={DEMOTED_HEADINGS}
+      >
         {markdown}
       </ReactMarkdown>
     </div>

@@ -35,9 +35,12 @@ export function loadProblem(id) {
   const entry = registry.find((problem) => problem.id === id)
   if (!entry) throw new Error(`Unknown problem id: ${id}`)
 
+  // Solution.jsx is optional -- conceptual problems ("What is an ETag?") have
+  // nothing to render and are description-only. But a Solution.jsx that exists
+  // WITHOUT a default export is a genuine mistake, so that still throws.
   const module = componentModules[`./${id}/${ENTRY_FILENAME}`]
-  if (!module?.default) {
-    throw new Error(`Problem "${id}" is missing a default export in ${ENTRY_FILENAME}`)
+  if (module && !module.default) {
+    throw new Error(`Problem "${id}" has ${ENTRY_FILENAME} but no default export`)
   }
 
   const markdown = markdownTexts[`./${id}/problem.md`]
@@ -45,10 +48,7 @@ export function loadProblem(id) {
     throw new Error(`Problem "${id}" is missing problem.md`)
   }
 
-  const files = sourcesByProblem[id]
-  if (!files?.length) {
-    throw new Error(`Problem "${id}" has no source files`)
-  }
+  const files = sourcesByProblem[id] ?? []
 
   // Concatenate this problem's stylesheets and confine every rule to its own
   // preview subtree. Injected by PreviewPane rather than imported for its side
@@ -58,5 +58,5 @@ export function loadProblem(id) {
     .map((file) => scopeCss(file.code, id))
     .join('\n')
 
-  return { ...entry, Component: module.default, markdown, files, css }
+  return { ...entry, Component: module?.default ?? null, markdown, files, css }
 }

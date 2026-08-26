@@ -1,5 +1,17 @@
 [
   {
+    "id": "async-vs-defer",
+    "title": "async vs defer",
+    "category": "Web Fundamentals",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "storage-quotas",
+    "title": "Browser Storage Quotas and Eviction",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
     "id": "calendar-day-view",
     "title": "Calendar Day View",
     "category": "Machine Coding",
@@ -24,6 +36,30 @@
     "difficulty": "Medium"
   },
   {
+    "id": "content-security-policy",
+    "title": "Content Security Policy",
+    "category": "Web Fundamentals",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "core-web-vitals",
+    "title": "Core Web Vitals",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "cors-deep-dive",
+    "title": "CORS Deep Dive",
+    "category": "Web Fundamentals",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "critical-rendering-path",
+    "title": "Critical Rendering Path",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
     "id": "data-table",
     "title": "Data Table",
     "category": "Machine Coding",
@@ -36,9 +72,21 @@
     "difficulty": "Medium"
   },
   {
+    "id": "dns-cdn-caching",
+    "title": "DNS Resolution and CDN Caching",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
     "id": "drawing-board",
     "title": "Drawing Board",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "etag",
+    "title": "ETags and Conditional Requests",
+    "category": "Web Fundamentals",
     "difficulty": "Medium"
   },
   {
@@ -72,9 +120,21 @@
     "difficulty": "Easy"
   },
   {
+    "id": "http-versions",
+    "title": "HTTP/1.1 vs HTTP/2 vs HTTP/3",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
     "id": "carousel",
     "title": "Image Carousel",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "web-performance-improvements",
+    "title": "Improving Web App Performance",
+    "category": "Web Fundamentals",
     "difficulty": "Medium"
   },
   {
@@ -94,6 +154,18 @@
     "title": "Knight Shortest Path",
     "category": "JavaScript",
     "difficulty": "Hard"
+  },
+  {
+    "id": "storage-comparison",
+    "title": "localStorage vs sessionStorage vs cookies",
+    "category": "Web Fundamentals",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "measuring-web-performance",
+    "title": "Measuring Website Performance",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
   },
   {
     "id": "modal",
@@ -138,9 +210,27 @@
     "difficulty": "Medium"
   },
   {
+    "id": "reflow-repaint-compositing",
+    "title": "Reflow, Repaint and Compositing",
+    "category": "Web Fundamentals",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "rest-vs-graphql",
+    "title": "REST vs GraphQL",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
     "id": "chess-board-rook-shortest-path",
     "title": "Rook Shortest Path",
     "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "same-origin-policy",
+    "title": "Same-Origin Policy",
+    "category": "Web Fundamentals",
     "difficulty": "Medium"
   },
   {
@@ -154,6 +244,24 @@
     "title": "Seat Picker",
     "category": "Machine Coding",
     "difficulty": "Medium"
+  },
+  {
+    "id": "semantic-html-a11y",
+    "title": "Semantic HTML and Accessibility",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "service-workers-caching",
+    "title": "Service Workers and Caching",
+    "category": "Web Fundamentals",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "shadow-dom-web-components",
+    "title": "Shadow DOM and Web Components",
+    "category": "Web Fundamentals",
+    "difficulty": "Hard"
   },
   {
     "id": "snake-ladder",
@@ -192,6 +300,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "tls-handshake",
+    "title": "TLS Handshake and HTTPS",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
     "id": "token-bucket",
     "title": "Token Bucket Rate Limiter",
     "category": "JavaScript",
@@ -220,6 +334,12 @@
     "title": "Virtual List",
     "category": "Machine Coding",
     "difficulty": "Hard"
+  },
+  {
+    "id": "websockets-sse-polling",
+    "title": "WebSockets vs SSE vs Long Polling",
+    "category": "Web Fundamentals",
+    "difficulty": "Medium"
   },
   {
     "id": "wordle",

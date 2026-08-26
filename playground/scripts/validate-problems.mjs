@@ -10,7 +10,7 @@ const ENTRY_FILENAME = 'Solution.jsx'
  * Pure comparison of a registry against what's on disk. Filesystem access is
  * injected so this is directly unit-testable.
  */
-export function collectProblemErrors({ registry, folders, hasSolution, hasMarkdown }) {
+export function collectProblemErrors({ registry, folders, hasMarkdown }) {
   const errors = []
   // Two sets on purpose: `claimed` is every id the registry mentions at all,
   // `validated` is only those that passed field validation. The orphan check
@@ -44,7 +44,8 @@ export function collectProblemErrors({ registry, folders, hasSolution, hasMarkdo
       continue
     }
 
-    if (!hasSolution(id)) errors.push(`Problem "${id}" is missing ${ENTRY_FILENAME}`)
+    // Solution.jsx is optional: conceptual problems are description-only and
+    // render no preview. problem.md is always required.
     if (!hasMarkdown(id)) errors.push(`Problem "${id}" is missing problem.md`)
   }
 
@@ -69,7 +70,6 @@ function main() {
   const errors = collectProblemErrors({
     registry,
     folders,
-    hasSolution: (id) => existsSync(join(problemsDir, id, ENTRY_FILENAME)),
     hasMarkdown: (id) => existsSync(join(problemsDir, id, 'problem.md')),
   })
 

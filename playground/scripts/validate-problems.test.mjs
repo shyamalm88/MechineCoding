@@ -31,15 +31,16 @@ test('reports a registry entry with no folder on disk', () => {
   assert.match(errors[0], /debounce.*no folder/i)
 })
 
-test('reports a folder missing Solution.jsx', () => {
+test('allows a description-only problem with no Solution.jsx', () => {
+  // Conceptual questions ("What is an ETag?") have nothing to render, so a
+  // missing Solution.jsx is valid -- the problem is description-only.
   const errors = collectProblemErrors({
     registry: [VALID_ENTRY],
     folders: ['debounce'],
     hasSolution: () => false,
     hasMarkdown: () => true,
   })
-  assert.equal(errors.length, 1)
-  assert.match(errors[0], /Solution\.jsx/)
+  assert.deepEqual(errors, [])
 })
 
 test('reports a folder missing problem.md', () => {
