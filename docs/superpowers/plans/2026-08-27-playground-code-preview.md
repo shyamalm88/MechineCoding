@@ -1431,7 +1431,7 @@ git commit -m "feat(playground): add sidebar, app shell, and dark IDE styling"
 
 **Files:**
 - Create: `playground-build/` (generated)
-- Modify: `index.html` (repo root — after the Java Notes button)
+- Modify: `index.html` (repo root — append to the end of the nav)
 
 - [ ] **Step 1: Run the full test suite**
 
@@ -1455,17 +1455,20 @@ Expected: paths begin with `./assets/`, not `/assets/` — confirming
 In `/Volumes/Personal/MechineCoding/index.html`, find:
 
 ```html
-  <button type="button" data-src="javanotes-notes/index.html">Java Notes</button>
+  <button type="button" data-src="frontend-interview-hub/index.html">Frontend Interview Hub</button>
 </nav>
 ```
 
 Replace with:
 
 ```html
-  <button type="button" data-src="javanotes-notes/index.html">Java Notes</button>
+  <button type="button" data-src="frontend-interview-hub/index.html">Frontend Interview Hub</button>
   <button type="button" data-src="playground-build/index.html">Playground</button>
 </nav>
 ```
+
+The Playground button goes last in the nav. Do not remove or reorder any
+existing button.
 
 - [ ] **Step 5: Verify the hub serves the built app**
 
