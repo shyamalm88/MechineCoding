@@ -1,13 +1,13 @@
 # playground — code + preview reference app
 
-A browsable library of **119 front-end interview problems**. Each entry shows a
+A browsable library of **135 front-end interview problems**. Each entry shows a
 live running preview beside its real source, syntax-highlighted — or, for
 conceptual questions, a full-width written answer.
 
 | Category | Count |
 |---|---|
 | Machine Coding | 43 |
-| JavaScript | 37 |
+| JavaScript | 53 |
 | Web Fundamentals | 20 |
 | React | 19 |
 
