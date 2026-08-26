@@ -1,0 +1,17 @@
+.td { max-width: 440px; font-size: 14px; color: #1f2430; }
+.td-form { display: flex; gap: 8px; }
+.td-input { flex: 1; padding: 9px 11px; border: 1px solid #d8dbe2; border-radius: 8px; font-size: 14px; }
+.td-add { padding: 9px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 8px; cursor: pointer; font-weight: 600; }
+.td-add:disabled { opacity: 0.4; cursor: default; }
+.td-filters { display: flex; gap: 6px; align-items: center; margin: 14px 0 10px; }
+.td-chip { padding: 5px 12px; border: 1px solid #d8dbe2; border-radius: 999px; background: #fff; cursor: pointer; font-size: 13px; text-transform: capitalize; }
+.td-on { background: #2563eb; border-color: #2563eb; color: #fff; }
+.td-count { margin-left: auto; color: #6b7280; font-size: 13px; }
+.td-list { list-style: none; margin: 0; padding: 0; }
+.td-item { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid #eef0f3; }
+.td-text { flex: 1; cursor: text; }
+.td-doneitem .td-text { text-decoration: line-through; color: #9aa1ad; }
+.td-edit { flex: 1; padding: 5px 7px; border: 1px solid #2563eb; border-radius: 6px; font-size: 14px; }
+.td-del { border: none; background: none; color: #b91c1c; font-size: 19px; cursor: pointer; line-height: 1; }
+.td-empty { color: #9aa1ad; padding: 18px 0; }
+.td-hint { color: #666; font-size: 12.5px; margin-top: 12px; }

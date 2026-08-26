@@ -1,0 +1,13 @@
+.mg { font-size: 14px; color: #1f2430; }
+.mg-bar { display: flex; gap: 20px; align-items: center; margin-bottom: 14px; }
+.mg-reset { margin-left: auto; padding: 7px 14px; border: 1px solid #d8dbe2; border-radius: 7px; background: #fff; cursor: pointer; }
+.mg-win { color: #15803d; font-weight: 700; }
+.mg-grid { display: grid; grid-template-columns: repeat(4, 68px); gap: 10px; }
+.mg-card {
+  width: 68px; height: 68px; font-size: 30px; cursor: pointer;
+  border: 1px solid #d8dbe2; border-radius: 10px; background: #eef1f6; color: #9aa1ad;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.mg-card:hover:not(.mg-done) { transform: translateY(-2px); }
+.mg-up { background: #fff; color: inherit; }
+.mg-done { background: #dcfce7; border-color: #86efac; cursor: default; }

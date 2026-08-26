@@ -1,0 +1,20 @@
+.am { font-size: 14px; color: #1f2430; }
+.am-hint { color: #666; font-size: 13px; max-width: 380px; }
+.am-trigger, .am-btn {
+  padding: 9px 16px; border: 1px solid #d8dbe2; border-radius: 8px;
+  background: #fff; cursor: pointer; font-size: 14px;
+}
+.am-primary { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+.am-outside { padding: 8px; width: 300px; margin-top: 4px; }
+.am-overlay {
+  position: fixed; inset: 0; background: rgba(15, 20, 30, 0.55);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.am-dialog {
+  background: #fff; border-radius: 12px; padding: 24px; width: min(440px, 92vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.am-title { margin: 0 0 6px; font-size: 18px; }
+.am-desc { margin: 0 0 16px; color: #555; font-size: 14px; }
+.am-input { display: block; width: 100%; padding: 9px; margin-bottom: 10px; border: 1px solid #d8dbe2; border-radius: 7px; }
+.am-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }

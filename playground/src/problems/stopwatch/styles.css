@@ -1,0 +1,13 @@
+.sw { font-family: ui-sans-serif, system-ui, sans-serif; color: #1f2430; }
+.sw-display {
+  font-family: "IBM Plex Mono", monospace; font-size: 46px; font-variant-numeric: tabular-nums;
+  letter-spacing: 1px; margin-bottom: 16px;
+}
+.sw-controls { display: flex; gap: 8px; }
+.sw-btn { padding: 9px 18px; border: 1px solid #d8dbe2; border-radius: 8px; background: #fff; cursor: pointer; font-size: 14px; }
+.sw-btn:disabled { opacity: 0.4; cursor: default; }
+.sw-primary { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+.sw-laps { margin-top: 18px; padding-left: 0; list-style: none; font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+.sw-laps li { display: flex; gap: 20px; padding: 5px 0; border-bottom: 1px solid #eee; }
+.sw-laps li span:first-child { width: 64px; color: #6b7280; }
+.sw-total { color: #9aa1ad; }

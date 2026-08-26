@@ -1,0 +1,20 @@
+.ms { position: relative; max-width: 420px; font-size: 14px; color: #1f2430; }
+.ms-control {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  border: 1px solid #d8dbe2; border-radius: 8px; padding: 7px 9px; background: #fff; cursor: text;
+}
+.ms-chip {
+  display: inline-flex; align-items: center; gap: 5px; background: #e8effd; color: #1d4ed8;
+  border-radius: 999px; padding: 3px 6px 3px 10px; font-size: 13px;
+}
+.ms-chip button { border: none; background: none; cursor: pointer; color: #1d4ed8; font-size: 15px; line-height: 1; padding: 0 2px; }
+.ms-input { flex: 1; min-width: 110px; border: none; outline: none; font-size: 14px; padding: 4px; }
+.ms-list {
+  position: absolute; z-index: 10; left: 0; right: 0; margin: 6px 0 0; padding: 4px;
+  list-style: none; background: #fff; border: 1px solid #d8dbe2; border-radius: 8px;
+  max-height: 220px; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+}
+.ms-option { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.ms-active { background: #eef2ff; }
+.ms-empty { padding: 10px; color: #9aa1ad; }
+.ms-hint { margin-top: 10px; color: #666; font-size: 12.5px; }

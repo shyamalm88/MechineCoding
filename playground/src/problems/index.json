@@ -1,5 +1,17 @@
 [
   {
+    "id": "accessible-modal",
+    "title": "Accessible Modal with Focus Trap",
+    "category": "Machine Coding",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "accordion",
+    "title": "Accordion Component",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
     "id": "analytics-batching",
     "title": "Analytics Batching with Flush",
     "category": "JavaScript",
@@ -336,10 +348,22 @@
     "difficulty": "Medium"
   },
   {
+    "id": "memory-card-game",
+    "title": "Memory Card Matching Game",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
     "id": "modal",
     "title": "Modal / Dialog",
     "category": "Machine Coding",
     "difficulty": "Medium"
+  },
+  {
+    "id": "multiselect-dropdown",
+    "title": "Multiselect Dropdown with Search",
+    "category": "Machine Coding",
+    "difficulty": "Hard"
   },
   {
     "id": "checkbox-hierarchy",
@@ -374,6 +398,12 @@
   {
     "id": "otp-input",
     "title": "OTP Input",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "pagination",
+    "title": "Pagination Component",
     "category": "Machine Coding",
     "difficulty": "Medium"
   },
@@ -546,6 +576,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "stopwatch",
+    "title": "Stopwatch",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
     "id": "suspense-lazy",
     "title": "Suspense and React.lazy",
     "category": "React",
@@ -574,6 +610,12 @@
     "title": "TLS Handshake and HTTPS",
     "category": "Web Fundamentals",
     "difficulty": "Medium"
+  },
+  {
+    "id": "todo-list",
+    "title": "Todo List",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
   },
   {
     "id": "token-bucket",
