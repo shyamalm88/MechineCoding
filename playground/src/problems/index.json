@@ -240,6 +240,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "mirrored-dom-tree",
+    "title": "Find Node in a Mirrored DOM Tree",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
     "id": "flatten",
     "title": "Flatten Arrays and Objects",
     "category": "JavaScript",
@@ -486,6 +492,12 @@
     "difficulty": "Hard"
   },
   {
+    "id": "render-dom",
+    "title": "renderDom: Virtual Node to DOM",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
     "id": "rest-vs-graphql",
     "title": "REST vs GraphQL",
     "category": "Web Fundamentals",
@@ -681,6 +693,12 @@
     "id": "websockets-sse-polling",
     "title": "WebSockets vs SSE vs Long Polling",
     "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "chat-ui",
+    "title": "WhatsApp-style Chat UI",
+    "category": "Machine Coding",
     "difficulty": "Medium"
   },
   {

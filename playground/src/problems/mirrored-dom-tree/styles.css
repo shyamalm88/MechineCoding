@@ -1,0 +1,8 @@
+.mt { font-size: 14px; color: #1f2430; }
+.mt-hint { color: #666; font-size: 13px; }
+.mt-pair { display: flex; gap: 28px; }
+.mt-tree { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+.mt-node { border: 1px solid #d8dbe2; border-radius: 7px; padding: 6px 9px; background: #fff; cursor: pointer; }
+.mt-row { display: flex; gap: 8px; margin-top: 7px; }
+.mt-hit { background: #fde68a; border-color: #f59e0b; font-weight: 700; }
+.mt-out { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; margin-top: 14px; }
