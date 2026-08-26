@@ -1,0 +1,14 @@
+[
+  {
+    "id": "star-rating",
+    "title": "Star Rating",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "debounce",
+    "title": "Debounce",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  }
+]
