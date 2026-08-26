@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontend Interview Hub</title>
+<style>
+  :root{
+    --bg:#FBF3EA; --card:#FFFFFF; --panel:#FBEEE1; --line:#E9D8C4;
+    --accent:#C0602E; --accent-soft:#F3C7A8;
+    --text:#2B241E; --text-muted:#6B6058; --text-faint:#9B8F84;
+    --easy:#2E8B57; --easy-bg:#DCF3E4;
+    --medium:#B8860B; --medium-bg:#FBEBC5;
+    --hard:#C0392B; --hard-bg:#FBDCD8;
+    --free-bg:#DCF3E4; --free-text:#227A4B;
+    --mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+    --serif:"Newsreader","Georgia",serif;
+    --sans:"Inter","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 24px 120px;}
+
+  /* ---------- top nav ---------- */
+  .top-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:44px;}
+  .brand{font-family:var(--serif);font-weight:700;font-size:20px;}
+  .brand span{color:var(--accent);}
+  .nav-tabs{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);padding:5px;border-radius:12px;}
+  .nav-tab{
+    font-family:var(--sans);font-weight:600;font-size:14px;
+    padding:9px 18px;border-radius:8px;border:none;background:transparent;
+    color:var(--text-muted);cursor:pointer;display:flex;align-items:center;gap:7px;
+  }
+  .nav-tab.active{background:var(--accent);color:#fff;}
+  .nav-tab .badge-soon{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;
+    background:var(--accent-soft);color:var(--accent);padding:1px 6px;border-radius:999px;
+  }
+  .nav-tab.active .badge-soon{background:rgba(255,255,255,.25);color:#fff;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---------- roadmap ---------- */
+  .hero{margin-bottom:48px;max-width:720px;}
+  .hero .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px;}
+  .hero h1{font-family:var(--serif);font-weight:600;font-size:40px;line-height:1.1;margin:0 0 16px;letter-spacing:-0.01em;}
+  .hero p{font-size:16px;line-height:1.6;color:var(--text-muted);margin:0;}
+
+  .timeline{position:relative;}
+  .stage{position:relative;display:grid;grid-template-columns:56px 1fr;gap:0;margin-bottom:28px;}
+  .stage .rail{position:relative;display:flex;justify-content:center;}
+  .stage .rail::before{content:"";position:absolute;top:0;bottom:-28px;width:1px;background:var(--line);}
+  .stage:last-child .rail::before{display:none;}
+  .node{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:600;font-size:15px;z-index:1;flex-shrink:0;}
+  .node.optional{background:var(--card);border:2px solid var(--accent);color:var(--accent);}
+  .content{min-width:0;}
+  .rm-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 28px;}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+  .card-head-left{display:flex;gap:16px;align-items:flex-start;}
+  .icon{width:44px;height:44px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;font-size:20px;}
+  .titles h2{margin:0 0 4px;font-size:21px;font-weight:700;display:flex;align-items:center;gap:10px;}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;background:var(--accent-soft);color:var(--accent);padding:3px 9px;border-radius:999px;font-weight:700;}
+  .tag.optional{background:transparent;border:1px solid var(--line);color:var(--text-faint);}
+  .titles p{margin:0;color:var(--text-muted);font-size:14.5px;}
+  .meta{text-align:right;font-family:var(--mono);font-size:12px;color:var(--text-faint);white-space:nowrap;padding-top:4px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-top:none;border-radius:0 0 16px 16px;margin-top:-1px;padding:26px 28px 22px;}
+  .why{font-size:14.5px;line-height:1.6;color:var(--text);margin-bottom:24px;}
+  .why b{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--accent);font-weight:700;margin-right:2px;}
+  .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 40px;}
+  .group{padding:14px 0;}
+  .group h3{font-family:var(--mono);font-size:11px;letter-spacing:.09em;color:var(--accent);text-transform:uppercase;margin:0 0 12px;font-weight:700;}
+  .group ul{margin:0;padding:0;list-style:none;}
+  .group li{font-size:14.5px;color:var(--text);padding:6px 0;}
+  .divider{grid-column:1/-1;height:1px;background:var(--line);margin:2px 0 4px;}
+  .actions{display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:18px;border-top:1px solid var(--line);flex-wrap:wrap;}
+  .btn{font-family:var(--sans);font-weight:600;font-size:14px;padding:11px 18px;border-radius:9px;border:1px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-ghost{background:transparent;border:1px solid var(--accent-soft);color:var(--accent);}
+  .soon{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--text-faint);text-transform:uppercase;}
+
+  /* ---------- practice questions ---------- */
+  .q-head h1{font-family:var(--serif);font-weight:700;font-size:34px;margin:0 0 8px;letter-spacing:-0.01em;}
+  .q-sub{color:var(--text-muted);font-size:15px;margin:0 0 28px;}
+  .q-tabs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+  .q-tab{font-family:var(--sans);font-weight:600;font-size:14px;padding:9px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px;}
+  .q-tab .count{font-family:var(--mono);font-size:11.5px;color:var(--text-faint);background:var(--bg);padding:1px 7px;border-radius:999px;}
+  .q-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .q-tab.active .count{background:rgba(255,255,255,.25);color:#fff;}
+  .q-tab.locked{color:var(--text-faint);}
+  .q-controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:26px;align-items:center;}
+  .q-search{flex:1 1 280px;padding:11px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:14px;font-family:var(--sans);color:var(--text);outline:none;}
+  .q-search::placeholder{color:var(--text-faint);}
+  .level-group{display:flex;gap:8px;flex-wrap:wrap;}
+  .level-btn{font-family:var(--sans);font-weight:600;font-size:13.5px;padding:9px 15px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;}
+  .level-btn.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+  .company-btn{font-family:var(--sans);font-weight:600;font-size:13.5px;padding:9px 15px;border-radius:9px;border:1px solid var(--accent-soft);background:var(--card);color:var(--accent);display:flex;align-items:center;gap:6px;cursor:default;}
+  .company-btn .premium{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--accent);}
+  .q-list{display:flex;flex-direction:column;gap:10px;}
+  .q-row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 22px;display:flex;align-items:center;gap:18px;}
+  .q-row.locked{background:#FCF4EA;}
+  .q-idx{font-family:var(--mono);color:var(--text-faint);font-size:14px;width:32px;flex-shrink:0;text-align:right;}
+  .q-main{flex:1;min-width:0;}
+  .q-title-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .q-title{font-weight:700;font-size:15.5px;color:var(--text);}
+  .qbadge{font-family:var(--sans);font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;}
+  .qbadge.free{background:var(--free-bg);color:var(--free-text);}
+  .qbadge.premium{font-family:var(--sans);font-size:12px;font-weight:500;color:var(--text-faint);display:flex;align-items:center;gap:4px;}
+  .q-companies{font-size:12.5px;color:var(--text-faint);margin-top:3px;}
+  .q-right{display:flex;align-items:center;gap:16px;flex-shrink:0;}
+  .q-cat{font-size:13px;color:var(--text-muted);white-space:nowrap;}
+  .q-diff{font-family:var(--sans);font-size:12px;font-weight:700;padding:3px 11px;border-radius:999px;white-space:nowrap;}
+  .q-diff.Easy{background:var(--easy-bg);color:var(--easy);}
+  .q-diff.Medium{background:var(--medium-bg);color:var(--medium);}
+  .q-diff.Hard{background:var(--hard-bg);color:var(--hard);}
+  .pager{display:flex;align-items:center;justify-content:space-between;margin-top:28px;flex-wrap:wrap;gap:14px;}
+  .pager-info{font-family:var(--mono);font-size:12.5px;color:var(--text-faint);}
+  .pager-btns{display:flex;gap:8px;align-items:center;}
+  .pbtn{font-family:var(--sans);font-weight:600;font-size:13.5px;padding:8px 13px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;min-width:38px;text-align:center;}
+  .pbtn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .pbtn:disabled{opacity:.4;cursor:default;}
+  .pbtn.dots{border:none;background:transparent;cursor:default;}
+  .q-empty{padding:60px 20px;text-align:center;color:var(--text-faint);font-size:14.5px;}
+
+  /* ---------- dsa placeholder ---------- */
+  .dsa-empty{
+    background:var(--card);border:1px dashed var(--line);border-radius:16px;
+    padding:80px 30px;text-align:center;
+  }
+  .dsa-empty .icon{
+    width:56px;height:56px;border-radius:12px;background:var(--accent-soft);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:24px;font-family:var(--mono);
+  }
+  .dsa-empty h2{font-family:var(--serif);font-size:24px;margin:0 0 8px;}
+  .dsa-empty p{color:var(--text-muted);font-size:14.5px;max-width:420px;margin:0 auto;}
+
+  /* ---------- DSA (dark stack theme) ---------- */
+  :root{
+    --dk-bg:#0A0E17; --dk-panel:#0D1420; --dk-card:#0F1622; --dk-line:rgba(150,170,210,0.14);
+    --dk-line-strong:rgba(150,170,210,0.26);
+    --dk-text:#D7DEEA; --dk-muted:#8B95A9; --dk-faint:#5D6478;
+    --dk-amber:#E0A458; --dk-green:#4ADE80; --dk-green-bg:rgba(74,222,128,0.10);
+    --dk-red:#F17171; --dk-red-bg:rgba(241,113,113,0.08);
+    --dk-blue:#7DBEEF;
+    --dk-e:#4ADE80; --dk-e-bg:rgba(74,222,128,0.14);
+    --dk-m:#E0A458; --dk-m-bg:rgba(224,164,88,0.14);
+    --dk-h:#F17171; --dk-h-bg:rgba(241,113,113,0.14);
+    --code-mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+  }
+  .dsa-shell{
+    background:var(--dk-bg); border-radius:20px; padding:36px 30px 46px;
+    color:var(--dk-text); font-family:var(--sans);
+  }
+  .dsa-top{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;margin-bottom:26px;}
+  .dsa-top h1{font-family:var(--serif);color:#fff;font-size:30px;margin:0 0 6px;}
+  .dsa-top p{color:var(--dk-muted);font-size:14px;margin:0;}
+  .dsa-progress{
+    font-family:var(--code-mono);font-size:12.5px;color:var(--dk-green);
+    background:var(--dk-green-bg);border:1px solid rgba(74,222,128,0.3);
+    padding:8px 14px;border-radius:8px;white-space:nowrap;
+  }
+  .dsa-frame{
+    background:var(--dk-panel);border:1px solid var(--dk-line);border-radius:12px;
+    margin-bottom:12px;overflow:hidden;
+  }
+  .dsa-frame.resolved{border-color:rgba(74,222,128,0.35);}
+  .dsa-frame-head{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    padding:16px 20px;cursor:pointer;
+  }
+  .dsa-frame-head:hover{background:rgba(255,255,255,0.02);}
+  .dsa-fh-left{display:flex;align-items:center;gap:10px;min-width:0;}
+  .dsa-caret{font-family:var(--code-mono);color:var(--dk-amber);font-size:13px;flex-shrink:0;transition:transform .15s;}
+  .dsa-frame.open .dsa-caret{transform:rotate(90deg);}
+  .dsa-push{font-family:var(--code-mono);font-size:14px;color:var(--dk-faint);}
+  .dsa-push b{color:var(--dk-text);font-weight:600;}
+  .dsa-push .fn{color:var(--dk-amber);}
+  .dsa-check{color:var(--dk-green);font-size:13px;font-family:var(--code-mono);}
+  .dsa-meta-inline{font-family:var(--code-mono);font-size:12px;color:var(--dk-faint);white-space:nowrap;}
+  .dsa-popall{
+    font-family:var(--code-mono);font-size:12px;color:var(--dk-faint);
+    background:transparent;border:1px solid var(--dk-line);border-radius:7px;
+    padding:6px 12px;cursor:pointer;
+  }
+  .dsa-popall:hover{border-color:var(--dk-line-strong);color:var(--dk-text);}
+  .dsa-body{padding:0 24px 26px;display:none;}
+  .dsa-frame.open .dsa-body{display:block;}
+  .dsa-comment{font-family:var(--code-mono);font-size:11.5px;color:var(--dk-faint);letter-spacing:.02em;margin:18px 0 10px;}
+  .dsa-comment:first-child{margin-top:6px;}
+  .dsa-patterns{list-style:none;margin:0;padding:0;}
+  .dsa-patterns li{
+    font-size:14px;color:var(--dk-text);padding:5px 0 5px 18px;position:relative;
+  }
+  .dsa-patterns li::before{content:"›";position:absolute;left:0;color:var(--dk-amber);}
+  .dsa-problems{display:flex;flex-direction:column;gap:2px;}
+  .dsa-problem{
+    display:flex;align-items:center;gap:12px;padding:9px 4px;border-radius:8px;
+    font-size:14.5px;color:var(--dk-text);
+  }
+  .dsa-problem:hover{background:rgba(255,255,255,0.03);}
+  .dsa-diff{
+    font-family:var(--code-mono);font-weight:700;font-size:11px;width:20px;height:20px;border-radius:5px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .dsa-diff.E{color:var(--dk-e);background:var(--dk-e-bg);}
+  .dsa-diff.M{color:var(--dk-m);background:var(--dk-m-bg);}
+  .dsa-diff.H{color:var(--dk-h);background:var(--dk-h-bg);}
+  .dsa-ptitle{flex:1;}
+  .dsa-premium{
+    font-family:var(--code-mono);font-size:10px;color:var(--dk-amber);
+    border:1px solid rgba(224,164,88,0.4);padding:1px 7px;border-radius:999px;
+  }
+  .dsa-arrow{color:var(--dk-faint);font-size:13px;}
+  @media (max-width:640px){
+    .dsa-shell{padding:26px 16px 34px;}
+    .dsa-frame-head{padding:14px 14px;}
+    .dsa-body{padding:0 14px 20px;}
+  }
+
+  @media (max-width:720px){
+    .rgrid{grid-template-columns:1fr;}
+    .card-head{flex-direction:column;}
+    .meta{text-align:left;}
+    .stage{grid-template-columns:40px 1fr;}
+    .node{width:34px;height:34px;font-size:13px;}
+    .hero h1{font-size:30px;}
+    .top-bar{flex-direction:column;align-items:flex-start;}
+  }
+  @media (max-width:640px){
+    .q-row{flex-wrap:wrap;}
+    .q-right{width:100%;justify-content:space-between;padding-top:8px;border-top:1px solid var(--line);margin-top:6px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top-bar">
+    <div class="brand">Frontend Interview <span>Hub</span></div>
+    <div class="nav-tabs" id="navTabs">
+      <button class="nav-tab active" data-view="roadmap">Roadmap</button>
+      <button class="nav-tab" data-view="questions">Practice Questions</button>
+      <button class="nav-tab" data-view="dsa">DSA</button>
+    </div>
+  </div>
+
+  <!-- ================= ROADMAP VIEW ================= -->
+  <section class="view active" id="view-roadmap">
+    <div class="hero">
+      <div class="eyebrow">Interview Prep · Frontend Track</div>
+      <h1>The Frontend Engineer Roadmap</h1>
+      <p>Seven stages, ordered the way interview loops actually run — from the fundamentals every round assumes you own, through the framework and system-design rounds that decide seniority.</p>
+    </div>
+
+    <div class="timeline">
+
+      <!-- 1 HTML & CSS -->
+      <div class="stage">
+        <div class="rail"><div class="node">1</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon">▤</div>
+                <div class="titles">
+                  <h2>HTML &amp; CSS <span class="tag">CORE</span></h2>
+                  <p>The foundation every UI round assumes you own.</p>
+                </div>
+              </div>
+              <div class="meta">2 weeks</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> Machine-coding and pixel-perfect rounds start here. Accessibility and layout gaps are the fastest way to lose an otherwise strong interview.</div>
+            <div class="rgrid">
+              <div class="group"><h3>Semantic HTML</h3><ul>
+                <li>Document structure &amp; sectioning elements</li>
+                <li>Forms, inputs &amp; native validation</li>
+                <li>Tables, lists, media (img/picture/video)</li>
+                <li>Metadata, links &amp; the &lt;head&gt;</li>
+              </ul></div>
+              <div class="group"><h3>Accessibility (A11y)</h3><ul>
+                <li>ARIA roles, states &amp; labels</li>
+                <li>Keyboard navigation &amp; focus management</li>
+                <li>Color contrast &amp; readable typography</li>
+                <li>Screen-reader mental model</li>
+              </ul></div>
+              <div class="group"><h3>CSS Core</h3><ul>
+                <li>Cascade, specificity &amp; inheritance</li>
+                <li>Box model &amp; units (rem/em/%/vh/ch)</li>
+                <li>Selectors, combinators, :is()/:where()/:has()</li>
+                <li>Stacking context &amp; z-index</li>
+              </ul></div>
+              <div class="group"><h3>Layout &amp; Responsive</h3><ul>
+                <li>Flexbox &amp; Grid</li>
+                <li>Positioning &amp; containing block</li>
+                <li>Media queries, mobile-first, clamp()</li>
+                <li>Container queries</li>
+              </ul></div>
+              <div class="group"><h3>Modern &amp; Visual</h3><ul>
+                <li>Custom properties (CSS variables)</li>
+                <li>Transitions, transforms, animations</li>
+                <li>Logical properties &amp; cascade layers</li>
+                <li>Reflow vs repaint, will-change</li>
+              </ul></div>
+              <div class="group"><h3>Interview Classics</h3><ul>
+                <li>Center a div — every technique</li>
+                <li>Truncate text / line clamp</li>
+                <li>Sticky header &amp; sticky footer</li>
+                <li>CSS-only tooltip, accordion, tabs</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" data-practice="">Practice this →</button>
+              <button class="btn btn-ghost">▶ Mock this round</button>
+              <span class="soon">Tutorials coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 JavaScript -->
+      <div class="stage">
+        <div class="rail"><div class="node">2</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon">{ }</div>
+                <div class="titles">
+                  <h2>JavaScript <span class="tag">CORE</span></h2>
+                  <p>The single highest-leverage topic on this track.</p>
+                </div>
+              </div>
+              <div class="meta">3–4 weeks</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> Most front-end rounds are really JavaScript rounds. Closures, the event loop, and polyfill machine-coding show up at nearly every product company.</div>
+            <div class="rgrid">
+              <div class="group"><h3>Language Core</h3><ul>
+                <li>var / let / const, hoisting, TDZ, scope</li>
+                <li>Types, coercion, == vs ===</li>
+                <li>Strict mode &amp; common gotchas</li>
+              </ul></div>
+              <div class="group"><h3>Functions &amp; this</h3><ul>
+                <li>Closures &amp; lexical scope</li>
+                <li>Higher-order functions &amp; currying</li>
+                <li>this binding — call / apply / bind</li>
+                <li>Arrow vs regular functions</li>
+              </ul></div>
+              <div class="group"><h3>Objects &amp; Prototypes</h3><ul>
+                <li>Prototype chain &amp; inheritance</li>
+                <li>new, Object.create, class syntax</li>
+                <li>Property descriptors &amp; immutability</li>
+              </ul></div>
+              <div class="group"><h3>Async JavaScript</h3><ul>
+                <li>Event loop, micro vs macro tasks</li>
+                <li>Promises &amp; async/await</li>
+                <li>Promise.all / race / allSettled / any</li>
+                <li>Error handling in async flows</li>
+              </ul></div>
+              <div class="group"><h3>ES6+ &amp; Data</h3><ul>
+                <li>Destructuring, spread/rest, modules</li>
+                <li>Optional chaining &amp; nullish coalescing</li>
+                <li>map / filter / reduce, Set, Map</li>
+                <li>Generators &amp; iterators</li>
+              </ul></div>
+              <div class="group"><h3>Machine-Coding Staples</h3><ul>
+                <li>debounce &amp; throttle</li>
+                <li>deepClone, memoize, curry</li>
+                <li>Polyfills: bind, Promise.all, map/reduce</li>
+                <li>EventEmitter, retry w/ backoff, LRU cache</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" data-practice="JavaScript">Practice this →</button>
+              <button class="btn btn-ghost">▶ Mock this round</button>
+              <span class="soon">Tutorials coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 Web Fundamentals -->
+      <div class="stage">
+        <div class="rail"><div class="node">3</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon">◎</div>
+                <div class="titles">
+                  <h2>Web Fundamentals <span class="tag">CORE</span></h2>
+                  <p>How the browser and network actually work.</p>
+                </div>
+              </div>
+              <div class="meta">2 weeks</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> Separates people who can wire up a component from people who can reason about performance, security and rendering under load — exactly the senior signal interviewers probe.</div>
+            <div class="rgrid">
+              <div class="group"><h3>How the Web Works</h3><ul>
+                <li>DNS, TCP/IP, HTTP/HTTPS</li>
+                <li>HTTP methods, status codes, headers</li>
+                <li>HTTP/1.1 vs 2 vs 3</li>
+              </ul></div>
+              <div class="group"><h3>Browser Internals</h3><ul>
+                <li>Critical rendering path</li>
+                <li>Parse → style → layout → paint → composite</li>
+                <li>DOM / CSSOM, reflow &amp; repaint</li>
+              </ul></div>
+              <div class="group"><h3>Networking &amp; Data</h3><ul>
+                <li>REST &amp; GraphQL basics</li>
+                <li>WebSockets, SSE, long polling</li>
+                <li>CORS &amp; caching (Cache-Control, ETag, CDN)</li>
+              </ul></div>
+              <div class="group"><h3>Security</h3><ul>
+                <li>XSS, CSRF, CSP, clickjacking</li>
+                <li>Cookies: HttpOnly / SameSite / Secure</li>
+                <li>Auth: sessions, JWT, OAuth basics</li>
+              </ul></div>
+              <div class="group"><h3>Performance</h3><ul>
+                <li>Core Web Vitals (LCP / CLS / INP)</li>
+                <li>Code splitting, tree shaking, bundling</li>
+                <li>Lazy loading, prefetch/preload, images</li>
+              </ul></div>
+              <div class="group"><h3>Storage &amp; Rendering</h3><ul>
+                <li>localStorage / sessionStorage / IndexedDB</li>
+                <li>Service Workers &amp; PWA basics</li>
+                <li>CSR vs SSR vs SSG vs ISR, hydration</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" data-practice="Web Fundamentals">Practice this →</button>
+              <button class="btn btn-ghost">▶ Mock this round</button>
+              <span class="soon">Tutorials coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 React.js -->
+      <div class="stage">
+        <div class="rail"><div class="node">4</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon">⚛</div>
+                <div class="titles">
+                  <h2>React.js <span class="tag">CORE</span></h2>
+                  <p>The framework round — Angular/Vue work, but React is the default ask.</p>
+                </div>
+              </div>
+              <div class="meta">2–3 weeks</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> Product companies expect fluent hooks and the ability to reason about render behavior. This is the conceptual round; building components under time pressure is its own stage.</div>
+            <div class="rgrid">
+              <div class="group"><h3>Core Model</h3><ul>
+                <li>JSX, components, props, state</li>
+                <li>Virtual DOM &amp; reconciliation</li>
+                <li>Keys, lists &amp; rendering behavior</li>
+              </ul></div>
+              <div class="group"><h3>Hooks</h3><ul>
+                <li>useState, useEffect (deps &amp; cleanup)</li>
+                <li>useRef, useMemo, useCallback</li>
+                <li>useContext, useReducer, custom hooks</li>
+                <li>Rules of hooks</li>
+              </ul></div>
+              <div class="group"><h3>Patterns</h3><ul>
+                <li>Composition &amp; compound components</li>
+                <li>Controlled vs uncontrolled</li>
+                <li>HOCs, render props, lifting state</li>
+                <li>Error boundaries, Suspense</li>
+              </ul></div>
+              <div class="group"><h3>State &amp; Data</h3><ul>
+                <li>Context vs Redux Toolkit vs Zustand</li>
+                <li>Server state: React Query / SWR</li>
+                <li>Loading / error / empty states</li>
+              </ul></div>
+              <div class="group"><h3>Performance</h3><ul>
+                <li>memo, useMemo, useCallback — when</li>
+                <li>Avoiding re-renders, key stability</li>
+                <li>Code splitting &amp; virtualization</li>
+                <li>React Profiler</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" data-practice="React">Practice this →</button>
+              <button class="btn btn-ghost">▶ Mock this round</button>
+              <span class="soon">Tutorials coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 Machine Coding -->
+      <div class="stage">
+        <div class="rail"><div class="node">5</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon">⌘</div>
+                <div class="titles">
+                  <h2>Machine Coding <span class="tag">CORE</span></h2>
+                  <p>Build a working component from scratch, under the clock.</p>
+                </div>
+              </div>
+              <div class="meta">2–3 weeks</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> The machine-coding round is where React knowledge becomes a hire signal. Interviewers watch you build a real, interactive component in 45–60 minutes — state modeling, edge cases, accessibility and clean structure all count.</div>
+            <div class="rgrid">
+              <div class="group"><h3>How the Round Works</h3><ul>
+                <li>Clarify requirements &amp; scope first</li>
+                <li>Model state before writing JSX</li>
+                <li>Handle loading / empty / error states</li>
+                <li>Keyboard &amp; accessibility basics</li>
+              </ul></div>
+              <div class="group"><h3>UI Components</h3><ul>
+                <li>Star rating, tabs, accordion</li>
+                <li>Modal / dialog, tooltip, carousel</li>
+                <li>OTP input, progress bar</li>
+              </ul></div>
+              <div class="group"><h3>List &amp; Data Patterns</h3><ul>
+                <li>Autocomplete / typeahead (with debounce)</li>
+                <li>Infinite scroll &amp; pagination</li>
+                <li>Nested comments, todo list</li>
+                <li>Data table with sort &amp; filter</li>
+              </ul></div>
+              <div class="group"><h3>Games &amp; Stateful Widgets</h3><ul>
+                <li>Tic-tac-toe, memory game</li>
+                <li>Stopwatch / timer</li>
+                <li>Traffic-light state machine</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" data-practice="Machine Coding">Practice this →</button>
+              <button class="btn btn-ghost">▶ Mock this round</button>
+              <span class="soon">Tutorials coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DSA -->
+      <div class="stage">
+        <div class="rail"><div class="node optional">◇</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon" style="font-family:var(--mono);font-size:12px;">01<br>10</div>
+                <div class="titles">
+                  <h2>DSA <span class="tag optional">OPTIONAL</span></h2>
+                  <p>Optional at some companies — basic problem solving is not.</p>
+                </div>
+              </div>
+              <div class="meta">2–3 weeks (parallel)</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> Many front-end loops skip heavy DSA, but a coding screen with arrays, strings, hashing and recursion is common. Learn the front-end-flavored patterns, not competitive-programming depth.</div>
+            <div class="rgrid">
+              <div class="group"><h3>Foundations</h3><ul>
+                <li>Big-O time &amp; space, amortized cost</li>
+                <li>Arrays &amp; strings</li>
+                <li>Hashing (maps &amp; sets)</li>
+              </ul></div>
+              <div class="group"><h3>Core Patterns</h3><ul>
+                <li>Two pointers &amp; sliding window</li>
+                <li>Prefix sums &amp; intervals</li>
+                <li>Recursion &amp; backtracking basics</li>
+              </ul></div>
+              <div class="group"><h3>Structures</h3><ul>
+                <li>Linked lists, stacks, queues</li>
+                <li>Trees &amp; basic graph traversal (BFS/DFS)</li>
+                <li>Binary search &amp; its variants</li>
+              </ul></div>
+              <div class="group"><h3>Front-End-Flavored</h3><ul>
+                <li>Flatten / unflatten nested JSON</li>
+                <li>DOM tree traversal</li>
+                <li>Group anagrams, top-k frequent</li>
+                <li>Debounce/throttle as logic problems</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-ghost" data-goto-dsa="">▶ Mock this round</button>
+              <span class="soon">Question bank coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6 Front-End System Design -->
+      <div class="stage">
+        <div class="rail"><div class="node">6</div></div>
+        <div class="content">
+          <div class="rm-card">
+            <div class="card-head">
+              <div class="card-head-left">
+                <div class="icon">▦</div>
+                <div class="titles">
+                  <h2>Front-End System Design <span class="tag">CORE</span></h2>
+                  <p>The round that separates SDE-1 from SDE-2.</p>
+                </div>
+              </div>
+              <div class="meta">2–3 weeks</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="why"><b>WHY IT MATTERS ·</b> For mid+ roles this is decisive. Interviewers want a structured approach to component APIs, rendering strategy, data flow and performance budgets — and the ability to drive the conversation.</div>
+            <div class="rgrid">
+              <div class="group"><h3>Approach &amp; Framework</h3><ul>
+                <li>RADIO: Requirements, Architecture, Data, Interface, Optimizations</li>
+                <li>Scoping &amp; clarifying requirements</li>
+                <li>Stating assumptions &amp; trade-offs</li>
+                <li>Driving a 45-minute round</li>
+              </ul></div>
+              <div class="group"><h3>Component &amp; App Design</h3><ul>
+                <li>Reusable component API design</li>
+                <li>Design systems &amp; theming</li>
+                <li>Rendering strategy (CSR/SSR/SSG)</li>
+                <li>State management architecture</li>
+              </ul></div>
+              <div class="group"><h3>Data &amp; Networking</h3><ul>
+                <li>REST vs GraphQL, pagination (offset/cursor)</li>
+                <li>Caching layers &amp; optimistic updates</li>
+                <li>Real-time: WebSocket / SSE / polling</li>
+                <li>Normalization</li>
+              </ul></div>
+              <div class="group"><h3>Performance &amp; Scale</h3><ul>
+                <li>Bundle &amp; asset strategy, CDN</li>
+                <li>Virtualization &amp; lazy loading</li>
+                <li>Perceived performance &amp; skeletons</li>
+                <li>Core Web Vitals budgets</li>
+              </ul></div>
+              <div class="group" style="grid-column:1/-1;"><h3>Classic Problems</h3><ul>
+                <li>Design a news feed / infinite feed</li>
+                <li>Autocomplete / typeahead</li>
+                <li>Chat / messenger UI</li>
+                <li>Photo feed (Instagram), collaborative docs</li>
+              </ul></div>
+              <div class="divider"></div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary" data-practice="System Design">Practice this →</button>
+              <button class="btn btn-ghost">▶ Mock this round</button>
+              <span class="soon">Tutorials coming soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================= PRACTICE QUESTIONS VIEW ================= -->
+  <section class="view" id="view-questions">
+    <div class="q-head">
+      <h1>Front-End Interview Questions</h1>
+      <p class="q-sub" id="subline">123 questions · 20 free to solve now · live editor with instant test feedback.</p>
+    </div>
+
+    <div class="q-tabs" id="qTabs"></div>
+
+    <div class="q-controls">
+      <input class="q-search" id="qSearch" type="text" placeholder="Search by title, topic, or company…">
+      <div class="level-group" id="qLevels"></div>
+      <div class="company-btn">🔒 Company <span class="premium">PREMIUM</span></div>
+    </div>
+
+    <div class="q-list" id="qList"></div>
+
+    <div class="pager">
+      <div class="pager-info" id="qPagerInfo"></div>
+      <div class="pager-btns" id="qPagerBtns"></div>
+    </div>
+  </section>
+
+  <!-- ================= DSA VIEW ================= -->
+  <section class="view" id="view-dsa">
+    <div class="dsa-shell">
+      <div class="dsa-top">
+        <div>
+          <h1>DSA Call Stack</h1>
+          <p>15 topics · 154 curated problems · patterns &amp; problems only.</p>
+        </div>
+      </div>
+      <div id="dsaFrames"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ---------------- shared nav ---------------- */
+const navTabs = document.querySelectorAll('.nav-tab');
+const views = { roadmap: document.getElementById('view-roadmap'),
+                questions: document.getElementById('view-questions'),
+                dsa: document.getElementById('view-dsa') };
+
+function showView(name){
+  navTabs.forEach(t=>t.classList.toggle('active', t.dataset.view===name));
+  Object.entries(views).forEach(([k,el])=>el.classList.toggle('active', k===name));
+  window.scrollTo({top:0, behavior:'instant'});
+}
+navTabs.forEach(t=>t.addEventListener('click', ()=>showView(t.dataset.view)));
+
+/* "Practice this" buttons -> jump to Practice Questions, pre-filtered */
+document.querySelectorAll('[data-practice]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const cat = btn.getAttribute('data-practice');
+    showView('questions');
+    if(cat){ state.cat = cat; state.page = 1; render(); }
+  });
+});
+document.querySelectorAll('[data-goto-dsa]').forEach(btn=>{
+  btn.addEventListener('click', ()=> showView('dsa'));
+});
+
+/* ---------------- practice questions data + logic ---------------- */
+const DATA = [
+["Implement debounce (rate-limit API calls)",1,"JavaScript","Medium",["Microsoft","Google","Atlassian"]],
+["Implement throttle",1,"JavaScript","Medium",["Microsoft"]],
+["Promise.all and Promise.allSettled implementation",1,"JavaScript","Medium",[]],
+["Polyfill of Promise",1,"JavaScript","Hard",["Microsoft"]],
+["Implement a curry utility",1,"JavaScript","Medium",[]],
+["How do closures work in JavaScript?",1,"JavaScript","Easy",[]],
+["Infinite currying — add(1)(2)(3)(4)",1,"JavaScript","Medium",[]],
+["Inheritance in JavaScript (ES5) and class vs prototypal",1,"JavaScript","Medium",[]],
+["Nested object to flat key-value pairs",1,"JavaScript","Medium",[]],
+["Flatten an array",1,"JavaScript","Easy",["Amazon","Adobe"]],
+["Call, apply, bind and their polyfills",1,"JavaScript","Medium",[]],
+["How JavaScript works: macrotask vs microtask queue",1,"JavaScript","Hard",["Paytm"]],
+["Deep clone an object",1,"JavaScript","Hard",["Atlassian","Flipkart"]],
+["Implement Promise.all",1,"JavaScript","Medium",["Amazon","Microsoft"]],
+["Implement Promise.allSettled",1,"JavaScript","Medium",["Microsoft","Uber"]],
+["Implement Function.prototype.call (myCall)",1,"JavaScript","Medium",["Amazon","Flipkart"]],
+["Implement Function.prototype.apply (myApply)",1,"JavaScript","Medium",["Amazon","Paytm"]],
+["Implement Function.prototype.bind (myBind)",1,"JavaScript","Medium",["Microsoft","Uber"]],
+["Array polyfills: map, filter, reduce, every",1,"JavaScript","Easy",[]],
+["Implement LRU Cache",1,"JavaScript","Hard",["Meta","Amazon","Google","Microsoft"]],
+["localStorage vs sessionStorage vs cookies",0,"Web Fundamentals","Easy",[]],
+["Run dependent jobs with a worker cap",0,"JavaScript","Hard",["Rippling","Uber","Amazon"]],
+["Why is React fast? What is the Virtual DOM?",0,"React","Easy",[]],
+["EventEmitter class with subscribe, emit, and unsubscribe",0,"JavaScript","Easy",["BookMyShow","DP World"]],
+["How to improve the performance of a web application?",0,"Web Fundamentals","Medium",[]],
+["Implement a reusable form field component with validation",0,"React","Medium",[]],
+["How to implement shouldComponentUpdate in a functional component?",0,"React","Medium",[]],
+["How to measure the performance of a website?",0,"Web Fundamentals","Medium",[]],
+["Process many items with only a few calls in flight",0,"JavaScript","Medium",["Uber","Swiggy"]],
+["Difference between useCallback and useMemo",0,"React","Medium",[]],
+["Search suggestion cache that drops the oldest unused query",0,"JavaScript","Medium",[]],
+["What is the Critical Rendering Path?",0,"Web Fundamentals","Medium",[]],
+["measureFunctionPerformance for sync and async functions",0,"JavaScript","Medium",["Atlassian"]],
+["What is an ETag?",0,"Web Fundamentals","Medium",[]],
+["What is React Fiber and why was it introduced?",0,"React","Hard",["Meta","Google","Amazon"]],
+["Analytics module: batch events with flush on size or time",0,"JavaScript","Hard",[]],
+["async vs defer on script tags",0,"Web Fundamentals","Easy",[]],
+["React 18 concurrent features — useTransition and useDeferredValue",0,"React","Medium",["Meta","Netflix","Airbnb"]],
+["Error boundaries — implementation and limitations",0,"React","Medium",["Meta","Microsoft","Stripe"]],
+["HTTP/1.1 vs HTTP/2 vs HTTP/3",0,"Web Fundamentals","Medium",[]],
+["The 'this' keyword and scope-based questions",0,"JavaScript","Medium",[]],
+["Undo/redo system for a text input editor",0,"JavaScript","Medium",[]],
+["CORS — deep dive",0,"Web Fundamentals","Hard",["Google","Stripe","Amazon"]],
+["React Portals — use cases and event bubbling",0,"React","Medium",["Meta","Amazon","Uber"]],
+["forwardRef and useImperativeHandle",0,"React","Medium",["Meta","Google","Microsoft"]],
+["Same-Origin Policy and origin definition",0,"Web Fundamentals","Medium",["Google","Meta","Microsoft"]],
+["Content Security Policy (CSP)",0,"Web Fundamentals","Hard",["Google","Stripe","Meta"]],
+["Context API performance pitfalls",0,"React","Hard",["Meta","Netflix","Shopify"]],
+["File/Folder explorer (tree view)",0,"Machine Coding","Medium",[]],
+["Deep equality check",0,"JavaScript","Medium",[]],
+["Google Calendar day view with overlapping events",0,"Machine Coding","Hard",[]],
+["React Strict Mode — why effects run twice",0,"React","Medium",["Meta","Vercel","Stripe"]],
+["Service Workers and caching strategies",0,"Web Fundamentals","Hard",["Google","Microsoft","Spotify"]],
+["Controlled vs uncontrolled components",0,"React","Easy",["Meta","Amazon","Google"]],
+["How does memory allocation work in JavaScript?",0,"JavaScript","Medium",[]],
+["Infinite scroll with list virtualization",0,"Machine Coding","Hard",[]],
+["WebSockets vs SSE vs long polling",0,"Web Fundamentals","Medium",["Meta","Slack","Uber"]],
+["Browser storage quotas and eviction",0,"Web Fundamentals","Medium",["Google","Apple","Meta"]],
+["Implement the pub/sub pattern",0,"JavaScript","Medium",[]],
+["Interactive diagonal grid highlight",0,"Machine Coding","Medium",[]],
+["Reconciliation, keys, and list rendering",0,"React","Medium",["Meta","Google","Microsoft"]],
+["DNS resolution and CDN edge caching",0,"Web Fundamentals","Medium",["Google","Cloudflare","Amazon"]],
+["Keep trying a flaky operation with growing pauses",0,"JavaScript","Medium",["Uber","Razorpay"]],
+["Nested checkboxes with parent/child sync",0,"Machine Coding","Medium",[]],
+["Suspense and React.lazy code splitting",0,"React","Medium",["Meta","Netflix","Airbnb"]],
+["React Server Components (RSC) overview",0,"React","Hard",["Meta","Vercel","Google"]],
+["Tabs component",0,"Machine Coding","Easy",[]],
+["TLS handshake and HTTPS",0,"Web Fundamentals","Medium",["Google","Stripe","Cloudflare"]],
+["Automatic batching in React 18",0,"React","Medium",["Meta","Microsoft"]],
+["Different ways to create objects in JavaScript",0,"JavaScript","Easy",[]],
+["REST vs GraphQL trade-offs",0,"Web Fundamentals","Medium",["Meta","Netflix","Shopify"]],
+["Tic-Tac-Toe (3x3 and N x N)",0,"Machine Coding","Medium",[]],
+["Pause an async flow for a given time",0,"JavaScript","Easy",["Freshworks"]],
+["Semantic HTML and web accessibility basics",0,"Web Fundamentals","Medium",["Google","Microsoft","Apple"]],
+["Todo list",0,"Machine Coding","Easy",[]],
+["useLayoutEffect vs useEffect",0,"React","Medium",["Meta","Google","Stripe"]],
+["Core Web Vitals — LCP, INP, CLS",0,"Web Fundamentals","Medium",["Google","Shopify","Meta"]],
+["Custom hooks — design patterns and rules",0,"React","Medium",["Meta","Airbnb","Amazon"]],
+["Polyfill for Array.prototype.reduce",0,"JavaScript","Easy",[]],
+["Typeahead / autocomplete component",0,"Machine Coding","Medium",[]],
+["How to do a deep copy? JSON.stringify/parse pitfalls",0,"JavaScript","Medium",[]],
+["React.memo, useMemo, and when optimization backfires",0,"React","Hard",["Meta","Google","Netflix"]],
+["Shadow DOM and Web Components",0,"Web Fundamentals","Hard",["Google","Salesforce","Adobe"]],
+["WhatsApp-style chat UI",0,"Machine Coding","Medium",[]],
+["Poll widget",0,"Machine Coding","Easy",[]],
+["Reflow, repaint, and compositing layers",0,"Web Fundamentals","Hard",["Google","Meta","Apple"]],
+["Connect 4 game",0,"Machine Coding","Medium",[]],
+["Object.create vs Object.assign",0,"JavaScript","Easy",[]],
+["Check if parentheses are balanced",0,"JavaScript","Easy",[]],
+["Popup / modal plugin",0,"Machine Coding","Hard",[]],
+["How to upload and download a file in the browser?",0,"JavaScript","Medium",[]],
+["Output question: object keys are coerced to strings",0,"JavaScript","Medium",[]],
+["Fire an event when an element is pushed to an array",0,"JavaScript","Medium",["PharmEasy"]],
+["Output question: Promise.all with a rejection",0,"JavaScript","Medium",[]],
+["Custom Array.sort using QuickSort",0,"JavaScript","Medium",["Freshworks"]],
+["Implement _.groupBy (Lodash)",0,"JavaScript","Medium",["Meesho"]],
+["Advanced debounce with leading and trailing options",0,"JavaScript","Hard",["MindTickle"]],
+["Memoize a function (numbers, strings, and object args)",0,"JavaScript","Medium",["Rippling","Forward Networks"]],
+["Implement pipe and compose",0,"JavaScript","Easy",["Tekion"]],
+["Polyfill for Promise.any",0,"JavaScript","Medium",[]],
+["Polyfill for Promise.race",0,"JavaScript","Medium",[]],
+["Cancelable promise",0,"JavaScript","Hard",["ThoughtSpot"]],
+["Run async jobs one after another and record every outcome",0,"JavaScript","Easy",["SumoLogic","Forward Networks"]],
+["Deep-diff two nested JSON objects",0,"JavaScript","Hard",["Google"]],
+["Custom JSON.stringify",0,"JavaScript","Medium",["ThoughtSpot","Multiplier"]],
+["Chainable calculator",0,"JavaScript","Easy",["Publicis Sapient","Meesho"]],
+["Polyfill for clearAllTimeout",0,"JavaScript","Medium",["Dream11"]],
+["renderDom: build DOM from a virtual node object",0,"Machine Coding","Medium",["Meta"]],
+["Find the matching element in a mirrored DOM tree",0,"Machine Coding","Medium",["Swiggy"]],
+["Token bucket rate limiter",0,"JavaScript","Hard",["Stripe","Google","Amazon","Uber"]],
+["Concurrent progress bars with a concurrency limit",0,"Machine Coding","Medium",[]],
+["Priority async task scheduler",0,"JavaScript","Hard",["Google","Amazon","Meta"]],
+["setCancellableInterval",0,"JavaScript","Medium",["Coinbase"]],
+["Star rating component",0,"Machine Coding","Easy",["Amazon","Flipkart","Google"]],
+["Stopwatch",0,"Machine Coding","Easy",[]],
+["Backbone Model",0,"JavaScript","Hard",["Meta","Coinbase","LinkedIn"]],
+["Image carousel with autoplay",0,"Machine Coding","Medium",["Netflix","Meta","Amazon"]],
+["Accessible modal with focus trap",0,"Machine Coding","Hard",["Meta","Google","Microsoft"]],
+["Accordion component",0,"Machine Coding","Easy",["Amazon","Shopify","Google"]],
+["Pagination component",0,"Machine Coding","Medium",["Google","Amazon","LinkedIn"]],
+["Multiselect dropdown with search",0,"Machine Coding","Hard",["Meta","Google","Uber"]],
+["Traffic light controller",0,"Machine Coding","Medium",["Google","Amazon","Microsoft"]],
+["Memory card matching game",0,"Machine Coding","Medium",["Meta","Google","Netflix"]]
+].map((r,i)=>({idx:i+1,title:r[0],free:!!r[1],category:r[2],difficulty:r[3],companies:r[4]}));
+
+const CATS = ["All","JavaScript","React","Web Fundamentals","Machine Coding","System Design"];
+const counts = {All: DATA.length};
+CATS.slice(1).forEach(c=>counts[c]=DATA.filter(d=>d.category===c).length);
+
+let state = {cat:"All", level:"All", q:"", page:1};
+const PAGE_SIZE = 15;
+
+function renderQTabs(){
+  const tabs = document.getElementById('qTabs');
+  tabs.innerHTML = '';
+  CATS.forEach(c=>{
+    const btn = document.createElement('button');
+    const locked = c === "System Design";
+    btn.className = 'q-tab' + (state.cat===c?' active':'') + (locked?' locked':'');
+    btn.innerHTML = locked
+      ? `${c} <span class="lock">🔒</span>`
+      : `${c} <span class="count">${counts[c]}</span>`;
+    btn.onclick = ()=>{ if(locked) return; state.cat=c; state.page=1; render(); };
+    tabs.appendChild(btn);
+  });
+}
+
+function renderQLevels(){
+  const levels = document.getElementById('qLevels');
+  levels.innerHTML='';
+  ["All Levels","Easy","Medium","Hard"].forEach(l=>{
+    const btn=document.createElement('button');
+    btn.className='level-btn'+((state.level===l||(l==="All Levels"&&state.level==="All"))?' active':'');
+    btn.textContent=l;
+    btn.onclick=()=>{ state.level = l==="All Levels"?"All":l; state.page=1; render(); };
+    levels.appendChild(btn);
+  });
+}
+
+function filtered(){
+  return DATA.filter(d=>{
+    if(state.cat!=="All" && d.category!==state.cat) return false;
+    if(state.level!=="All" && d.difficulty!==state.level) return false;
+    if(state.q){
+      const q=state.q.toLowerCase();
+      const hay=(d.title+' '+d.category+' '+d.companies.join(' ')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderQList(){
+  const list = document.getElementById('qList');
+  const items = filtered();
+  const totalPages = Math.max(1, Math.ceil(items.length/PAGE_SIZE));
+  if(state.page>totalPages) state.page = totalPages;
+  const start = (state.page-1)*PAGE_SIZE;
+  const pageItems = items.slice(start, start+PAGE_SIZE);
+
+  list.innerHTML='';
+  if(pageItems.length===0){
+    list.innerHTML = '<div class="q-empty">No questions match your filters.</div>';
+  } else {
+    pageItems.forEach(d=>{
+      const row = document.createElement('div');
+      row.className = 'q-row'+(d.free?'':' locked');
+      row.innerHTML = `
+        <div class="q-idx">${d.idx}</div>
+        <div class="q-main">
+          <div class="q-title-line">
+            <span class="q-title">${d.title}</span>
+            ${d.free ? '<span class="qbadge free">Free</span>' : '<span class="qbadge premium">🔒 Premium</span>'}
+          </div>
+          ${d.companies.length ? `<div class="q-companies">${d.companies.join(' · ')}</div>` : ''}
+        </div>
+        <div class="q-right">
+          <span class="q-cat">${d.category}</span>
+          <span class="q-diff ${d.difficulty}">${d.difficulty}</span>
+        </div>`;
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('qPagerInfo').textContent =
+    items.length ? `${start+1}–${Math.min(start+PAGE_SIZE, items.length)} of ${items.length}` : '0 of 0';
+
+  const pagerBtns = document.getElementById('qPagerBtns');
+  pagerBtns.innerHTML='';
+  const mkBtn=(label,page,opts={})=>{
+    const b=document.createElement('button');
+    b.className='pbtn'+(opts.active?' active':'')+(opts.dots?' dots':'');
+    b.textContent=label;
+    b.disabled=!!opts.disabled||!!opts.dots;
+    if(!opts.dots) b.onclick=()=>{ state.page=page; render(); };
+    return b;
+  };
+  pagerBtns.appendChild(mkBtn('← Prev', state.page-1, {disabled: state.page<=1}));
+  const pages = [];
+  for(let p=1;p<=totalPages;p++){
+    if(p===1||p===totalPages||Math.abs(p-state.page)<=1) pages.push(p);
+    else if(pages[pages.length-1]!== '...') pages.push('...');
+  }
+  pages.forEach(p=>{
+    if(p==='...') pagerBtns.appendChild(mkBtn('…',0,{dots:true}));
+    else pagerBtns.appendChild(mkBtn(p,p,{active:p===state.page}));
+  });
+  pagerBtns.appendChild(mkBtn('Next →', state.page+1, {disabled: state.page>=totalPages}));
+}
+
+function render(){
+  renderQTabs();
+  renderQLevels();
+  renderQList();
+}
+
+document.getElementById('qSearch').addEventListener('input', e=>{
+  state.q = e.target.value.trim();
+  state.page = 1;
+  render();
+});
+
+render();
+
+/* ---------------- DSA call-stack data + logic ---------------- */
+const DSA = [
+{id:"arrays", fn:"arrays()", title:"Arrays & Strings", count:13, patterns:5, pace:"wk 1–2", requires:[],
+ returns:"You read array problems as index-and-memory puzzles, not brute-force loops — and you know the cost of every operation before you write it.",
+ patternList:["Index manipulation & in-place swaps","Kadane's algorithm for subarray sums","Dutch National Flag partitioning","Interval merging on sorted ranges","Matrix traversal & in-place marking"],
+ problems:[["E","Two Sum"],["E","Contains Duplicate"],["E","Best Time to Buy and Sell Stock"],["E","Move Zeroes"],["E","Majority Element"],["M","Maximum Subarray"],["M","Product of Array Except Self"],["M","Sort Colors"],["M","Rotate Array"],["M","Merge Intervals"],["M","Insert Interval"],["M","Set Matrix Zeroes"],["M","Spiral Matrix"]],
+ resources:[["read","GFG — Array data structure guide"],["watch","Abdul Bari — algorithms & complexity fundamentals"],["sheet","Striver's A2Z DSA sheet — arrays section"],["ref","Big-O cheat sheet — know your costs"]]},
+
+{id:"hashing", fn:"hashing()", title:"Hashing & Prefix Sum", count:8, patterns:5, pace:"wk 2", requires:["arrays"],
+ returns:"You trade memory for time on instinct — frequency maps, seen-sets, and prefix sums turn O(n²) lookups into O(n) passes.",
+ patternList:["Frequency counting with hash maps","Seen-set for duplicates & complements","Prefix sum + HashMap for subarray sums","Bucket grouping (anagrams)","Running-balance tricks (contiguous arrays)"],
+ problems:[["E","Valid Anagram"],["E","Find All Numbers Disappeared in an Array"],["M","Group Anagrams"],["M","Top K Frequent Elements"],["M","Subarray Sum Equals K"],["M","Contiguous Array"],["M","Continuous Subarray Sum"],["M","Longest Consecutive Sequence"]],
+ resources:[["read","GFG — prefix sum, implementation & applications"],["visual","VisuAlgo — hash table visualization"],["watch","NeetCode — hashing & prefix-sum walkthroughs"]]},
+
+{id:"twoPointers", fn:"twoPointers()", title:"Two Pointers", count:8, patterns:5, pace:"wk 2–3", requires:["arrays"],
+ returns:"You stop writing nested loops over arrays. Converging, diverging, and fast-slow pointer pairs become your first instinct on sorted or paired data.",
+ patternList:["Converging pointers on sorted input","Partition-in-place (Dutch flag style)","Fast & slow pointer reads","Palindrome verification","K-sum reduction to 2-sum"],
+ problems:[["E","Valid Palindrome"],["E","Two Sum II — Input Array Is Sorted"],["E","Remove Duplicates from Sorted Array"],["E","Reverse String"],["E","Squares of a Sorted Array"],["M","3Sum"],["M","Container With Most Water"],["H","Trapping Rain Water"]],
+ resources:[["read","GFG — the two-pointers technique"],["watch","NeetCode — two pointers playlist walkthroughs"],["read","Mentoxis — pattern breakdowns from 50+ real interviews"]]},
+
+{id:"recursion", fn:"recursion()", title:"Recursion & Backtracking", count:13, patterns:5, pace:"wk 3–4", requires:["arrays"],
+ returns:"You can draw the recursion tree for anything — base case, subproblem, combine step. This is the single highest-leverage node in the graph: trees, DFS, and DP all compile down to it.",
+ patternList:["Base case + recursive case design","Recursion tree & stack-frame tracing","Choose → explore → un-choose (backtracking)","Subsets / permutations / combinations","Constraint pruning (N-Queens, Sudoku)"],
+ problems:[["E","Fibonacci Number"],["E","Climbing Stairs"],["M","Pow(x, n)"],["M","Generate Parentheses"],["M","Subsets"],["M","Subsets II"],["M","Permutations"],["M","Combination Sum"],["M","Letter Combinations of a Phone Number"],["M","Palindrome Partitioning"],["M","Word Search"],["H","N-Queens"],["H","Sudoku Solver"]],
+ resources:[["watch","Striver — recursion & backtracking series"],["watch","Aditya Verma — recursion made visual"],["read","GFG — recursion algorithms primer"]]},
+
+{id:"stack", fn:"stack()", title:"Stack", count:9, patterns:5, pace:"wk 3", requires:["arrays"],
+ returns:"LIFO becomes a tool, not a trivia answer — you recognize matching, parsing, and 'undo the last thing' problems on sight.",
+ patternList:["Matching & validation (parentheses)","LIFO state machines (undo, backspace)","Expression evaluation (RPN, calculators)","String decoding with nested structure","Two-stack constructions"],
+ problems:[["E","Valid Parentheses"],["E","Backspace String Compare"],["E","Implement Stack using Queues"],["M","Min Stack"],["M","Evaluate Reverse Polish Notation"],["M","Decode String"],["M","Asteroid Collision"],["M","Simplify Path"],["H","Basic Calculator"]],
+ resources:[["read","GFG — stack data structure"],["visual","VisuAlgo — stack operations"],["sheet","Striver's A2Z sheet — stacks & queues"]]},
+
+{id:"slidingWindow", fn:"slidingWindow()", title:"Sliding Window", count:7, patterns:5, pace:"wk 3–4", requires:["arrays","twoPointers"],
+ returns:"Contiguous subarray/substring problems collapse into one template: expand right, shrink left while invalid, record the answer.",
+ patternList:["Fixed-size windows","Variable-size windows with validity condition","Window + frequency map","'At most K' → count via subtraction","Minimum-length windows (shrink-to-fit)"],
+ problems:[["M","Longest Substring Without Repeating Characters"],["M","Longest Repeating Character Replacement"],["M","Permutation in String"],["M","Max Consecutive Ones III"],["M","Fruit Into Baskets"],["H","Minimum Window Substring"],["H","Sliding Window Maximum"]],
+ resources:[["read","GFG — the window sliding technique"],["watch","NeetCode — sliding window walkthroughs"],["read","Mentoxis — high-frequency window patterns"]]},
+
+{id:"binarySearch", fn:"binarySearch()", title:"Binary Search", count:8, patterns:5, pace:"wk 4", requires:["arrays"],
+ returns:"You search answer-spaces, not just arrays — monotonic predicates, rotated arrays, and 'minimize the maximum' all become binary search.",
+ patternList:["Classic bounds (lower/upper)","Rotated sorted arrays","Search on the answer (Koko, ship capacity)","2D matrix as virtual 1D","Peak & local-extrema arguments"],
+ problems:[["E","Binary Search"],["M","Search a 2D Matrix"],["M","Find Minimum in Rotated Sorted Array"],["M","Search in Rotated Sorted Array"],["M","Find Peak Element"],["M","Koko Eating Bananas"],["M","Capacity To Ship Packages Within D Days"],["H","Median of Two Sorted Arrays"]],
+ resources:[["read","GFG — binary search"],["watch","Abdul Bari — binary search theory, done right"],["sheet","Striver's A2Z sheet — binary search section"]]},
+
+{id:"linkedList", fn:"linkedList()", title:"Linked List", count:11, patterns:5, pace:"wk 4–5", requires:["recursion"],
+ returns:"Pointer surgery stops being scary. You manipulate next-pointers with a dummy node and a clear invariant — iteratively and recursively.",
+ patternList:["Dummy node & pointer rewiring","Fast & slow pointers (cycle, midpoint)","Reversal — iterative and recursive","Merge & reorder patterns","Deep copy with random pointers"],
+ problems:[["E","Reverse Linked List"],["E","Middle of the Linked List"],["E","Linked List Cycle"],["E","Merge Two Sorted Lists"],["E","Palindrome Linked List"],["M","Linked List Cycle II"],["M","Remove Nth Node From End of List"],["M","Reorder List"],["M","Add Two Numbers"],["M","Copy List with Random Pointer"],["H","Reverse Nodes in k-Group"]],
+ resources:[["watch","mycodeschool — pointers & linked lists, the classic"],["read","GFG — linked list data structure"],["visual","VisuAlgo — linked list operations"]]},
+
+{id:"monotonicStack", fn:"monotonicStack()", title:"Monotonic Stack", count:8, patterns:5, pace:"wk 5", requires:["stack"],
+ returns:"You maintain a stack that stays sorted, so each element is pushed and popped exactly once — 'next greater/smaller' families drop from O(n²) to O(n).",
+ patternList:["Next greater / smaller element","Monotonic decreasing stack for spans","Histogram & rectangle extremes","Contribution technique (subarray minimums)","Digit removal for monotone results"],
+ problems:[["E","Next Greater Element I"],["M","Daily Temperatures"],["M","Next Greater Element II"],["M","Online Stock Span"],["M","Remove K Digits"],["M","Sum of Subarray Minimums"],["H","Largest Rectangle in Histogram"],["H","Trapping Rain Water"]],
+ resources:[["practice","LeetCode — monotonic stack problem tag"],["watch","Striver — stack series incl. monotonic patterns"],["read","Mentoxis — why interviewers love this pattern"]]},
+
+{id:"queue", fn:"queue()", title:"Queue & Deque", count:8, patterns:5, pace:"wk 5", requires:["linkedList"],
+ returns:"FIFO discipline plus the deque upgrade — you model waiting lines, circular buffers, and sliding extremes without fear. BFS depends on this frame.",
+ patternList:["FIFO simulation & recent-calls","Circular buffer implementation","Deque as sliding-window extrema structure","Two-queue / two-stack conversions","Order-reversal with a queue"],
+ problems:[["E","Implement Queue using Stacks"],["E","Number of Recent Calls"],["E","Time Needed to Buy Tickets"],["M","Design Circular Queue"],["M","Reveal Cards In Increasing Order"],["M","Design Circular Deque"],["M","Rotting Oranges"],["H","Sliding Window Maximum"]],
+ resources:[["read","GFG — queue data structure"],["visual","VisuAlgo — queue & deque operations"],["sheet","Striver's A2Z sheet — stacks & queues"]]},
+
+{id:"trees", fn:"trees()", title:"Binary Trees & BST", count:15, patterns:5, pace:"wk 5–7", requires:["recursion","linkedList"],
+ returns:"Every tree problem becomes one recursive decision: what does a node do for its parent? You stop memorizing traversals and start deriving them.",
+ patternList:["Pre/in/post-order — recursive & iterative","Subtree property → return value design","BST invariant exploitation","LCA via post-order returns","Serialize/deserialize & reconstruction"],
+ problems:[["E","Maximum Depth of Binary Tree"],["E","Invert Binary Tree"],["E","Same Tree"],["E","Symmetric Tree"],["E","Balanced Binary Tree"],["E","Diameter of Binary Tree"],["E","Path Sum"],["M","Path Sum II"],["M","Validate Binary Search Tree"],["M","Kth Smallest Element in a BST"],["M","Lowest Common Ancestor of a Binary Tree"],["M","Binary Tree Level Order Traversal"],["M","Construct Binary Tree from Preorder and Inorder Traversal"],["H","Binary Tree Maximum Path Sum"],["H","Serialize and Deserialize Binary Tree"]],
+ resources:[["visual","VisuAlgo — BST & traversals, animated"],["read","GFG — binary tree data structure"],["watch","Striver — binary tree series"],["watch","NeetCode — tree walkthroughs"]]},
+
+{id:"dfs", fn:"dfs()", title:"DFS", count:9, patterns:5, pace:"wk 7", requires:["trees"],
+ returns:"Depth-first search becomes your default graph verb — flood fills, connected components, path existence, and memo-free exhaustive exploration.",
+ patternList:["Grid as implicit graph (4-directional)","Visited marking & component counting","Flood fill & boundary reasoning","Path enumeration on DAGs","Cycle detection with recursion-stack state"],
+ problems:[["E","Flood Fill"],["M","Number of Islands"],["M","Max Area of Island"],["M","Keys and Rooms"],["M","All Paths From Source to Target"],["M","Clone Graph"],["M","Surrounded Regions"],["M","Pacific Atlantic Water Flow"],["M","Course Schedule"]],
+ resources:[["read","GFG — depth-first search for a graph"],["visual","VisuAlgo — DFS on graphs, animated"],["watch","WilliamFiset — graph theory, beautifully animated"]]},
+
+{id:"bfs", fn:"bfs()", title:"BFS", count:10, patterns:5, pace:"wk 7–8", requires:["trees","queue"],
+ returns:"You own shortest-path-in-unweighted-graph. Level-by-level expansion stops being a trick and becomes a proof technique: first time seen = shortest distance.",
+ patternList:["Level-order with queue snapshots","Multi-source BFS (rotting oranges, 01-matrix)","Shortest path in unweighted graphs","State-space BFS (locks, ladders)","Bidirectional intuition for deep searches"],
+ problems:[["M","Binary Tree Level Order Traversal"],["M","Binary Tree Zigzag Level Order Traversal"],["E","Average of Levels in Binary Tree"],["E","Minimum Depth of Binary Tree"],["M","Binary Tree Right Side View"],["M","Rotting Oranges"],["M","01 Matrix"],["M","Shortest Path in Binary Matrix"],["M","Open the Lock"],["H","Word Ladder"]],
+ resources:[["read","GFG — breadth-first search for a graph"],["visual","VisuAlgo — BFS on graphs, animated"],["watch","WilliamFiset — BFS & shortest paths"]]},
+
+{id:"dp", fn:"dp()", title:"Dynamic Programming", count:15, patterns:6, pace:"wk 8–12", requires:["recursion","trees"],
+ returns:"The final boss de-mystified: overlapping subproblems + optimal substructure. You write the recursion first, memoize it, then flip it into tabulation — every time.",
+ patternList:["1D linear DP (robber, stairs)","Grid DP (paths, obstacle variants)","Knapsack family (subset sum, coin change)","String DP (LCS, edit distance)","Interval DP & game theory (burst balloons)","Revisit after graphs: DP on trees & DAGs"],
+ problems:[["E","Climbing Stairs"],["E","Min Cost Climbing Stairs"],["M","House Robber"],["M","House Robber II"],["M","Decode Ways"],["M","Word Break"],["M","Coin Change"],["M","Partition Equal Subset Sum"],["M","Maximum Product Subarray"],["M","Unique Paths"],["M","Minimum Path Sum"],["M","Longest Increasing Subsequence"],["M","Longest Common Subsequence"],["H","Edit Distance"],["H","Burst Balloons"]],
+ resources:[["watch","Aditya Verma — the DP series that makes it click"],["watch","Striver — DP series, pattern by pattern"],["read","GFG — dynamic programming hub"]]},
+
+{id:"graphs", fn:"graphs()", title:"Graphs", count:12, patterns:5, pace:"wk 8–10", requires:["dfs","bfs"],
+ returns:"Union-find, topological sort, and Dijkstra join your toolkit. You model vague word problems as vertices and edges within the first two minutes of reading.",
+ patternList:["Union-Find (disjoint set) with path compression","Topological sort — Kahn's & DFS-based","Connected components & cycle detection","Dijkstra & weighted shortest paths","Minimum spanning tree (Prim/Kruskal intuition)"],
+ problems:[["M","Number of Provinces"],["M","Redundant Connection"],["M","Number of Connected Components in an Undirected Graph",true],["M","Graph Valid Tree",true],["M","Accounts Merge"],["M","Course Schedule"],["M","Course Schedule II"],["M","Network Delay Time"],["M","Cheapest Flights Within K Stops"],["M","Min Cost to Connect All Points"],["H","Alien Dictionary",true],["H","Swim in Rising Water"]],
+ resources:[["watch","WilliamFiset — graph theory playlists"],["read","GFG — graph data structure & algorithms"],["read","CP-Algorithms — graph reference"],["sheet","NeetCode roadmap — graph ordering"]]},
+];
+
+let dsaOpen = null;
+
+function renderDsaFrame(topic, index){
+  const isOpen = dsaOpen === topic.id;
+
+  const frame = document.createElement('div');
+  frame.className = 'dsa-frame'+(isOpen?' open':'');
+
+  const head = document.createElement('div');
+  head.className = 'dsa-frame-head';
+  head.innerHTML = `
+    <div class="dsa-fh-left">
+      <span class="dsa-caret">▸</span>
+      <span class="dsa-push">push <b class="fn">${topic.fn}</b></span>
+    </div>
+    <span class="dsa-meta-inline">${topic.count} problems</span>
+  `;
+  head.onclick = ()=>{ dsaOpen = isOpen ? null : topic.id; renderDsa(); };
+  frame.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'dsa-body';
+
+  if(isOpen){
+    const patComment = document.createElement('div');
+    patComment.className = 'dsa-comment';
+    patComment.textContent = '// locals.patterns';
+    body.appendChild(patComment);
+    const patUl = document.createElement('ul');
+    patUl.className = 'dsa-patterns';
+    topic.patternList.forEach(p=>{
+      const li = document.createElement('li'); li.textContent = p; patUl.appendChild(li);
+    });
+    body.appendChild(patUl);
+
+    const probComment = document.createElement('div');
+    probComment.className = 'dsa-comment';
+    probComment.textContent = `// locals.problems (${topic.problems.length})`;
+    body.appendChild(probComment);
+    const probWrap = document.createElement('div');
+    probWrap.className = 'dsa-problems';
+    topic.problems.forEach(p=>{
+      const [diff, name, premium] = p;
+      const row = document.createElement('div');
+      row.className = 'dsa-problem';
+      row.innerHTML = `<span class="dsa-diff ${diff}">${diff}</span><span class="dsa-ptitle">${name}</span>${premium?'<span class="dsa-premium">premium</span>':''}<span class="dsa-arrow">↗</span>`;
+      probWrap.appendChild(row);
+    });
+    body.appendChild(probWrap);
+  }
+
+  frame.appendChild(body);
+  return frame;
+}
+
+function renderDsa(){
+  const container = document.getElementById('dsaFrames');
+  if(!container) return;
+  container.innerHTML = '';
+  DSA.forEach((topic, i)=> container.appendChild(renderDsaFrame(topic, i)));
+}
+
+renderDsa();
+</script>
+</body>
+</html>
