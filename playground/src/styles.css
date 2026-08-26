@@ -144,7 +144,18 @@ body {
 .workspace-stage { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
 
 /* ---- preview ---- */
-.preview-pane { padding: 28px; }
+/* A light "page" surface. Problems are authored as standalone pages against a
+   default white background, so rendering them on the dark shell left dark-on-
+   dark and light-on-light text (the Kanban board measured 1.23:1 contrast).
+   Giving the preview its own page-like surface renders every problem as its
+   author intended, and keeps the shell dark around it. */
+.preview-pane {
+  padding: 28px;
+  min-height: 100%;
+  background: #ffffff;
+  color: #1f2430;
+  color-scheme: light;
+}
 .preview-error {
   padding: 16px;
   border-radius: 8px;
