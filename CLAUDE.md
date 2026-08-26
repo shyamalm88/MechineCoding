@@ -29,6 +29,8 @@ npm run preview
 | `JavaScriptProblems/` | Polyfills, design patterns, async utilities, utility functions |
 | `reactHooks/` | 6 custom React hooks |
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
+| `playground/` | Vite + React app: problem library with live preview + read-only source |
+| `playground-build/` | Generated static build of `playground/` — not hand-edited |
 | `Theory/` | Markdown reference notes (browser internals, JS core, React advanced patterns, etc.) — source of truth for `theory-notes/` |
 | `system-design/` | Markdown architecture docs (frontend system design) — source of truth for `system-design-notes/` |
 | `tools/md-site/` | Reusable markdown-to-HTML-site generator (source-agnostic) |
@@ -54,6 +56,31 @@ Solution components must use a **default export** and a `.jsx` extension (Vite c
 
 ### JavaScript problems structure
 `promise-async-problems/` is subdivided by concern: `Core/` (building blocks like retry/timeout), `execution/` (parallel/series/limit runners), `orchastration/` (compose, waterfall, dependency graphs), `reliability/` (circuit breaker, backoff), `scheduler/` (priority queues, idle runners). Each file is standalone with no imports.
+
+### Playground app (`playground/`)
+
+A problem library where each entry shows a live preview beside its read-only
+source. Separate from `practice/`, which it supersedes for new problems. See
+`playground/README.md` for full usage.
+
+```bash
+cd playground && npm install
+npm run dev      # http://localhost:5173
+npm test         # unit tests via Node's built-in runner (no test framework dep)
+npm run build    # validates, then builds into ../playground-build/
+```
+
+Adding a problem requires **no component changes** — create
+`src/problems/<id>/{problem.md,Solution.jsx}` and add one entry to
+`src/problems/index.json`; `loader.js` finds it via `import.meta.glob`.
+(Contrast with `practice/`, where each new LLD needs a hand-written static
+import in `Detail.jsx`.)
+
+Problem stylesheets share the app's document, so **prefix problem CSS class
+names** to avoid collisions.
+
+`playground-build/` is generated output — never hand-edit it. Re-run
+`npm run build` and commit the result after changing any problem.
 
 ### System design docs
 All 25 docs in `system-design/` are canonical. Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.
