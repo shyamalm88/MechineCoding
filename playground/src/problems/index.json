@@ -1,5 +1,11 @@
 [
   {
+    "id": "analytics-batching",
+    "title": "Analytics Batching with Flush",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "array-polyfills",
     "title": "Array Polyfills: map, filter, reduce, every",
     "category": "JavaScript",
@@ -24,6 +30,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "backbone-model",
+    "title": "Backbone Model",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "storage-quotas",
     "title": "Browser Storage Quotas and Eviction",
     "category": "Web Fundamentals",
@@ -40,6 +52,12 @@
     "title": "call, apply, bind and Polyfills",
     "category": "JavaScript",
     "difficulty": "Medium"
+  },
+  {
+    "id": "chainable-calculator",
+    "title": "Chainable Calculator",
+    "category": "JavaScript",
+    "difficulty": "Easy"
   },
   {
     "id": "circle-collide",
@@ -120,6 +138,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "custom-json-stringify",
+    "title": "Custom JSON.stringify",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "data-table",
     "title": "Data Table",
     "category": "Machine Coding",
@@ -142,6 +166,12 @@
     "title": "Deep Equality Check",
     "category": "JavaScript",
     "difficulty": "Medium"
+  },
+  {
+    "id": "deep-diff",
+    "title": "Deep-Diff Two JSON Objects",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "dns-cdn-caching",
@@ -190,6 +220,12 @@
     "title": "File Explorer with Drag & Drop",
     "category": "Machine Coding",
     "difficulty": "Hard"
+  },
+  {
+    "id": "file-upload-download",
+    "title": "File Upload and Download",
+    "category": "JavaScript",
+    "difficulty": "Medium"
   },
   {
     "id": "flatten",
@@ -276,6 +312,12 @@
     "difficulty": "Hard"
   },
   {
+    "id": "measure-function-performance",
+    "title": "measureFunctionPerformance",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "measuring-web-performance",
     "title": "Measuring Website Performance",
     "category": "Web Fundamentals",
@@ -284,6 +326,12 @@
   {
     "id": "memoize",
     "title": "Memoize a Function",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "memory-management",
+    "title": "Memory Allocation and Garbage Collection",
     "category": "JavaScript",
     "difficulty": "Medium"
   },
@@ -312,6 +360,18 @@
     "difficulty": "Medium"
   },
   {
+    "id": "object-key-coercion",
+    "title": "Object Keys Are Coerced to Strings",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "observable-array",
+    "title": "Observe Pushes to an Array",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "otp-input",
     "title": "OTP Input",
     "category": "Machine Coding",
@@ -328,6 +388,18 @@
     "title": "Poll Widget",
     "category": "Machine Coding",
     "difficulty": "Easy"
+  },
+  {
+    "id": "clear-all-timeout",
+    "title": "Polyfill for clearAllTimeout",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "priority-scheduler",
+    "title": "Priority Async Task Scheduler",
+    "category": "JavaScript",
+    "difficulty": "Hard"
   },
   {
     "id": "promise-progress",
@@ -412,6 +484,12 @@
     "title": "Search Highlighter",
     "category": "Machine Coding",
     "difficulty": "Easy"
+  },
+  {
+    "id": "search-suggestion-cache",
+    "title": "Search Suggestion Cache",
+    "category": "JavaScript",
+    "difficulty": "Medium"
   },
   {
     "id": "seat-picker",
@@ -519,6 +597,12 @@
     "id": "typeahead",
     "title": "Typeahead / Autocomplete",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "undo-redo",
+    "title": "Undo/Redo System",
+    "category": "JavaScript",
     "difficulty": "Medium"
   },
   {
