@@ -63,6 +63,20 @@ test('ignores paths that are not two segments deep', () => {
   assert.deepEqual(Object.keys(grouped), ['x'])
 })
 
+test('ignores malformed paths with empty segments', () => {
+  const grouped = groupSourcesByProblem({
+    './x/': 'trailing slash',
+    './/file.js': 'doubled slash',
+    './x/Solution.jsx': 'kept',
+  })
+
+  assert.deepEqual(Object.keys(grouped), ['x'])
+  assert.deepEqual(
+    grouped.x.map((file) => file.name),
+    ['Solution.jsx'],
+  )
+})
+
 test('returns an empty object for an empty glob result', () => {
   assert.deepEqual(groupSourcesByProblem({}), {})
 })

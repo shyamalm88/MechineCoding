@@ -19,6 +19,11 @@ export function groupSourcesByProblem(globResult) {
     if (segments.length !== 3) continue
 
     const [, problemId, name] = segments
+    // A trailing or doubled slash (e.g. './x/' or './/file.js') still splits
+    // into 3 segments but leaves one of them empty; without this guard that
+    // would silently produce an empty-named file or an empty-string problem
+    // group instead of being ignored like any other malformed path.
+    if (!problemId || !name) continue
     if (!grouped[problemId]) grouped[problemId] = []
     grouped[problemId].push({ name, code })
   }

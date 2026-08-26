@@ -525,6 +525,20 @@ test('ignores paths that are not two segments deep', () => {
   assert.deepEqual(Object.keys(grouped), ['x'])
 })
 
+test('ignores malformed paths with empty segments', () => {
+  const grouped = groupSourcesByProblem({
+    './x/': 'trailing slash',
+    './/file.js': 'doubled slash',
+    './x/Solution.jsx': 'kept',
+  })
+
+  assert.deepEqual(Object.keys(grouped), ['x'])
+  assert.deepEqual(
+    grouped.x.map((file) => file.name),
+    ['Solution.jsx'],
+  )
+})
+
 test('returns an empty object for an empty glob result', () => {
   assert.deepEqual(groupSourcesByProblem({}), {})
 })
@@ -561,6 +575,12 @@ export function groupSourcesByProblem(globResult) {
     if (segments.length !== 3) continue
 
     const [, problemId, name] = segments
+    // A malformed path -- trailing slash ('./x/') or a doubled slash
+    // ('.//f.js') -- also splits into three segments, but with one of them
+    // empty. Left unguarded those produce an empty-named file or a group
+    // keyed by the empty string, silently.
+    if (!problemId || !name) continue
+
     if (!grouped[problemId]) grouped[problemId] = []
     grouped[problemId].push({ name, code })
   }
