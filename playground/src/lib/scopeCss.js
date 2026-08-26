@@ -98,17 +98,31 @@ function splitTopLevel(css) {
   return segments
 }
 
+/**
+ * Append the scope attribute to the LAST compound of a selector, producing the
+ * "self" form: an element that carries the attribute directly.
+ *
+ * A pseudo-element must remain last in a compound (`.a[attr]::before` is valid,
+ * `.a::before[attr]` is not), so the attribute is inserted before it.
+ */
+function selfForm(selector, scope) {
+  const pseudoElement = selector.search(/::/)
+  if (pseudoElement === -1) return `${selector}${scope}`
+  return `${selector.slice(0, pseudoElement)}${scope}${selector.slice(pseudoElement)}`
+}
+
 function scopeSelectorList(selectorList, scope) {
   return selectorList
     .split(',')
-    .map((selector) => {
+    .flatMap((selector) => {
       const trimmed = selector.trim()
-      if (!trimmed) return null
+      if (!trimmed) return []
       // Idempotent: re-scoping an already-scoped sheet is a no-op.
-      if (trimmed.startsWith(scope)) return trimmed
-      return `${scope} ${trimmed}`
+      if (trimmed.startsWith(scope) || trimmed.includes(scope)) return [trimmed]
+      // Two forms: descendant (normal preview content, and anything inside a
+      // tagged portal root) and self (the tagged portal root itself).
+      return [`${scope} ${trimmed}`, selfForm(trimmed, scope)]
     })
-    .filter(Boolean)
     .join(', ')
 }
 

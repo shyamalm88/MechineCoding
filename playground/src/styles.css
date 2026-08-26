@@ -165,6 +165,13 @@ body {
   background: #ffffff;
   color: #1f2430;
   color-scheme: light;
+  /* `contain: layout` makes this a containing block for fixed-position
+     descendants, so a problem's `position: fixed` toast or overlay fills the
+     PREVIEW rather than the whole viewport (and the app shell). Note this
+     cannot help portalled content, which renders into <body> and is not a
+     descendant at all -- that is handled by tagging portal roots in
+     PreviewPane. */
+  contain: layout;
 }
 .preview-error {
   padding: 16px;

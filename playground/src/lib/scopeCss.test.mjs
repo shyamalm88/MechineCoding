@@ -9,25 +9,34 @@ test('scopeAttribute builds the attribute selector for an id', () => {
 })
 
 test('prefixes a simple class rule', () => {
-  assert.equal(scopeCss('.board { color: red; }', 'x'), `${S('x')} .board { color: red; }`)
+  assert.equal(
+    scopeCss('.board { color: red; }', 'x'),
+    `${S('x')} .board, .board${S('x')} { color: red; }`,
+  )
 })
 
 test('prefixes every selector in a comma-separated list', () => {
   const out = scopeCss('.a, .b { color: red; }', 'x')
-  assert.equal(out, `${S('x')} .a, ${S('x')} .b { color: red; }`)
+  assert.equal(out, `${S('x')} .a, .a${S('x')}, ${S('x')} .b, .b${S('x')} { color: red; }`)
 })
 
 test('prefixes bare element selectors so they cannot leak to the app shell', () => {
-  assert.equal(scopeCss('button { border: 0; }', 'x'), `${S('x')} button { border: 0; }`)
+  assert.equal(
+    scopeCss('button { border: 0; }', 'x'),
+    `${S('x')} button, button${S('x')} { border: 0; }`,
+  )
 })
 
 test('prefixes a universal reset so it cannot restyle the whole page', () => {
-  assert.equal(scopeCss('* { margin: 0; }', 'x'), `${S('x')} * { margin: 0; }`)
+  assert.equal(scopeCss('* { margin: 0; }', 'x'), `${S('x')} *, *${S('x')} { margin: 0; }`)
 })
 
 test('keeps multiple rules independent', () => {
   const out = scopeCss('.a { color: red; }\n.b { color: blue; }', 'x')
-  assert.equal(out, `${S('x')} .a { color: red; }\n${S('x')} .b { color: blue; }`)
+  assert.equal(
+    out,
+    `${S('x')} .a, .a${S('x')} { color: red; }\n${S('x')} .b, .b${S('x')} { color: blue; }`,
+  )
 })
 
 test('does NOT prefix keyframe steps', () => {
@@ -72,7 +81,7 @@ test('recognises @keyframes even when a comment precedes it', () => {
 test('handles descendant and compound selectors', () => {
   assert.equal(
     scopeCss('.a .b > .c { color: red; }', 'x'),
-    `${S('x')} .a .b > .c { color: red; }`,
+    `${S('x')} .a .b > .c, .a .b > .c${S('x')} { color: red; }`,
   )
 })
 
@@ -87,6 +96,44 @@ test('returns empty string for empty or missing input', () => {
 })
 
 test('does not double-scope an already scoped selector', () => {
+  const once = scopeCss('.a { color: red; }', 'x')
+  assert.equal(scopeCss(once, 'x'), once)
+})
+
+// --- portal support ---------------------------------------------------------
+// Portalled content (createPortal → document.body) renders OUTSIDE the preview
+// pane, so a descendant-only scope never matches it. Each selector therefore
+// also gets a "self" form, matching an element that carries the scope
+// attribute directly -- which PreviewPane puts on portal roots.
+
+test('emits a self form so a tagged portal root matches', () => {
+  const out = scopeCss('.overlay { position: fixed; }', 'x')
+  assert.ok(out.includes(`${S('x')} .overlay`), 'descendant form present')
+  assert.ok(out.includes(`.overlay${S('x')}`), 'self form present')
+})
+
+test('self form works for bare element selectors', () => {
+  const out = scopeCss('button { border: 0; }', 'x')
+  assert.ok(out.includes(`button${S('x')}`), out)
+})
+
+test('self form places the attribute before a pseudo-element', () => {
+  const out = scopeCss('.a::before { content: ""; }', 'x')
+  assert.ok(out.includes(`.a${S('x')}::before`), out)
+  assert.ok(!out.includes(`.a::before${S('x')}`), 'attribute after ::before is invalid CSS')
+})
+
+test('self form keeps pseudo-classes attached to the last compound', () => {
+  const out = scopeCss('.close:hover { color: red; }', 'x')
+  assert.ok(out.includes(`.close:hover${S('x')}`), out)
+})
+
+test('self form appends to the LAST compound of a descendant selector', () => {
+  const out = scopeCss('.a .b { color: red; }', 'x')
+  assert.ok(out.includes(`.a .b${S('x')}`), out)
+})
+
+test('still idempotent with both forms', () => {
   const once = scopeCss('.a { color: red; }', 'x')
   assert.equal(scopeCss(once, 'x'), once)
 })
