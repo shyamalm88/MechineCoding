@@ -1,7 +1,15 @@
 # playground — code + preview reference app
 
-A browsable library of front-end interview problems. Each entry shows a live
-running preview beside its real source, syntax-highlighted.
+A browsable library of **119 front-end interview problems**. Each entry shows a
+live running preview beside its real source, syntax-highlighted — or, for
+conceptual questions, a full-width written answer.
+
+| Category | Count |
+|---|---|
+| Machine Coding | 43 |
+| JavaScript | 37 |
+| Web Fundamentals | 20 |
+| React | 19 |
 
 The preview renders the actual React component in the same bundle — no iframe,
 no second bundler — and the Code tab shows that same file via Vite's `?raw`
@@ -32,6 +40,10 @@ Re-run `npm run build` and commit the output after changing any problem.
    { "id": "<id>", "title": "...", "category": "...", "difficulty": "Easy" }
    ```
 3. Run `npm run validate` to confirm the registry and disk agree.
+
+**`Solution.jsx` is optional.** A folder with only `problem.md` renders as a
+description-only problem — no tabs, prose gets the full pane. That is the right
+shape for conceptual questions ("What is an ETag?") with nothing to run.
 
 No component edits are needed — `src/problems/loader.js` discovers folders via
 `import.meta.glob`.

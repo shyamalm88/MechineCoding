@@ -29,7 +29,7 @@ npm run preview
 | `JavaScriptProblems/` | Polyfills, design patterns, async utilities, utility functions |
 | `reactHooks/` | 6 custom React hooks |
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
-| `playground/` | Vite + React app: problem library with live preview + read-only source |
+| `playground/` | Vite + React app: 119-problem interview library, live preview + read-only source |
 | `playground-build/` | Generated static build of `playground/` — not hand-edited |
 | `Theory/` | Markdown reference notes (browser internals, JS core, React advanced patterns, etc.) — source of truth for `theory-notes/` |
 | `system-design/` | Markdown architecture docs (frontend system design) — source of truth for `system-design-notes/` |
@@ -73,6 +73,9 @@ npm run build    # validates, then builds into ../playground-build/
 Adding a problem requires **no component changes** — create
 `src/problems/<id>/{problem.md,Solution.jsx}` and add one entry to
 `src/problems/index.json`; `loader.js` finds it via `import.meta.glob`.
+`Solution.jsx` is optional: a folder with only `problem.md` renders as a
+description-only problem (no tabs), which is how conceptual questions are
+handled.
 (Contrast with `practice/`, where each new LLD needs a hand-written static
 import in `Detail.jsx`.)
 
