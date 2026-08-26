@@ -1,0 +1,44 @@
+.kanban {
+    display: flex;
+    gap: 16px;
+    padding: 20px;
+    font-family: system-ui, sans-serif;
+}
+
+.column {
+    background: #f3f4f6;
+    padding: 12px;
+    border-radius: 8px;
+    width: 260px;
+    min-height: 300px;
+}
+
+.column h3 {
+    margin-bottom: 10px;
+}
+
+.card {
+    background: white;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: grab;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card:active {
+    cursor: grabbing;
+}
+
+.delete {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+}
+
+.add {
+    width: 100%;
+    margin-top: 8px;
+}

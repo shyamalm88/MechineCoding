@@ -1,0 +1,59 @@
+.calendar-wrapper {
+    display: flex;
+    font-family: system-ui, sans-serif;
+}
+
+.time-column {
+    width: 60px;
+    padding-top: 20px;
+}
+
+.time-label {
+    height: 60px;
+    font-size: 12px;
+    color: #555;
+}
+
+.calendar {
+    position: relative;
+    height: 540px;
+    /* 9 hours × 60px */
+    width: 600px;
+    border-left: 1px solid #ccc;
+    background: #fafafa;
+}
+
+.hour-line {
+    position: relative;
+    height: 60px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.event {
+    position: absolute;
+    background: #3b82f6;
+    color: white;
+    padding: 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    box-sizing: border-box;
+}
+
+.now-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: red;
+    z-index: 10;
+}
+
+.now-dot {
+    position: absolute;
+    left: -6px;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    background: red;
+    border-radius: 50%;
+}

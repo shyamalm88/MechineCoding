@@ -1,14 +1,230 @@
 [
   {
+    "id": "calendar-day-view",
+    "title": "Calendar Day View",
+    "category": "Machine Coding",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "circle-collide",
+    "title": "Circle Collision Detection",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "progress-bars-iv",
+    "title": "Concurrent Progress Bars",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "connect-4",
+    "title": "Connect 4",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "data-table",
+    "title": "Data Table",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "debounce",
+    "title": "Debounce",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "drawing-board",
+    "title": "Drawing Board",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "file-explorer",
+    "title": "File Explorer",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "file-explorer-dnd",
+    "title": "File Explorer with Drag & Drop",
+    "category": "Machine Coding",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "grid-lights",
+    "title": "Grid Lights",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "grid-selection",
+    "title": "Grid Selection",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "holy-grail",
+    "title": "Holy Grail Layout",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "carousel",
+    "title": "Image Carousel",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "infinite-scroll",
+    "title": "Infinite Scroll",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "kanban-board",
+    "title": "Kanban Board",
+    "category": "Machine Coding",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "chess-board-knight-shortest-path",
+    "title": "Knight Shortest Path",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "modal",
+    "title": "Modal / Dialog",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "checkbox-hierarchy",
+    "title": "Nested Checkboxes",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "nested-comments",
+    "title": "Nested Comments",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "notification-system",
+    "title": "Notification System",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "otp-input",
+    "title": "OTP Input",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "poll-widget",
+    "title": "Poll Widget",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "promise-progress",
+    "title": "Promise Progress",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "chess-board-rook-shortest-path",
+    "title": "Rook Shortest Path",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "search-highlighter",
+    "title": "Search Highlighter",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "seat-picker",
+    "title": "Seat Picker",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "snake-ladder",
+    "title": "Snakes and Ladders",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
     "id": "star-rating",
     "title": "Star Rating",
     "category": "Machine Coding",
     "difficulty": "Easy"
   },
   {
-    "id": "debounce",
-    "title": "Debounce",
+    "id": "star-rating-lld",
+    "title": "Star Rating (LLD)",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "stepper-wizard",
+    "title": "Stepper Wizard",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "tabs",
+    "title": "Tabs",
+    "category": "Machine Coding",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "tic-tac-toe-dynamic",
+    "title": "Tic-Tac-Toe (N x N)",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "token-bucket",
+    "title": "Token Bucket Rate Limiter",
     "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "traffic-light",
+    "title": "Traffic Light Controller",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "transfer-list",
+    "title": "Transfer List",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "typeahead",
+    "title": "Typeahead / Autocomplete",
+    "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "virtual-list",
+    "title": "Virtual List",
+    "category": "Machine Coding",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "wordle",
+    "title": "Wordle",
+    "category": "Machine Coding",
     "difficulty": "Medium"
   }
 ]

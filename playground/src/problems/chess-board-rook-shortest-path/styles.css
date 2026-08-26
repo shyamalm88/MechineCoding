@@ -1,0 +1,54 @@
+.board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    width: 360px;
+    margin: 20px auto;
+}
+
+.cell {
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+/* Chessboard colors */
+.light {
+    background: #f0d9b5;
+}
+
+.dark {
+    background: #b58863;
+}
+
+/* Start / End */
+.start {
+    background: #22c55e !important;
+    color: white;
+}
+
+.end {
+    background: #ef4444 !important;
+    color: white;
+}
+
+/* Blocked cell */
+.blocked {
+    background: black !important;
+    color: white;
+}
+
+/* Path */
+.path {
+    background: #4ade80 !important;
+}
+
+/* Legend */
+.legend {
+    margin-top: 16px;
+    font-size: 14px;
+}

@@ -1,0 +1,23 @@
+.App {
+    font-family: sans-serif;
+    text-align: center;
+}
+
+.wrapper {
+    max-width: 400px;
+}
+
+.gridWrapper {
+    display: grid;
+    gap: 20px;
+}
+
+.gridItem {
+    display: flex;
+    width: 100px;
+    height: 100px;
+    border: 1px solid #ccc;
+    justify-content: center;
+    text-align: center;
+    align-items: center;
+}

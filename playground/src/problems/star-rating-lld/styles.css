@@ -1,0 +1,38 @@
+/* Container to align stars */
+.star-container {
+    display: flex;
+    gap: 4px;
+}
+
+/* Reset default button styles */
+button.star {
+    background-color: transparent;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    padding: 0;
+    font-size: 2rem;
+    /* Size of the star */
+    transition: transform 0.2s;
+    /* Nice pop effect */
+}
+
+/* Add a slight pop when clicking/hovering */
+button.star:active {
+    transform: scale(1.2);
+}
+
+/* The actual star character color */
+.star-icon {
+    transition: color 0.2s;
+}
+
+/* Default State (Grey/Empty) */
+.star.off .star-icon {
+    color: #e4e5e9;
+}
+
+/* Active State (Gold/Filled) */
+.star.on .star-icon {
+    color: #ffc107;
+}

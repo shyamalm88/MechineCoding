@@ -1,0 +1,55 @@
+.buttons{
+    gap: 10px;
+    display: flex
+}
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    z-index: 9999;
+    pointer-events: none;
+    /* optional */
+}
+
+.toast {
+    pointer-events: auto;
+
+    width: 280px;
+    max-width: 320px;
+
+    padding: 12px 14px;
+    border-radius: 6px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    font-size: 14px;
+    color: white;
+
+    box-sizing: border-box;
+}
+.toast.successBg {
+    background: #22c55e;
+}
+
+.toast.errorBg {
+    background: #ef4444;
+}
+
+.toast.infoBg {
+    background: #3b82f6;
+}
+
+.toast button {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
