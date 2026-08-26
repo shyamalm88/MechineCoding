@@ -1,5 +1,17 @@
 [
   {
+    "id": "array-polyfills",
+    "title": "Array Polyfills: map, filter, reduce, every",
+    "category": "JavaScript",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "async-utilities",
+    "title": "Async Utilities: sleep, retry, timeout, cancel",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "async-vs-defer",
     "title": "async vs defer",
     "category": "Web Fundamentals",
@@ -24,9 +36,27 @@
     "difficulty": "Hard"
   },
   {
+    "id": "call-apply-bind",
+    "title": "call, apply, bind and Polyfills",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "circle-collide",
     "title": "Circle Collision Detection",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "closures",
+    "title": "Closures",
+    "category": "JavaScript",
+    "difficulty": "Easy"
+  },
+  {
+    "id": "concurrency-limit",
+    "title": "Concurrency Limit and Task Pools",
+    "category": "JavaScript",
     "difficulty": "Medium"
   },
   {
@@ -78,6 +108,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "curry",
+    "title": "Currying and Infinite Currying",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "custom-hooks",
     "title": "Custom Hooks",
     "category": "React",
@@ -92,6 +128,18 @@
   {
     "id": "debounce",
     "title": "Debounce",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "deep-clone",
+    "title": "Deep Clone and JSON Pitfalls",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "deep-equal",
+    "title": "Deep Equality Check",
     "category": "JavaScript",
     "difficulty": "Medium"
   },
@@ -120,6 +168,18 @@
     "difficulty": "Medium"
   },
   {
+    "id": "event-loop",
+    "title": "Event Loop: Macrotasks vs Microtasks",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "event-emitter",
+    "title": "EventEmitter and Pub/Sub",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "file-explorer",
     "title": "File Explorer",
     "category": "Machine Coding",
@@ -130,6 +190,12 @@
     "title": "File Explorer with Drag & Drop",
     "category": "Machine Coding",
     "difficulty": "Hard"
+  },
+  {
+    "id": "flatten",
+    "title": "Flatten Arrays and Objects",
+    "category": "JavaScript",
+    "difficulty": "Medium"
   },
   {
     "id": "forwardref-imperativehandle",
@@ -168,6 +234,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "throttle",
+    "title": "Implement Throttle",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "web-performance-improvements",
     "title": "Improving Web App Performance",
     "category": "Web Fundamentals",
@@ -198,9 +270,21 @@
     "difficulty": "Easy"
   },
   {
+    "id": "lru-cache",
+    "title": "LRU Cache",
+    "category": "JavaScript",
+    "difficulty": "Hard"
+  },
+  {
     "id": "measuring-web-performance",
     "title": "Measuring Website Performance",
     "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "memoize",
+    "title": "Memoize a Function",
+    "category": "JavaScript",
     "difficulty": "Medium"
   },
   {
@@ -234,6 +318,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "functional-utils",
+    "title": "pipe, compose, groupBy, brackets, QuickSort",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
     "id": "poll-widget",
     "title": "Poll Widget",
     "category": "Machine Coding",
@@ -242,6 +332,18 @@
   {
     "id": "promise-progress",
     "title": "Promise Progress",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "promise-combinators",
+    "title": "Promise.all, allSettled, race, any",
+    "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "prototypes-inheritance",
+    "title": "Prototypes, Inheritance and Object Creation",
     "category": "JavaScript",
     "difficulty": "Medium"
   },
@@ -376,6 +478,12 @@
     "title": "Tabs",
     "category": "Machine Coding",
     "difficulty": "Easy"
+  },
+  {
+    "id": "this-keyword",
+    "title": "The this Keyword",
+    "category": "JavaScript",
+    "difficulty": "Medium"
   },
   {
     "id": "tic-tac-toe-dynamic",
