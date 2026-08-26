@@ -76,8 +76,11 @@ Adding a problem requires **no component changes** — create
 (Contrast with `practice/`, where each new LLD needs a hand-written static
 import in `Detail.jsx`.)
 
-Problem stylesheets share the app's document, so **prefix problem CSS class
-names** to avoid collisions.
+Problem stylesheets must **not** be imported by `Solution.jsx` — the platform
+reads each folder's `.css`, scopes every rule to `[data-problem="<id>"]`
+(`src/lib/scopeCss.js`), and injects it into the preview. That isolation is
+what lets migrated problems keep global resets and generic class names without
+wrecking the app shell. Previews render on a light page surface.
 
 `playground-build/` is generated output — never hand-edit it. Re-run
 `npm run build` and commit the result after changing any problem.

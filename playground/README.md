@@ -38,9 +38,14 @@ No component edits are needed — `src/problems/loader.js` discovers folders via
 
 ### Conventions
 
-- **Prefix your CSS class names** (e.g. `.sr-star`). Problem stylesheets are
-  bundled into the same document as the app shell, so unprefixed names will
-  collide with other problems.
+- **Do not import your stylesheet.** `Solution.jsx` must not
+  `import './styles.css'` — that injects it globally and leaks. The platform
+  reads every `.css` in the folder, scopes each rule to
+  `[data-problem="<id>"]`, and injects it into the preview automatically.
+- Because of that scoping you may use natural class names (`.board`, `.cell`)
+  without worrying about collisions with other problems.
+- Previews render on a **light page surface**, matching how a standalone page
+  would look. Author colours against a white background.
 - `Solution.jsx` is listed first in the Code tab; everything else follows
   alphabetically.
 - Write `problem.md` as a standalone document with its own `# Title`. Headings
