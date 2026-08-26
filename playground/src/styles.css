@@ -1,0 +1,28 @@
+:root {
+  --pg-bg: #0b0e14;
+  --pg-panel: #11151f;
+  --pg-panel-alt: #161b26;
+  --pg-line: rgba(150, 170, 210, 0.16);
+  --pg-text: #d7dee9;
+  --pg-muted: #8b95a9;
+  --pg-faint: #5d6478;
+  --pg-accent: #e0a458;
+  --pg-easy: #4ade80;
+  --pg-medium: #e0a458;
+  --pg-hard: #f17171;
+  --pg-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --pg-sans: "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font-family: var(--pg-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-shell { padding: 24px; }
