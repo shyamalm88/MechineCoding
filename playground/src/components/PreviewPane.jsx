@@ -29,9 +29,12 @@ class PreviewErrorBoundary extends Component {
   }
 }
 
-export default function PreviewPane({ problemId, Component: Problem }) {
+export default function PreviewPane({ problemId, Component: Problem, css }) {
   return (
-    <div className="preview-pane">
+    // data-problem is the anchor every scoped rule is prefixed with, so the
+    // stylesheet below only applies inside this subtree.
+    <div className="preview-pane" data-problem={problemId}>
+      {css ? <style>{css}</style> : null}
       {/* Keyed by problem id so switching problems resets a previously
           caught error instead of showing it forever. */}
       <PreviewErrorBoundary key={problemId}>

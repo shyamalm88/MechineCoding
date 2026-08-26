@@ -1,5 +1,6 @@
 import registry from './index.json'
 import { groupSourcesByProblem, ENTRY_FILENAME } from '../lib/sources.js'
+import { scopeCss } from '../lib/scopeCss.js'
 
 // Vite statically analyses these globs at build time, so every problem folder
 // is bundled without a hand-maintained import list. The same Solution.jsx is
@@ -49,5 +50,13 @@ export function loadProblem(id) {
     throw new Error(`Problem "${id}" has no source files`)
   }
 
-  return { ...entry, Component: module.default, markdown, files }
+  // Concatenate this problem's stylesheets and confine every rule to its own
+  // preview subtree. Injected by PreviewPane rather than imported for its side
+  // effect, so one problem's `* { margin: 0 }` can't restyle the app shell.
+  const css = files
+    .filter((file) => file.name.endsWith('.css'))
+    .map((file) => scopeCss(file.code, id))
+    .join('\n')
+
+  return { ...entry, Component: module.default, markdown, files, css }
 }

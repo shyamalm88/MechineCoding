@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import './styles.css'
 
 const STARS = [1, 2, 3, 4, 5]
 

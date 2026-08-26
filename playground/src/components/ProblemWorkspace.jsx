@@ -41,7 +41,11 @@ export default function ProblemWorkspace({ problem }) {
 
         <div className="workspace-stage">
           {tab === 'Preview' ? (
-            <PreviewPane problemId={problem.id} Component={problem.Component} />
+            <PreviewPane
+              problemId={problem.id}
+              Component={problem.Component}
+              css={problem.css}
+            />
           ) : (
             <CodeView files={problem.files} />
           )}
