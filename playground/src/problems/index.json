@@ -6,6 +6,12 @@
     "difficulty": "Easy"
   },
   {
+    "id": "automatic-batching",
+    "title": "Automatic Batching",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
     "id": "storage-quotas",
     "title": "Browser Storage Quotas and Eviction",
     "category": "Web Fundamentals",
@@ -42,6 +48,18 @@
     "difficulty": "Hard"
   },
   {
+    "id": "context-performance",
+    "title": "Context API Performance Pitfalls",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "controlled-vs-uncontrolled",
+    "title": "Controlled vs Uncontrolled Components",
+    "category": "React",
+    "difficulty": "Easy"
+  },
+  {
     "id": "core-web-vitals",
     "title": "Core Web Vitals",
     "category": "Web Fundamentals",
@@ -57,6 +75,12 @@
     "id": "critical-rendering-path",
     "title": "Critical Rendering Path",
     "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "custom-hooks",
+    "title": "Custom Hooks",
+    "category": "React",
     "difficulty": "Medium"
   },
   {
@@ -84,6 +108,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "error-boundaries",
+    "title": "Error Boundaries",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
     "id": "etag",
     "title": "ETags and Conditional Requests",
     "category": "Web Fundamentals",
@@ -100,6 +130,12 @@
     "title": "File Explorer with Drag & Drop",
     "category": "Machine Coding",
     "difficulty": "Hard"
+  },
+  {
+    "id": "forwardref-imperativehandle",
+    "title": "forwardRef and useImperativeHandle",
+    "category": "React",
+    "difficulty": "Medium"
   },
   {
     "id": "grid-lights",
@@ -210,6 +246,36 @@
     "difficulty": "Medium"
   },
   {
+    "id": "react-fiber",
+    "title": "React Fiber",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "react-portals",
+    "title": "React Portals",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "react-server-components",
+    "title": "React Server Components",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "react-strict-mode",
+    "title": "React Strict Mode",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "reconciliation-keys",
+    "title": "Reconciliation and Keys",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
     "id": "reflow-repaint-compositing",
     "title": "Reflow, Repaint and Compositing",
     "category": "Web Fundamentals",
@@ -219,6 +285,12 @@
     "id": "rest-vs-graphql",
     "title": "REST vs GraphQL",
     "category": "Web Fundamentals",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "reusable-form-field",
+    "title": "Reusable Form Field with Validation",
+    "category": "React",
     "difficulty": "Medium"
   },
   {
@@ -264,6 +336,12 @@
     "difficulty": "Hard"
   },
   {
+    "id": "should-component-update-functional",
+    "title": "shouldComponentUpdate in Function Components",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
     "id": "snake-ladder",
     "title": "Snakes and Ladders",
     "category": "Machine Coding",
@@ -285,6 +363,12 @@
     "id": "stepper-wizard",
     "title": "Stepper Wizard",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "suspense-lazy",
+    "title": "Suspense and React.lazy",
+    "category": "React",
     "difficulty": "Medium"
   },
   {
@@ -330,6 +414,30 @@
     "difficulty": "Medium"
   },
   {
+    "id": "usecallback-vs-usememo",
+    "title": "useCallback vs useMemo",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "uselayouteffect",
+    "title": "useLayoutEffect vs useEffect",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "react18-concurrent",
+    "title": "useTransition and useDeferredValue",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "virtual-dom",
+    "title": "Virtual DOM and Why React Is Fast",
+    "category": "React",
+    "difficulty": "Easy"
+  },
+  {
     "id": "virtual-list",
     "title": "Virtual List",
     "category": "Machine Coding",
@@ -340,6 +448,12 @@
     "title": "WebSockets vs SSE vs Long Polling",
     "category": "Web Fundamentals",
     "difficulty": "Medium"
+  },
+  {
+    "id": "memo-optimization-backfire",
+    "title": "When Memoization Backfires",
+    "category": "React",
+    "difficulty": "Hard"
   },
   {
     "id": "wordle",
