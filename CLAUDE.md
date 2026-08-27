@@ -29,7 +29,7 @@ npm run preview
 | `JavaScriptProblems/` | Polyfills, design patterns, async utilities, utility functions |
 | `reactHooks/` | 6 custom React hooks |
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
-| `playground/` | Vite + React app: 135-problem interview library, live preview + read-only source |
+| `playground/` | Vite + React app: 160-problem interview library, live preview + read-only source |
 | `playground-build/` | Generated static build of `playground/` — not hand-edited |
 | `Theory/` | Markdown reference notes (browser internals, JS core, React advanced patterns, etc.) — source of truth for `theory-notes/` |
 | `system-design/` | Markdown architecture docs (frontend system design) — source of truth for `system-design-notes/` |

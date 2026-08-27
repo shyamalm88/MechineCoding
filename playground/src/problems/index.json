@@ -18,6 +18,18 @@
     "difficulty": "Hard"
   },
   {
+    "id": "nextjs-routing",
+    "title": "App Router File Conventions and Routing",
+    "category": "Next.js",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "nextjs-app-vs-pages",
+    "title": "App Router vs Pages Router",
+    "category": "Next.js",
+    "difficulty": "Medium"
+  },
+  {
     "id": "array-polyfills",
     "title": "Array Polyfills: map, filter, reduce, every",
     "category": "JavaScript",
@@ -114,6 +126,12 @@
     "difficulty": "Easy"
   },
   {
+    "id": "composition-prop-drilling",
+    "title": "Composition vs Prop Drilling",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
     "id": "concurrency-limit",
     "title": "Concurrency Limit and Task Pools",
     "category": "JavaScript",
@@ -192,6 +210,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "nextjs-data-fetching",
+    "title": "Data Fetching Patterns",
+    "category": "Next.js",
+    "difficulty": "Medium"
+  },
+  {
     "id": "data-table",
     "title": "Data Table",
     "category": "Machine Coding",
@@ -237,6 +261,12 @@
     "id": "error-boundaries",
     "title": "Error Boundaries",
     "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "nextjs-error-handling",
+    "title": "Error Handling and Loading States",
+    "category": "Next.js",
     "difficulty": "Medium"
   },
   {
@@ -306,6 +336,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "patterns-evolution",
+    "title": "HOCs, Render Props and Hooks",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
     "id": "holy-grail",
     "title": "Holy Grail Layout",
     "category": "Machine Coding",
@@ -316,6 +352,12 @@
     "title": "HTTP/1.1 vs HTTP/2 vs HTTP/3",
     "category": "Web Fundamentals",
     "difficulty": "Medium"
+  },
+  {
+    "id": "hydration-mismatch",
+    "title": "Hydration Mismatches",
+    "category": "React",
+    "difficulty": "Hard"
   },
   {
     "id": "carousel",
@@ -358,6 +400,12 @@
     "title": "Knight Shortest Path",
     "category": "JavaScript",
     "difficulty": "Hard"
+  },
+  {
+    "id": "lazy-initial-state",
+    "title": "Lazy Initial State",
+    "category": "React",
+    "difficulty": "Medium"
   },
   {
     "id": "leaky-bucket",
@@ -414,6 +462,12 @@
     "difficulty": "Medium"
   },
   {
+    "id": "nextjs-middleware-runtime",
+    "title": "Middleware, Edge Runtime and Env Vars",
+    "category": "Next.js",
+    "difficulty": "Hard"
+  },
+  {
     "id": "modal",
     "title": "Modal / Dialog",
     "category": "Machine Coding",
@@ -435,6 +489,12 @@
     "id": "nested-comments",
     "title": "Nested Comments",
     "category": "Machine Coding",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "nextjs-image-font-metadata",
+    "title": "next/image, next/font and Metadata",
+    "category": "Next.js",
     "difficulty": "Medium"
   },
   {
@@ -460,6 +520,12 @@
     "title": "Observe Pushes to an Array",
     "category": "JavaScript",
     "difficulty": "Medium"
+  },
+  {
+    "id": "nextjs-performance",
+    "title": "Optimising a Next.js App",
+    "category": "Next.js",
+    "difficulty": "Hard"
   },
   {
     "id": "otp-input",
@@ -522,6 +588,18 @@
     "difficulty": "Medium"
   },
   {
+    "id": "effect-race-conditions",
+    "title": "Race Conditions in useEffect",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "react19-features",
+    "title": "React 19: use(), Actions, useOptimistic",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
     "id": "react-fiber",
     "title": "React Fiber",
     "category": "React",
@@ -570,9 +648,21 @@
     "difficulty": "Medium"
   },
   {
+    "id": "nextjs-rendering-strategies",
+    "title": "Rendering Strategies: SSG, SSR, ISR, PPR",
+    "category": "Next.js",
+    "difficulty": "Medium"
+  },
+  {
     "id": "request-deduplication",
     "title": "Request Dedup and Race Conditions",
     "category": "JavaScript",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "key-state-reset",
+    "title": "Resetting State with key",
+    "category": "React",
     "difficulty": "Medium"
   },
   {
@@ -630,6 +720,18 @@
     "difficulty": "Medium"
   },
   {
+    "id": "nextjs-server-actions",
+    "title": "Server Actions",
+    "category": "Next.js",
+    "difficulty": "Hard"
+  },
+  {
+    "id": "nextjs-server-client-components",
+    "title": "Server vs Client Components",
+    "category": "Next.js",
+    "difficulty": "Hard"
+  },
+  {
     "id": "service-workers-caching",
     "title": "Service Workers and Caching",
     "category": "Web Fundamentals",
@@ -652,6 +754,12 @@
     "title": "Snakes and Ladders",
     "category": "Machine Coding",
     "difficulty": "Medium"
+  },
+  {
+    "id": "stale-closures",
+    "title": "Stale Closures",
+    "category": "React",
+    "difficulty": "Hard"
   },
   {
     "id": "star-rating",
@@ -678,16 +786,40 @@
     "difficulty": "Easy"
   },
   {
+    "id": "nextjs-streaming",
+    "title": "Streaming and Suspense",
+    "category": "Next.js",
+    "difficulty": "Medium"
+  },
+  {
     "id": "suspense-lazy",
     "title": "Suspense and React.lazy",
     "category": "React",
     "difficulty": "Medium"
   },
   {
+    "id": "synthetic-events",
+    "title": "Synthetic Events and Delegation",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
     "id": "tabs",
     "title": "Tabs",
     "category": "Machine Coding",
     "difficulty": "Easy"
+  },
+  {
+    "id": "derived-state",
+    "title": "The Derived-State Anti-Pattern",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "nextjs-caching",
+    "title": "The Four Caches in Next.js",
+    "category": "Next.js",
+    "difficulty": "Hard"
   },
   {
     "id": "this-keyword",
@@ -762,6 +894,18 @@
     "difficulty": "Medium"
   },
   {
+    "id": "useref-vs-usestate",
+    "title": "useRef vs useState",
+    "category": "React",
+    "difficulty": "Medium"
+  },
+  {
+    "id": "external-store-tearing",
+    "title": "useSyncExternalStore and Tearing",
+    "category": "React",
+    "difficulty": "Hard"
+  },
+  {
     "id": "react18-concurrent",
     "title": "useTransition and useDeferredValue",
     "category": "React",
@@ -802,6 +946,12 @@
     "title": "When Memoization Backfires",
     "category": "React",
     "difficulty": "Hard"
+  },
+  {
+    "id": "state-updates-async",
+    "title": "Why State Looks One Render Behind",
+    "category": "React",
+    "difficulty": "Medium"
   },
   {
     "id": "wordle",

@@ -1,6 +1,6 @@
 # playground — code + preview reference app
 
-A browsable library of **135 front-end interview problems**. Each entry shows a
+A browsable library of **160 front-end interview problems**. Each entry shows a
 live running preview beside its real source, syntax-highlighted — or, for
 conceptual questions, a full-width written answer.
 
@@ -8,8 +8,9 @@ conceptual questions, a full-width written answer.
 |---|---|
 | Machine Coding | 43 |
 | JavaScript | 53 |
+| React | 32 |
 | Web Fundamentals | 20 |
-| React | 19 |
+| Next.js | 12 |
 
 The preview renders the actual React component in the same bundle — no iframe,
 no second bundler — and the Code tab shows that same file via Vite's `?raw`
