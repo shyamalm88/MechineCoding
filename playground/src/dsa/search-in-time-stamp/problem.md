@@ -1,7 +1,5 @@
 # Time Based Key-Value Store (LeetCode #981)
 
-> Time Based Key-Value Store (LeetCode #981)
-
 Design a time-based key-value data structure that can store multiple values
 for the same key at different time stamps and retrieve the key's value at a
 certain timestamp.

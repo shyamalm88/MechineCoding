@@ -1,7 +1,5 @@
 # Best Time to Buy and Sell Stock II (LeetCode #122) — UNLIMITED transactions
 
-> Best Time to Buy and Sell Stock II (LeetCode #122) — UNLIMITED transactions
-
 Buy and sell as many times as you want (but can only hold 1 share at a time).
 Return the maximum profit.
 

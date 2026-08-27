@@ -1,7 +1,5 @@
 # Heap Sort (Classic Algorithm — no LC#, foundational)
 
-> Heap Sort (Classic Algorithm — no LC#, foundational)
-
 ## Category
 
 🔵 CORE (In-Place Sorting via Binary Max-Heap)

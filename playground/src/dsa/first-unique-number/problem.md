@@ -1,7 +1,5 @@
 # First Unique Number (LeetCode #1429)
 
-> First Unique Number (LeetCode #1429)
-
 Implement FirstUnique:
 - FirstUnique(int[] nums): initializes with the numbers in the queue.
 - int showFirstUnique(): returns the value of the first unique integer in

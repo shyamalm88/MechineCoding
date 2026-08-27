@@ -1,7 +1,5 @@
 # Alien Dictionary (LeetCode #269, Premium)
 
-> Alien Dictionary (LeetCode #269, Premium)
-
 ## Category
 
 🔴 VVIMP (Topological Sort — Order Extraction from Adjacent Pairs)

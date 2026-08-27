@@ -1,7 +1,5 @@
 # Copy List with Random Pointer (LeetCode #138)
 
-> Copy List with Random Pointer (LeetCode #138)
-
 Deep-copy a list where each node has `next` AND a `random` pointer to any
 node (or null).
 
@@ -31,4 +29,4 @@ DRY RUN (interleaved): A → B
 
 ## Time
 
-O(n) both   SPACE: O(n) map / O(1) interleaved
+O(n) both · SPACE: O(n) map / O(1) interleaved

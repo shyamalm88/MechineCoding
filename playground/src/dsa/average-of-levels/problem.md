@@ -1,7 +1,5 @@
 # Average of Levels in Binary Tree (LeetCode #637)
 
-> Average of Levels in Binary Tree (LeetCode #637)
-
 ## Intuition
 
 Any "per level" question is BFS with a LEVEL SNAPSHOT: capture the queue
@@ -14,4 +12,4 @@ level-order problems.
 
 ## Time
 
-O(n)   SPACE: O(w) where w is the widest level
+O(n) · SPACE: O(w) where w is the widest level

@@ -1,7 +1,5 @@
 # Best Time to Buy and Sell Stock with Cooldown (LeetCode #309)
 
-> Best Time to Buy and Sell Stock with Cooldown (LeetCode #309)
-
 Unlimited transactions, but after selling you must WAIT 1 day (cooldown) before buying.
 Return the maximum profit.
 

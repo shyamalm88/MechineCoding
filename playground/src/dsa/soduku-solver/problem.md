@@ -1,7 +1,5 @@
 # Sudoku Solver (LeetCode #37)
 
-> Sudoku Solver (LeetCode #37)
-
 ## Category
 
 🔴 VVIMP (Backtracking + Constraint Propagation)

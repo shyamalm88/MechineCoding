@@ -1,7 +1,5 @@
 # Decode String (LeetCode #394)
 
-> Decode String (LeetCode #394)
-
 Given an encoded string, return its decoded form.
 Encoding rule: k[encoded_string] means encoded_string repeated k times.
 k is always a positive integer. Input is always valid.

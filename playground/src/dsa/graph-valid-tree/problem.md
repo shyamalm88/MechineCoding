@@ -1,7 +1,5 @@
 # Graph Valid Tree (LeetCode #261)
 
-> Graph Valid Tree (LeetCode #261)
-
 ## Category
 
 🔵 CORE (Graph Validity: Connectivity + Acyclic)

@@ -1,7 +1,5 @@
 # Palindromic Substrings (LeetCode #647)
 
-> Palindromic Substrings (LeetCode #647)
-
 Given a string s, return the number of palindromic substrings in it.
 
 A string is a palindrome when it reads the same backward as forward.

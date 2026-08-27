@@ -1,7 +1,5 @@
 # Middle of the Linked List (LeetCode #876)
 
-> Middle of the Linked List (LeetCode #876)
-
 Return the middle node. With an even count, return the SECOND middle.
 
 ## Intuition
@@ -25,4 +23,4 @@ The loop condition decides which middle you get on even input:
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

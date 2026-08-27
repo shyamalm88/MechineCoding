@@ -1,7 +1,5 @@
 # Minimum Path Sum (LeetCode #64)
 
-> Minimum Path Sum (LeetCode #64)
-
 ## Category
 
 🟢 IMPORTANT (2D Grid DP / Cost Accumulation)

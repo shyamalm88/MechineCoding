@@ -1,7 +1,5 @@
 # Maximum Points You Can Obtain from Cards (LeetCode #1423)
 
-> Maximum Points You Can Obtain from Cards (LeetCode #1423)
-
 There are n cards in a row with values cardPoints[]. In one step you can
 take one card from the beginning or end. You take exactly k cards total.
 Return the maximum sum of the k chosen cards.

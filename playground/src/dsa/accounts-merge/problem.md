@@ -1,7 +1,5 @@
 # Accounts Merge (LeetCode #721)
 
-> Accounts Merge (LeetCode #721)
-
 ## Category
 
 🟢 IMPORTANT (Union-Find + Graph Modeling)

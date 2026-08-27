@@ -1,7 +1,5 @@
 # Design Circular Deque (LeetCode #641)
 
-> Design Circular Deque (LeetCode #641)
-
 ## Intuition
 
 A fixed-size array used as a RING: instead of shifting elements (O(n)), move
@@ -16,4 +14,4 @@ capacity`, because JavaScript's % returns negatives for negative operands.
 
 ## Time
 
-O(1) all operations   SPACE: O(k)
+O(1) all operations · SPACE: O(k)

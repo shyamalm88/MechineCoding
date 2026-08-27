@@ -1,7 +1,5 @@
 # Design a Priority Queue (Classic Data Structure — no LC#, foundational)
 
-> Design a Priority Queue (Classic Data Structure — no LC#, foundational)
-
 ## Category
 
 🔵 CORE (Generic Binary Heap — building block for many Heap problems)

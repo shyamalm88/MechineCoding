@@ -1,7 +1,5 @@
 # Two Sum (LeetCode #1)
 
-> Two Sum (LeetCode #1)
-
 Given an array of integers nums and an integer target, return indices of the
 two numbers that add up to target. Each input has exactly one solution.
 You may not use the same element twice.

@@ -1,7 +1,5 @@
 # Cheapest Flights Within K Stops (LeetCode #787)
 
-> Cheapest Flights Within K Stops (LeetCode #787)
-
 ## Category
 
 🟢 IMPORTANT (State-Space Dijkstra / BFS Hybrid)

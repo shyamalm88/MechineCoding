@@ -1,7 +1,5 @@
 # Pow(x, n) (LeetCode #50)
 
-> Pow(x, n) (LeetCode #50)
-
 Implement pow(x, n), which calculates x raised to the power n (i.e., x^n).
 
 Example 1:

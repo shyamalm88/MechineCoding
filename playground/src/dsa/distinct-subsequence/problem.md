@@ -1,7 +1,5 @@
 # Distinct Subsequences (LeetCode #115)
 
-> Distinct Subsequences (LeetCode #115)
-
 ## Category
 
 🔴 VVIMP (Counting DP on Subsequences)

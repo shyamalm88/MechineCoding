@@ -1,7 +1,5 @@
 # Shortest Distance from All Buildings (LeetCode #317)
 
-> Shortest Distance from All Buildings (LeetCode #317)
-
 ## Category
 
 🔵 CORE (Multi-Source Shortest Path / BFS vs Dijkstra Decision)

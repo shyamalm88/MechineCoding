@@ -1,7 +1,5 @@
 # Online Stock Span (LeetCode #901)
 
-> Online Stock Span (LeetCode #901)
-
 For each daily price, return the number of consecutive days up to and
 including today where the price was <= today's price.
 
@@ -30,4 +28,4 @@ is pushed and popped at most once → amortised O(1) per call.
 
 ## Time
 
-O(1) amortised per next()   SPACE: O(n)
+O(1) amortised per next() · SPACE: O(n)

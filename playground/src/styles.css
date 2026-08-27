@@ -54,17 +54,46 @@ body {
   outline: none;
 }
 .sidebar-filters { display: flex; flex-wrap: wrap; gap: 6px; }
-.sidebar-subfilters { margin-top: -6px; }
+/* Difficulty / importance are dropdowns rather than chip rows -- with three
+   filter dimensions the chips consumed most of the sidebar before any problem
+   was visible. */
+.sidebar-selects { display: flex; gap: 8px; }
+.select-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.select-field > span {
+  font-family: var(--pg-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pg-faint);
+}
+.select-field select {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--pg-line);
+  background: var(--pg-bg);
+  color: var(--pg-text);
+  font-family: var(--pg-sans);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  /* the native arrow is invisible on a dark control in some browsers */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--pg-muted) 50%),
+                    linear-gradient(135deg, var(--pg-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
+}
+.select-field select:focus-visible { border-color: var(--pg-accent); }
+.select-field option { background: var(--pg-panel); color: var(--pg-text); }
 .sidebar-count {
   margin: -4px 0 2px;
   font-family: var(--pg-mono);
   font-size: 11px;
   color: var(--pg-faint);
 }
-.chip-diff.easy.active { background: var(--pg-easy); border-color: var(--pg-easy); color: #06210f; }
-.chip-diff.medium.active { background: var(--pg-medium); border-color: var(--pg-medium); color: #1a1206; }
-.chip-diff.hard.active { background: var(--pg-hard); border-color: var(--pg-hard); color: #2a0b0b; }
-.chip-imp.active { background: #7dbeef; border-color: #7dbeef; color: #06192a; }
 
 /* problem row tags */
 .item-tags { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }

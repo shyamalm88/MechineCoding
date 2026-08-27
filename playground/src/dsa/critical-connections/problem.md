@@ -1,7 +1,5 @@
 # Critical Connections in a Network (LeetCode #1192)
 
-> Critical Connections in a Network (LeetCode #1192)
-
 ## Category
 
 🔴 VVIMP (Tarjan's Bridge-Finding Algorithm)

@@ -1,7 +1,5 @@
 # Subsets (LeetCode #78)
 
-> Subsets (LeetCode #78)
-
 Given an integer array nums of unique elements, return all possible subsets
 (the power set).
 

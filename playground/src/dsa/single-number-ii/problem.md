@@ -1,7 +1,5 @@
 # Single Number II (LeetCode #137)
 
-> Single Number II (LeetCode #137)
-
 ## Category
 
 🟢 IMPORTANT (Bit Manipulation — Counting Bits Mod 3)

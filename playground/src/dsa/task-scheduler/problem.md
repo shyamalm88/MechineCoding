@@ -1,7 +1,5 @@
 # Task Scheduler (LeetCode #621)
 
-> Task Scheduler (LeetCode #621)
-
 Given a list of tasks (chars 'A'-'Z') and a cooldown n, find the minimum
 number of CPU intervals (including idle) needed to execute all tasks.
 Same task must be separated by at least n intervals.

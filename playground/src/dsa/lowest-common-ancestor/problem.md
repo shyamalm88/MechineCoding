@@ -1,7 +1,5 @@
 # Lowest Common Ancestor of a Binary Tree (LeetCode #236)
 
-> Lowest Common Ancestor of a Binary Tree (LeetCode #236)
-
 Given a binary tree, find the lowest common ancestor (LCA) of two given
 nodes in the tree.
 

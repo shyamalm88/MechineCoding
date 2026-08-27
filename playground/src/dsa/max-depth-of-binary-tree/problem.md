@@ -1,7 +1,5 @@
 # Maximum Depth of Binary Tree (LeetCode #104)
 
-> Maximum Depth of Binary Tree (LeetCode #104)
-
 ## Category
 
 🔵 CORE (Tree Recursion / Height Computation)

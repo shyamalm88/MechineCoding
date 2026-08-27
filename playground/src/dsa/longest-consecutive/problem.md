@@ -1,7 +1,5 @@
 # Longest Consecutive Sequence (LeetCode #128)
 
-> Longest Consecutive Sequence (LeetCode #128)
-
 Given an unsorted array of integers nums, return the length of the longest
 consecutive elements sequence.
 

@@ -1,7 +1,5 @@
 # Reverse Linked List (LeetCode #206)
 
-> Reverse Linked List (LeetCode #206)
-
 Reverse a singly linked list and return the new head.
 
 ## Intuition
@@ -23,4 +21,4 @@ the only reference to the rest of the list.
 
 ## Time
 
-O(n)   SPACE: O(1) iterative, O(n) recursive (call stack)
+O(n) · SPACE: O(1) iterative, O(n) recursive (call stack)

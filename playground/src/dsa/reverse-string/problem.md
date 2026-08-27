@@ -1,7 +1,5 @@
 # Reverse String (LeetCode #344)
 
-> Reverse String (LeetCode #344)
-
 Reverse an array of characters IN PLACE with O(1) extra memory.
 
 ## Intuition
@@ -15,4 +13,4 @@ new array defeats the exercise.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

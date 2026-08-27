@@ -1,7 +1,5 @@
 # Median of Two Sorted Arrays (LeetCode #4) ⭐ HARD
 
-> Median of Two Sorted Arrays (LeetCode #4) ⭐ HARD
-
 Given two sorted arrays nums1 and nums2, return the median of the two
 combined sorted arrays. Must run in O(log(m+n)).
 

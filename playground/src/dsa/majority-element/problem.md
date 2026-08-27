@@ -1,7 +1,5 @@
 # Majority Element (LeetCode #169)
 
-> Majority Element (LeetCode #169)
-
 Return the element appearing more than ⌊n/2⌋ times. One is guaranteed to exist.
 
 ## Intuition
@@ -33,4 +31,4 @@ the algorithm always returns something, even when no majority exists.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

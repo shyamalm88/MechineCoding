@@ -1,7 +1,5 @@
 # Shortest Path Visiting All Nodes (LeetCode #847)
 
-> Shortest Path Visiting All Nodes (LeetCode #847)
-
 ## Category
 
 🔴 VVIMP (Bitmask BFS on State Space)

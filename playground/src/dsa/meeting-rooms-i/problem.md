@@ -1,7 +1,5 @@
 # Meeting Rooms I (LeetCode #252)
 
-> Meeting Rooms I (LeetCode #252)
-
 Given an array of meeting time intervals where intervals[i] = [start, end],
 determine if a person can attend all meetings (no overlaps).
 

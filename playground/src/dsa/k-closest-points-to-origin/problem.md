@@ -1,7 +1,5 @@
 # K Closest Points to Origin (LeetCode #973)
 
-> K Closest Points to Origin (LeetCode #973)
-
 Given an array of points on a 2D plane and an integer k, return the k
 closest points to the origin (0, 0). Distance = sqrt(x² + y²).
 The answer may be returned in any order.

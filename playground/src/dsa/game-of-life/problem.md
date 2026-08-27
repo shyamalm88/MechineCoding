@@ -1,7 +1,5 @@
 # Game of Life (LeetCode #289)
 
-> Game of Life (LeetCode #289)
-
 Given an m x n grid `board` where each cell is either 1 (live) or 0 (dead),
 compute the next state of the board using Conway's Game of Life rules,
 applied SIMULTANEOUSLY to every cell:

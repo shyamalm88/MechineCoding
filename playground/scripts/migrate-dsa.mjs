@@ -78,10 +78,15 @@ function headerToMarkdown(header, title) {
   let inCode = false
   for (let line of lines) {
     // "PROBLEM:", "INTUITION:" etc. become headings.
+    // Split a combined complexity line so both halves are readable.
+    line = line.replace(/^(\s*TIME:.*?)\s{2,}(SPACE:.*)$/, '$1 · $2')
+
     const label = line.match(/^([A-Z][A-Z0-9 &/()#-]{2,30}):\s*(.*)$/)
     if (label && !inCode) {
       const [, key, rest] = label
-      if (key === 'PROBLEM') { if (rest.trim()) body.push(`> ${rest.trim()}`, '') ; continue }
+      // The PROBLEM: line IS the title, already emitted as the h1 -- repeating
+      // it as a blockquote just duplicates the heading on every page.
+      if (key === 'PROBLEM') continue
       body.push('', `## ${key.charAt(0) + key.slice(1).toLowerCase()}`, '')
       if (rest.trim()) body.push(rest.trim())
       continue

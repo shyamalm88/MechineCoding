@@ -1,7 +1,5 @@
 # Find the Duplicate Number (LeetCode #287)
 
-> Find the Duplicate Number (LeetCode #287)
-
 Given an array nums of n+1 integers where each integer is in [1, n],
 exactly ONE number is repeated. Find it without modifying the array and O(1) space.
 

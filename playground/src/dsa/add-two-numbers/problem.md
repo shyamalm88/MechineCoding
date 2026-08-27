@@ -1,7 +1,5 @@
 # Add Two Numbers (LeetCode #2)
 
-> Add Two Numbers (LeetCode #2)
-
 Two non-empty lists hold digits in REVERSE order. Add them and return the
 sum as a list, also reversed.
 
@@ -22,4 +20,4 @@ add left to right exactly as you would on paper, carrying as you go.
 
 ## Time
 
-O(max(n,m))   SPACE: O(max(n,m)) for the output
+O(max(n,m)) · SPACE: O(max(n,m)) for the output

@@ -1,7 +1,5 @@
 # Reconstruct Itinerary (LeetCode #332)
 
-> Reconstruct Itinerary (LeetCode #332)
-
 ## Category
 
 🔴 VVIMP (Directed Graph + Lexicographic Eulerian Path)

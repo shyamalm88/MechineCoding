@@ -1,7 +1,5 @@
 # Kth Largest Element in a Stream (LeetCode #703)
 
-> Kth Largest Element in a Stream (LeetCode #703)
-
 Design a class to find the kth largest element in a stream.
 - KthLargest(k, nums): init with k and initial array nums.
 - add(val): add val to the stream and return the current kth largest.

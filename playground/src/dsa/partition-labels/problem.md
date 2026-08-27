@@ -1,7 +1,5 @@
 # Partition Labels (LeetCode #763)
 
-> Partition Labels (LeetCode #763)
-
 Partition string s into as many parts as possible so that each letter appears
 in at most one part. Return a list of the sizes of these parts.
 

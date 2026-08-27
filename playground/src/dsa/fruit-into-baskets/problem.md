@@ -1,7 +1,5 @@
 # Fruit Into Baskets (LeetCode #904)
 
-> Fruit Into Baskets (LeetCode #904)
-
 Longest subarray containing at most 2 distinct values.
 
 ## Intuition
@@ -25,4 +23,4 @@ key when its count hits zero or the distinct count never drops.
 
 ## Time
 
-O(n) -- each index enters and leaves once   SPACE: O(K)
+O(n) -- each index enters and leaves once · SPACE: O(K)

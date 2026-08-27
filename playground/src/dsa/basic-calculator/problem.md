@@ -1,7 +1,5 @@
 # Basic Calculator (LeetCode #224)
 
-> Basic Calculator (LeetCode #224)
-
 Evaluate a string with +, -, non-negative integers and PARENTHESES.
 (No * or / — that is #227.)
 
@@ -34,4 +32,4 @@ assumption is the usual bug.
 
 ## Time
 
-O(n)   SPACE: O(n) for nesting depth
+O(n) · SPACE: O(n) for nesting depth

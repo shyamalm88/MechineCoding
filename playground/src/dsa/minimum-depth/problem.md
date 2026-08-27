@@ -1,7 +1,5 @@
 # Minimum Depth of Binary Tree (LeetCode #111)
 
-> Minimum Depth of Binary Tree (LeetCode #111)
-
 Shortest root-to-LEAF path length. A leaf has no children.
 
 ## Intuition
@@ -16,4 +14,4 @@ depth, so you can return immediately without exploring a deep subtree.
 
 ## Time
 
-O(n) worst case, often far less with BFS   SPACE: O(w)
+O(n) worst case, often far less with BFS · SPACE: O(w)

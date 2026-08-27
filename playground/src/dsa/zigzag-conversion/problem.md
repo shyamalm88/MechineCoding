@@ -1,7 +1,5 @@
 # Zigzag Conversion (LeetCode #6)
 
-> Zigzag Conversion (LeetCode #6)
-
 The string "PAYPALISHIRING" is written in a zigzag pattern on a given
 number of rows like this (numRows = 3):
 

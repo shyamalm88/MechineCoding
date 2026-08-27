@@ -1,7 +1,5 @@
 # Find All Numbers Disappeared in an Array (LeetCode #448)
 
-> Find All Numbers Disappeared in an Array (LeetCode #448)
-
 nums has n integers in [1, n]. Return every value in that range that is absent.
 
 ## Intuition
@@ -23,4 +21,4 @@ Math.abs is essential when reading — the slot may already be marked.
 
 ## Time
 
-O(n)   SPACE: O(1) excluding the output
+O(n) · SPACE: O(1) excluding the output

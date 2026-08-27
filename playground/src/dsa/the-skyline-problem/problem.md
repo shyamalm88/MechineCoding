@@ -1,7 +1,5 @@
 # The Skyline Problem (LeetCode #218)
 
-> The Skyline Problem (LeetCode #218)
-
 ## Category
 
 🔴 HARD / VVIMP (Sweep Line + Lazy-Eviction Max-Heap)

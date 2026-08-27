@@ -1,7 +1,5 @@
 # Flatten Binary Tree to Linked List (LeetCode #114)
 
-> Flatten Binary Tree to Linked List (LeetCode #114)
-
 Given the root of a binary tree, flatten the tree into a "linked list":
 - The "linked list" should use the same TreeNode class where the right child
 ```text

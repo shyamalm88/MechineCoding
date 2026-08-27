@@ -1,7 +1,5 @@
 # Min Stack (LeetCode #155)
 
-> Min Stack (LeetCode #155)
-
 Design a stack that supports push, pop, top, and retrieving the minimum element
 in constant time.
 

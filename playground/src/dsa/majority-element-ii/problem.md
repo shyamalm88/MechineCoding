@@ -1,7 +1,5 @@
 # Majority Element II (LeetCode #229)
 
-> Majority Element II (LeetCode #229)
-
 Given an integer array of size n, find all elements that appear MORE THAN ⌊n/3⌋ times.
 There can be at most 2 such elements.
 

@@ -1,7 +1,5 @@
 # Max Area of Island (LeetCode #695)
 
-> Max Area of Island (LeetCode #695)
-
 You are given an m x n binary matrix grid. An island is a group of 1s
 (representing land) connected 4-directionally (horizontal or vertical).
 You may assume all four edges of the grid are surrounded by water.

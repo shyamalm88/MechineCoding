@@ -1,7 +1,5 @@
 # Maximal Square (LeetCode #221)
 
-> Maximal Square (LeetCode #221)
-
 ## Category
 
 🔴 VVIMP (2D DP / Local-to-Global Invariant)

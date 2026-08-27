@@ -1,7 +1,5 @@
 # Merge K Sorted Lists (LeetCode #23)
 
-> Merge K Sorted Lists (LeetCode #23)
-
 Given an array of k linked-lists, each sorted in ascending order,
 merge all the linked-lists into one sorted linked-list.
 

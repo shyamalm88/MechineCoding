@@ -1,7 +1,5 @@
 # Next Greater Element I (LeetCode #496)
 
-> Next Greater Element I (LeetCode #496)
-
 nums1 is a subset of nums2. For each value in nums1, find the first greater
 element to its RIGHT in nums2, or -1.
 
@@ -27,4 +25,4 @@ nums2 = [1,3,4,2]
 
 ## Time
 
-O(n + m)   SPACE: O(n)
+O(n + m) · SPACE: O(n)

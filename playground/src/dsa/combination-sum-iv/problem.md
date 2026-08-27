@@ -1,7 +1,5 @@
 # Combination Sum IV (LeetCode #377)
 
-> Combination Sum IV (LeetCode #377)
-
 Given an array of distinct positive integers nums and a positive integer target,
 return the number of possible combinations that add up to target.
 ORDER MATTERS (different orderings counted as different combinations).

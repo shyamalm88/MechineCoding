@@ -1,7 +1,5 @@
 # Simplify Path (LeetCode #71)
 
-> Simplify Path (LeetCode #71)
-
 Given an absolute path for a Unix-style file system, convert it to its
 simplified canonical path.
 

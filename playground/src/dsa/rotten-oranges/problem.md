@@ -1,7 +1,5 @@
 # Rotting Oranges (LeetCode #994)
 
-> Rotting Oranges (LeetCode #994)
-
 You are given an m x n grid where each cell can have one of three values:
 ```text
   0 - Empty cell

@@ -1,7 +1,5 @@
 # Reverse Nodes in k-Group (LeetCode #25)
 
-> Reverse Nodes in k-Group (LeetCode #25)
-
 Reverse every consecutive group of k nodes. A trailing group with fewer than
 k nodes is left as-is.
 
@@ -31,4 +29,4 @@ partial tail and violate the spec.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

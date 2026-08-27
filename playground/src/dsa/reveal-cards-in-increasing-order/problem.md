@@ -1,7 +1,5 @@
 # Reveal Cards In Increasing Order (LeetCode #950)
 
-> Reveal Cards In Increasing Order (LeetCode #950)
-
 Order a deck so that repeatedly (reveal top, move next card to the bottom)
 yields increasing order.
 
@@ -28,4 +26,4 @@ sorted [2,3,5,7,11,13,17]
 
 ## Time
 
-O(n log n) for the sort   SPACE: O(n)
+O(n log n) for the sort · SPACE: O(n)

@@ -1,7 +1,5 @@
 # Remove Duplicates from Sorted Array (LeetCode #26)
 
-> Remove Duplicates from Sorted Array (LeetCode #26)
-
 Remove duplicates IN PLACE so each value appears once; return the new length.
 The first k elements must hold the result.
 
@@ -24,4 +22,4 @@ ever adjacent, so comparing nums[fast] to nums[slow] is sufficient.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

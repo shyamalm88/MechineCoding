@@ -1,7 +1,5 @@
 # Maximum Sum Circular Subarray (LeetCode #918)
 
-> Maximum Sum Circular Subarray (LeetCode #918)
-
 Given a circular integer array nums, return the maximum possible sum of a
 non-empty subarray. The array is circular (end wraps to beginning).
 

@@ -1,7 +1,5 @@
 # Subarrays with K Different Integers (LeetCode #992)
 
-> Subarrays with K Different Integers (LeetCode #992)
-
 Given an integer array nums and an integer k, return the number of good
 subarrays of nums.
 

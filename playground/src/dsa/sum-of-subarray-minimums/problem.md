@@ -1,7 +1,5 @@
 # Sum of Subarray Minimums (LeetCode #907)
 
-> Sum of Subarray Minimums (LeetCode #907)
-
 Sum min(b) over every contiguous subarray b. Answer modulo 1e9+7.
 
 ## Intuition
@@ -32,4 +30,4 @@ on the other, or subarrays with duplicate minima get counted twice.
 
 ## Time
 
-O(n)   SPACE: O(n)
+O(n) · SPACE: O(n)

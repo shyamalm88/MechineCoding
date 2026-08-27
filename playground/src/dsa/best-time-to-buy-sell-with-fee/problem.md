@@ -1,7 +1,5 @@
 # Best Time to Buy and Sell Stock with Transaction Fee (LeetCode #714)
 
-> Best Time to Buy and Sell Stock with Transaction Fee (LeetCode #714)
-
 Unlimited transactions but each SELL incurs a transaction fee.
 Return the maximum profit after fees.
 

@@ -1,7 +1,5 @@
 # Find K Closest Elements (LeetCode #658)
 
-> Find K Closest Elements (LeetCode #658)
-
 ## Category
 
 🟢 IMPORTANT (Binary Search on the Answer's Window Boundary)

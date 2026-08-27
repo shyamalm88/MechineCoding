@@ -1,7 +1,5 @@
 # Shortest Path with Obstacles Elimination (LeetCode #1293)
 
-> Shortest Path with Obstacles Elimination (LeetCode #1293)
-
 ## Category
 
 🟢 IMPORTANT (Grid BFS with State Expansion)

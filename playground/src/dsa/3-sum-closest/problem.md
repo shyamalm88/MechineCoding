@@ -1,7 +1,5 @@
 # 3Sum Closest (LeetCode #16)
 
-> 3Sum Closest (LeetCode #16)
-
 Given an integer array nums and an integer target, find three integers in
 nums such that their sum is CLOSEST to target. Return that sum.
 Assume exactly one solution exists.

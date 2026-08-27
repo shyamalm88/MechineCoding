@@ -1,7 +1,5 @@
 # Invert Binary Tree (LeetCode #226)
 
-> Invert Binary Tree (LeetCode #226)
-
 Given the root of a binary tree, invert the tree, and return its root.
 
 Example 1:

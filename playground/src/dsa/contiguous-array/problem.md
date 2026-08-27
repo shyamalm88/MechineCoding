@@ -1,7 +1,5 @@
 # Contiguous Array (LeetCode #525)
 
-> Contiguous Array (LeetCode #525)
-
 Given a binary array nums, return the maximum length of a contiguous subarray
 with an equal number of 0s and 1s.
 

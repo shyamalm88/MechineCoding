@@ -1,7 +1,5 @@
 # Minimum Genetic Mutation (LeetCode #433)
 
-> Minimum Genetic Mutation (LeetCode #433)
-
 ## Category
 
 🟢 IMPORTANT (BFS on Implicit Graph)

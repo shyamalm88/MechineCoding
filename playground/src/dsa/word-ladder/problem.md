@@ -1,7 +1,5 @@
 # Word Ladder (LeetCode #127)
 
-> Word Ladder (LeetCode #127)
-
 A transformation sequence from word beginWord to word endWord using a dictionary
 wordList is a sequence of words beginWord -> s1 -> s2 -> ... -> sk such that:
 

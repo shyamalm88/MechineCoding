@@ -1,7 +1,5 @@
 # Serialize and Deserialize Binary Tree (LeetCode #297)
 
-> Serialize and Deserialize Binary Tree (LeetCode #297)
-
 Serialization is the process of converting a data structure or object into
 a sequence of bits so that it can be stored or transmitted. Design an
 algorithm to serialize and deserialize a binary tree.

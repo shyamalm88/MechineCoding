@@ -1,7 +1,5 @@
 # Largest Rectangle in Histogram (LeetCode #84)
 
-> Largest Rectangle in Histogram (LeetCode #84)
-
 Given an array of integers `heights` representing the histogram's bar
 heights, where each bar has width 1, return the area of the largest
 rectangle that can be formed within the histogram.

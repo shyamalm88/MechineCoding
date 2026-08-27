@@ -1,7 +1,5 @@
 # Triangle (LeetCode #120)
 
-> Triangle (LeetCode #120)
-
 Given a triangle array, return the minimum path sum from top to bottom.
 At each step you may move to adjacent numbers on the row below
 (triangle[i][j] can go to triangle[i+1][j] or triangle[i+1][j+1]).

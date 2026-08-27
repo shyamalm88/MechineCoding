@@ -1,7 +1,5 @@
 # Maximum Frequency Stack (LeetCode #895)
 
-> Maximum Frequency Stack (LeetCode #895)
-
 Design a stack-like data structure to push elements to the stack and pop the
 most frequent element from the stack.
 

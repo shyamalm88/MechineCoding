@@ -1,7 +1,5 @@
 # Continuous Subarray Sum (LeetCode #523)
 
-> Continuous Subarray Sum (LeetCode #523)
-
 Is there a subarray of length >= 2 whose sum is a multiple of k?
 
 ## Intuition
@@ -18,4 +16,4 @@ Seed the map with {0: -1} so a prefix that is itself divisible by k counts.
 
 ## Time
 
-O(n)   SPACE: O(min(n,k))
+O(n) · SPACE: O(min(n,k))

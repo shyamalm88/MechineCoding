@@ -1,7 +1,5 @@
 # Swim in Rising Water (LeetCode #778)
 
-> Swim in Rising Water (LeetCode #778)
-
 ## Category
 
 🔴 VVIMP (Dijkstra with NON-ADDITIVE Cost)

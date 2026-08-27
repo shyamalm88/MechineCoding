@@ -1,7 +1,5 @@
 # Next Greater Element II (LeetCode #503)
 
-> Next Greater Element II (LeetCode #503)
-
 Same as #496 but the array is CIRCULAR — after the last element you wrap
 around to the front.
 
@@ -28,4 +26,4 @@ would create phantom entries that never resolve.
 
 ## Time
 
-O(n)   SPACE: O(n)
+O(n) · SPACE: O(n)

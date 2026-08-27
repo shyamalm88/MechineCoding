@@ -1,7 +1,5 @@
 # Linked List Cycle (LeetCode #141)
 
-> Linked List Cycle (LeetCode #141)
-
 Does the list contain a cycle?
 
 ## Intuition
@@ -22,7 +20,7 @@ the O(1) answer.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)
 
 FOLLOW-UP (#142, cycle start): after the collision, reset one pointer to the
 head and advance both one step at a time; they meet at the cycle entrance.

@@ -1,7 +1,5 @@
 # Number of Connected Components in an Undirected Graph (LeetCode #323)
 
-> Number of Connected Components in an Undirected Graph (LeetCode #323)
-
 You have a graph of n nodes. You are given an integer n and an array edges
 where edges[i] = [ai, bi] indicates that there is an undirected edge
 between nodes ai and bi in the graph.

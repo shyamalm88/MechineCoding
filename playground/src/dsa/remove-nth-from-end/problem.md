@@ -1,7 +1,5 @@
 # Remove Nth Node From End of List (LeetCode #19)
 
-> Remove Nth Node From End of List (LeetCode #19)
-
 Remove the nth node from the end and return the head — in one pass.
 
 ## Intuition
@@ -24,4 +22,4 @@ without it, deleting head requires a separate branch.
 
 ## Time
 
-O(n) one pass   SPACE: O(1)
+O(n) one pass · SPACE: O(1)

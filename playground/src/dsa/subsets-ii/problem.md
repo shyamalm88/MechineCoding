@@ -1,7 +1,5 @@
 # Subsets II (LeetCode #90)
 
-> Subsets II (LeetCode #90)
-
 ## Category
 
 🟢 IMPORTANT (Backtracking + Duplicate Handling)

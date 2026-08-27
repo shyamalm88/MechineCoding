@@ -1,7 +1,5 @@
 # Boats to Save People (LeetCode #881)
 
-> Boats to Save People (LeetCode #881)
-
 Each boat can carry at most 2 people, with weight limit `limit`.
 Given people[] (their weights), return the minimum number of boats needed.
 

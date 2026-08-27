@@ -1,7 +1,5 @@
 # Sliding Window Median (LeetCode #480)
 
-> Sliding Window Median (LeetCode #480)
-
 ## Category
 
 🔴 HARD / VVIMP (Sorted Window via Binary-Search Insert/Remove)

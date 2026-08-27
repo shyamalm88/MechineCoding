@@ -1,7 +1,5 @@
 # Search a 2D Matrix (LeetCode #74)
 
-> Search a 2D Matrix (LeetCode #74)
-
 Search a 2D Matrix (LeetCode 74)
 
 ## Intuition

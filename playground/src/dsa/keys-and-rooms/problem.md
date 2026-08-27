@@ -1,7 +1,5 @@
 # Keys and Rooms (LeetCode #841)
 
-> Keys and Rooms (LeetCode #841)
-
 Room 0 is unlocked; each room holds keys to others. Can you visit them all?
 
 ## Intuition
@@ -15,4 +13,4 @@ reachability, not distance.
 
 ## Time
 
-O(V + E)   SPACE: O(V)
+O(V + E) · SPACE: O(V)

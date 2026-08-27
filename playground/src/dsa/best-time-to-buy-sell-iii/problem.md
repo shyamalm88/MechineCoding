@@ -1,7 +1,5 @@
 # Best Time to Buy and Sell Stock III (LeetCode #123) — AT MOST 2 transactions
 
-> Best Time to Buy and Sell Stock III (LeetCode #123) — AT MOST 2 transactions
-
 At most 2 transactions total. Must sell before buying again.
 Return the maximum profit.
 

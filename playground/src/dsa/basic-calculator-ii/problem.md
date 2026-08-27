@@ -1,7 +1,5 @@
 # Basic Calculator II (LeetCode #227)
 
-> Basic Calculator II (LeetCode #227)
-
 Given a string `s` representing a non-negative integer arithmetic
 expression, evaluate it and return the result. The expression contains
 only non-negative integers, '+', '-', '*', '/' operators, and empty

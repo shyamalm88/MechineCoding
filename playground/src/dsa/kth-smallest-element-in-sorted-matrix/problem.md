@@ -1,7 +1,5 @@
 # Kth Smallest Element in a Sorted Matrix (LeetCode #378)
 
-> Kth Smallest Element in a Sorted Matrix (LeetCode #378)
-
 Given an n x n matrix where each of the rows and columns is sorted in
 ascending order, return the kth smallest element in the matrix.
 

@@ -1,7 +1,5 @@
 # Decode Ways (LeetCode #91)
 
-> Decode Ways (LeetCode #91)
-
 A message containing letters from A-Z can be encoded into numbers using the
 following mapping:
 'A' -> "1", 'B' -> "2", ... 'Z' -> "26"

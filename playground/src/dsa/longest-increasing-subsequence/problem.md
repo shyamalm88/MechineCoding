@@ -1,7 +1,5 @@
 # Longest Increasing Subsequence (LeetCode #300)
 
-> Longest Increasing Subsequence (LeetCode #300)
-
 Given an integer array nums, return the length of the longest strictly
 increasing subsequence.
 

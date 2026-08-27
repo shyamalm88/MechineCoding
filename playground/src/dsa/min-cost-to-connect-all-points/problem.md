@@ -1,7 +1,5 @@
 # Min Cost to Connect All Points (LeetCode #1584)
 
-> Min Cost to Connect All Points (LeetCode #1584)
-
 ## Category
 
 🔵 CORE (Minimum Spanning Tree — Prim's Algorithm)

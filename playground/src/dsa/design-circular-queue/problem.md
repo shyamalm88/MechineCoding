@@ -1,7 +1,5 @@
 # Design Circular Queue (LeetCode #622)
 
-> Design Circular Queue (LeetCode #622)
-
 Design a circular (ring buffer) queue with fixed capacity.
 Supports: enQueue, deQueue, Front, Rear, isEmpty, isFull.
 

@@ -1,7 +1,5 @@
 # Path With Maximum Probability (LeetCode #1514)
 
-> Path With Maximum Probability (LeetCode #1514)
-
 ## Category
 
 🔵 CORE (Dijkstra with Modified Cost Function)

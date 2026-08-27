@@ -1,7 +1,5 @@
 # Time Needed to Buy Tickets (LeetCode #2073)
 
-> Time Needed to Buy Tickets (LeetCode #2073)
-
 Everyone in a queue buys one ticket per second, then rejoins the back if they
 still need more. How long until person k finishes?
 
@@ -20,4 +18,4 @@ people behind never get that final round.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

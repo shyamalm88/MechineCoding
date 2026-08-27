@@ -1,7 +1,5 @@
 # House Robber III (LeetCode #337)
 
-> House Robber III (LeetCode #337)
-
 The thief has found a new place for his thievery. The houses form a
 binary tree — the root is the only entrance. If two directly-linked
 houses (a node and its child) are both robbed on the same night, an

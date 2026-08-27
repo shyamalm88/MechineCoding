@@ -1,7 +1,5 @@
 # Target Sum (LeetCode #494)
 
-> Target Sum (LeetCode #494)
-
 ## Category
 
 🔴 VVIMP (DP via Problem Transformation)

@@ -1,7 +1,5 @@
 # Redundant Connection (LeetCode #684)
 
-> Redundant Connection (LeetCode #684)
-
 ## Category
 
 🔵 CORE (Cycle Detection in Undirected Graph using Union-Find)

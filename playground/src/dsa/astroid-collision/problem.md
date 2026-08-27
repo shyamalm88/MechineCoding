@@ -1,7 +1,5 @@
 # Asteroid Collision (LeetCode #735)
 
-> Asteroid Collision (LeetCode #735)
-
 We are given an array asteroids of integers representing asteroids in a row.
 For each asteroid, the absolute value represents its size, and the sign
 represents its direction (positive meaning right, negative meaning left).

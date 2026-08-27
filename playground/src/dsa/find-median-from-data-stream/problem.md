@@ -1,7 +1,5 @@
 # Find Median from Data Stream (LeetCode #295)
 
-> Find Median from Data Stream (LeetCode #295)
-
 Design a data structure that supports:
 - addNum(num): add a number to the stream
 - findMedian(): return the median of all numbers so far

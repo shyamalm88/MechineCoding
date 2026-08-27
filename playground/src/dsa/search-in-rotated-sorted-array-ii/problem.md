@@ -1,7 +1,5 @@
 # Search in Rotated Sorted Array II (LeetCode #81)
 
-> Search in Rotated Sorted Array II (LeetCode #81)
-
 Like #33 but the array may contain DUPLICATES. Return true if target exists.
 
 Example 1:

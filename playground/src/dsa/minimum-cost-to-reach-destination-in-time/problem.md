@@ -1,7 +1,5 @@
 # Minimum Cost to Reach Destination in Time (LeetCode #1928)
 
-> Minimum Cost to Reach Destination in Time (LeetCode #1928)
-
 ## Category
 
 🟡 OPTIONAL (Dijkstra + State Pruning)

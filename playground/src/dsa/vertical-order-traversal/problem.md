@@ -1,7 +1,5 @@
 # Vertical Order Traversal of a Binary Tree (LeetCode #987)
 
-> Vertical Order Traversal of a Binary Tree (LeetCode #987)
-
 Given the root of a binary tree, calculate the vertical order traversal.
 
 For each node at position (row, col), its left and right children are at

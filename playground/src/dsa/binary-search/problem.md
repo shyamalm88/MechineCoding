@@ -1,7 +1,5 @@
 # Binary Search (LeetCode #704)
 
-> Binary Search (LeetCode #704)
-
 Return the index of target in a sorted array, or -1.
 
 ## Intuition
@@ -35,4 +33,4 @@ where bugs live:
 
 ## Time
 
-O(log n)   SPACE: O(1)
+O(log n) · SPACE: O(1)

@@ -1,7 +1,5 @@
 # Single Element in a Sorted Array (LeetCode #540)
 
-> Single Element in a Sorted Array (LeetCode #540)
-
 ## Category
 
 🟢 IMPORTANT (Binary Search via Even/Odd Index Pairing)

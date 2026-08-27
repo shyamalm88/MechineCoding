@@ -1,7 +1,5 @@
 # Implement Stack using Queues (LeetCode #225)
 
-> Implement Stack using Queues (LeetCode #225)
-
 ## Intuition
 
 A queue is FIFO; a stack is LIFO. To reverse the order you pay somewhere —
@@ -22,4 +20,4 @@ which you chose and why.
 
 ## Time
 
-push O(n), pop/top/empty O(1)   SPACE: O(n)
+push O(n), pop/top/empty O(1) · SPACE: O(n)

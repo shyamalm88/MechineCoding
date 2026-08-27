@@ -1,7 +1,5 @@
 # Backspace String Compare (LeetCode #844)
 
-> Backspace String Compare (LeetCode #844)
-
 Given two strings s and t, where '#' represents a backspace character,
 return true if they are equal after processing all backspaces.
 

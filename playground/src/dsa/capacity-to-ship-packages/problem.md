@@ -1,7 +1,5 @@
 # Capacity to Ship Packages Within D Days (LeetCode #1011)
 
-> Capacity to Ship Packages Within D Days (LeetCode #1011)
-
 Packages with weights[] must be shipped in D days in the given order.
 Find the MINIMUM weight capacity of the ship such that all packages are
 shipped within D days. Packages loaded in order, cannot split across days.

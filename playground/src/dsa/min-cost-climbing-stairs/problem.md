@@ -1,7 +1,5 @@
 # Min Cost Climbing Stairs (LeetCode #746)
 
-> Min Cost Climbing Stairs (LeetCode #746)
-
 cost[i] is the price of stepping off stair i. You may climb 1 or 2 steps and
 may start at index 0 or 1. Find the cheapest way to reach the TOP (past the
 last stair).
@@ -31,4 +29,4 @@ Only the last two values matter, so it collapses to O(1) space.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

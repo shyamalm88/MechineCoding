@@ -60,35 +60,27 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
         ))}
       </div>
 
-      <div className="sidebar-filters sidebar-subfilters">
-        {DIFFICULTIES.map((name) => (
-          <button
-            key={name}
-            type="button"
-            className={
-              name === difficulty ? `chip chip-diff ${name.toLowerCase()} active` : `chip chip-diff ${name.toLowerCase()}`
-            }
-            onClick={() => setDifficulty(difficulty === name ? ALL : name)}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
+      <div className="sidebar-selects">
+        <label className="select-field">
+          <span>Difficulty</span>
+          <select value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
+            {[ALL, ...DIFFICULTIES].map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </label>
 
-      {importances.length > 0 && (
-        <div className="sidebar-filters sidebar-subfilters">
-          {importances.map((name) => (
-            <button
-              key={name}
-              type="button"
-              className={name === importance ? 'chip chip-imp active' : 'chip chip-imp'}
-              onClick={() => setImportance(name)}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
+        {importances.length > 0 && (
+          <label className="select-field">
+            <span>Importance</span>
+            <select value={importance} onChange={(event) => setImportance(event.target.value)}>
+              {importances.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
 
       <p className="sidebar-count">{visible.length} of {problems.length}</p>
 

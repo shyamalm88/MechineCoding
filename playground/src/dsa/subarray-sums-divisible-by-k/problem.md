@@ -1,7 +1,5 @@
 # Subarray Sums Divisible by K (LeetCode #974)
 
-> Subarray Sums Divisible by K (LeetCode #974)
-
 ## Category
 
 🟢 IMPORTANT (Prefix Sum + Modular HashMap)

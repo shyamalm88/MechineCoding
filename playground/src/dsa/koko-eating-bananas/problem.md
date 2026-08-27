@@ -1,7 +1,5 @@
 # Koko Eating Bananas (LeetCode #875)
 
-> Koko Eating Bananas (LeetCode #875)
-
 Koko has piles of bananas and h hours before guards return. She picks a
 speed k (bananas/hour). Each hour she eats min(pile, k) from one pile.
 Find the MINIMUM k such that she can eat all bananas within h hours.

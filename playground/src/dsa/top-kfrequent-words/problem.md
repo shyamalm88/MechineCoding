@@ -1,7 +1,5 @@
 # Top K Frequent Words (LeetCode #692)
 
-> Top K Frequent Words (LeetCode #692)
-
 ## Category
 
 🟢 IMPORTANT (Min-Heap with Multi-Key Custom Comparator)

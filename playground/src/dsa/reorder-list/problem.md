@@ -1,7 +1,5 @@
 # Reorder List (LeetCode #143)
 
-> Reorder List (LeetCode #143)
-
 Reorder 1→2→3→4→5 into 1→5→2→4→3, in place.
 
 ## Intuition
@@ -26,4 +24,4 @@ rather than invent something new.
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)

@@ -1,7 +1,5 @@
 # Contains Duplicate (LeetCode #217)
 
-> Contains Duplicate (LeetCode #217)
-
 Return true if any value appears at least twice.
 
 ## Intuition
@@ -15,4 +13,4 @@ interviewer constrains memory.
 
 ## Time
 
-O(n)   SPACE: O(n)
+O(n) · SPACE: O(n)

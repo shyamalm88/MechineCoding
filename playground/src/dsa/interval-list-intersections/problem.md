@@ -1,7 +1,5 @@
 # Interval List Intersections (LeetCode #986)
 
-> Interval List Intersections (LeetCode #986)
-
 Given two lists of closed intervals firstList and secondList (both sorted,
 disjoint within each list), return the intersection of these two lists.
 

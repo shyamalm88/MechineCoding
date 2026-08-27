@@ -1,7 +1,5 @@
 # Partition Equal Subset Sum (LeetCode #416)
 
-> Partition Equal Subset Sum (LeetCode #416)
-
 ## Category
 
 🟢 IMPORTANT (0/1 Knapsack → Boolean DP)

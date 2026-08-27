@@ -1,7 +1,5 @@
 # Maximum Profit in Job Scheduling (LeetCode #1235)
 
-> Maximum Profit in Job Scheduling (LeetCode #1235)
-
 ## Category
 
 🟢 IMPORTANT (DP + Binary Search on Sorted Intervals)

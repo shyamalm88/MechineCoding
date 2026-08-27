@@ -1,7 +1,5 @@
 # Two Sum II — Input Array is Sorted (LeetCode #167)
 
-> Two Sum II — Input Array is Sorted (LeetCode #167)
-
 Given a 1-indexed sorted array of integers, find two numbers that add to target.
 Return their indices [index1, index2] (1-indexed). Exactly one solution exists.
 

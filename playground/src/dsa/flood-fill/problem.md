@@ -1,7 +1,5 @@
 # Flood Fill (LeetCode #733)
 
-> Flood Fill (LeetCode #733)
-
 An image is represented by an m x n integer grid where image[i][j]
 represents the pixel value of the image. Given a starting pixel (sr, sc)
 and a new color, flood fill the image.

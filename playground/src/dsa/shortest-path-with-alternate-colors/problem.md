@@ -1,7 +1,5 @@
 # Shortest Path with Alternating Colors (LeetCode #1129)
 
-> Shortest Path with Alternating Colors (LeetCode #1129)
-
 ## Category
 
 🟢 IMPORTANT (Graph BFS with Color-State)

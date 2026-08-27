@@ -1,7 +1,5 @@
 # Palindrome Linked List (LeetCode #234)
 
-> Palindrome Linked List (LeetCode #234)
-
 Determine whether a singly linked list reads the same forwards and backwards,
 in O(1) extra space.
 
@@ -26,7 +24,7 @@ rejected. The O(1) answer composes two primitives you already know:
 
 ## Time
 
-O(n)   SPACE: O(1)
+O(n) · SPACE: O(1)
 
 ## Important
 

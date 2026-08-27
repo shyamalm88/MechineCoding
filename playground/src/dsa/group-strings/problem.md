@@ -1,7 +1,5 @@
 # Group Shifted Strings (LeetCode #249)
 
-> Group Shifted Strings (LeetCode #249)
-
 We can shift a string by shifting each of its letters to its successive letter.
 For example, "abc" can be shifted to be "bcd".
 We can keep shifting the string to form a sequence.

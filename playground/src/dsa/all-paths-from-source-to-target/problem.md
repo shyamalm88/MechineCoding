@@ -1,7 +1,5 @@
 # All Paths From Source to Target (LeetCode #797)
 
-> All Paths From Source to Target (LeetCode #797)
-
 List every path from node 0 to node n-1 in a DAG.
 
 ## Intuition

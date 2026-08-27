@@ -1,7 +1,5 @@
 # Minimum Number of Arrows to Burst Balloons (LeetCode #452)
 
-> Minimum Number of Arrows to Burst Balloons (LeetCode #452)
-
 Balloons are represented as [xstart, xend] (horizontal spread on x-axis).
 An arrow shot at x bursts every balloon where xstart <= x <= xend.
 Return the minimum number of arrows needed to burst all balloons.

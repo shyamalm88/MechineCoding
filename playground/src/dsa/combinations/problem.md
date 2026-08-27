@@ -1,7 +1,5 @@
 # Combinations (LeetCode #77)
 
-> Combinations (LeetCode #77)
-
 ## Category
 
 🔵 CORE (Backtracking Fundamentals)

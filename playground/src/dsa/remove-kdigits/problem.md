@@ -1,7 +1,5 @@
 # Remove K Digits (LeetCode #402)
 
-> Remove K Digits (LeetCode #402)
-
 Given a string num (non-negative integer) and integer k, remove k digits
 to make the resulting number as small as possible. Return it as a string.
 

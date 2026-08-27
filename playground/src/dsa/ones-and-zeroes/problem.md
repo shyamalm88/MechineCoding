@@ -1,7 +1,5 @@
 # Ones and Zeroes (LeetCode #474)
 
-> Ones and Zeroes (LeetCode #474)
-
 ## Category
 
 🔴 VVIMP (2D 0/1 Knapsack — Two Capacity Dimensions)

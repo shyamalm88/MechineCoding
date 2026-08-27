@@ -1,7 +1,5 @@
 # Maximum Product Subarray (LeetCode #152)
 
-> Maximum Product Subarray (LeetCode #152)
-
 Given an integer array nums, find a subarray that has the largest product,
 and return the product.
 

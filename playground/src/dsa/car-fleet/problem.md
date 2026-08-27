@@ -1,7 +1,5 @@
 # Car Fleet (LeetCode #853)
 
-> Car Fleet (LeetCode #853)
-
 n cars travel to the same destination at `target` miles away.
 position[i] and speed[i] give the starting position and speed of car i.
 A car that catches up to another car ahead never passes it — they form a fleet.

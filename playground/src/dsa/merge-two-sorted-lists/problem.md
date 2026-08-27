@@ -1,7 +1,5 @@
 # Merge Two Sorted Lists (LeetCode #21)
 
-> Merge Two Sorted Lists (LeetCode #21)
-
 Splice two sorted lists into one sorted list.
 
 ## Intuition
@@ -25,4 +23,4 @@ special case for "is this the first node?" — you always append to
 
 ## Time
 
-O(n + m)   SPACE: O(1) — nodes are relinked, not copied
+O(n + m) · SPACE: O(1) — nodes are relinked, not copied

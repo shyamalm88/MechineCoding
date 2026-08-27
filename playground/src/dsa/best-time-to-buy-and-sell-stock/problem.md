@@ -1,7 +1,5 @@
 # Best Time to Buy and Sell Stock (LeetCode #121) — ONE transaction
 
-> Best Time to Buy and Sell Stock (LeetCode #121) — ONE transaction
-
 Given prices[], choose ONE day to buy and ONE later day to sell.
 Return the maximum profit. Return 0 if no profit possible.
 

@@ -1,7 +1,5 @@
 # Number of Recent Calls (LeetCode #933)
 
-> Number of Recent Calls (LeetCode #933)
-
 Implement RecentCounter that counts the number of requests in the past 3000ms.
 ping(t) adds a new request at time t and returns the count of requests in [t-3000, t].
 It is guaranteed that every call to ping uses a strictly larger value of t.

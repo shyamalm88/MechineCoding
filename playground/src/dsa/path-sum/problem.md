@@ -1,7 +1,5 @@
 # Path Sum (LeetCode #112)
 
-> Path Sum (LeetCode #112)
-
 Is there a root-to-LEAF path whose values sum to targetSum?
 
 ## Intuition
@@ -23,4 +21,4 @@ goes below zero.
 
 ## Time
 
-O(n)   SPACE: O(h) recursion depth
+O(n) · SPACE: O(h) recursion depth

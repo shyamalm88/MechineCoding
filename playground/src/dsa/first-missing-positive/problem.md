@@ -1,7 +1,5 @@
 # First Missing Positive (LeetCode #41) ⭐ HARD
 
-> First Missing Positive (LeetCode #41) ⭐ HARD
-
 Given an unsorted integer array nums, return the smallest missing positive integer.
 Must run in O(N) time and O(1) space.
 

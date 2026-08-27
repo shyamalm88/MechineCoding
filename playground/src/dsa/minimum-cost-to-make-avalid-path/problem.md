@@ -1,7 +1,5 @@
 # Minimum Cost to Make at Least One Valid Path (LeetCode #1368)
 
-> Minimum Cost to Make at Least One Valid Path (LeetCode #1368)
-
 ## Category
 
 🔴 VVIMP (0–1 BFS / Dijkstra Optimization)

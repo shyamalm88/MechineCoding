@@ -1,7 +1,5 @@
 # Same Tree (LeetCode #100)
 
-> Same Tree (LeetCode #100)
-
 ## Category
 
 🔵 CORE (Tree Comparison / Structural Equality)

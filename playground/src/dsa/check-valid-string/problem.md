@@ -1,7 +1,5 @@
 # Valid Parenthesis String (LeetCode #678)
 
-> Valid Parenthesis String (LeetCode #678)
-
 Given a string s containing only three types of characters: '(', ')' and '*',
 return true if s is valid.
 

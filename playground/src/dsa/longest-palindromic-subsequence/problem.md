@@ -1,7 +1,5 @@
 # Longest Palindromic Subsequence (LeetCode #516)
 
-> Longest Palindromic Subsequence (LeetCode #516)
-
 ## Category
 
 🔴 VVIMP (Subsequence DP on Strings)

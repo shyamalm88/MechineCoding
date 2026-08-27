@@ -1,7 +1,5 @@
 # Fibonacci Number (LeetCode #509)
 
-> Fibonacci Number (LeetCode #509)
-
 ## Intuition
 
 The canonical introduction to DP, because all three stages are visible:
@@ -19,4 +17,4 @@ many 1D DP problems.
 
 ## Time
 
-O(n)   SPACE: O(1) for the iterative form
+O(n) · SPACE: O(1) for the iterative form
