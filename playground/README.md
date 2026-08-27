@@ -16,16 +16,50 @@ The preview renders the actual React component in the same bundle — no iframe,
 no second bundler — and the Code tab shows that same file via Vite's `?raw`
 import, so the code you read is provably the code that ran.
 
+## Two collections, one app
+
+The same app is built twice against different problem sets. `COLLECTION` picks
+which loader the `#collection` alias resolves to, so each build bundles only its
+own problems (verified: neither bundle contains the other's content).
+
+| Collection | Source | Output | Hub tab |
+|---|---|---|---|
+| `problems` | `src/problems/` | `../playground-build/` | Playground |
+| `dsa` | `src/dsa/` | `../dsa-build/` | DSA |
+
 ## Commands
 
 ```bash
 cd playground
 npm install
-npm run dev        # http://localhost:5173
-npm test           # unit tests (Node's built-in runner)
-npm run validate   # check the problem registry against disk
-npm run build      # validate, then build into ../playground-build/
+npm run dev          # Playground  → http://localhost:5173
+npm run dev:dsa      # DSA
+npm test             # unit tests (Node's built-in runner)
+npm run validate     # check the problems registry against disk
+npm run validate:dsa # same for DSA
+npm run build        # → ../playground-build/
+npm run build:dsa    # → ../dsa-build/
+npm run build:all    # both
 ```
+
+## The DSA collection
+
+Generated from `DSA/` by `scripts/migrate-dsa.mjs`, which is re-runnable:
+
+```bash
+node scripts/migrate-dsa.mjs
+```
+
+- **Category** comes from the top folder, **importance** (Core/IMP/VVIMP) from
+  the subfolder — `DSA/<Category>/<Importance>/<file>.js`.
+- **Difficulty** is not in the sources, so it comes from
+  `scripts/dsa-difficulty.json`, keyed by LeetCode number. Anything unlisted
+  defaults to Medium and is reported at the end of the run.
+- The JSDoc header becomes `problem.md`; the code after it is what the Code tab
+  shows.
+- `DSA/google-2025/` and `_`-prefixed helper files are skipped.
+- The script clears only the generated problem **directories**, never the whole
+  folder — `src/dsa/loader.js` is hand-written and lives there.
 
 `playground-build/` is committed and is what the root hub page links to.
 Re-run `npm run build` and commit the output after changing any problem.

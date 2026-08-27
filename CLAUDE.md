@@ -30,7 +30,8 @@ npm run preview
 | `reactHooks/` | 6 custom React hooks |
 | `practice/` | Vite + React 18 app for visualizing LLD solutions |
 | `playground/` | Vite + React app: 160-problem interview library, live preview + read-only source |
-| `playground-build/` | Generated static build of `playground/` — not hand-edited |
+| `playground-build/` | Generated static build of `playground/` (problems collection) — not hand-edited |
+| `dsa-build/` | Generated static build of `playground/` (DSA collection) — not hand-edited |
 | `Theory/` | Markdown reference notes (browser internals, JS core, React advanced patterns, etc.) — source of truth for `theory-notes/` |
 | `system-design/` | Markdown architecture docs (frontend system design) — source of truth for `system-design-notes/` |
 | `tools/md-site/` | Reusable markdown-to-HTML-site generator (source-agnostic) |
@@ -85,8 +86,15 @@ reads each folder's `.css`, scopes every rule to `[data-problem="<id>"]`
 what lets migrated problems keep global resets and generic class names without
 wrecking the app shell. Previews render on a light page surface.
 
-`playground-build/` is generated output — never hand-edit it. Re-run
-`npm run build` and commit the result after changing any problem.
+**Two collections, one app.** `COLLECTION=dsa` switches which loader the
+`#collection` alias resolves to, so `npm run build` and `npm run build:dsa`
+produce `playground-build/` and `dsa-build/` from the same source with no
+cross-contamination. The DSA set is generated from `DSA/` by
+`scripts/migrate-dsa.mjs` (category = folder, importance = subfolder,
+difficulty from `scripts/dsa-difficulty.json` by LeetCode number).
+
+Both build folders are generated output — never hand-edit them. Re-run
+`npm run build:all` and commit the result after changing any problem.
 
 ### System design docs
 All 25 docs in `system-design/` are canonical. Each doc follows a 10-section template: Requirements → Component Architecture → State Management → API Design → Performance → Accessibility → Error Handling → Testing → Security → Deployment.

@@ -2,28 +2,41 @@ import { useMemo, useState } from 'react'
 
 const ALL = 'All'
 
-export default function Sidebar({ problems, selectedId, onSelect }) {
+const DIFFICULTIES = ['Easy', 'Medium', 'Hard']
+
+export default function Sidebar({ problems, selectedId, onSelect, collection }) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState(ALL)
+  const [difficulty, setDifficulty] = useState(ALL)
+  const [importance, setImportance] = useState(ALL)
 
   const categories = useMemo(
     () => [ALL, ...new Set(problems.map((problem) => problem.category))],
     [problems],
   )
 
+  // The importance row only exists for collections that use it (DSA), so the
+  // same Sidebar serves both without a second component.
+  const importances = useMemo(() => {
+    const found = [...new Set(problems.map((p) => p.importance).filter(Boolean))]
+    return found.length ? [ALL, ...found] : []
+  }, [problems])
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return problems.filter((problem) => {
       if (category !== ALL && problem.category !== category) return false
+      if (difficulty !== ALL && problem.difficulty !== difficulty) return false
+      if (importance !== ALL && problem.importance !== importance) return false
       if (!needle) return true
       return `${problem.title} ${problem.category}`.toLowerCase().includes(needle)
     })
-  }, [problems, query, category])
+  }, [problems, query, category, difficulty, importance])
 
   return (
     <nav className="sidebar">
       <div className="sidebar-brand">
-        Play<span>ground</span>
+        {collection?.brand ?? (<>Play<span>ground</span></>)}
       </div>
 
       <input
@@ -47,6 +60,38 @@ export default function Sidebar({ problems, selectedId, onSelect }) {
         ))}
       </div>
 
+      <div className="sidebar-filters sidebar-subfilters">
+        {DIFFICULTIES.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={
+              name === difficulty ? `chip chip-diff ${name.toLowerCase()} active` : `chip chip-diff ${name.toLowerCase()}`
+            }
+            onClick={() => setDifficulty(difficulty === name ? ALL : name)}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
+      {importances.length > 0 && (
+        <div className="sidebar-filters sidebar-subfilters">
+          {importances.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={name === importance ? 'chip chip-imp active' : 'chip chip-imp'}
+              onClick={() => setImportance(name)}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="sidebar-count">{visible.length} of {problems.length}</p>
+
       <ul className="sidebar-list">
         {visible.map((problem) => (
           <li key={problem.id}>
@@ -56,8 +101,15 @@ export default function Sidebar({ problems, selectedId, onSelect }) {
               onClick={() => onSelect(problem.id)}
             >
               <span className="item-title">{problem.title}</span>
-              <span className={`difficulty ${problem.difficulty.toLowerCase()}`}>
-                {problem.difficulty}
+              <span className="item-tags">
+                {problem.importance && (
+                  <span className={`imp imp-${problem.importance.toLowerCase()}`}>
+                    {problem.importance}
+                  </span>
+                )}
+                <span className={`difficulty ${problem.difficulty.toLowerCase()}`}>
+                  {problem.difficulty}
+                </span>
               </span>
             </button>
           </li>

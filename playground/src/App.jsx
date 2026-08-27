@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { listProblems, loadProblem } from './problems/loader.js'
+import { listProblems, loadProblem, COLLECTION } from '#collection'
 import Sidebar from './components/Sidebar.jsx'
 import ProblemWorkspace from './components/ProblemWorkspace.jsx'
 
@@ -14,7 +14,12 @@ export default function App() {
 
   return (
     <div className="layout">
-      <Sidebar problems={problems} selectedId={selectedId} onSelect={setSelectedId} />
+      <Sidebar
+          problems={problems}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          collection={COLLECTION}
+        />
       <main className="main">
         {problem ? (
           <ProblemWorkspace key={problem.id} problem={problem} />

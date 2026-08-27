@@ -8,7 +8,11 @@
     "build": "npm run validate && vite build",
     "preview": "vite preview",
     "validate": "node scripts/validate-problems.mjs",
-    "test": "node --test scripts/ src/lib/"
+    "test": "node --test scripts/ src/lib/",
+    "dev:dsa": "COLLECTION=dsa vite",
+    "build:dsa": "npm run validate:dsa && COLLECTION=dsa OUT_DIR=../dsa-build vite build",
+    "build:all": "npm run build && npm run build:dsa",
+    "validate:dsa": "node scripts/validate-problems.mjs dsa"
   },
   "dependencies": {
     "highlight.js": "^11.11.1",

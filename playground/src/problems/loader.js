@@ -22,6 +22,8 @@ const markdownTexts = import.meta.glob('./*/problem.md', {
 
 const sourcesByProblem = groupSourcesByProblem(sourceTexts)
 
+export const COLLECTION = { id: 'problems', brand: null }
+
 export function listProblems() {
   return registry
 }

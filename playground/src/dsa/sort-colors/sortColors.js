@@ -1,0 +1,55 @@
+// ============================================================================
+// APPROACH: Three Pointers (Dutch National Flag Algorithm)
+// ============================================================================
+/**
+ * INTUITION:
+ * We want to partition the array into three sections:
+ * [0s ... 1s ... 2s]
+ *
+ * We use three pointers:
+ * - `low`: The boundary for 0s (everything before `low` is 0).
+ * - `mid`: The current element we are inspecting.
+ * - `high`: The boundary for 2s (everything after `high` is 2).
+ *
+ * Logic:
+ * - If nums[mid] == 0: Swap with `low`, increment both `low` and `mid`.
+ * - If nums[mid] == 1: It's in the correct middle section, just increment `mid`.
+ * - If nums[mid] == 2: Swap with `high`, decrement `high`. Do NOT increment `mid`
+ *   because the swapped element from `high` hasn't been inspected yet.
+ *
+ * Time Complexity: O(N) - One pass.
+ * Space Complexity: O(1) - In-place.
+ */
+const sortColors = (nums) => {
+  let low = 0;
+  let mid = 0;
+  let high = nums.length - 1;
+
+  while (mid <= high) {
+    if (nums[mid] === 0) {
+      // Found a 0: Swap it to the 'low' region (front)
+      [nums[low], nums[mid]] = [nums[mid], nums[low]];
+      low++;
+      mid++;
+    } else if (nums[mid] === 1) {
+      // Found a 1: It's in the correct place (middle), just move on
+      mid++;
+    } else {
+      // Found a 2: Swap it to the 'high' region (back)
+      [nums[mid], nums[high]] = [nums[high], nums[mid]];
+      high--;
+      // Note: Do NOT increment mid. The swapped value from 'high' is unknown and needs checking.
+    }
+  }
+};
+
+console.log("=== Sort Colors Tests ===\n");
+const t1 = [2, 0, 2, 1, 1, 0];
+sortColors(t1);
+console.log("Test 1:", t1); // Expected: [0,0,1,1,2,2]
+
+const t2 = [2, 0, 1];
+sortColors(t2);
+console.log("Test 2:", t2); // Expected: [0,1,2]
+
+module.exports = { sortColors };

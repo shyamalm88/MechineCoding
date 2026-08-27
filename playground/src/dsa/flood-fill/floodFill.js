@@ -1,0 +1,150 @@
+// ============================================================================
+// APPROACH: DFS (Depth-First Search)
+// ============================================================================
+/**
+ * INTUITION:
+ * This is a classic graph traversal problem. From the starting pixel,
+ * explore all 4 directions recursively, changing color as we go.
+ *
+ * Key insight: Once we change a pixel's color, it no longer matches
+ * originalColor, so we won't revisit it (acts as "visited" marker).
+ *
+ * Edge case: If originalColor === newColor, return early to avoid
+ * infinite recursion (pixel would always match originalColor).
+ *
+ * Visual of DFS traversal:
+ *   Start at (1,1):
+ *   [1, 1, 1]     Step 1: Change (1,1) to 2
+ *   [1, X, 0]     Step 2: DFS to (0,1), (2,1), (1,0), (1,2)
+ *   [1, 0, 1]     Step 3: Continue recursively...
+ *
+ * Time Complexity: O(m × n) - visit each pixel at most once
+ * Space Complexity: O(m × n) - recursion stack in worst case (all same color)
+ */
+const floodFillDFS = (image, sr, sc, color) => {
+  // Edge case: empty image
+  if (!image || !image.length) return image;
+
+  const row = image.length;
+  const col = image[0].length;
+  const directions = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
+
+  // Store the original color we need to replace
+  const originalColor = image[sr][sc];
+
+  // CRITICAL: If same color, return early to prevent infinite recursion
+  // (changing pixel wouldn't change its value, so it would always match)
+  if (originalColor === color) return image;
+
+  // DFS helper function
+  const dfs = (r, c) => {
+    // Boundary check: out of bounds
+    // Color check: not the original color (either already changed or different)
+    if (
+      r < 0 ||
+      c < 0 ||
+      r >= row ||
+      c >= col ||
+      image[r][c] !== originalColor
+    ) {
+      return;
+    }
+
+    // Change current pixel's color (also marks as visited)
+    image[r][c] = color;
+
+    // Explore all 4 directions (up, down, right, left)
+    for (let [dr, dc] of directions) {
+      let nr = dr + r;
+      let nc = dc + c;
+      dfs(nr, nc);
+    }
+  };
+
+  // Start DFS from the given pixel
+  dfs(sr, sc);
+  return image;
+};
+
+const floodFillBFS = (image, sr, sc, color) => {
+  if (!image || !image.length) return image;
+  const row = image.length;
+  const col = image[0].length;
+  const originalColor = image[sr][sc];
+  if (originalColor === color) return image;
+  const q = [[sr, sc]];
+  image[sr][sc] = color;
+  const dirs = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
+
+  while (q.length) {
+    const [r, c] = q.shift();
+    for (let [dr, dc] of dirs) {
+      const nr = dr + r;
+      const nc = dc + c;
+
+      if (
+        nr < 0 ||
+        nc < 0 ||
+        nr >= row ||
+        nc >= col ||
+        image[nr][nc] !== originalColor
+      ) {
+        continue;
+      }
+
+      image[nr][nc] = color;
+      q.push([nr, nc]);
+    }
+  }
+  return image;
+};
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+const clone2D = (arr) => arr.map((row) => [...row]);
+
+console.log("=== Flood Fill Tests ===\n");
+
+// Test 1: Standard case
+const img1 = [
+  [1, 1, 1],
+  [1, 1, 0],
+  [1, 0, 1],
+];
+console.log("Test 1:", JSON.stringify(floodFillDFS(clone2D(img1), 1, 1, 2)));
+// Expected: [[2,2,2],[2,2,0],[2,0,1]]
+
+// Test 2: Same color (no change)
+const img2 = [
+  [0, 0, 0],
+  [0, 0, 0],
+];
+console.log("Test 2:", JSON.stringify(floodFillDFS(clone2D(img2), 0, 0, 0)));
+// Expected: [[0,0,0],[0,0,0]]
+
+// Test 3: Single pixel
+const img3 = [[1]];
+console.log("Test 3:", JSON.stringify(floodFillDFS(clone2D(img3), 0, 0, 5)));
+// Expected: [[5]]
+
+// Test 4: Disconnected regions
+const img4 = [
+  [1, 0, 1],
+  [0, 1, 0],
+  [1, 0, 1],
+];
+console.log("Test 4:", JSON.stringify(floodFillDFS(clone2D(img4), 1, 1, 9)));
+// Expected: [[1,0,1],[0,9,0],[1,0,1]] (only center changes)
+
+module.exports = { floodFillDFS };

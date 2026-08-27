@@ -1,0 +1,1759 @@
+[
+  {
+    "id": "contains-duplicate",
+    "title": "Contains Duplicate #217",
+    "category": "Arrays & Hashing",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "contiguous-array",
+    "title": "Contiguous Array #525",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "continuous-subarray-sum",
+    "title": "Continuous Subarray Sum #523",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "find-all-duplicates-in-array",
+    "title": "Find All Duplicates in an Array #442",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "find-disappeared-numbers",
+    "title": "Find All Numbers Disappeared in an Array #448",
+    "category": "Arrays & Hashing",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "find-duplicate-number",
+    "title": "Find the Duplicate Number #287",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "first-missing-positive",
+    "title": "First Missing Positive #41",
+    "category": "Arrays & Hashing",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "gas-station-problem",
+    "title": "Gas Station #134",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "longest-consecutive",
+    "title": "Longest Consecutive Sequence #128",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "majority-element-ii",
+    "title": "Majority Element II #229",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "max-product-sub-array",
+    "title": "Maximum Product Subarray #152",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "maximum-sub-array",
+    "title": "Maximum Subarray #53",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "maximum-sum-circular-subarray",
+    "title": "Maximum Sum Circular Subarray #918",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "next-permutation",
+    "title": "Next Permutation #31",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "product-except-self",
+    "title": "Product of Array Except Self #238",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "rotate-array-ktimes",
+    "title": "Rotate Array #189",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "single-number-ii",
+    "title": "Single Number II #137",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "sub-array-sum-equals-k",
+    "title": "Subarray Sum Equals K #560",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "subarray-sums-divisible-by-k",
+    "title": "Subarray Sums Divisible by K #974",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "top-kfrequent-element",
+    "title": "Top K Frequent Elements #347",
+    "category": "Arrays & Hashing",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "two-sum",
+    "title": "Two Sum #1",
+    "category": "Arrays & Hashing",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "capacity-to-ship-packages",
+    "title": "Capacity to Ship Packages Within D Days #1011",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "first-and-last-position-of-element",
+    "title": "Find First and Last Position of Element in Sorted Array #34",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "find-kclosest-elements",
+    "title": "Find K Closest Elements #658",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "find-minimum-in-rotated-sorted-array",
+    "title": "Find Minimum in Rotated Sorted Array #153",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "find-peak-element",
+    "title": "Find Peak Element #162",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "koko-eating-bananas",
+    "title": "Koko Eating Bananas #875",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "median-of-two-sorted-arrays",
+    "title": "Median of Two Sorted Arrays #4",
+    "category": "Binary Search",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "search-in-rotated-sorted-array",
+    "title": "Search in Rotated Sorted Array #33",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "search-in-rotated-sorted-array-ii",
+    "title": "Search in Rotated Sorted Array II #81",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "single-element-in-sorted-array",
+    "title": "Single Element in a Sorted Array #540",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "search-in-time-stamp",
+    "title": "Time Based Key-Value Store #981",
+    "category": "Binary Search",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "best-time-to-buy-and-sell-stock",
+    "title": "Best Time to Buy and Sell Stock #121",
+    "category": "Dynamic Programming",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "best-time-to-buy-sell-stock-ii",
+    "title": "Best Time to Buy and Sell Stock II #122",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "best-time-to-buy-sell-iii",
+    "title": "Best Time to Buy and Sell Stock III #123",
+    "category": "Dynamic Programming",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "best-time-to-buy-sell-with-cooldown",
+    "title": "Best Time to Buy and Sell Stock with Cooldown #309",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "best-time-to-buy-sell-with-fee",
+    "title": "Best Time to Buy and Sell Stock with Transaction Fee #714",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "burst-baloons",
+    "title": "Burst Balloons #312",
+    "category": "Dynamic Programming",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "climbing-stairs",
+    "title": "Climbing Stairs #70",
+    "category": "Dynamic Programming",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "coin-change",
+    "title": "Coin Change #322",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "coin-change-ii",
+    "title": "Coin Change II #518",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "combination-sum-iv",
+    "title": "Combination Sum IV #377",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "decode-ways",
+    "title": "Decode Ways #91",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "distinct-subsequence",
+    "title": "Distinct Subsequences #115",
+    "category": "Dynamic Programming",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "edit-distance",
+    "title": "Edit Distance #72",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "fibonacci",
+    "title": "Fibonacci Number #509",
+    "category": "Dynamic Programming",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "house-robber1",
+    "title": "House Robber #198",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "house-robber-ii",
+    "title": "House Robber II #213",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "jump-game",
+    "title": "Jump Game #55",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "jump-game-ii",
+    "title": "Jump Game II #45",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "longest-common-sub-sequence",
+    "title": "Longest Common Subsequence #1143",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "longest-increasing-subsequence",
+    "title": "Longest Increasing Subsequence #300",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "longest-palindromic-subsequence",
+    "title": "Longest Palindromic Subsequence #516",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "maximal-square",
+    "title": "Maximal Square #221",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "maximum-profit-in-job-scheduling",
+    "title": "Maximum Profit in Job Scheduling #1235",
+    "category": "Dynamic Programming",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "minimum-path-sum",
+    "title": "Minimum Path Sum #64",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "ones-and-zeroes",
+    "title": "Ones and Zeroes #474",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "partial-equal-subset-sum",
+    "title": "Partition Equal Subset Sum #416",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "find-target-sum-ways",
+    "title": "Target Sum #494",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "triangle",
+    "title": "Triangle #120",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "uniqueue-path",
+    "title": "Unique Paths #62",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "word-break",
+    "title": "Word Break #139",
+    "category": "Dynamic Programming",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "01-matrix",
+    "title": "01 Matrix #542",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "accounts-merge",
+    "title": "Accounts Merge #721",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "allien-directory",
+    "title": "Alien Dictionary #269",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "all-paths-from-source-to-target",
+    "title": "All Paths From Source to Target #797",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "bus-route",
+    "title": "Bus Routes #815",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "Optional"
+  },
+  {
+    "id": "cheapest-flights-within-kstops",
+    "title": "Cheapest Flights Within K Stops #787",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "clone-graph",
+    "title": "Clone Graph #133",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "course-schedule",
+    "title": "Course Schedule #207",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "course-schedule-ii",
+    "title": "Course Schedule II #210",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "critical-connections",
+    "title": "Critical Connections in a Network #1192",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "graph-valid-tree",
+    "title": "Graph Valid Tree #261",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "is-bipartite",
+    "title": "Is Graph Bipartite? #785",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "keys-and-rooms",
+    "title": "Keys and Rooms #841",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "max-area-of-island",
+    "title": "Max Area of Island #695",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "min-cost-to-connect-all-points",
+    "title": "Min Cost to Connect All Points #1584",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "minimum-cost-to-make-avalid-path",
+    "title": "Minimum Cost to Make at Least One Valid Path #1368",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "minimum-cost-to-reach-destination-in-time",
+    "title": "Minimum Cost to Reach Destination in Time #1928",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "Optional"
+  },
+  {
+    "id": "minimum-genetic-mutation",
+    "title": "Minimum Genetic Mutation #433",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "network-delay-time",
+    "title": "Network Delay Time #743",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "connected-component",
+    "title": "Number of Connected Components in an Undirected Graph #323",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "number-of-islands",
+    "title": "Number of Islands #200",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "number-of-provinces",
+    "title": "Number of Provinces #547",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "open-lock",
+    "title": "Open the Lock #752",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "pacific-atlantic",
+    "title": "Pacific Atlantic Water Flow #417",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "max-probability",
+    "title": "Path With Maximum Probability #1514",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "path-with-minimum-effort",
+    "title": "Path With Minimum Effort #1631",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "reconstruct-itinerary",
+    "title": "Reconstruct Itinerary #332",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "redundant-connections",
+    "title": "Redundant Connection #684",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "rotten-oranges",
+    "title": "Rotting Oranges #994",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "shortest-distance-from-all-building",
+    "title": "Shortest Distance from All Buildings #317",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "Core"
+  },
+  {
+    "id": "shortest-path-visiting-all-nodes",
+    "title": "Shortest Path Visiting All Nodes #847",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "shortest-path-with-alternate-colors",
+    "title": "Shortest Path with Alternating Colors #1129",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "shortest-path-with-obstacle-elimination",
+    "title": "Shortest Path with Obstacles Elimination #1293",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "sliding-puzzle",
+    "title": "Sliding Puzzle #773",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "swim-in-rising-water",
+    "title": "Swim in Rising Water #778",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "walls-and-gates",
+    "title": "Walls and Gates #286",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "word-ladder",
+    "title": "Word Ladder #127",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "word-ladder-ii",
+    "title": "Word Ladder II #126",
+    "category": "Graphs",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "priority-queue",
+    "title": "Design a Priority Queue (Classic Data Structure — no LC#, foundational)",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "find-median-from-data-stream",
+    "title": "Find Median from Data Stream #295",
+    "category": "Heap",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "heap-sort",
+    "title": "Heap Sort (Classic Algorithm — no LC#, foundational)",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "k-closest-points-to-origin",
+    "title": "K Closest Points to Origin #973",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "kth-largest-in-stream",
+    "title": "Kth Largest Element in a Stream #703",
+    "category": "Heap",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "find-kth-largest",
+    "title": "Kth Largest Element in an Array #215",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "merge-ksorted-lists",
+    "title": "Merge K Sorted Lists #23",
+    "category": "Heap",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "task-scheduler",
+    "title": "Task Scheduler #621",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "the-skyline-problem",
+    "title": "The Skyline Problem #218",
+    "category": "Heap",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "top-kfrequent-elements",
+    "title": "Top K Frequent Elements #347",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "top-kfrequent-words",
+    "title": "Top K Frequent Words #692",
+    "category": "Heap",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "insert-interval",
+    "title": "Insert Interval #57",
+    "category": "Intervals",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "interval-list-intersections",
+    "title": "Interval List Intersections #986",
+    "category": "Intervals",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "meeting-rooms-i",
+    "title": "Meeting Rooms I #252",
+    "category": "Intervals",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "minimum-meeting-rooms-required",
+    "title": "Meeting Rooms II #253",
+    "category": "Intervals",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "merge-intervals",
+    "title": "Merge Intervals #56",
+    "category": "Intervals",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "minimum-arrows-to-burst-balloons",
+    "title": "Minimum Number of Arrows to Burst Balloons #452",
+    "category": "Intervals",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "non-overlapping-intervals",
+    "title": "Non-overlapping Intervals #435",
+    "category": "Intervals",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "range-module",
+    "title": "rangeModule",
+    "category": "Intervals",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "add-two-numbers",
+    "title": "Add Two Numbers #2",
+    "category": "Linked List",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "copy-list-with-random-pointer",
+    "title": "Copy List with Random Pointer #138",
+    "category": "Linked List",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "merge-two-sorted-lists",
+    "title": "Merge Two Sorted Lists #21",
+    "category": "Linked List",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "middle-of-linked-list",
+    "title": "Middle of the Linked List #876",
+    "category": "Linked List",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "palindrome-linked-list",
+    "title": "Palindrome Linked List #234",
+    "category": "Linked List",
+    "difficulty": "Easy",
+    "importance": "IMP"
+  },
+  {
+    "id": "remove-nth-from-end",
+    "title": "Remove Nth Node From End of List #19",
+    "category": "Linked List",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "reorder-list",
+    "title": "Reorder List #143",
+    "category": "Linked List",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "reverse-linked-list",
+    "title": "Reverse Linked List #206",
+    "category": "Linked List",
+    "difficulty": "Easy",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "reverse-nodes-in-kgroup",
+    "title": "Reverse Nodes in k-Group #25",
+    "category": "Linked List",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "diagonal-traverse",
+    "title": "Diagonal Traverse #498",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "flood-fill",
+    "title": "Flood Fill #733",
+    "category": "Matrix",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "game-of-life",
+    "title": "Game of Life #289",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "kth-smallest-element-in-sorted-matrix",
+    "title": "Kth Smallest Element in a Sorted Matrix #378",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "range-sum2-d",
+    "title": "Range Sum Query 2D - Immutable #304",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "rotate-image",
+    "title": "Rotate Image #48",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "search-in2-dmatrix",
+    "title": "searchIn2DMatrix",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "search-in2-dmatrix-ii",
+    "title": "searchIn2DMatrixII",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "set-matrix0",
+    "title": "Set Matrix Zeroes #73",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "shortest-bridge",
+    "title": "Shortest Bridge #934",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "shortest-path-binary-matrix",
+    "title": "Shortest Path in Binary Matrix #1091",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "spiral-matrix",
+    "title": "Spiral Matrix #54",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "surrounded-regions",
+    "title": "Surrounded Regions #130",
+    "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "online-stock-span",
+    "title": "Online Stock Span #901",
+    "category": "Monotonic Stack",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "sum-of-subarray-minimums",
+    "title": "Sum of Subarray Minimums #907",
+    "category": "Monotonic Stack",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "design-circular-deque",
+    "title": "Design Circular Deque #641",
+    "category": "Queue & Deque",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "design-circular-queue",
+    "title": "Design Circular Queue #622",
+    "category": "Queue & Deque",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "first-unique-number",
+    "title": "First Unique Number #1429",
+    "category": "Queue & Deque",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "implement-queue-using-stacks",
+    "title": "Implement Queue using Stacks #232",
+    "category": "Queue & Deque",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "moving-average-from-data-stream",
+    "title": "Moving Average from Data Stream #346",
+    "category": "Queue & Deque",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "number-of-recent-calls",
+    "title": "Number of Recent Calls #933",
+    "category": "Queue & Deque",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "reveal-cards-in-increasing-order",
+    "title": "Reveal Cards In Increasing Order #950",
+    "category": "Queue & Deque",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "time-needed-to-buy-tickets",
+    "title": "Time Needed to Buy Tickets #2073",
+    "category": "Queue & Deque",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "combination-sum",
+    "title": "Combination Sum #39",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "combination-sum-ii",
+    "title": "Combination Sum II #40",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "combinations",
+    "title": "Combinations #77",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "generate-parenthesis",
+    "title": "Generate Parentheses #22",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "letter-combinations-ofa-phone-number",
+    "title": "Letter Combinations of a Phone Number #17",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "nqueens",
+    "title": "N-Queens #51",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "palindrome-partitioning",
+    "title": "Palindrome Partitioning #131",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "partition-to-kequal-sum-subsets",
+    "title": "Partition to K Equal Sum Subsets #698",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "permutations",
+    "title": "Permutations #46",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "permutations-ii",
+    "title": "Permutations II #47",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "pow",
+    "title": "Pow(x, n) #50",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "subsets",
+    "title": "Subsets #78",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "subsets-ii",
+    "title": "Subsets II #90",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "soduku-solver",
+    "title": "Sudoku Solver #37",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "word-break-2",
+    "title": "Word Break #139",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "word-break-ii",
+    "title": "Word Break II #140",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "word-search",
+    "title": "Word Search #79",
+    "category": "Recursion & Backtracking",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "find-all-anagrams-in-astring",
+    "title": "Find All Anagrams in a String #438",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "fruit-into-baskets",
+    "title": "Fruit Into Baskets #904",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "longest-repeating-character-replacement",
+    "title": "Longest Repeating Character Replacement #424",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "longest-substring-with-kdistinct-characters",
+    "title": "Longest Substring with At Most K Distinct Characters #340",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "longest-sub-string-without-repeating-character",
+    "title": "Longest Substring Without Repeating Characters #3",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "max-consecutive-ones-iii",
+    "title": "Max Consecutive Ones III #1004",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "maximum-points-from-cards",
+    "title": "Maximum Points You Can Obtain from Cards #1423",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "minimum-size-subarray-sum",
+    "title": "Minimum Size Subarray Sum #209",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "minimum-window-substring",
+    "title": "Minimum Window Substring #76",
+    "category": "Sliding Window",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "permutation-in-string",
+    "title": "Permutation in String #567",
+    "category": "Sliding Window",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "shortest-subarray-with-sum-at-least-k",
+    "title": "Shortest Subarray with Sum at Least K #862",
+    "category": "Sliding Window",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "sliding-window-maximum",
+    "title": "Sliding Window Maximum #239",
+    "category": "Sliding Window",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "sliding-window-median",
+    "title": "Sliding Window Median #480",
+    "category": "Sliding Window",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "subarrays-with-kdistinct-integers",
+    "title": "Subarrays with K Different Integers #992",
+    "category": "Sliding Window",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "astroid-collision",
+    "title": "Asteroid Collision #735",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "basic-calculator-ii",
+    "title": "Basic Calculator II #227",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "car-fleet",
+    "title": "Car Fleet #853",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "daily-temperatures",
+    "title": "Daily Temperatures #739",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "decode-string",
+    "title": "Decode String #394",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "reverse-polish-notation",
+    "title": "Evaluate Reverse Polish Notation #150",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "implement-stack-using-queues",
+    "title": "Implement Stack using Queues #225",
+    "category": "Stack",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "largest-rectangle-in-histogram",
+    "title": "Largest Rectangle in Histogram #84",
+    "category": "Stack",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "maximum-frequency-stack",
+    "title": "Maximum Frequency Stack #895",
+    "category": "Stack",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "min-stack",
+    "title": "Min Stack #155",
+    "category": "Stack",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "next-greater-element",
+    "title": "nextGreaterElement",
+    "category": "Stack",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "remove-kdigits",
+    "title": "Remove K Digits #402",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "simplify-path",
+    "title": "Simplify Path #71",
+    "category": "Stack",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "valid-parenthesis",
+    "title": "Valid Parentheses #20",
+    "category": "Stack",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "encode-decode",
+    "title": "Encode and Decode Strings #271",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "group-anagrams",
+    "title": "Group Anagrams #49",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "group-strings",
+    "title": "Group Shifted Strings #249",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "longest-common-prefix",
+    "title": "Longest Common Prefix #14",
+    "category": "Strings",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "longest-palindromic-substring",
+    "title": "Longest Palindromic Substring #5",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "longest-valid-parentheses",
+    "title": "Longest Valid Parentheses #32",
+    "category": "Strings",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "minimum-remove-to-valid-parenthesis",
+    "title": "minimumRemoveToValidParenthesis",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "palindromic-sub-strings",
+    "title": "Palindromic Substrings #647",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "atoi",
+    "title": "String to Integer (atoi) #8",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "valid-anagram",
+    "title": "Valid Anagram #242",
+    "category": "Strings",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "valid-palindrome",
+    "title": "Valid Palindrome #125",
+    "category": "Strings",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "check-valid-string",
+    "title": "Valid Parenthesis String #678",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "zigzag-conversion",
+    "title": "Zigzag Conversion #6",
+    "category": "Strings",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "average-of-levels",
+    "title": "Average of Levels in Binary Tree #637",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "balanced-binary-tree",
+    "title": "Balanced Binary Tree #110",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "level-order-traversal",
+    "title": "Binary Tree Level Order Traversal #102",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "binary-tree-maximum-path-sum",
+    "title": "Binary Tree Maximum Path Sum #124",
+    "category": "Trees & BST",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "right-side-view",
+    "title": "Binary Tree Right Side View #199",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "zigzag",
+    "title": "Binary Tree Zigzag Level Order Traversal #103",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "construct-atree",
+    "title": "Construct Binary Tree from Preorder and Inorder Traversal #105",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "count-good-nodes",
+    "title": "Count Good Nodes in Binary Tree #1448",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "diameter-of-binary-tree",
+    "title": "Diameter of Binary Tree #543",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "tree-to-list",
+    "title": "Flatten Binary Tree to Linked List #114",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "house-robber-iii",
+    "title": "House Robber III #337",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "invert-tree",
+    "title": "Invert Binary Tree #226",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "kth-smallest-in-bst",
+    "title": "Kth Smallest Element in a BST #230",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "lowest-common-ancestor",
+    "title": "Lowest Common Ancestor of a Binary Tree #236",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "max-depth-of-binary-tree",
+    "title": "Maximum Depth of Binary Tree #104",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "minimum-depth",
+    "title": "Minimum Depth of Binary Tree #111",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "path-sum-ii",
+    "title": "Path Sum II #113",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "path-sum-iii",
+    "title": "Path Sum III #437",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "same-tree",
+    "title": "Same Tree #100",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "search-bst",
+    "title": "Search in a Binary Search Tree #700",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "IMP"
+  },
+  {
+    "id": "serialize-deserialize",
+    "title": "Serialize and Deserialize Binary Tree #297",
+    "category": "Trees & BST",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "subtree-of-another-tree",
+    "title": "Subtree of Another Tree #572",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "IMP"
+  },
+  {
+    "id": "symmetric-tree",
+    "title": "Symmetric Tree #101",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "valid-bst",
+    "title": "Validate Binary Search Tree #98",
+    "category": "Trees & BST",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "vertical-order-traversal",
+    "title": "Vertical Order Traversal of a Binary Tree #987",
+    "category": "Trees & BST",
+    "difficulty": "Hard",
+    "importance": "IMP"
+  },
+  {
+    "id": "3-sum",
+    "title": "3Sum #15",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "3-sum-closest",
+    "title": "3Sum Closest #16",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "4-sum",
+    "title": "4Sum #18",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "backspace-string-compare",
+    "title": "Backspace String Compare #844",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "boats-to-save-people",
+    "title": "Boats to Save People #881",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "container-with-most-water",
+    "title": "Container With Most Water #11",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "linked-list-cycle-ii",
+    "title": "Linked List Cycle II #142",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "merge-sorted-array",
+    "title": "Merge Sorted Array #88",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "move-zeros",
+    "title": "Move Zeroes #283",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "partition-labels",
+    "title": "Partition Labels #763",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "remove-duplicates-ii",
+    "title": "Remove Duplicates from Sorted Array II #80",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "reverse-string",
+    "title": "Reverse String #344",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "sort-colors",
+    "title": "Sort Colors #75",
+    "category": "Two Pointers",
+    "difficulty": "Medium",
+    "importance": "Core"
+  },
+  {
+    "id": "squares-of-sorted-array",
+    "title": "Squares of a Sorted Array #977",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "trapping-rain-water",
+    "title": "Trapping Rain Water #42",
+    "category": "Two Pointers",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "two-sum-ii",
+    "title": "Two Sum II — Input Array is Sorted #167",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "valid-palindrome-ii",
+    "title": "Valid Palindrome II #680",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
+  }
+]

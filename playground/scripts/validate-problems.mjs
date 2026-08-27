@@ -60,7 +60,9 @@ export function collectProblemErrors({ registry, folders, hasMarkdown }) {
 
 function main() {
   const here = dirname(fileURLToPath(import.meta.url))
-  const problemsDir = join(here, '..', 'src', 'problems')
+  // `node validate-problems.mjs dsa` checks the DSA collection instead.
+  const collection = process.argv[2] ?? 'problems'
+  const problemsDir = join(here, '..', 'src', collection)
 
   const registry = JSON.parse(readFileSync(join(problemsDir, 'index.json'), 'utf8'))
   const folders = readdirSync(problemsDir, { withFileTypes: true })
@@ -79,7 +81,7 @@ function main() {
     process.exit(1)
   }
 
-  console.log(`Problem validation passed (${registry.length} problems).`)
+  console.log(`Problem validation passed (${registry.length} problems in "${collection}").`)
 }
 
 // Only run main() when executed directly, so importing this module in tests

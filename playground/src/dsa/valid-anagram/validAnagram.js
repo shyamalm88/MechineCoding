@@ -1,0 +1,36 @@
+// ============================================================================
+// APPROACH: Frequency Counter
+// ============================================================================
+/**
+ * INTUITION:
+ * If two strings are anagrams, they must have the same length and the exact
+ * same count of every character.
+ * We can use a frequency array of size 26 (for lowercase English letters).
+ * Increment for string `s`, decrement for string `t`.
+ * If the array is all zeros at the end, they are anagrams.
+ *
+ * Time Complexity: O(N)
+ * Space Complexity: O(1) (Fixed size array of 26)
+ */
+const isAnagram = (s, t) => {
+  // Anagrams must be of the same length
+  if (s.length !== t.length) return false;
+
+  const count = new Array(26).fill(0);
+  const base = "a".charCodeAt(0);
+
+  // Increment for 's', Decrement for 't'
+  for (let i = 0; i < s.length; i++) {
+    count[s.charCodeAt(i) - base]++;
+    count[t.charCodeAt(i) - base]--;
+  }
+
+  // If they are anagrams, all counts should cancel out to zero
+  return count.every((c) => c === 0);
+};
+
+console.log("=== Valid Anagram Tests ===\n");
+console.log("Test 1:", isAnagram("anagram", "nagaram")); // Expected: true
+console.log("Test 2:", isAnagram("rat", "car")); // Expected: false
+
+module.exports = { isAnagram };
