@@ -1,3 +1,6 @@
+/**
+ * PROBLEM: Range Module (LeetCode #715)
+ */
 class RangeModule {
   constructor() {
     // Keeps intervals sorted and disjoint: [[start1, end1], [start2, end2]...]

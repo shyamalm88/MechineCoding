@@ -77,7 +77,16 @@
     "2073": "Easy",
     "637": "Easy",
     "111": "Easy",
-    "25": "Hard"
+    "25": "Hard",
+    "169": "Easy",
+    "26": "Easy",
+    "704": "Easy",
+    "141": "Easy",
+    "496": "Easy",
+    "112": "Easy",
+    "746": "Easy",
+    "224": "Hard",
+    "715": "Hard"
   },
   "__byTitle": {
     "Design a Priority Queue (Classic Data Structure \u2014 no LC#, foundational)": "Medium",

@@ -1,4 +1,6 @@
 /**
+ * PROBLEM: Minimum Remove to Make Valid Parentheses (LeetCode #1249)
+ *
  * Intuition:
  * To make the parentheses valid with minimum removals, we need to identify
  * unmatched '(' and unmatched ')'.

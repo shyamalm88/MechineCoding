@@ -63,6 +63,13 @@
     "importance": "Core"
   },
   {
+    "id": "majority-element",
+    "title": "Majority Element #169",
+    "category": "Arrays & Hashing",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
     "id": "majority-element-ii",
     "title": "Majority Element II #229",
     "category": "Arrays & Hashing",
@@ -143,6 +150,13 @@
     "id": "two-sum",
     "title": "Two Sum #1",
     "category": "Arrays & Hashing",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "binary-search",
+    "title": "Binary Search #704",
+    "category": "Binary Search",
     "difficulty": "Easy",
     "importance": "Core"
   },
@@ -383,6 +397,13 @@
     "category": "Dynamic Programming",
     "difficulty": "Hard",
     "importance": "IMP"
+  },
+  {
+    "id": "min-cost-climbing-stairs",
+    "title": "Min Cost Climbing Stairs #746",
+    "category": "Dynamic Programming",
+    "difficulty": "Easy",
+    "importance": "Core"
   },
   {
     "id": "minimum-path-sum",
@@ -827,7 +848,7 @@
   },
   {
     "id": "range-module",
-    "title": "rangeModule",
+    "title": "Range Module #715",
     "category": "Intervals",
     "difficulty": "Hard",
     "importance": "VVIMP"
@@ -845,6 +866,13 @@
     "category": "Linked List",
     "difficulty": "Medium",
     "importance": "VVIMP"
+  },
+  {
+    "id": "linked-list-cycle",
+    "title": "Linked List Cycle #141",
+    "category": "Linked List",
+    "difficulty": "Easy",
+    "importance": "Core"
   },
   {
     "id": "merge-two-sorted-lists",
@@ -939,14 +967,14 @@
   },
   {
     "id": "search-in2-dmatrix",
-    "title": "searchIn2DMatrix",
+    "title": "Search a 2D Matrix #74",
     "category": "Matrix",
     "difficulty": "Medium",
     "importance": "Core"
   },
   {
     "id": "search-in2-dmatrix-ii",
-    "title": "searchIn2DMatrixII",
+    "title": "Search a 2D Matrix II #240",
     "category": "Matrix",
     "difficulty": "Medium",
     "importance": "Core"
@@ -983,6 +1011,20 @@
     "id": "surrounded-regions",
     "title": "Surrounded Regions #130",
     "category": "Matrix",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "next-greater-element-i",
+    "title": "Next Greater Element I #496",
+    "category": "Monotonic Stack",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "next-greater-element-ii",
+    "title": "Next Greater Element II #503",
+    "category": "Monotonic Stack",
     "difficulty": "Medium",
     "importance": "IMP"
   },
@@ -1281,6 +1323,13 @@
     "importance": "Core"
   },
   {
+    "id": "basic-calculator",
+    "title": "Basic Calculator #224",
+    "category": "Stack",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
     "id": "basic-calculator-ii",
     "title": "Basic Calculator II #227",
     "category": "Stack",
@@ -1345,9 +1394,9 @@
   },
   {
     "id": "next-greater-element",
-    "title": "nextGreaterElement",
+    "title": "Next Greater Element (generic array form)",
     "category": "Stack",
-    "difficulty": "Easy",
+    "difficulty": "Medium",
     "importance": "Core"
   },
   {
@@ -1415,7 +1464,7 @@
   },
   {
     "id": "minimum-remove-to-valid-parenthesis",
-    "title": "minimumRemoveToValidParenthesis",
+    "title": "Minimum Remove to Make Valid Parentheses #1249",
     "category": "Strings",
     "difficulty": "Medium",
     "importance": "IMP"
@@ -1575,6 +1624,13 @@
     "importance": "Core"
   },
   {
+    "id": "path-sum",
+    "title": "Path Sum #112",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
     "id": "path-sum-ii",
     "title": "Path Sum II #113",
     "category": "Trees & BST",
@@ -1706,6 +1762,13 @@
     "category": "Two Pointers",
     "difficulty": "Medium",
     "importance": "IMP"
+  },
+  {
+    "id": "remove-duplicates-from-sorted-array",
+    "title": "Remove Duplicates from Sorted Array #26",
+    "category": "Two Pointers",
+    "difficulty": "Easy",
+    "importance": "Core"
   },
   {
     "id": "remove-duplicates-ii",
