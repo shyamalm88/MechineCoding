@@ -69,3 +69,43 @@ Do not recite definitions. Say: **how fresh must this be, and can it be the same
 for everyone?** Same for everyone + tolerates staleness → static/ISR.
 Per-user or must be current → dynamic. Mostly the former with a small
 personalised region → PPR or a client component fetching after load.
+
+## Worked example: the accidental dynamic page
+
+```jsx
+// app/products/page.js — intended to be static
+import { cookies } from 'next/headers'
+
+export default async function Products() {
+  const theme = (await cookies()).get('theme')   // ← this ONE line
+  …
+}
+```
+
+Reading a cookie makes the output request-dependent, so Next drops the page from
+static generation. Your product listing now renders per request, and the only
+signal is a `ƒ` instead of `○` in the build output.
+
+The fix: keep the page static and read the cookie in a small Client Component,
+or accept dynamic if the personalisation is genuinely page-wide.
+
+## How to answer this out loud
+
+"There are four: static at build time, dynamic per request, ISR which is static
+with background regeneration, and PPR which streams dynamic holes into a static
+shell. In the App Router you don't declare it — it's inferred, and touching
+`cookies()`, `headers()` or `searchParams` silently makes a route dynamic, which
+is the thing I'd check first when a page is unexpectedly slow. ISR is
+stale-while-revalidate, so the first visitor after expiry still gets stale
+content and triggers the refresh — and I'd usually prefer `revalidateTag` on the
+mutation over guessing an interval. The question I'd actually ask is: how fresh
+must this be, and can it be the same for everyone?"
+
+## Follow-ups to expect
+
+- *How do you check what a route rendered as?* `next build` output — `○` static,
+  `ƒ` dynamic.
+- *What's the risk with `generateStaticParams` on a huge dataset?* Build times
+  explode; pre-render the popular subset and let the tail be dynamic.
+- *Is PPR production-ready?* It was experimental at the time of writing — check
+  before proposing it.

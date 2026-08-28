@@ -70,3 +70,39 @@ them from the bundle entirely.
 - A `'use client'` file importing a server-only library leaks it into the bundle
   — `import 'server-only'` makes that a build error instead of a silent leak.
 - Third-party components using hooks need a `'use client'` wrapper file.
+
+## Worked example: the directive in the wrong place
+
+```jsx
+// app/layout.js
+'use client'                         // ✗ one line, entire app now client-side
+import Dashboard from './Dashboard'  // and everything IT imports
+```
+
+Every component below this — charts, tables, the markdown renderer — is now in
+the client bundle, and none of them can `await` data any more. The build still
+succeeds; you just lost every benefit of the App Router.
+
+The fix is always the same: move the directive down to the smallest component
+that actually needs interactivity.
+
+## How to answer this out loud
+
+"Everything under `app/` is a Server Component unless it or an ancestor in the
+import graph has `'use client'` — and that's the key point, it's a *boundary*,
+not a per-file flag, so everything imported below it joins the client bundle.
+Server Components can await data and query the database directly with zero
+bundle cost, but they can't use state, effects or event handlers. Since a Client
+Component can't import a Server Component, the pattern that makes it work is
+passing server-rendered content as `children` into an interactive client shell.
+And props crossing the boundary have to be serialisable, so you can't pass a
+callback."
+
+## Follow-ups to expect
+
+- *Do Client Components still server-render?* Yes — `'use client'` marks where
+  the client *bundle* begins, not that it skips SSR.
+- *How do you stop a server module leaking?* `import 'server-only'` turns an
+  accidental client import into a build error.
+- *How do you use a third-party component that needs hooks?* Re-export it from
+  your own `'use client'` wrapper file.

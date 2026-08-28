@@ -75,3 +75,37 @@ When someone says "my data is stale", ask **which cache**:
 Non-`fetch` data access (a direct DB query) is **not** in the Data Cache. Wrap it
 in React `cache()` for per-request memoization, or `unstable_cache` for
 persistence.
+
+## Worked example: "my data is stale" — which cache?
+
+A user submits a form, the database updates, but the list still shows the old
+data. There are three possible culprits and they need different fixes:
+
+```
+Stale only for this user, this session  → Router Cache   → router.refresh()
+Stale for everyone, all sessions        → Data / Full Route Cache → revalidateTag()
+Duplicate identical requests in one render → memoization isn't applying
+                                             (different URL/options, or not fetch)
+```
+
+Asking *which* cache is what turns an hour of guessing into a two-minute fix.
+
+## How to answer this out loud
+
+"There are four, and 'it's cached' is meaningless without saying which. Request
+Memoization dedupes identical fetches within a single render. The Data Cache
+persists fetch results across requests — and in Next 15 fetch is no longer
+cached by default, which most tutorials get wrong. The Full Route Cache holds
+rendered output for static routes. And the Router Cache is client-side, which is
+why data can look stale after a mutation even though the server is correct.
+For invalidation I'd tag fetches and call `revalidateTag` from the mutation,
+rather than guessing a revalidate interval."
+
+## Follow-ups to expect
+
+- *How do you cache a database query?* It is not in the Data Cache — wrap it in
+  React `cache()` for per-request dedup or `unstable_cache` to persist.
+- *Why is my Server Action's change not showing?* Client Router Cache — call
+  `revalidatePath`/`revalidateTag` in the action, or `router.refresh()`.
+- *What changed in Next 15?* fetch and GET Route Handlers are uncached by
+  default, and the client Router Cache no longer caches page segments.
