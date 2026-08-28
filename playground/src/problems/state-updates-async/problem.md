@@ -73,3 +73,41 @@ doSomethingWith(next)
 
 or react to it in an effect keyed on the value. Trying to read state back out of
 React right after setting it is fighting the model.
+
+## Worked example: the counter that only goes up by one
+
+```jsx
+function handleClick() {
+  setCount(count + 1)     // count is 0 → queues "set to 1"
+  setCount(count + 1)     // count is STILL 0 → queues "set to 1"
+  setCount(count + 1)     // count is STILL 0 → queues "set to 1"
+}                          // result: 1
+```
+
+`count` is a `const` captured by this render's closure. Nothing can change it
+mid-function — the new value arrives as a *new* `count` in the next render.
+
+```jsx
+setCount(c => c + 1)   // 0 → 1
+setCount(c => c + 1)   // 1 → 2   ← receives the pending value
+setCount(c => c + 1)   // 2 → 3
+```
+
+## How to answer this out loud
+
+"State looks one render behind because the variable is a const from the current
+render — `setState` doesn't reassign it, it schedules a new render where the
+const has a new value. So reading it right after setting always gives the old
+one. And three `setCount(count + 1)` calls all read the same stale base, so you
+get 1, not 3; the functional form composes because each call receives the
+pending value. The rule I use is: if the next state depends on the previous
+state, use the updater function."
+
+## Follow-ups to expect
+
+- *How do I run code after the state updates?* An effect keyed on the value, or
+  compute the next value locally and use that.
+- *Is `setState` asynchronous?* Not a promise — it schedules work. The observable
+  behaviour is that the current closure never sees the new value.
+- *When does React skip the render?* When the new value is `Object.is`-equal to
+  the current one — an optimisation, not a guarantee.

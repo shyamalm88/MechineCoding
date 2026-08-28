@@ -64,3 +64,35 @@ const id = useId()   // stable across both renders
 A hydration mismatch means your render is **not a pure function of props and
 state** — it depends on something ambient (clock, environment, randomness). The
 warning is telling you about impurity; the framework is the messenger.
+
+## Worked example: the timestamp that breaks the page
+
+```jsx
+export default function Footer() {
+  return <p>Rendered at {new Date().toLocaleTimeString()}</p>
+}
+```
+
+The server renders `10:04:31`. By the time the browser hydrates it is `10:04:32`.
+React sees a mismatch, discards the server HTML for that subtree, and re-renders
+it client-side — losing the SSR benefit and potentially flashing.
+
+## How to answer this out loud
+
+"Hydration is React attaching to server-rendered HTML rather than recreating it,
+which assumes both renders produce identical output. When they differ, React 18
+treats it as an error and re-renders the subtree client-side — so you don't just
+get a console warning, you get a flash and lose the SSR benefit. The causes are
+always something ambient: time, randomness, `window`, locale, or invalid nesting
+that the parser silently restructures. The fix is to render the same thing on
+both passes and update after mount, use `useId` for generated ids, and
+`suppressHydrationWarning` only for a genuinely unavoidable single element."
+
+## Follow-ups to expect
+
+- *Why does invalid nesting cause it?* The HTML parser moves illegal markup, so
+  the DOM genuinely differs from what was sent.
+- *How do you render something client-only?* Mount flag + effect, or
+  `dynamic(..., { ssr: false })` in Next.js.
+- *What is the deeper cause?* A render that is not a pure function of props and
+  state.

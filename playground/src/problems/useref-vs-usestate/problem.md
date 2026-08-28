@@ -59,3 +59,29 @@ and is often better than `useRef` + `useEffect`:
 ```
 
 In React 19 a callback ref may also return a cleanup function.
+
+## Worked example: why the ref counter looks broken
+
+In the demo, clicking "ref.current +1" appears to do nothing — then clicking
+"setState +1" makes the accumulated ref value suddenly appear.
+
+That is not a bug. Mutating a ref does not schedule a render, so nothing
+re-reads it. When something *else* triggers a render, the new value is picked up.
+This is the defining difference in one observable behaviour.
+
+## How to answer this out loud
+
+"Both survive re-renders; the difference is that state triggers a re-render and a
+ref doesn't. So the rule is: if it should appear on screen, it's state; if it
+just needs to persist — a timer id, a DOM node, the previous value, a mutable box
+to escape a stale closure — it's a ref. React also asks you not to read or write
+refs during render, because a render can run twice or be discarded; the one
+sanctioned exception is lazy init with a null check, since that's idempotent."
+
+## Follow-ups to expect
+
+- *Why does `useRef` have no lazy initialiser?* An oversight in practice; the
+  null-check idiom is the accepted workaround.
+- *Can a ref hold non-DOM values?* Yes — `useRef(0)` is just a mutable box.
+- *What is a callback ref for?* Measuring a node the instant it attaches, without
+  a separate effect; in React 19 it can return a cleanup.

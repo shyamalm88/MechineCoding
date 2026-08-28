@@ -1,43 +1,80 @@
 # useLayoutEffect vs useEffect
 
-## Timing
+## The short answer
+
+Both run after render. The difference is **whether the browser has painted yet**:
+
+- **`useLayoutEffect`** runs after the DOM is updated but **before paint**. It
+  *blocks* the browser from drawing.
+- **`useEffect`** runs **after paint**, asynchronously.
 
 ```
-render ▶ DOM mutated ▶ useLayoutEffect ▶ BROWSER PAINTS ▶ useEffect
-                          (blocking)                        (async)
+render → DOM mutated → useLayoutEffect → 🖼 BROWSER PAINTS → useEffect
+                        (blocking)                            (async)
 ```
 
-`useLayoutEffect` runs **synchronously after DOM mutation but before paint**.
-`useEffect` runs after the browser has painted.
+Default to `useEffect`. Reach for `useLayoutEffect` only when the user must
+never see the intermediate state.
 
-## When layout effect is required
+## The problem it solves: visible flicker
 
-When you must measure or mutate the DOM and the user must never see the
-intermediate state:
+Say you position a tooltip by measuring the element it points at:
 
-```js
-useLayoutEffect(() => {
+```jsx
+useEffect(() => {
   const { height } = ref.current.getBoundingClientRect()
-  setTooltipPosition(height)      // no flicker: happens before paint
+  setPosition(height + 8)
 }, [])
 ```
 
-With `useEffect` here, the browser paints the tooltip at position 0, then
-repositions it — a visible flash.
+Sequence with `useEffect`:
 
-## Default to useEffect
+1. render with `position = 0`
+2. **browser paints** — the tooltip appears at the top-left corner
+3. effect runs, measures, sets position
+4. re-render, browser paints again — tooltip jumps into place
 
-`useLayoutEffect` blocks paint. Slow work inside it directly delays the frame,
-so it is the wrong home for data fetching, subscriptions, or anything async.
-Use it only for synchronous DOM reads/writes that affect what is about to be
-painted.
+The user sees a **flash** of the tooltip in the wrong spot. It is brief but very
+noticeable, and it looks like a bug.
+
+With `useLayoutEffect`, steps 3 and 4 happen *before* step 2, so the tooltip is
+only ever painted in its correct position.
+
+## When you need it
+
+The pattern is always the same: **measure or mutate the DOM, and the result
+affects what is about to be painted.**
+
+- positioning tooltips, popovers, dropdowns relative to a trigger
+- reading `scrollHeight` to auto-size a textarea
+- restoring scroll position before the user sees the top of the list
+- measuring text to decide whether to truncate
+
+## Why not always use it?
+
+Because it **blocks painting**. Whatever you do inside delays the frame:
+
+```jsx
+useLayoutEffect(() => {
+  fetchData()          // ✗ blocks paint for the whole request
+  subscribe()          // ✗ no reason to block
+}, [])
+```
+
+Data fetching, subscriptions, logging and timers all belong in `useEffect` —
+none of them change what is about to be drawn, so making the user wait is pure
+cost.
+
+Rule of thumb: if removing the effect would not cause a visual flicker, it does
+not need to be a layout effect.
 
 ## The SSR warning
 
 > useLayoutEffect does nothing on the server
 
-There is no DOM and no paint during SSR, so it cannot run — meaning markup
-rendered on the server will not include its effect, and hydration may mismatch.
+There is no DOM and no paint during server rendering, so it cannot run. That
+means markup rendered on the server will not include its result, and hydration
+may mismatch.
 
 The standard workaround:
 
@@ -46,8 +83,36 @@ const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect
 ```
 
-## Related
+Most UI libraries ship exactly this. It silences the warning by using the
+appropriate hook per environment — it does not magically make measurement work
+on the server, so components that depend on measurement must still render a
+sensible default first.
 
-`useInsertionEffect` runs even earlier — before DOM mutations — and exists
-specifically for CSS-in-JS libraries injecting styles. Application code should
-essentially never need it.
+## Cleanup ordering is identical
+
+Both run their cleanup before the next invocation, and on unmount. The only
+difference is timing relative to paint — the dependency-array semantics,
+cleanup rules and stale-closure hazards are exactly the same.
+
+## Related: useInsertionEffect
+
+Runs even earlier — **before** DOM mutations — and exists specifically for
+CSS-in-JS libraries injecting `<style>` tags, so that styles exist before layout
+is calculated. Application code should essentially never need it. Knowing it
+exists (and that it is library-only) is a good signal.
+
+## How to answer this out loud
+
+"`useLayoutEffect` runs synchronously after the DOM updates but before the
+browser paints, so it's for cases where the user must not see an intermediate
+state — measuring an element and positioning something based on it. `useEffect`
+runs after paint and is the default, because layout effects block the frame. The
+practical tell is flicker: if you see content jump on mount, it's usually an
+effect that should have been a layout effect."
+
+## Follow-ups to expect
+
+- *Does it hurt performance?* Yes if you do slow work in it — it delays paint.
+- *Why the SSR warning?* No DOM, no paint; use the isomorphic wrapper.
+- *What about refs?* Refs are attached before both hooks run, so both can read
+  `ref.current`.

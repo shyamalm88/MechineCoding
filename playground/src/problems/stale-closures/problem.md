@@ -66,3 +66,35 @@ Suppressing the lint rule with `// eslint-disable-next-line react-hooks/exhausti
 does not fix the bug — it hides the warning that was telling you about it. If
 the dependency genuinely should not re-trigger the effect, a ref or
 `useEffectEvent` is the honest fix.
+
+## Worked example: the debounced save that never sees your edits
+
+```jsx
+const save = useCallback(
+  debounce(() => api.save(text), 500),   // captures `text` from THIS render
+  [],                                    // created once, frozen forever
+)
+```
+
+The user types "hello", waits, and the app saves `""` — the value from the first
+render. It looks like the save is broken; in fact the closure is doing exactly
+what it was told.
+
+## How to answer this out loud
+
+"A stale closure is when a function captures props or state from the render that
+created it and keeps seeing those old values. The classic case is an effect with
+an empty dependency array setting up an interval — it logs the initial count
+forever. It's not a React quirk, it's how JavaScript closures work; React just
+makes it easy to hit because 're-rendered' feels like 'my callback got the new
+value'. The fixes are correct dependencies, a functional updater if you only
+need to *update*, or a ref as a mutable box if you need to *read* fresh state
+from a long-lived callback."
+
+## Follow-ups to expect
+
+- *Why not just disable the lint rule?* It is reporting the bug, not causing it.
+- *When is a ref the right fix?* When re-creating the effect would be wasteful or
+  destructive — tearing down a WebSocket every second, for instance.
+- *What is `useEffectEvent`?* React's experimental answer: a function that always
+  sees the latest values without being a dependency.

@@ -77,3 +77,24 @@ state through a private context:
 The consumer controls structure and styling; the library owns state and
 accessibility. This is how Radix, Headless UI and Reach are built, and it is the
 strongest answer to "how would you design a reusable component API?".
+
+## How to answer this out loud
+
+"Most people jump from prop drilling straight to Context, but there's a step in
+between. If `Layout` and `Sidebar` don't use `user` and are only passing it
+through, the fix is to build the JSX where the data already lives and pass the
+element down as `children` or a prop. The drilling disappears, and you get a
+performance benefit for free: the element is created by the parent, so its
+reference doesn't change when the intermediate component re-renders — React
+bails out of re-rendering that subtree with no `memo` at all. I'd save Context
+for values that are broadly needed and rarely change, like theme or the auth
+user."
+
+## Follow-ups to expect
+
+- *When is Context the right call?* Broad + rarely changing. For frequently
+  changing state with many consumers you want a store with selectors.
+- *What is the `children` performance trick exactly?* Same element reference
+  across the parent's re-renders, so React skips re-rendering it.
+- *What is a compound component?* Related components sharing implicit state via a
+  private context — how Radix and Headless UI are built.

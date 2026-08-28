@@ -1,6 +1,12 @@
 # Suspense and React.lazy code splitting
 
-```js
+## The short answer
+
+`React.lazy` turns a dynamic `import()` into a component, so its code ships as a
+**separate bundle** loaded on first render. `<Suspense>` shows a fallback while
+that load (or any other suspending work) is in flight.
+
+```jsx
 const Settings = lazy(() => import('./Settings'))
 
 <Suspense fallback={<Skeleton />}>
@@ -8,33 +14,110 @@ const Settings = lazy(() => import('./Settings'))
 </Suspense>
 ```
 
-`lazy` turns a dynamic `import()` into a component; the bundler emits a separate
-chunk, fetched on first render. `Suspense` renders the fallback while it loads.
+The user downloads the settings page only if they actually open it.
 
-## How Suspense actually works
+## How Suspense works under the hood
 
-A suspending component **throws a promise**. The nearest `Suspense` boundary
-catches it, renders the fallback, and retries when the promise resolves. That is
-why it composes with error boundaries — both are catch mechanisms, one for
-promises, one for errors.
+A suspending component **throws a promise**. The nearest `<Suspense>` boundary
+catches it, renders the fallback, and retries the subtree when the promise
+resolves.
+
+That is why it composes naturally with error boundaries — both are catch
+mechanisms walking up the tree, one for promises and one for errors. It is also
+why you cannot "await" in a normal component: throwing is the signalling
+mechanism.
 
 ## Boundary placement is a UX decision
 
-One boundary around a whole page means the entire page flashes a skeleton. Many
-small boundaries let already-loaded regions stay visible. Too many produces a
-"popcorn" effect of independently resolving spinners.
+This is the part that separates a real answer from a definition.
 
-Route-level boundaries plus one around genuinely heavy independent widgets is
-the usual balance.
+```jsx
+// one boundary: the whole page flashes a skeleton
+<Suspense fallback={<PageSkeleton />}>
+  <Header /><Feed /><Sidebar />
+</Suspense>
 
-## Traps
+// granular: each region resolves independently
+<Header />
+<Suspense fallback={<FeedSkeleton />}><Feed /></Suspense>
+<Suspense fallback={<SidebarSkeleton />}><Sidebar /></Suspense>
+```
 
-- **`lazy` must be called outside the component.** Declaring it inside means a
-  new component type every render → remount and refetch every time.
-- A failed chunk load (deploy happened, old hashed chunk is gone) throws — pair
-  Suspense with an error boundary offering a reload.
-- `Suspense` does **not** make data fetching work by itself. It needs a
-  Suspense-enabled source (React Query, Relay, RSC, or `use()`); wrapping a
-  plain `useEffect` fetch in it does nothing.
-- Transitions avoid hiding already-visible content: with `startTransition`,
-  React keeps the old UI instead of replacing it with the fallback.
+Too coarse and you hide content that was ready. Too granular and you get a
+"popcorn" effect of things appearing at random moments, which feels worse than a
+single clean load.
+
+A common balance: **one boundary per route, plus one around each genuinely heavy
+independent widget.**
+
+## The mistake that breaks everything
+
+```jsx
+function Page() {
+  const Settings = lazy(() => import('./Settings'))   // ✗ INSIDE the component
+  return <Suspense …><Settings /></Suspense>
+}
+```
+
+`lazy()` called during render creates a **new component type every render**.
+React sees a different type, unmounts the old one, and remounts — so it
+refetches the chunk and loses all state, forever. Always call `lazy` at module
+scope.
+
+## Suspense does not make data fetching work
+
+A very common misconception:
+
+```jsx
+<Suspense fallback={<Spinner />}>
+  <ComponentThatUsesUseEffectFetch />   {/* ✗ never suspends */}
+</Suspense>
+```
+
+`useEffect` + `setState` does not throw a promise, so Suspense has nothing to
+catch and the fallback never shows. Suspense needs a **Suspense-enabled source**:
+React Query/SWR in suspense mode, Relay, RSC, or the `use()` hook.
+
+## Handling a failed chunk
+
+Chunk loading can fail — most often because you deployed while the user's tab
+was open, so the hashed file they are asking for no longer exists. That throws,
+and needs an error boundary:
+
+```jsx
+<ErrorBoundary fallback={<button onClick={() => location.reload()}>Reload</button>}>
+  <Suspense fallback={<Skeleton />}>
+    <Settings />
+  </Suspense>
+</ErrorBoundary>
+```
+
+Ignoring this is a real production failure mode, not a theoretical one.
+
+## Transitions avoid hiding visible content
+
+If a route already shows content and you navigate, Suspense would normally
+replace it with the fallback — a visible regression. Wrapping the navigation in
+`startTransition` tells React to **keep the old UI** until the new one is ready:
+
+```jsx
+startTransition(() => navigate('/settings'))
+```
+
+## How to answer this out loud
+
+"`React.lazy` wraps a dynamic import so the component ships in its own chunk,
+and Suspense renders a fallback while it loads — mechanically, a suspending
+component throws a promise that the nearest boundary catches. The interesting
+part is boundary placement: one boundary per page flashes everything, too many
+gives a popcorn effect. And Suspense doesn't magically make `useEffect` fetching
+suspend — it needs a suspense-enabled data source."
+
+## Follow-ups to expect
+
+- *Where do you code-split?* Routes first, then heavy independent widgets —
+  charts, editors, maps.
+- *How do you avoid a flash for fast loads?* Delay showing the fallback, or use
+  a transition so existing content stays.
+- *What about SSR?* Suspense supports streaming server rendering — the shell is
+  sent immediately and boundaries stream in.

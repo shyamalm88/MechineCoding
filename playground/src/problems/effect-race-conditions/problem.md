@@ -63,3 +63,30 @@ again.
 
 React Query, SWR, and RSC all handle this for you — which is a large part of why
 they exist.
+
+## Why this is also the "setState on unmounted component" fix
+
+The same cleanup solves the old React warning about updating state after
+unmount. That warning was never really about unmounting — it was about a
+callback outliving the thing that scheduled it. React 18 removed the warning
+precisely because the fix was always the same: invalidate the pending work.
+
+## How to answer this out loud
+
+"Fetching in an effect keyed on an id is a race: select A then B quickly, and if
+A's request is slower it resolves last and overwrites B's result. Nothing
+errored — the bug is that the last *response* wins instead of the newest
+*request*. The fix is the effect's cleanup: set an `ignore` flag so a superseded
+run discards its result, or use an AbortController to actually cancel. That same
+cleanup is what fixed the old 'setState on an unmounted component' warning."
+
+## Follow-ups to expect
+
+- *Does debouncing fix it?* It reduces the window but does not close it — two
+  requests can still be in flight, and network latency isn't bounded by your
+  debounce.
+- *Why not just check `if (id === currentId)`?* You would be reading a stale `id`
+  from the closure; the cleanup flag is per-effect-run, which is what makes it
+  correct.
+- *What do React Query / SWR do?* Exactly this, plus caching and dedup — which is
+  a large part of why they exist.

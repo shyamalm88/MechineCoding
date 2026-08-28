@@ -67,3 +67,25 @@ The interview point: it does **not** make the underlying concepts obsolete.
 Understanding *why* referential identity matters is what lets you reason about
 what the compiler is doing, and recognise the cases (mutation, impure render)
 where it must bail out.
+
+## How to answer this out loud
+
+"The headline additions are `use()`, Actions, and `useOptimistic`. `use()` reads
+a promise or context and can be called conditionally, which no other hook can —
+the trap is that the promise must be created outside render or it never settles.
+Actions let you pass an async function to a form's `action` and React manages
+pending state and errors, with `useActionState` for the result and
+`useFormStatus` so a child submit button can read the parent form's state.
+`useOptimistic` shows the change immediately and reverts automatically on
+failure. Beyond that, `ref` is a normal prop so `forwardRef` isn't needed, ref
+callbacks can return cleanups, and document metadata hoists into `<head>`."
+
+## Follow-ups to expect
+
+- *What does the React Compiler change?* It auto-memoises, so most manual
+  `useMemo`/`useCallback` become unnecessary — but understanding referential
+  identity is exactly what it automates.
+- *Why can `use()` be conditional?* It is not tracked by the call-order
+  mechanism the other hooks rely on.
+- *Is `useFormStatus` usable anywhere?* No — it must be inside the `<form>` whose
+  status it reads.

@@ -59,3 +59,23 @@ Its weaknesses:
 Rarely in app code — it is a **library primitive**. Redux, Zustand, Jotai and
 Apollo all use it internally. Knowing it exists, and why, is the interview
 signal; hand-writing one is for when you are building a store.
+
+## How to answer this out loud
+
+"Tearing is when one render shows two different values of the same state,
+because concurrent rendering can pause mid-render and an external store mutated
+during the pause. React's own state is immune since it's versioned per render;
+anything outside React isn't. `useSyncExternalStore` takes subscribe,
+getSnapshot and getServerSnapshot, and re-reads the snapshot at the right moments
+— if it changed mid-render it restarts synchronously rather than committing a
+torn tree. The rule that bites is that getSnapshot must return a referentially
+stable value, or you get an infinite loop."
+
+## Follow-ups to expect
+
+- *Would I write this in app code?* Rarely — it is a library primitive. Redux,
+  Zustand and Jotai use it internally.
+- *Why not `useState` + `useEffect`?* It works most of the time, but can tear,
+  misses changes between render and effect, and has no server-render story.
+- *How do you select a slice?* `useSyncExternalStoreWithSelector` with a memoised
+  selector — an inline object literal will loop.
