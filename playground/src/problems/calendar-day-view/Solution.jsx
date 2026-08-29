@@ -85,10 +85,7 @@ export default function CalendarDayView() {
         ))}
 
         {showNow && (
-          <div
-            className="now-line"
-            style={{ top: `${((e.start - START_MIN) / DAY_RANGE) * 100}%` }}
-          >
+          <div className="now-line" style={{ top: `${nowTop}%` }}>
             <div className="now-dot" />
           </div>
         )}

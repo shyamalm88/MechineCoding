@@ -1,42 +1,30 @@
 .calendar-wrapper {
-    display: flex;
-    font-family: system-ui, sans-serif;
+  display: flex;
 }
 
 .time-column {
-    width: 60px;
-    padding-top: 20px;
-}
-
-.time-label {
-    height: 60px;
-    font-size: 12px;
-    color: #555;
+  width: 60px;
+  height: 1440px;
 }
 
 .calendar {
-    position: relative;
-    height: 540px;
-    /* 9 hours × 60px */
-    width: 600px;
-    border-left: 1px solid #ccc;
-    background: #fafafa;
+  position: relative;
+  height: 1440px;   /* 24 hours × 60px */
+  flex: 1;
 }
 
 .hour-line {
-    position: relative;
-    height: 60px;
-    border-bottom: 1px solid #e5e7eb;
+  height: 60px;     /* each hour = 60px */
+  border-top: 1px solid #ddd;
+  box-sizing: border-box;
 }
 
 .event {
-    position: absolute;
-    background: #3b82f6;
-    color: white;
-    padding: 6px;
-    border-radius: 6px;
-    font-size: 12px;
-    box-sizing: border-box;
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #333;
+  background: lightblue;
+  overflow: hidden;
 }
 
 .now-line {
