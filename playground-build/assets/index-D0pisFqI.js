@@ -1124,6 +1124,7 @@ function layoutEvents(events) {
   let maxEnd = -Infinity;
 
   for (const event of sorted) {
+    // Same group if this event overlaps any event in the group.
     if (!group.length || event.start < maxEnd) {
       group.push(event);
       maxEnd = Math.max(maxEnd, event.end);
@@ -1135,6 +1136,7 @@ function layoutEvents(events) {
     }
   }
 
+  // Distribute the final group.
   if (group.length) {
     distribute(group, result);
   }
