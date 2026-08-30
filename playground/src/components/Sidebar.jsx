@@ -1,14 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useHashParam } from '../lib/hashState.js'
 
 const ALL = 'All'
 
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard']
 
 export default function Sidebar({ problems, selectedId, onSelect, collection }) {
-  const [query, setQuery] = useState('')
-  const [category, setCategory] = useState(ALL)
-  const [difficulty, setDifficulty] = useState(ALL)
-  const [importance, setImportance] = useState(ALL)
+  // Mirrored into the URL hash so a reload restores the same view.
+  const [query, setQuery] = useHashParam('q', '')
+  const [category, setCategory] = useHashParam('cat', ALL)
+  const [difficulty, setDifficulty] = useHashParam('diff', ALL)
+  const [importance, setImportance] = useHashParam('imp', ALL)
 
   const categories = useMemo(
     () => [ALL, ...new Set(problems.map((problem) => problem.category))],

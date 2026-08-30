@@ -99,13 +99,28 @@
 
   // remember the iframe's current page in the URL hash so a refresh
   // restores the same site + note instead of resetting to the default
-  frame.addEventListener('load', function () {
-    var path = relativeToBase(frame.contentWindow.location.href);
-    if (path) {
-      history.replaceState(null, '', '#' + path);
-      activateButton(path);
+  var lastPath = '';
+
+  function syncHash() {
+    var path;
+    try {
+      path = relativeToBase(frame.contentWindow.location.href);
+    } catch (e) {
+      return; // cross-origin frame: nothing to read
     }
-  });
+    if (!path || path === lastPath) return;
+    lastPath = path;
+    history.replaceState(null, '', '#' + path);
+    activateButton(path);
+  }
+
+  frame.addEventListener('load', syncHash);
+
+  // The playground/DSA apps keep their filters and open problem in their own
+  // hash, updated via replaceState -- which fires NO event the parent can hear
+  // (not load, not hashchange). Poll so that state still reaches the address
+  // bar and survives a refresh of this page.
+  setInterval(syncHash, 400);
 
   buttons.forEach(function (btn) {
     btn.addEventListener('click', function () {

@@ -1,22 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { listProblems, loadProblem, COLLECTION } from '#collection'
 import Sidebar from './components/Sidebar.jsx'
 import ProblemWorkspace from './components/ProblemWorkspace.jsx'
+import { useHashParam } from './lib/hashState.js'
 
 export default function App() {
   const problems = useMemo(() => listProblems(), [])
-  const [selectedId, setSelectedId] = useState(problems[0]?.id ?? null)
+  const fallbackId = problems[0]?.id ?? null
+  const [selectedId, setSelectedId] = useHashParam('p', fallbackId)
+
+  // The hash is user input: a stale or hand-edited id must not reach
+  // loadProblem, which throws on an unknown id.
+  const openId = problems.some((problem) => problem.id === selectedId)
+    ? selectedId
+    : fallbackId
 
   const problem = useMemo(
-    () => (selectedId ? loadProblem(selectedId) : null),
-    [selectedId],
+    () => (openId ? loadProblem(openId) : null),
+    [openId],
   )
 
   return (
     <div className="layout">
       <Sidebar
           problems={problems}
-          selectedId={selectedId}
+          selectedId={openId}
           onSelect={setSelectedId}
           collection={COLLECTION}
         />
