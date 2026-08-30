@@ -721,6 +721,104 @@
     "importance": "VVIMP"
   },
   {
+    "id": "assign-cookies",
+    "title": "Assign Cookies #455",
+    "category": "Greedy",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "can-place-flowers",
+    "title": "Can Place Flowers #605",
+    "category": "Greedy",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "candy",
+    "title": "Candy #135",
+    "category": "Greedy",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "course-schedule-iii",
+    "title": "Course Schedule III #630",
+    "category": "Greedy",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "hand-of-straights",
+    "title": "Hand of Straights #846",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "ipo",
+    "title": "IPO #502",
+    "category": "Greedy",
+    "difficulty": "Hard",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "lemonade-change",
+    "title": "Lemonade Change #860",
+    "category": "Greedy",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "maximum-units-on-atruck",
+    "title": "Maximum Units on a Truck #1710",
+    "category": "Greedy",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "monotone-increasing-digits",
+    "title": "Monotone Increasing Digits #738",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "queue-reconstruction-by-height",
+    "title": "Queue Reconstruction by Height #406",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "reorganize-string",
+    "title": "Reorganize String #767",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "split-array-into-consecutive-subsequences",
+    "title": "Split Array into Consecutive Subsequences #659",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "VVIMP"
+  },
+  {
+    "id": "two-city-scheduling",
+    "title": "Two City Scheduling #1029",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
+    "id": "wiggle-subsequence",
+    "title": "Wiggle Subsequence #376",
+    "category": "Greedy",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
     "id": "priority-queue",
     "title": "Design a Priority Queue (Classic Data Structure — no LC#, foundational)",
     "category": "Heap",

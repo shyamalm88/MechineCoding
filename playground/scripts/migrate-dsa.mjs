@@ -27,6 +27,7 @@ const CATEGORY_LABEL = {
   BinarySearch: 'Binary Search',
   DP: 'Dynamic Programming',
   Graph: 'Graphs',
+  Greedy: 'Greedy',
   Heap: 'Heap',
   Stack: 'Stack',
   String: 'Strings',
