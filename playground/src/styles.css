@@ -270,6 +270,49 @@ body {
 }
 .code-block code.hljs { background: transparent; padding: 0; }
 
+/* CopyableCode wraps every <pre> so the button can sit over it. In the Code
+   tab the shell replaces the <pre> as the flex child, so it has to carry the
+   flex sizing itself or the block loses its scroll area. */
+.code-shell { position: relative; min-width: 0; }
+.code-view .code-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.copy-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 4px 10px;
+  font-family: var(--pg-sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pg-muted);
+  background: var(--pg-panel-alt);
+  border: 1px solid var(--pg-line);
+  border-radius: 6px;
+  cursor: pointer;
+  /* Out of the way until wanted, but never fully invisible: a control that
+     only exists on hover is unreachable by touch and easy to miss. */
+  opacity: 0.45;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.code-shell:hover .copy-button,
+.copy-button:focus-visible { opacity: 1; }
+.copy-button:hover { color: var(--pg-text); border-color: var(--pg-accent); }
+.copy-button.copied { opacity: 1; color: var(--pg-easy); border-color: var(--pg-easy); }
+.copy-button.failed { opacity: 1; color: var(--pg-hard); border-color: var(--pg-hard); }
+
+/* The block is focusable so Ctrl/Cmd+A can be scoped to it -- show that focus
+   rather than leaving a keyboard user guessing where they are. */
+.code-shell pre:focus-visible {
+  outline: 2px solid var(--pg-accent);
+  outline-offset: -2px;
+}
+
 /* ---- markdown ---- */
 /* Headings are demoted one level by MarkdownView, so a problem.md's `# Title`
    arrives here as h2 and its `## Section` as h3. */
@@ -282,7 +325,7 @@ body {
   padding: 1px 5px;
   border-radius: 4px;
 }
-.markdown-view pre { border-radius: 8px; padding: 12px; overflow-x: auto; }
+.markdown-view pre { border-radius: 8px; padding: 12px; padding-right: 68px; overflow-x: auto; }
 .markdown-view table {
   border-collapse: collapse;
   width: 100%;

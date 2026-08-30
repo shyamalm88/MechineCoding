@@ -4,6 +4,7 @@ import javascript from 'highlight.js/lib/languages/javascript'
 import xml from 'highlight.js/lib/languages/xml'
 import css from 'highlight.js/lib/languages/css'
 import 'highlight.js/styles/github-dark.css'
+import CopyableCode from './CopyableCode.jsx'
 
 // Register only the languages these problems actually use, rather than pulling
 // in highlight.js's full ~190-language bundle. `xml` is required even though no
@@ -52,9 +53,9 @@ export default function CodeView({ files }) {
           ))}
         </div>
       )}
-      <pre className="code-block">
+      <CopyableCode className="code-block">
         <code className="hljs" dangerouslySetInnerHTML={{ __html: highlighted }} />
-      </pre>
+      </CopyableCode>
     </div>
   )
 }
