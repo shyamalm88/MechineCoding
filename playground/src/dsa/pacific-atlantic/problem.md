@@ -86,3 +86,7 @@ Visual of DFS direction:
 
 Time Complexity: O(M * N) - each cell visited at most twice (once per ocean)
 Space Complexity: O(M * N) - two Sets + recursion stack
+
+## Alternative
+
+BFS Approach

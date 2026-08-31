@@ -18,3 +18,31 @@ Constraints:
 - numbers sorted in non-decreasing order
 - Exactly one solution
 - Must use O(1) extra space
+
+## Approach
+
+Two Pointers — left and right converge
+
+## Story / intuition
+
+Sorted array is the perfect setup for two pointers.
+Start with left=0, right=n-1 (smallest and largest).
+If sum < target → need larger sum → move left RIGHT (increase smaller number)
+If sum > target → need smaller sum → move right LEFT (decrease larger number)
+If sum == target → found it!
+
+## Why this works
+
+At every step, the pair we're checking is the ONLY candidate
+for the current left-right combination. Moving a pointer eliminates all pairs
+that can't possibly work.
+
+## Dry run
+
+numbers=[2,7,11,15], target=9
+l=0(2), r=3(15): sum=17 > 9 → r=2
+l=0(2), r=2(11): sum=13 > 9 → r=1
+l=0(2), r=1(7):  sum=9 == 9 → return [1,2] ✓
+
+Time:  O(N)
+Space: O(1)

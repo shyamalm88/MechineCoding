@@ -10,6 +10,6 @@ Without the snapshot, children enqueued during the loop get mixed into the
 same level and the averages are wrong — the single most common bug in
 level-order problems.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(w) where w is the widest level
+TIME: O(n) · SPACE: O(w) where w is the widest level

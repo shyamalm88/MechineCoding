@@ -18,3 +18,19 @@ Constraints:
 - 1 <= Node.val <= 10^7
 - root is a binary search tree.
 - 1 <= val <= 10^7
+
+## Approach
+
+Iterative Search
+
+## Intuition
+
+A BST has the property that for any node:
+- Left child < Node
+- Right child > Node
+
+We can traverse down the tree like a binary search in a sorted array.
+If target < current, go left. If target > current, go right.
+
+Time Complexity: O(H) - Where H is height of tree (log N for balanced, N for skewed).
+Space Complexity: O(1) - Iterative approach uses constant extra space.

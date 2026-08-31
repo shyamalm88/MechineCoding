@@ -1,9 +1,5 @@
 # Shortest Path with Obstacles Elimination (LeetCode #1293)
 
-## Category
-
-🟢 IMPORTANT (Grid BFS with State Expansion)
-
 You are given an m x n grid where:
 - 0 = empty cell
 - 1 = obstacle

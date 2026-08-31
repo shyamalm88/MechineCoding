@@ -17,3 +17,16 @@ Constraints:
 - 1 <= nums.length <= 10
 - -10 <= nums[i] <= 10
 - All the numbers of nums are unique.
+
+## Approach
+
+Backtracking (Include/Exclude)
+
+## Intuition
+
+For every element in the array, we have exactly two choices:
+1. Include it in the current subset.
+2. Exclude it from the current subset.
+
+Time Complexity: O(N * 2^N) - 2^N subsets, each takes O(N) to copy.
+Space Complexity: O(N) - Recursion stack.

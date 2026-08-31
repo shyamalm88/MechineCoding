@@ -1,9 +1,5 @@
 # Distinct Subsequences (LeetCode #115)
 
-## Category
-
-🔴 VVIMP (Counting DP on Subsequences)
-
 You are given two strings:
 - s (source string)
 - t (target string)

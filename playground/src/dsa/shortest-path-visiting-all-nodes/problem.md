@@ -1,9 +1,5 @@
 # Shortest Path Visiting All Nodes (LeetCode #847)
 
-## Category
-
-🔴 VVIMP (Bitmask BFS on State Space)
-
 You are given an undirected, connected graph with n nodes labeled 0 to n-1.
 
 You can start at ANY node.

@@ -23,6 +23,6 @@ nums2 = [1,3,4,2]
   nums1 [4,1,2] → [-1, 3, -1]
 ```
 
-## Time
+## Complexity
 
-O(n + m) · SPACE: O(n)
+TIME: O(n + m) · SPACE: O(n)

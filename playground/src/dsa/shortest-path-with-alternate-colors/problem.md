@@ -1,9 +1,5 @@
 # Shortest Path with Alternating Colors (LeetCode #1129)
 
-## Category
-
-🟢 IMPORTANT (Graph BFS with Color-State)
-
 You are given a directed graph with n nodes (0 to n - 1).
 
 There are two types of edges:

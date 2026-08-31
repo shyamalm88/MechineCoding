@@ -19,6 +19,6 @@ the only reference to the rest of the list.
   return prev = 3 → 2 → 1
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1) iterative, O(n) recursive (call stack)
+TIME: O(n) · SPACE: O(1) iterative, O(n) recursive (call stack)

@@ -22,9 +22,9 @@ rejected. The O(1) answer composes two primitives you already know:
   compare 1==1, 2==2 → true
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)
 
 ## Important
 

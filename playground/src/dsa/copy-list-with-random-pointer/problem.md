@@ -27,6 +27,6 @@ DRY RUN (interleaved): A → B
   unzip  : A → B  and  A' → B'
 ```
 
-## Time
+## Complexity
 
-O(n) both · SPACE: O(n) map / O(1) interleaved
+TIME: O(n) both · SPACE: O(n) map / O(1) interleaved

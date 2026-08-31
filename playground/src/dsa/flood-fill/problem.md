@@ -34,3 +34,33 @@ Constraints:
 - 1 <= m, n <= 50
 - 0 <= image[i][j], color < 2^16
 - 0 <= sr < m, 0 <= sc < n
+
+## Approach
+
+DFS (Depth-First Search)
+
+## Intuition
+
+This is a classic graph traversal problem. From the starting pixel,
+explore all 4 directions recursively, changing color as we go.
+
+Key insight: Once we change a pixel's color, it no longer matches
+originalColor, so we won't revisit it (acts as "visited" marker).
+
+Edge case: If originalColor === newColor, return early to avoid
+infinite recursion (pixel would always match originalColor).
+
+Visual of DFS traversal:
+```text
+  Start at (1,1):
+  [1, 1, 1]     Step 1: Change (1,1) to 2
+  [1, X, 0]     Step 2: DFS to (0,1), (2,1), (1,0), (1,2)
+  [1, 0, 1]     Step 3: Continue recursively...
+```
+
+Time Complexity: O(m × n) - visit each pixel at most once
+Space Complexity: O(m × n) - recursion stack in worst case (all same color)
+
+## Critical
+
+If same color, return early to prevent infinite recursion

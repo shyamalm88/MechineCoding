@@ -19,3 +19,20 @@ Output: 42 (15 -> 20 -> 7)
 Constraints:
 - The number of nodes in the tree is in the range [1, 3 * 10^4].
 - -1000 <= Node.val <= 1000
+
+## Approach
+
+Post-Order DFS (Global Max Update)
+
+## Intuition
+
+For any node, the maximum path passing through it (as the "peak" of the path)
+is: Node.val + MaxLeftGain + MaxRightGain.
+
+However, to its parent, this node can only contribute one branch (it cannot
+split). So it returns: Node.val + max(MaxLeftGain, MaxRightGain).
+
+Important: If a branch has a negative sum, we should ignore it (treat gain as 0).
+
+Time Complexity: O(N)
+Space Complexity: O(H)

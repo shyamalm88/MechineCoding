@@ -17,3 +17,30 @@ Constraints:
 - 0 <= nums.length <= 10^4
 - -10^4 <= nums[i] <= 10^4
 - add will be called at most 10^4 times
+
+## Approach
+
+Min-Heap of size K
+
+## Story / intuition
+
+Maintain a Min-Heap that holds exactly the K largest elements seen so far.
+The SMALLEST of these K elements (heap top) IS the Kth largest overall.
+
+On each add:
+- Push new value into heap.
+- If heap size > K, pop (removes the smallest, which is too small to matter).
+- Return heap top (= Kth largest).
+
+WHY MIN-HEAP? We want to quickly evict elements that are too small to be in
+the top-K. The smallest of the top-K is always at the top of a min-heap.
+
+## Dry run
+
+k=3, nums=[4,5,8,2] → heap after init = [4,5,8]
+add(3): push 3 → [3,4,5,8] size=4>3 → pop min(3) → [4,5,8]. top=4 ✓
+add(5): push 5 → [4,5,5,8] size=4>3 → pop 4 → [5,5,8]. top=5 ✓
+add(10): push 10 → [5,5,8,10] → pop 5 → [5,8,10]. top=5 ✓
+
+Time:  O(log K) per add
+Space: O(K)

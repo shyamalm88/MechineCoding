@@ -30,6 +30,6 @@ assumption is the usual bug.
   -3 → 7
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(n) for nesting depth
+TIME: O(n) · SPACE: O(n) for nesting depth

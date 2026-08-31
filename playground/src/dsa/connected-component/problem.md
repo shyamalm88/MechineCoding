@@ -93,3 +93,14 @@ Visual:
 
 Time Complexity: O(V + E) - build graph + visit each node and edge once
 Space Complexity: O(V + E) - adjacency list + visited array + recursion stack
+
+DFS to mark all nodes in the same component
+@param {number} node - current node to explore
+
+## Alternative
+
+BFS Approach
+
+## Alternative
+
+Union-Find (Disjoint Set Union)

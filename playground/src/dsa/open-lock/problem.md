@@ -75,3 +75,7 @@ Algorithm:
 
 Time Complexity: O(A^L * L^2 + D), where A is alphabet size (10), L is number of digits (4), D is size of deadends.
 Space Complexity: O(A^L + D) for the queue and visited set.
+
+Helper to generate all 8 possible next states
+@param {string} s - current lock state
+@return {string[]} - list of next states

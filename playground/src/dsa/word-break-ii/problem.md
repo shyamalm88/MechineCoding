@@ -25,3 +25,40 @@ Constraints:
 - 1 <= wordDict[i].length <= 10
 - s and wordDict[i] consist of only lowercase English letters.
 - All the strings of wordDict are unique.
+
+## Approach
+
+Backtracking (DFS)
+
+## Intuition
+
+We need to find ALL possible ways to break the string. This suggests an
+exhaustive search. We can use backtracking (DFS).
+
+At any index `start`, we iterate through all possible end indices `i` (from
+start to end of string).
+If the substring s[start...i] exists in the dictionary:
+1. We choose this word.
+2. We recursively call the function for the remaining substring (starting at i+1).
+3. When the recursion returns (backtracks), we remove the chosen word and try
+```text
+   the next possibility.
+```
+
+## Time complexity
+
+O(N * 2^N)
+- In the worst case (e.g., s="aaaa...", wordDict=["a", "aa", "aaa"]), every
+```text
+  prefix is a valid word.
+```
+
+- There are 2^(N-1) possible ways to put spaces in a string of length N.
+- For each valid partition, we spend O(N) to join strings.
+- Thus, O(N * 2^N).
+
+## Space complexity
+
+O(N * 2^N)
+- To store the results (all possible sentences).
+- Recursion stack depth is O(N).

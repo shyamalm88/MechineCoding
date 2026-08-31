@@ -21,6 +21,6 @@ The loop condition decides which middle you get on even input:
   while (fast.next && fast.next.next) → FIRST middle
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

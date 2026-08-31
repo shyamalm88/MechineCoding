@@ -1,9 +1,5 @@
 # Sliding Puzzle (LeetCode #773)
 
-## Category
-
-🟢 IMPORTANT (BFS on Implicit State Graph)
-
 You are given a 2x3 board representing a sliding puzzle.
 
 The board contains:

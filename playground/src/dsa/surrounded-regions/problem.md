@@ -15,3 +15,23 @@ Constraints:
 - n == board[i].length
 - 1 <= m, n <= 200
 - board[i][j] is 'X' or 'O'.
+
+## Approach
+
+DFS from Borders (Reverse Thinking)
+
+## Intuition
+
+Instead of finding surrounded 'O's, it's easier to find *unsurrounded* 'O's.
+An 'O' is unsurrounded if it's on the border or connected to an 'O' on the border.
+
+1. Start DFS/BFS from every 'O' on the four borders.
+2. Mark all reachable 'O's from the borders with a temporary marker (e.g., 'E' for Escaped).
+3. Iterate through the entire grid again:
+```text
+   - If a cell is 'O' (it wasn't reached from a border), flip it to 'X'.
+   - If a cell is 'E', flip it back to 'O'.
+```
+
+Time Complexity: O(M * N)
+Space Complexity: O(M * N) for the recursion stack in the worst case.

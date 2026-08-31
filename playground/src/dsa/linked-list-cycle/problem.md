@@ -18,9 +18,9 @@ the O(1) answer.
   slow 2, fast 0 → slow 0, fast 2 → slow -4, fast -4 → collision → true
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)
 
 FOLLOW-UP (#142, cycle start): after the collision, reset one pointer to the
 head and advance both one step at a time; they meet at the cycle entrance.

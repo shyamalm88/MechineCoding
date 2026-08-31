@@ -23,3 +23,22 @@ Example 3:
 Input: asteroids = [10,2,-5]
 Output: [10]
 Explanation: The 2 and -5 collide resulting in -5. The 10 and -5 collide resulting in 10.
+
+## Approach
+
+Stack
+
+## Intuition
+
+Iterate through the asteroids. Use a stack to keep track of stable asteroids.
+- If an asteroid is moving Right (> 0), push it (it won't collide with previous ones).
+- If an asteroid is moving Left (< 0), it collides with Right-moving asteroids
+```text
+  at the top of the stack.
+  - If Top < |Current|, Top explodes (pop). Check next.
+  - If Top == |Current|, Both explode (pop, stop).
+  - If Top > |Current|, Current explodes (stop).
+```
+
+Time Complexity: O(N)
+Space Complexity: O(N)

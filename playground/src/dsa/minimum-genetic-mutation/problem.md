@@ -1,9 +1,5 @@
 # Minimum Genetic Mutation (LeetCode #433)
 
-## Category
-
-🟢 IMPORTANT (BFS on Implicit Graph)
-
 A gene string consists of 8 characters, each being one of:
 ```text
   'A', 'C', 'G', 'T'

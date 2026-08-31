@@ -20,3 +20,47 @@ Output: [0,1,2]
 Constraints:
 - 1 <= s.length, p.length <= 3 * 10^4
 - s and p consist of lowercase English letters.
+
+## Approach
+
+Fixed Sliding Window with Frequency Map
+
+## Intuition
+
+We need to find substrings of length `p.length` in `s` that contain the exact
+same character counts as `p`.
+
+We can use a sliding window of size `p.length`.
+1. Create a frequency map (`need`) for string `p`.
+2. Expand the window by adding `s[right]` to a `window` map.
+3. If the window size exceeds `p.length`, shrink it from the left.
+4. Instead of comparing two full maps (O(26)) every time, we track a `formed` count.
+```text
+   - When `window[char]` reaches the count in `need[char]`, we increment `formed`.
+   - When removing a char from the left, if it causes `window[char]` to drop below
+     `need[char]`, we decrement `formed`.
+```
+
+5. If `formed` equals the number of unique characters in `p`, we found an anagram.
+
+## Dry run
+
+Input: s = "cbaebabacd", p = "abc"
+need = {a:1, b:1, c:1}, required = 3
+
+1. right=0 ('c'): window={c:1}. formed=1 (c is satisfied).
+2. right=1 ('b'): window={c:1, b:1}. formed=2 (b is satisfied).
+3. right=2 ('a'): window={c:1, b:1, a:1}. formed=3.
+```text
+   - Window len is 3. formed == required. Add 0 to result.
+```
+
+4. right=3 ('e'): window={c:1, b:1, a:1, e:1}.
+```text
+   - Window len > 3. Remove s[0] ('c').
+   - window['c'] becomes 0. It was needed, so formed-- (now 2).
+   - formed != required.
+```
+
+Time Complexity: O(N) - N is length of s.
+Space Complexity: O(1) - Map size is bounded by 26 lowercase letters.

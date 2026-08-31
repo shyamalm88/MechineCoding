@@ -1,9 +1,5 @@
 # Minimum Path Sum (LeetCode #64)
 
-## Category
-
-🟢 IMPORTANT (2D Grid DP / Cost Accumulation)
-
 You are given an m x n grid filled with non-negative numbers.
 
 You start at the top-left cell (0,0).

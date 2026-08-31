@@ -15,3 +15,16 @@ Constraints:
 - 1 <= strs.length <= 200
 - 0 <= strs[i].length <= 200
 - strs[i] consists of only lowercase English letters.
+
+## Approach
+
+Vertical Scanning
+
+## Intuition
+
+We iterate through the characters of the first string (column by column).
+For each character, we check if it exists in the same position in all other strings.
+If we find a mismatch or reach the end of a shorter string, we stop.
+
+Time Complexity: O(S) where S is the sum of all characters in all strings.
+Space Complexity: O(1) (ignoring result storage).

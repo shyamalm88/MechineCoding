@@ -27,3 +27,31 @@ Output: true
 Constraints:
 - 1 <= s.length <= 100
 - s[i] is '(', ')' or '*'.
+
+## Approach
+
+Greedy (Range of Open Counts)
+
+## Intuition
+
+Since '*' is flexible, at any point in the string, we don't have a single
+count of open parentheses. Instead, we have a range of possible open
+parenthesis counts: [minOpen, maxOpen].
+
+- minOpen: The minimum number of open parentheses we MUST have (treating '*' as ')').
+- maxOpen: The maximum number of open parentheses we COULD have (treating '*' as '(').
+
+Iteration logic:
+- '(': Increment both minOpen and maxOpen.
+- ')': Decrement both minOpen and maxOpen.
+- '*': Decrement minOpen (treat as ')') and increment maxOpen (treat as '(').
+
+Validity checks during iteration:
+1. If maxOpen < 0: We have too many ')' even if we turned every '*' into '('. Invalid.
+2. If minOpen < 0: We treated too many '*' as ')'. Since '*' can be empty, we reset minOpen to 0.
+
+Final check:
+- If minOpen == 0, it means it's possible to close all parentheses.
+
+Time Complexity: O(N)
+Space Complexity: O(1)

@@ -19,10 +19,7 @@ Two details:
    wrongly prune valid alternative paths through a shared node
 ```
 
-## Time
+## Complexity
 
-O(2^n · n) worst case -- there can be exponentially many paths
-
-## Space
-
-O(n) recursion depth
+TIME: O(2^n · n) worst case -- there can be exponentially many paths
+SPACE: O(n) recursion depth

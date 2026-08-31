@@ -25,3 +25,17 @@ Explanation: "226" could be decoded as "BZ" (2 26), "VF" (22 6), or "BBF" (2 2 6
 Constraints:
 - 1 <= s.length <= 100
 - s contains only digits and may contain leading zero(s).
+
+## Approach
+
+Dynamic Programming (Top-Down)
+
+## Intuition
+
+At index `i`, we can:
+1. Take 1 digit: Valid if s[i] != '0'. Recurse on i+1.
+2. Take 2 digits: Valid if s[i...i+1] is between "10" and "26". Recurse on i+2.
+Sum the ways from both valid choices.
+
+Time Complexity: O(N)
+Space Complexity: O(N)

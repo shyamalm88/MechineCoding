@@ -21,6 +21,6 @@ key when its count hits zero or the distinct count never drops.
   then [2,3,2,2] len 4 → answer 4
 ```
 
-## Time
+## Complexity
 
-O(n) -- each index enters and leaves once · SPACE: O(K)
+TIME: O(n) -- each index enters and leaves once · SPACE: O(K)

@@ -1,9 +1,5 @@
 # Longest Palindromic Subsequence (LeetCode #516)
 
-## Category
-
-🔴 VVIMP (Subsequence DP on Strings)
-
 You are given a string s.
 
 Return the LENGTH of the LONGEST palindromic SUBSEQUENCE in s.

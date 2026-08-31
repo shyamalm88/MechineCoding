@@ -29,6 +29,6 @@ majority cannot be exhausted first, so it survives as the final candidate.
 without the guarantee you must verify the candidate in a second pass --
 the algorithm always returns something, even when no majority exists.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

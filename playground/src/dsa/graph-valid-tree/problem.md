@@ -1,9 +1,5 @@
 # Graph Valid Tree (LeetCode #261)
 
-## Category
-
-🔵 CORE (Graph Validity: Connectivity + Acyclic)
-
 You are given:
 - n nodes labeled from 0 to n - 1
 - edges where edges[i] = [u, v] represents an undirected edge

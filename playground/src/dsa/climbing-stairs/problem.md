@@ -21,3 +21,17 @@ Explanation: There are three ways to climb to the top.
 
 Constraints:
 - 1 <= n <= 45
+
+## Approach
+
+Dynamic Programming (Bottom-Up)
+
+## Intuition
+
+To reach step `i`, we could have come from step `i-1` (taking 1 step)
+or from step `i-2` (taking 2 steps).
+So, ways[i] = ways[i-1] + ways[i-2].
+This is exactly the Fibonacci sequence.
+
+Time Complexity: O(N)
+Space Complexity: O(N) (Can be optimized to O(1))

@@ -38,3 +38,7 @@ the smaller one to determine the water level.
 Approach: Two Pointers with running max
 Time Complexity: O(n) - single pass through array
 Space Complexity: O(1) - only pointers and max variables
+
+## Alternative solution
+
+Prefix/Suffix Max Arrays

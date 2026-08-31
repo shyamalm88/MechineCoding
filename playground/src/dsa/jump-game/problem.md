@@ -17,3 +17,18 @@ Output: false
 Constraints:
 - 1 <= nums.length <= 10^4
 - 0 <= nums[i] <= 10^5
+
+## Approach
+
+Greedy
+
+## Intuition
+
+We iterate through the array and keep track of the `maxReach` (the farthest index
+we can currently reach).
+If at any point the current index `i` is greater than `maxReach`, it means
+we are stuck and cannot proceed further.
+Otherwise, update `maxReach = max(maxReach, i + nums[i])`.
+
+Time Complexity: O(N)
+Space Complexity: O(1)

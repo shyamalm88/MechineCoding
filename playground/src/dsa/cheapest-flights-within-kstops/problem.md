@@ -1,9 +1,5 @@
 # Cheapest Flights Within K Stops (LeetCode #787)
 
-## Category
-
-🟢 IMPORTANT (State-Space Dijkstra / BFS Hybrid)
-
 You are given:
 - n cities labeled from 0 to n - 1
 - flights[i] = [from, to, price]

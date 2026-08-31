@@ -1,9 +1,5 @@
 # Sudoku Solver (LeetCode #37)
 
-## Category
-
-🔴 VVIMP (Backtracking + Constraint Propagation)
-
 Solve a 9x9 Sudoku board.
 
 Rules:

@@ -26,6 +26,6 @@ is pushed and popped at most once → amortised O(1) per call.
    85 → pop (80,1) and (75,4) → span 6
 ```
 
-## Time
+## Complexity
 
-O(1) amortised per next() · SPACE: O(n)
+TIME: O(1) amortised per next() · SPACE: O(n)

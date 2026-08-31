@@ -98,3 +98,12 @@ Visual:
 
 Time Complexity: O(N^2) - check all cells in N×N matrix
 Space Complexity: O(N) - visited array + recursion stack
+
+## Dfs
+
+Visit all cities in the same province
+@param {number} city - current city to explore
+
+## Alternative
+
+BFS Approach

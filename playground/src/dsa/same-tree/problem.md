@@ -1,9 +1,5 @@
 # Same Tree (LeetCode #100)
 
-## Category
-
-🔵 CORE (Tree Comparison / Structural Equality)
-
 Given the roots of two binary trees p and q,
 return true if they are the SAME.
 

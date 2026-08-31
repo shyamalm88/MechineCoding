@@ -31,6 +31,6 @@ where bugs live:
   lo3 hi5 mid4 (9==9) → return 4
 ```
 
-## Time
+## Complexity
 
-O(log n) · SPACE: O(1)
+TIME: O(log n) · SPACE: O(1)

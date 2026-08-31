@@ -32,3 +32,11 @@ Approach: Pre-order DFS traversal
 
 Time Complexity: O(n) for both operations
 Space Complexity: O(n) - string storage and recursion stack
+
+Encodes a tree to a single string.
+@param {TreeNode} root
+@return {string}
+
+Decodes your encoded data to tree.
+@param {string} data
+@return {TreeNode}

@@ -118,3 +118,14 @@ Final Step: Reverse Result -> [0, 2, 1, 3] (Valid Topological Sort)
 
 Time Complexity: O(V + E) - visit each node and edge once
 Space Complexity: O(V + E) - adjacency list + result array
+
+DFS with cycle detection
+Returns true if cycle found
+
+## Post-order
+
+Add to result after all descendants processed
+
+## Alternative
+
+BFS (Kahn's Algorithm)

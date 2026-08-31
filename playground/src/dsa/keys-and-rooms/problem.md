@@ -11,6 +11,6 @@ compare the visited count to n.
 DFS or BFS both work; nothing here favours either, since we only care about
 reachability, not distance.
 
-## Time
+## Complexity
 
-O(V + E) · SPACE: O(V)
+TIME: O(V + E) · SPACE: O(V)

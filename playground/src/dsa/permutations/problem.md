@@ -15,3 +15,17 @@ Constraints:
 - 1 <= nums.length <= 6
 - -10 <= nums[i] <= 10
 - All the integers of nums are unique.
+
+## Approach
+
+Backtracking (Swapping)
+
+## Intuition
+
+To generate all permutations, we can fix one number at the current position
+and recursively permute the remaining positions.
+We can do this in-place by swapping elements to place them in the "current"
+position, recursing, and then swapping back (backtracking) to restore the state.
+
+Time Complexity: O(N * N!) - There are N! permutations, and copying takes O(N).
+Space Complexity: O(N) - Recursion stack.

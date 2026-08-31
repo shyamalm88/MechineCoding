@@ -27,6 +27,6 @@ partial tail and violate the spec.
   result 2 1 4 3 5
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

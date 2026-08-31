@@ -16,3 +16,18 @@ Output: false
 Constraints:
 - 1 <= s.length, t.length <= 5 * 10^4
 - s and t consist of lowercase English letters.
+
+## Approach
+
+Frequency Counter
+
+## Intuition
+
+If two strings are anagrams, they must have the same length and the exact
+same count of every character.
+We can use a frequency array of size 26 (for lowercase English letters).
+Increment for string `s`, decrement for string `t`.
+If the array is all zeros at the end, they are anagrams.
+
+Time Complexity: O(N)
+Space Complexity: O(1) (Fixed size array of 26)

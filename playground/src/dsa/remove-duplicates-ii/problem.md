@@ -19,3 +19,23 @@ Output: 7, nums = [0,0,1,1,2,3,3,_,_]
 Constraints:
 - 1 <= nums.length <= 3 * 10^4
 - nums is sorted in non-decreasing order.
+
+## Approach
+
+Two Pointers (Read/Write)
+
+## Intuition
+
+We need a pointer `insertIndex` that tells us where to write the next valid number.
+We iterate through the array with `i`.
+
+A number is valid to keep if:
+1. We haven't filled 2 spots yet (insertIndex < 2).
+2. OR, the number is different from the one located 2 spots back (nums[insertIndex-2]).
+```text
+   (Since the array is sorted, if nums[i] > nums[insertIndex-2], it means we haven't
+   used this number twice yet).
+```
+
+Time Complexity: O(N)
+Space Complexity: O(1)

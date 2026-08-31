@@ -79,3 +79,11 @@ Key Insight:
 
 Time Complexity: O(N + E) - visit each node and edge once
 Space Complexity: O(N) - HashMap stores N nodes + recursion stack
+
+## Important
+
+Add to map BEFORE recursing to handle cycles
+
+## Helper
+
+Build graph from adjacency list

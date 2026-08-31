@@ -17,3 +17,22 @@ Explanation: You need to remove two [1,2] to make the rest of the intervals non-
 Constraints:
 - 1 <= intervals.length <= 10^5
 - intervals[i].length == 2
+
+## Approach
+
+Greedy (Sort by End Time)
+
+## Intuition
+
+To maximize the number of non-overlapping intervals we can keep (which minimizes
+the number we remove), we should always pick the interval that ends *earliest*.
+Why? Because finishing early leaves the most room for subsequent intervals.
+
+1. Sort by End Time.
+2. Iterate: If current interval starts before the previous one ends, it's an overlap.
+```text
+   We discard the current one (count++) because the previous one ended earlier (greedy choice).
+```
+
+Time Complexity: O(N log N)
+Space Complexity: O(log N) or O(N) depending on sort implementation.

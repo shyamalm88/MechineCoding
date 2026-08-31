@@ -1,9 +1,5 @@
 # Partition Equal Subset Sum (LeetCode #416)
 
-## Category
-
-🟢 IMPORTANT (0/1 Knapsack → Boolean DP)
-
 You are given an array of positive integers nums.
 
 Determine if the array can be partitioned into TWO subsets

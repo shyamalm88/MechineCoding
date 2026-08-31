@@ -18,3 +18,20 @@ Constraints:
 - n == nums.length
 - 1 <= n <= 5000
 - All the integers of nums are unique.
+
+## Approach
+
+Binary Search
+
+## Intuition
+
+We want to find the "pivot" point where the order resets.
+We compare `mid` with `right`.
+- If nums[mid] > nums[right], the minimum must be to the right of mid (e.g., [3,4,5,1,2], mid=5, right=2).
+- If nums[mid] < nums[right], the minimum is either mid or to the left (e.g., [5,1,2,3,4], mid=2, right=4).
+
+Time Complexity: O(log N)
+Space Complexity: O(1)
+
+@param {number[]} nums
+@return {number}

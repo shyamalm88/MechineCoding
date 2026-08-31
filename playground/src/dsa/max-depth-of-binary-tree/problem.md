@@ -1,9 +1,5 @@
 # Maximum Depth of Binary Tree (LeetCode #104)
 
-## Category
-
-🔵 CORE (Tree Recursion / Height Computation)
-
 Given the root of a binary tree,
 return its maximum depth.
 

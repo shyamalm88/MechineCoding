@@ -67,17 +67,63 @@ function splitHeader(source) {
   }
 }
 
+/**
+ * Collect every documentation comment a file carries, not just the opening one.
+ *
+ * These sources put the problem statement in the first block but the part that
+ * actually teaches -- approach, intuition, dry run, complexity -- in a SECOND
+ * block above the implementation. Lifting only the first left 155 of 279
+ * descriptions under 500 characters while ~189k characters of explanation sat
+ * buried in the Code tab.
+ *
+ * Everything above the first console.log is documentation; the tests follow it.
+ * The code file itself is left untouched, so the Code tab still shows exactly
+ * what ran, comments included.
+ */
+function extractDoc(source) {
+  const testsAt = source.search(/^\s*console\.log/m)
+  const region = testsAt === -1 ? source : source.slice(0, testsAt)
+
+  const parts = []
+
+  // Block comments, in source order.
+  const blockPattern = /\/\*\*([\s\S]*?)\*\//g
+  let match
+  while ((match = blockPattern.exec(region)) !== null) {
+    const body = match[1]
+    // Skip @param/@return stubs: they document the signature, not the idea.
+    const hasProse = body
+      .split('\n')
+      .some((line) => {
+        const text = line.replace(/^\s*\*? ?/, '').trim()
+        return text && !text.startsWith('@')
+      })
+    if (hasProse) parts.push({ at: match.index, text: body })
+  }
+
+  // Section titles written as line comments -- "// APPROACH: Two Pointers".
+  // Requiring the colon keeps banner lines like "// TEST CASES" out.
+  const headingPattern = /^[ \t]*\/\/[ \t]*([A-Z][A-Z0-9 &/()#+.'-]{2,60}:.*)$/gm
+  while ((match = headingPattern.exec(region)) !== null) {
+    parts.push({ at: match.index, text: ' * ' + match[1] })
+  }
+
+  parts.sort((a, b) => a.at - b.at)
+  return parts.map((part) => part.text).join('\n *\n')
+}
+
 /** Turn a JSDoc comment body into markdown. */
 function headerToMarkdown(header, title) {
   const lines = header
     .split('\n')
-    .map((line) => line.replace(/^\s*\*ualsehjkl?/, '').replace(/^\s*\* ?/, ''))
+    .map((line) => line.replace(/^\s*\*ualsehjkl?/, '').replace(/^\s*\* ?/, '').trimEnd())
     // The sources use long ==== / ---- rules as visual separators; they become
     // markdown setext headings (turning the line above into an <h1>) if kept.
     .filter((line) => !/^[=\-_]{6,}\s*$/.test(line))
 
   const body = []
   let inCode = false
+  let complexityOpen = false
   for (let line of lines) {
     // "PROBLEM:", "INTUITION:" etc. become headings.
     // Split a combined complexity line so both halves are readable.
@@ -89,6 +135,22 @@ function headerToMarkdown(header, title) {
       // The PROBLEM: line IS the title, already emitted as the h1 -- repeating
       // it as a blockquote just duplicates the heading on every page.
       if (key === 'PROBLEM') continue
+      // The importance tier already shows as a tag in the sidebar and header,
+      // so a "CATEGORY: 🔵 CORE" section is just noise on the page.
+      if (key === 'CATEGORY') continue
+
+      // TIME: and SPACE: are two halves of one idea -- give them a single
+      // Complexity section instead of a heading each.
+      if (key === 'TIME' || key === 'SPACE') {
+        if (!complexityOpen) {
+          body.push('', '## Complexity', '')
+          complexityOpen = true
+        }
+        body.push(line.trim())
+        continue
+      }
+      complexityOpen = false
+
       body.push('', `## ${key.charAt(0) + key.slice(1).toLowerCase()}`, '')
       if (rest.trim()) body.push(rest.trim())
       continue
@@ -149,6 +211,7 @@ for (const file of files) {
 
   const source = readFileSync(file, 'utf8')
   const { header, code } = splitHeader(source)
+  const doc = extractDoc(source)
   const titleMatch = header.match(/PROBLEM:\s*(.+)/)
   const rawTitle = (titleMatch ? titleMatch[1] : basename(file, '.js')).trim()
 
@@ -179,7 +242,7 @@ for (const file of files) {
 
   const dir = join(DEST, id)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'problem.md'), headerToMarkdown(header, rawTitle))
+  writeFileSync(join(dir, 'problem.md'), headerToMarkdown(doc, rawTitle))
   writeFileSync(join(dir, basename(file)), code + '\n')
 
   // Read technique tags back out of the file's own prose -- see techniques.mjs.

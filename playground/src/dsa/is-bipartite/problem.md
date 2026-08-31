@@ -101,3 +101,16 @@ Why check if neighbor has SAME color?
 
 Time Complexity: O(V + E) - visit each node and edge once
 Space Complexity: O(V) - color array + recursion stack
+
+DFS to color the graph
+@param {number} node - current node
+@param {number} c - color to assign (0 or 1)
+@returns {boolean} true if valid 2-coloring possible from this node
+
+## Alternative
+
+BFS Approach (Level-order coloring)
+
+## Alternative
+
+Union-Find (Check if odd cycle exists)

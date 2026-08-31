@@ -1,9 +1,5 @@
 # Coin Change II (LeetCode #518)
 
-## Category
-
-🟢 IMPORTANT (Unbounded Knapsack / Counting DP)
-
 You are given:
 - an integer amount
 - an array of coins (each coin can be used UNLIMITED times)

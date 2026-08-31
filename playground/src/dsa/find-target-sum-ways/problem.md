@@ -1,9 +1,5 @@
 # Target Sum (LeetCode #494)
 
-## Category
-
-🔴 VVIMP (DP via Problem Transformation)
-
 You are given an array of integers nums and an integer target.
 
 You can assign either:

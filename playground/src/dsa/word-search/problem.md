@@ -19,3 +19,20 @@ Constraints:
 - m == board.length, n = board[i].length
 - 1 <= m, n <= 6
 - 1 <= word.length <= 15
+
+## Approach
+
+DFS + Backtracking
+
+## Intuition
+
+We iterate through every cell. If a cell matches the first letter of the word,
+we start a DFS.
+Inside DFS:
+1. Check boundaries and character match.
+2. Mark current cell as visited (e.g., replace with '#').
+3. Explore all 4 directions for the next character.
+4. Backtrack: Restore the original character so other paths can use it.
+
+Time Complexity: O(N * M * 4^L) where L is word length.
+Space Complexity: O(L) - Recursion stack depth.

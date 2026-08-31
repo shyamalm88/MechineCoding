@@ -19,6 +19,6 @@ Math.abs is essential when reading — the slot may already be marked.
   positive slots remain at idx 4 and 5 → missing 5 and 6
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1) excluding the output
+TIME: O(n) · SPACE: O(1) excluding the output

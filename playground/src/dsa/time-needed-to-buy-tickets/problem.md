@@ -16,6 +16,6 @@ that you can just COUNT the tickets each person buys before k finishes:
 The -1 is the crux: once k buys their last ticket the process stops, so
 people behind never get that final round.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

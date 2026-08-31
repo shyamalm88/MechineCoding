@@ -16,3 +16,19 @@ Explanation: 3 is the length of the path [4,2,1,3] or [5,2,1,3].
 Constraints:
 - The number of nodes in the tree is in the range [1, 10^4].
 - -100 <= Node.val <= 100
+
+## Approach
+
+Post-Order DFS (Height Calculation)
+
+## Intuition
+
+The diameter at a specific node is the sum of the heights of its left and
+right subtrees (LeftHeight + RightHeight).
+
+We traverse every node, calculate the diameter passing through it, and
+update a global maximum.
+The function itself returns the Height of the node to its parent.
+
+Time Complexity: O(N)
+Space Complexity: O(H)

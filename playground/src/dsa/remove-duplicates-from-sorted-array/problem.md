@@ -20,6 +20,6 @@ ever adjacent, so comparing nums[fast] to nums[slow] is sufficient.
   length = 3, array starts [0,1,2]
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

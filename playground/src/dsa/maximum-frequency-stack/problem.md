@@ -31,3 +31,30 @@ freqStack.pop();   // return 5, as 5 is the most frequent.
 freqStack.pop();   // return 7, as 5 and 7 is the most frequent, but 7 is closest to the top.
 freqStack.pop();   // return 5, as 5 is the most frequent.
 freqStack.pop();   // return 4, as 4, 5 and 7 is the most frequent, but 4 is closest to the top.
+
+## Approach
+
+Hash Map of Stacks
+
+## Intuition
+
+We need to track two things:
+1. The frequency of each element (`freq` map).
+2. The order of elements for each frequency (`group` map).
+
+`group` is a map where the key is the frequency `k`, and the value is a stack
+of elements that have that frequency.
+
+When we push `val`:
+- Increment its count in `freq`. Let's say it becomes `f`.
+- Push `val` onto the stack at `group[f]`.
+- This means `val` is the most recent element to reach frequency `f`.
+
+When we pop:
+- Look at the stack at `group[maxFreq]`.
+- Pop the top element `x`. This is the most recent element with the highest frequency.
+- Decrement `freq[x]`.
+- If the stack at `group[maxFreq]` becomes empty, decrement `maxFreq`.
+
+Time Complexity: O(1) for both push and pop.
+Space Complexity: O(N) to store elements.

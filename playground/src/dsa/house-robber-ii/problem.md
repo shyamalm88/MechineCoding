@@ -19,3 +19,18 @@ because they are adjacent houses.
 Constraints:
 - 1 <= nums.length <= 100
 - 0 <= nums[i] <= 1000
+
+## Approach
+
+Dynamic Programming (Break the Circle)
+
+## Intuition
+
+Since House[0] and House[n-1] are neighbors, we cannot rob both.
+This breaks down into two linear House Robber problems:
+1. Rob houses from index 0 to n-2 (exclude last house).
+2. Rob houses from index 1 to n-1 (exclude first house).
+The answer is the maximum of these two scenarios.
+
+Time Complexity: O(N)
+Space Complexity: O(N) (Recursion stack + Memo)

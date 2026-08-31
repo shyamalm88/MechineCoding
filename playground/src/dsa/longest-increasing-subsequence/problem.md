@@ -15,3 +15,17 @@ Output: 4
 Constraints:
 - 1 <= nums.length <= 2500
 - -10^4 <= nums[i] <= 10^4
+
+## Approach
+
+Dynamic Programming
+
+## Intuition
+
+Let dp[i] be the length of the longest increasing subsequence ending at index i.
+To calculate dp[i], we look at all previous indices j < i.
+If nums[j] < nums[i], we can extend the subsequence ending at j.
+dp[i] = max(dp[i], dp[j] + 1).
+
+Time Complexity: O(N^2)
+Space Complexity: O(N)

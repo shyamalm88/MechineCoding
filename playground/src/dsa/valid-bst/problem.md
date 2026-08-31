@@ -59,3 +59,7 @@ Constraints:
 Approach: DFS with valid range propagation
 Time Complexity: O(n) - visit each node once
 Space Complexity: O(h) - recursion stack, h = height of tree
+
+## Alternative solution
+
+Inorder Traversal (should produce sorted array)

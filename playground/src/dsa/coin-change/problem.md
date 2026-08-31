@@ -21,3 +21,16 @@ Constraints:
 - 1 <= coins.length <= 12
 - 1 <= coins[i] <= 2^31 - 1
 - 0 <= amount <= 10^4
+
+## Approach
+
+Dynamic Programming (Top-Down)
+
+## Intuition
+
+We want to find min coins for `amount`.
+For each coin `c` in coins, if we take it, we need 1 + minCoins(amount - c).
+We try all coins and take the minimum.
+
+Time Complexity: O(Amount * Coins)
+Space Complexity: O(Amount)

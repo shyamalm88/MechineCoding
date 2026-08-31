@@ -44,10 +44,7 @@ VISUALIZATION (starting top-right):
   Looking for 5: 15→11→7→4→5 ✓ (staircase pattern)
 ```
 
-## Time
+## Complexity
 
-O(m + n) - at most m+n steps (move down m times OR left n times)
-
-## Space
-
-O(1) - only using two pointers
+TIME: O(m + n) - at most m+n steps (move down m times OR left n times)
+SPACE: O(1) - only using two pointers

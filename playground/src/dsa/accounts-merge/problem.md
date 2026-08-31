@@ -1,9 +1,5 @@
 # Accounts Merge (LeetCode #721)
 
-## Category
-
-🟢 IMPORTANT (Union-Find + Graph Modeling)
-
 You are given a list of accounts where:
 
 ```text

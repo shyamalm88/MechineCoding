@@ -20,3 +20,22 @@ Constraints:
 - -2^31 <= n <= 2^31 - 1
 - n is an integer.
 - -10^4 <= x^n <= 10^4
+
+## Approach
+
+Binary Exponentiation (Iterative)
+
+## Intuition
+
+Instead of multiplying x by itself n times (which is O(n)), we can use
+"Exponentiation by Squaring".
+
+The idea is:
+x^n = (x^2)^(n/2)      if n is even
+x^n = x * (x^2)^((n-1)/2)  if n is odd
+
+By squaring the base (x = x * x) and halving the exponent (n = n / 2) at
+each step, we reduce the problem size logarithmically.
+
+Time Complexity: O(log n) - We halve n at every step.
+Space Complexity: O(1) - We only use a few variables for storage.

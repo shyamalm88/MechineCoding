@@ -19,6 +19,6 @@ missing, which is not a root-to-leaf path.
 Negative values are allowed, so you cannot prune early when the remainder
 goes below zero.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(h) recursion depth
+TIME: O(n) · SPACE: O(h) recursion depth

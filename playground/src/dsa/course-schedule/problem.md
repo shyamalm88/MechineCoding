@@ -90,3 +90,11 @@ Algorithm:
 
 Time Complexity: O(V + E) - visit each node and edge once
 Space Complexity: O(V + E) - adjacency list + recursion stack
+
+DFS to detect cycles
+@param {number} node - current course
+@returns {boolean} true if cycle found
+
+## Alternative
+
+BFS (Kahn's Algorithm - Topological Sort)

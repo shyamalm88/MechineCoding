@@ -17,3 +17,22 @@ Output: false
 Constraints:
 - The number of nodes in the tree is in the range [0, 5000].
 - -10^4 <= Node.val <= 10^4
+
+## Approach
+
+Bottom-Up DFS
+
+## Intuition
+
+Instead of calculating height for every node from the top down (which would be O(N^2)),
+we can check balance from the bottom up.
+
+We use a helper function that returns the height of the tree if it is balanced,
+or -1 if it is unbalanced.
+
+1. If a subtree returns -1, the current tree is also unbalanced (-1).
+2. If the absolute difference between left and right height > 1, return -1.
+3. Otherwise, return 1 + max(leftHeight, rightHeight).
+
+Time Complexity: O(N) - We visit every node once.
+Space Complexity: O(H) - Recursion stack.

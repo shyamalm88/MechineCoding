@@ -27,6 +27,6 @@ Only the last two values matter, so it collapses to O(1) space.
   dp3 = min(10+20, 0+15) = 15  ← start at index 1, skip to top
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

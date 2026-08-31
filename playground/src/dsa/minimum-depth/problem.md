@@ -12,6 +12,6 @@ that exists.
 BFS is the better answer anyway: the FIRST leaf encountered is at the minimum
 depth, so you can return immediately without exploring a deep subtree.
 
-## Time
+## Complexity
 
-O(n) worst case, often far less with BFS · SPACE: O(w)
+TIME: O(n) worst case, often far less with BFS · SPACE: O(w)

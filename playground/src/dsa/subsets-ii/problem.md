@@ -1,9 +1,5 @@
 # Subsets II (LeetCode #90)
 
-## Category
-
-🟢 IMPORTANT (Backtracking + Duplicate Handling)
-
 Given an integer array nums that may contain duplicates,
 return all possible UNIQUE subsets.
 

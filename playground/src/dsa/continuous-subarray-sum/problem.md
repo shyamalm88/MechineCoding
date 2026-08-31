@@ -14,6 +14,6 @@ what maximises that gap.
 
 Seed the map with {0: -1} so a prefix that is itself divisible by k counts.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(min(n,k))
+TIME: O(n) · SPACE: O(min(n,k))

@@ -22,6 +22,6 @@ rather than invent something new.
   weave: 1 → 4 → 2 → 3
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

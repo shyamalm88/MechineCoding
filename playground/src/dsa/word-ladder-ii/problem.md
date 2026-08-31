@@ -32,3 +32,28 @@ Constraints:
 - beginWord, endWord, and wordList[i] consist of lowercase English letters.
 - beginWord != endWord
 - All the words in wordList are unique.
+
+## Approach
+
+BFS + DFS (Backtracking)
+
+## Intuition
+
+To find ALL shortest paths, we need two steps:
+1. BFS: Find the shortest distance from beginWord to every other word.
+```text
+   While doing BFS, we build a "parents" graph (DAG).
+   - If we reach a word for the first time, record its distance and parent.
+   - If we reach a word again at the SAME shortest distance, add the new parent.
+   - This allows us to capture multiple paths of the same length.
+```
+
+2. DFS: Reconstruct paths from endWord back to beginWord using the parents graph.
+```text
+   - Start at endWord.
+   - Recursively visit all parents until we reach beginWord.
+   - Collect the paths.
+```
+
+Time Complexity: O(N * M * 26 + P), where P is the total length of all paths returned.
+Space Complexity: O(N * M) to store the graph and distances.

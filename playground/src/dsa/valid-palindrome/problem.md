@@ -19,3 +19,17 @@ Explanation: "raceacar" is not a palindrome.
 Constraints:
 - 1 <= s.length <= 2 * 10^5
 - s consists only of printable ASCII characters.
+
+## Approach
+
+Two Pointers
+
+## Intuition
+
+We need to ignore non-alphanumeric characters and case.
+1. Clean the string: Remove non-alphanumeric chars using Regex and convert to lowercase.
+2. Use Two Pointers (start and end) to compare characters moving inward.
+
+Time Complexity: O(N)
+Space Complexity: O(N) (if creating a new string) or O(1) (if traversing raw string).
+Here we create a new string for simplicity, which is O(N).

@@ -24,6 +24,6 @@ sorted [2,3,5,7,11,13,17]
   final [2,13,3,11,5,17,7]
 ```
 
-## Time
+## Complexity
 
-O(n log n) for the sort · SPACE: O(n)
+TIME: O(n log n) for the sort · SPACE: O(n)

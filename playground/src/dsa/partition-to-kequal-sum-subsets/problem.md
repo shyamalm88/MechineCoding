@@ -18,3 +18,49 @@ Constraints:
 - 1 <= k <= nums.length <= 16
 - 1 <= nums[i] <= 10^4
 - The frequency of each element is in the range [1, 4].
+
+## Approach
+
+Backtracking — fill K buckets to a shared target sum
+
+## Story / intuition
+
+Think of K empty BUCKETS, each needing to be filled to exactly
+`target = sum(nums) / k`. Go through the numbers ONE AT A TIME (largest
+first) and try dropping each one into each bucket. If a number doesn't
+fit (would overflow a bucket past `target`), skip that bucket. If every
+number gets placed and every bucket lands exactly on `target`, success.
+
+Two pruning rules make this fast enough:
+
+1. SORT DESCENDING first. Large numbers have the FEWEST valid buckets
+```text
+   they can go into, so deciding their placement EARLY prunes the search
+   tree the most (fail fast instead of late).
+```
+
+2. EMPTY-BUCKET SYMMETRY: if placing a number into an EMPTY bucket leads
+```text
+   to failure down the line, trying it in any OTHER empty bucket would
+   fail identically (empty buckets are interchangeable) — so the moment
+   we backtrack out of an empty bucket, BREAK instead of trying the next
+   bucket.
+```
+
+## Dry run
+
+nums = [4,3,2,3,5,2,1], k = 4
+sum = 20, target = 5. sorted desc = [5,4,3,3,2,2,1]
+
+Place 5 → bucket0 = 5 (full)                    buckets=[5,0,0,0]
+Place 4 → bucket1 = 4                           buckets=[5,4,0,0]
+Place 3 → bucket0(8>5) bucket1(7>5) → bucket2=3 buckets=[5,4,3,0]
+Place 3 → ...bucket3=3                          buckets=[5,4,3,3]
+Place 2 → bucket0,1 overflow → bucket2=3+2=5    buckets=[5,4,5,3]
+Place 2 → bucket0,1,2 overflow → bucket3=3+2=5  buckets=[5,4,5,5]
+Place 1 → bucket0,2,3 full → bucket1=4+1=5      buckets=[5,5,5,5]
+
+All 7 numbers placed, all buckets == target → true ✓
+
+Time:  O(K^N) worst case, heavily pruned by sorting + empty-bucket skip
+Space: O(N) recursion depth + O(K) buckets

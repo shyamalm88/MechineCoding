@@ -1,9 +1,5 @@
 # Network Delay Time (LeetCode #743)
 
-## Category
-
-🔵 CORE (Pure Dijkstra Baseline)
-
 You are given a network of n nodes, labeled from 1 to n.
 You are also given a list of travel times as directed edges times,
 where times[i] = [u, v, w] represents a directed edge from node u to node v

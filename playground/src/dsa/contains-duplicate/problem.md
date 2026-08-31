@@ -11,6 +11,6 @@ common case where a duplicate appears near the front.
 Sorting first is O(n log n) with O(1) space — the trade to mention if the
 interviewer constrains memory.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(n)
+TIME: O(n) · SPACE: O(n)

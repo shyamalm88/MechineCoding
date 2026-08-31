@@ -18,3 +18,20 @@ Output: 3
 
 Constraints:
 - 1 <= m, n <= 100
+
+## Approach
+
+Dynamic Programming (Bottom-Up)
+
+## Intuition
+
+Let dp[i][j] be the number of unique paths to reach cell (i, j).
+Since we can only move Down or Right, we can reach (i, j) from:
+1. Top: (i-1, j)
+2. Left: (i, j-1)
+
+So, dp[i][j] = dp[i-1][j] + dp[i][j-1].
+Base case: First row and first column always have 1 path (straight line).
+
+Time Complexity: O(M * N)
+Space Complexity: O(M * N) (Can be optimized to O(N))

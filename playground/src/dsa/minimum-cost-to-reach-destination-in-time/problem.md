@@ -1,9 +1,5 @@
 # Minimum Cost to Reach Destination in Time (LeetCode #1928)
 
-## Category
-
-🟡 OPTIONAL (Dijkstra + State Pruning)
-
 You are given:
 - n cities labeled 0 to n-1
 - edges[i] = [u, v, time]  (undirected)

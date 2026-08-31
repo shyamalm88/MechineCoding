@@ -15,6 +15,6 @@ Recognising that only two previous values matter is the "rolling array"
 space optimisation that reappears in House Robber, Climbing Stairs and
 many 1D DP problems.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1) for the iterative form
+TIME: O(n) · SPACE: O(1) for the iterative form

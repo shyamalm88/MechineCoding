@@ -20,6 +20,6 @@ without it, deleting head requires a separate branch.
   result 1 2 3 5
 ```
 
-## Time
+## Complexity
 
-O(n) one pass · SPACE: O(1)
+TIME: O(n) one pass · SPACE: O(1)

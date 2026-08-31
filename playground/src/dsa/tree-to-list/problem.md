@@ -19,3 +19,26 @@ Output: [1,null,2,null,3,null,4,null,5,null,6]
 Constraints:
 - The number of nodes in the tree is in the range [0, 2000].
 - -100 <= Node.val <= 100
+
+## Approach
+
+Reverse Post-Order DFS
+
+## Intuition
+
+We need Pre-order: Root -> Left -> Right.
+If we traverse in REVERSE (Right -> Left -> Root), we can maintain a `prev`
+pointer to the previously processed node (which will be the "next" node in
+the final list).
+
+1. Go Right.
+2. Go Left.
+3. Process Root:
+```text
+   - root.right = prev
+   - root.left = null
+   - prev = root
+```
+
+Time Complexity: O(N)
+Space Complexity: O(H)

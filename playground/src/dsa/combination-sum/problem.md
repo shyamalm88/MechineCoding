@@ -19,3 +19,17 @@ Output: [[2,2,2,2],[2,3,3],[3,5]]
 Constraints:
 - 1 <= candidates.length <= 30
 - 1 <= target <= 500
+
+## Approach
+
+Backtracking
+
+## Intuition
+
+At each step, we can choose a candidate. Since we can reuse candidates,
+when we recurse, we pass the *same* index.
+To avoid duplicates (like [2,3] and [3,2]), we only allow choosing numbers
+from the current index onwards.
+
+Time Complexity: O(N^(T/M)) where N is candidates, T is target, M is min value.
+Space Complexity: O(T/M) - Recursion depth (max number of elements in combination).

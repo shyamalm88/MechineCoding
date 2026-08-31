@@ -11,6 +11,6 @@ is correctly left alone.
 The in-place constraint is the whole point — `arr.reverse()` or building a
 new array defeats the exercise.
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(1)
+TIME: O(n) · SPACE: O(1)

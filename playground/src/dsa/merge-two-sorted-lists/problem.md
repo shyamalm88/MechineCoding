@@ -21,6 +21,6 @@ special case for "is this the first node?" — you always append to
   result 1 1 2 3 4 4
 ```
 
-## Time
+## Complexity
 
-O(n + m) · SPACE: O(1) — nodes are relinked, not copied
+TIME: O(n + m) · SPACE: O(1) — nodes are relinked, not copied

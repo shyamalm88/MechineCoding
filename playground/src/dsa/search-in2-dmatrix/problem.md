@@ -25,13 +25,10 @@ Step 2: Binary search within the selected row
   - Standard binary search since the row is sorted
 ```
 
-## Time
+## Complexity
 
-O(m + log n) - m rows to scan + binary search in n columns
-
-## Space
-
-O(1) - only using pointers
+TIME: O(m + log n) - m rows to scan + binary search in n columns
+SPACE: O(1) - only using pointers
 
 ## Alternative
 

@@ -23,3 +23,24 @@ or index number 5 where the peak element is 6.
 Constraints:
 - 1 <= nums.length <= 1000
 - nums[i] != nums[i + 1] for all valid i.
+
+## Approach
+
+Binary Search
+
+## Intuition
+
+We can view the array as a series of ascending and descending slopes.
+If we pick a middle element `mid` and compare it with its right neighbor `mid + 1`:
+1. If nums[mid] > nums[mid+1]: We are on a descending slope. Since the left boundary
+```text
+   starts at -∞, there must be a peak to the left (or at `mid`).
+```
+
+2. If nums[mid] < nums[mid+1]: We are on an ascending slope. Since the right boundary
+```text
+   ends at -∞, there must be a peak to the right.
+```
+
+Time Complexity: O(log N)
+Space Complexity: O(1)

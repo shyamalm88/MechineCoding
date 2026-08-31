@@ -18,3 +18,20 @@ Constraints:
 - 1 <= intervals.length <= 10^4
 - intervals[i].length == 2
 - 0 <= starti <= endi <= 10^4
+
+## Approach
+
+Sorting
+
+## Intuition
+
+If we sort the intervals by their start time, overlapping intervals will
+be adjacent in the sorted list.
+We can iterate through the sorted list and merge the current interval with
+the previous one if they overlap (current.start <= previous.end).
+
+Time Complexity: O(N log N) - Due to sorting.
+Space Complexity: O(N) - To store the result (or O(log N) for sort stack).
+
+@param {number[][]} intervals
+@return {number[][]}

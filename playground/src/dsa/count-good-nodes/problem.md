@@ -17,3 +17,20 @@ Node 3 -> (3,1,3) is the maximum value in the path.
 Constraints:
 - The number of nodes in the binary tree is in the range [1, 10^5].
 - Each node's value is between [-10^4, 10^4].
+
+## Approach
+
+DFS with State (Max So Far)
+
+## Intuition
+
+We need to traverse the tree (DFS) and keep track of the maximum value we have
+encountered so far in the current path from the root.
+
+For each node:
+1. Compare node.val with maxSoFar.
+2. If node.val >= maxSoFar, it's a "Good Node". Increment count and update maxSoFar.
+3. Continue to children passing the (possibly updated) maxSoFar.
+
+Time Complexity: O(N)
+Space Complexity: O(H)

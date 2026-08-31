@@ -15,3 +15,31 @@ Input: prices=[7,6,4,3,1] → Output: 0
 Constraints:
 - 1 <= prices.length <= 3 * 10^4
 - 0 <= prices[i] <= 10^4
+
+## Approach
+
+Greedy — Collect every upward slope
+
+## Story / intuition
+
+With unlimited transactions, the optimal strategy is to capture EVERY price increase.
+If tomorrow is higher than today → buy today, sell tomorrow.
+This is equivalent to adding up all positive differences.
+
+Think of it as: the total profit = sum of all uphill segments.
+You can simulate buying/selling daily: buy Mon sell Tue, buy Tue sell Wed...
+Same as holding Mon→Wed and selling once.
+
+## Dry run
+
+[7,1,5,3,6,4]
+(1→7): negative → skip
+(7→1): negative → skip
+(1→5): +4 → take it
+(5→3): negative → skip
+(3→6): +3 → take it
+(6→4): negative → skip
+Total: 4 + 3 = 7 ✓
+
+Time:  O(N)
+Space: O(1)

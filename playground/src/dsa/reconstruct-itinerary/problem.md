@@ -1,9 +1,5 @@
 # Reconstruct Itinerary (LeetCode #332)
 
-## Category
-
-🔴 VVIMP (Directed Graph + Lexicographic Eulerian Path)
-
 You are given a list of airline tickets where:
 
 ```text

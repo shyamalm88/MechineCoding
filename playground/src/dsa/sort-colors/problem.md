@@ -21,3 +21,28 @@ Constraints:
 - n == nums.length
 - 1 <= n <= 300
 - nums[i] is either 0, 1, or 2.
+
+## Approach
+
+Three Pointers (Dutch National Flag Algorithm)
+
+## Intuition
+
+We want to partition the array into three sections:
+[0s ... 1s ... 2s]
+
+We use three pointers:
+- `low`: The boundary for 0s (everything before `low` is 0).
+- `mid`: The current element we are inspecting.
+- `high`: The boundary for 2s (everything after `high` is 2).
+
+Logic:
+- If nums[mid] == 0: Swap with `low`, increment both `low` and `mid`.
+- If nums[mid] == 1: It's in the correct middle section, just increment `mid`.
+- If nums[mid] == 2: Swap with `high`, decrement `high`. Do NOT increment `mid`
+```text
+  because the swapped element from `high` hasn't been inspected yet.
+```
+
+Time Complexity: O(N) - One pass.
+Space Complexity: O(1) - In-place.

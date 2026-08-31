@@ -33,3 +33,32 @@ Constraints:
 - beginWord, endWord, and wordList[i] consist of lowercase English letters.
 - beginWord != endWord
 - All the words in wordList are unique.
+
+## Approach
+
+Breadth-First Search (BFS)
+
+## Intuition
+
+We can model this problem as a graph where:
+- Nodes are words.
+- Edges exist between words that differ by exactly one letter.
+
+We need to find the SHORTEST path from beginWord to endWord.
+BFS is the standard algorithm for finding the shortest path in an unweighted graph.
+
+Algorithm:
+1. Start BFS from beginWord.
+2. For each word, generate all possible next words by changing 1 letter (26 * L possibilities).
+3. If a generated word exists in our wordList (Set), it's a valid neighbor.
+4. Add neighbor to queue and remove from Set (to mark visited).
+5. Track 'level' (distance). Return level + 1 when endWord is found.
+
+Time Complexity: O(M^2 * N)
+- M is length of each word, N is number of words in list.
+- For each word in BFS, we iterate M positions and try 26 chars.
+- String creation/hashing takes O(M).
+- Total: N words * M positions * 26 chars * M string op cost.
+
+Space Complexity: O(M * N)
+- To store wordList in a Set and queue for BFS.

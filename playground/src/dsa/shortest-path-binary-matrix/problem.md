@@ -28,3 +28,25 @@ Constraints:
 - n == grid[i].length
 - 1 <= n <= 100
 - grid[i][j] is 0 or 1
+
+## Approach
+
+BFS (Breadth-First Search)
+
+## Intuition
+
+We are looking for the SHORTEST path in an unweighted grid (each step cost is 1).
+This is a classic use case for BFS. DFS would explore one path deeply and
+might find a path, but not necessarily the shortest one without checking all.
+BFS explores layer by layer (distance 1, then distance 2, etc.), guaranteeing
+the first time we reach the target, it is via the shortest path.
+
+Key details:
+- 8 Directions: Unlike standard mazes (4 directions), we can move diagonally.
+- Visited Array: We can modify the input grid to mark visited cells (change 0 to 1)
+```text
+  to save space, or use a separate Set/Matrix. Here we modify in-place.
+```
+
+Time Complexity: O(N^2) - In worst case, we visit every cell once.
+Space Complexity: O(N^2) - For the queue in worst case.

@@ -1,9 +1,5 @@
 # Burst Balloons (LeetCode #312)
 
-## Category
-
-🔴 VVIMP (Interval DP / Reverse Thinking)
-
 You are given n balloons, each with a number.
 
 When you burst a balloon at index i, you gain:

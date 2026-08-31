@@ -29,3 +29,20 @@ Constraints:
 - 1 <= key.length, value.length <= 100
 - 1 <= timestamp <= 10^7
 - All the timestamps timestamp of set are strictly increasing.
+
+## Approach
+
+HashMap + Binary Search
+
+## Intuition
+
+We need to store values associated with a key and a timestamp.
+A HashMap is natural for Key -> Data lookup.
+Since `set` is called with strictly increasing timestamps, the list of
+[timestamp, value] pairs for any key will be naturally sorted by time.
+
+For `get(key, timestamp)`, we need the value with the largest time <= timestamp.
+Since the list is sorted, we can use Binary Search to find this position efficiently.
+
+Time Complexity: Set O(1), Get O(log N)
+Space Complexity: O(N) total entries stored.

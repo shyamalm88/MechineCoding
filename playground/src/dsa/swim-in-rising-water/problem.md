@@ -1,9 +1,5 @@
 # Swim in Rising Water (LeetCode #778)
 
-## Category
-
-🔴 VVIMP (Dijkstra with NON-ADDITIVE Cost)
-
 You are given an n x n grid where grid[r][c] represents the elevation
 at that cell.
 

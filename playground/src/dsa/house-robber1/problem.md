@@ -18,3 +18,18 @@ Total amount you can rob = 1 + 3 = 4.
 Constraints:
 - 1 <= nums.length <= 100
 - 0 <= nums[i] <= 400
+
+## Approach
+
+Dynamic Programming (Top-Down)
+
+## Intuition
+
+At each house `i`, we have two choices:
+1. Rob this house: Add money[i] and move to house `i+2`.
+2. Skip this house: Move to house `i+1`.
+
+Recurrence: dp[i] = max(money[i] + dp[i+2], dp[i+1])
+
+Time Complexity: O(N)
+Space Complexity: O(N)

@@ -24,6 +24,6 @@ would create phantom entries that never resolve.
   result [2,-1,2]
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(n)
+TIME: O(n) · SPACE: O(n)

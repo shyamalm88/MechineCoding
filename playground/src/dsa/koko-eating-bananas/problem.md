@@ -17,3 +17,35 @@ Constraints:
 - 1 <= piles.length <= 10^4
 - piles.length <= h <= 10^9
 - 1 <= piles[i] <= 10^9
+
+## Approach
+
+Binary Search on the ANSWER (speed k)
+
+## Story / intuition
+
+This is the classic "binary search on answer" pattern.
+Instead of searching an array, we search the ANSWER SPACE: speed k ∈ [1, max(piles)].
+
+Key insight: If Koko CAN finish at speed k, she can also finish at any speed > k.
+This monotonic property means we can binary search:
+```text
+  → if canFinish(mid), try slower (go left: hi=mid)
+  → if can't finish, go faster (go right: lo=mid+1)
+```
+
+canFinish(speed, h): sum of ceil(pile/speed) for all piles <= h?
+
+Search space: lo=1 (slowest possible), hi=max(piles) (eat biggest pile in 1hr)
+
+## Dry run
+
+piles=[3,6,7,11], h=8
+lo=1, hi=11 → mid=6: hours=ceil(3/6)+ceil(6/6)+ceil(7/6)+ceil(11/6)=1+1+2+2=6 ≤ 8 ✓ → hi=6
+lo=1, hi=6  → mid=3: hours=1+2+3+4=10 > 8 ✗ → lo=4
+lo=4, hi=6  → mid=5: hours=1+2+2+3=8 ≤ 8 ✓ → hi=5
+lo=4, hi=5  → mid=4: hours=1+2+2+3=8 ≤ 8 ✓ → hi=4
+lo=4, hi=4  → done. Answer: 4 ✓
+
+Time:  O(N log M) where N=piles.length, M=max(piles)
+Space: O(1)

@@ -18,6 +18,6 @@ ends up at the front, so pop/top become O(1).
 The alternative (two queues, costly pop) is the other accepted answer; say
 which you chose and why.
 
-## Time
+## Complexity
 
-push O(n), pop/top/empty O(1) · SPACE: O(n)
+TIME: push O(n), pop/top/empty O(1) · SPACE: O(n)

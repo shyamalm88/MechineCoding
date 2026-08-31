@@ -18,3 +18,22 @@ Explanation: Six palindromic strings: "a", "a", "a", "aa", "aa", "aaa".
 Constraints:
 - 1 <= s.length <= 1000
 - s consists of lowercase English letters.
+
+## Approach
+
+Expand Around Center
+
+## Intuition
+
+A palindrome mirrors around its center. Therefore, we can count palindromes
+by expanding from every possible center.
+There are 2N - 1 centers:
+- N centers are single characters (e.g., "aba" centered at 'b').
+- N - 1 centers are between characters (e.g., "abba" centered between 'b's).
+
+We iterate through each index `i` and treat it as a center:
+1. Odd length palindromes: center at `i` (left=i, right=i).
+2. Even length palindromes: center between `i` and `i+1` (left=i, right=i+1).
+
+Time Complexity: O(N^2) - We expand around each center.
+Space Complexity: O(1) - No extra space used.

@@ -1,9 +1,5 @@
 # Path With Maximum Probability (LeetCode #1514)
 
-## Category
-
-🔵 CORE (Dijkstra with Modified Cost Function)
-
 You are given an undirected graph with n nodes (labeled 0 to n - 1).
 
 You are given:

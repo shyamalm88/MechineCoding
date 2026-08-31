@@ -12,3 +12,17 @@ Output: "bb"
 
 Constraints:
 - 1 <= s.length <= 1000
+
+## Approach
+
+Expand Around Center
+
+## Intuition
+
+A palindrome mirrors around its center. Therefore, a palindrome can be
+expanded from its center.
+There are 2N - 1 centers (N single character centers, N-1 between-character centers).
+We iterate through each possible center and expand outwards.
+
+Time Complexity: O(N^2)
+Space Complexity: O(1)

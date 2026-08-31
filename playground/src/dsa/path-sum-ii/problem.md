@@ -53,3 +53,10 @@ Space Complexity: O(n) - path array and recursion stack
 Related Problems:
 - Path Sum I (LeetCode #112) - see pathSumI.js
 - Path Sum III (LeetCode #437) - see pathSumIII.js
+
+Finds all root-to-leaf paths where the sum equals targetSum
+Uses DFS + Backtracking
+
+@param {TreeNode} root
+@param {number} targetSum
+@return {number[][]}

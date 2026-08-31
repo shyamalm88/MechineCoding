@@ -19,3 +19,22 @@ Output: false
 Constraints:
 - 1 <= s.length <= 10^5
 - s consists of lowercase English letters.
+
+## Approach
+
+Two Pointers (Greedy with One Skip)
+
+## Intuition
+
+We use standard two pointers (left, right) to check for a palindrome.
+If s[left] === s[right], we continue moving inward.
+
+If s[left] !== s[right], we have a mismatch. We are allowed ONE deletion.
+We have two choices:
+1. Delete character at `left` (check if substring s[left+1...right] is palindrome).
+2. Delete character at `right` (check if substring s[left...right-1] is palindrome).
+
+If either of those substrings is a valid palindrome, return true.
+
+Time Complexity: O(N)
+Space Complexity: O(1)

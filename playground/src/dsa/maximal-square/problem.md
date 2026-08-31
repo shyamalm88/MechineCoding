@@ -1,9 +1,5 @@
 # Maximal Square (LeetCode #221)
 
-## Category
-
-🔴 VVIMP (2D DP / Local-to-Global Invariant)
-
 You are given an m x n binary matrix filled with:
 - '0'
 - '1'

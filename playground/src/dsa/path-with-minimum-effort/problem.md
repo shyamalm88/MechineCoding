@@ -31,3 +31,71 @@ Input:
 ```
 
 Output: 2
+
+## Approach
+
+Dijkstra / Priority Queue (Minimize the Maximum Edge)
+
+## Intuition
+
+This is a shortest-path problem with a NON-STANDARD cost definition.
+
+- Moving between two adjacent cells has a "cost":
+```text
+    |height[current] - height[next]|
+```
+
+- The total cost of a path is NOT the sum of costs,
+```text
+  but the MAXIMUM cost encountered along the path.
+```
+
+Key Observation:
+- As we extend a path, the effort (max edge so far) NEVER decreases.
+- This monotonic property allows Dijkstra’s algorithm to work.
+
+Instead of minimizing SUM of edges, we minimize:
+
+```text
+  max(edge_1, edge_2, ..., edge_k)
+```
+
+## State
+
+- Each cell (r, c) is a node
+- dist[r][c] = minimum possible effort to reach (r, c)
+
+## Edge relaxation
+
+From (r, c) → (nr, nc):
+
+```text
+  edgeEffort = |heights[r][c] - heights[nr][nc]|
+  newEffort  = max(dist[r][c], edgeEffort)
+```
+
+If newEffort < dist[nr][nc], update it.
+
+## Algorithm
+
+1. Initialize dist[][] with Infinity
+2. dist[0][0] = 0
+3. Push (0, 0, 0) into min-heap → [effort, row, col]
+4. While heap is not empty:
+```text
+   a. Pop cell with minimum effort so far
+   b. If it is destination, return effort
+   c. Relax all valid neighbors
+```
+
+## Time complexity
+
+- Each cell is processed at most once with its best effort
+- Heap operations: O(log(R * C))
+
+Total: O(R * C * log(R * C))
+
+## Space complexity
+
+- dist array: O(R * C)
+- priority queue: O(R * C)

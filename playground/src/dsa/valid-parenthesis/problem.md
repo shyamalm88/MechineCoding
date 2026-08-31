@@ -19,3 +19,15 @@ Output: true
 Example 3:
 Input: s = "(]"
 Output: false
+
+## Approach
+
+Stack
+
+## Intuition
+
+Use a stack to keep track of opening brackets. When a closing bracket is encountered,
+check if it matches the most recent opening bracket (top of stack).
+
+Time Complexity: O(N)
+Space Complexity: O(N)

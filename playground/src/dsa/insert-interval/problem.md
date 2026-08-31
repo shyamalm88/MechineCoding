@@ -22,3 +22,22 @@ Output: [[1,2],[3,10],[12,16]]
 Constraints:
 - 0 <= intervals.length <= 10^4
 - intervals is sorted by starti in ascending order.
+
+## Approach
+
+Linear Scan (Three Stages)
+
+## Intuition
+
+Since the input is already sorted, we can process the intervals in one pass:
+1. Left Part: Add all intervals that end strictly before the new interval starts.
+2. Overlap Part: Merge all intervals that overlap with the new interval.
+```text
+   - Start = min(currentStart, newStart)
+   - End = max(currentEnd, newEnd)
+```
+
+3. Right Part: Add all remaining intervals that start after the new interval ends.
+
+Time Complexity: O(N)
+Space Complexity: O(N) for the result array.

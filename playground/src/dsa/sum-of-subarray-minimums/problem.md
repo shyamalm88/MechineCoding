@@ -28,6 +28,6 @@ on the other, or subarrays with duplicate minima get counted twice.
   ... total 17
 ```
 
-## Time
+## Complexity
 
-O(n) · SPACE: O(n)
+TIME: O(n) · SPACE: O(n)

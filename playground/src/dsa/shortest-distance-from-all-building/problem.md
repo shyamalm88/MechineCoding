@@ -1,9 +1,5 @@
 # Shortest Distance from All Buildings (LeetCode #317)
 
-## Category
-
-🔵 CORE (Multi-Source Shortest Path / BFS vs Dijkstra Decision)
-
 You are given an m x n grid where:
 - 0 = empty land
 - 1 = building

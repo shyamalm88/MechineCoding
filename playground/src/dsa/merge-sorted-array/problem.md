@@ -23,3 +23,20 @@ Constraints:
 - nums1.length == m + n
 - nums2.length == n
 - 0 <= m, n <= 200
+
+## Approach
+
+Three Pointers (Fill from Back)
+
+## Intuition
+
+If we iterate from the start, we would need to shift elements in nums1 to make
+space, which is O(N^2) or requires extra space.
+
+However, the end of nums1 is empty (zeros). We can fill the largest elements
+there without overwriting anything important.
+We compare the tails of the valid parts of nums1 and nums2, and place the
+larger one at the end of nums1.
+
+Time Complexity: O(M + N)
+Space Complexity: O(1)

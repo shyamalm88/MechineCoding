@@ -18,6 +18,6 @@ add left to right exactly as you would on paper, carrying as you go.
   result [7,0,8]
 ```
 
-## Time
+## Complexity
 
-O(max(n,m)) · SPACE: O(max(n,m)) for the output
+TIME: O(max(n,m)) · SPACE: O(max(n,m)) for the output

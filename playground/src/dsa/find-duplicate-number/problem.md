@@ -14,3 +14,41 @@ Constraints:
 - Each value in [1, n]
 - Only one repeated number (may repeat more than twice)
 - Must NOT modify array, must use O(1) extra space
+
+## Approach
+
+Floyd's Cycle Detection (Linked List in Disguise)
+
+## Story / intuition
+
+Treat the array as an implicit linked list: value at index i = "next node" from i.
+Index 0 → nums[0] → nums[nums[0]] → ...
+
+Because one value is repeated, two different indices point to the SAME next node.
+This creates a CYCLE. The duplicate number is the ENTRANCE to the cycle.
+
+Floyd's Algorithm:
+Phase 1: Find where slow and fast meet (inside the cycle).
+Phase 2: Move one pointer to start (index 0), keep other at meeting point.
+```text
+         Both move at speed 1. Where they meet = CYCLE ENTRANCE = duplicate.
+```
+
+## Dry run
+
+nums=[1,3,4,2,2], n=4
+Implicit list: 0→1→3→2→4→2→4→2... (cycle: 2→4→2)
+
+Phase 1: slow=0, fast=0
+Step1: slow=nums[0]=1, fast=nums[nums[0]]=nums[1]=3
+Step2: slow=nums[1]=3, fast=nums[nums[3]]=nums[2]=4
+Step3: slow=nums[3]=2, fast=nums[nums[4]]=nums[2]=4
+Step4: slow=nums[2]=4, fast=nums[nums[4]]=nums[2]=4 → MEET at 4
+
+Phase 2: slow=0 (reset), fast=4 (meeting point)
+Step1: slow=nums[0]=1, fast=nums[4]=2
+Step2: slow=nums[1]=3, fast=nums[2]=4
+Step3: slow=nums[3]=2, fast=nums[4]=2 → MEET at 2 = duplicate ✓
+
+Time:  O(N)
+Space: O(1)

@@ -1,9 +1,5 @@
 # Redundant Connection (LeetCode #684)
 
-## Category
-
-🔵 CORE (Cycle Detection in Undirected Graph using Union-Find)
-
 You are given an undirected graph that started as a tree with n nodes
 (labeled 1 to n), but then ONE extra edge was added.
 

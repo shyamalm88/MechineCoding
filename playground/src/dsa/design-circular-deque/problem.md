@@ -12,6 +12,6 @@ waste one slot. Say which you chose.
 Note the modulo when moving front backwards: `(front - 1 + capacity) %
 capacity`, because JavaScript's % returns negatives for negative operands.
 
-## Time
+## Complexity
 
-O(1) all operations · SPACE: O(k)
+TIME: O(1) all operations · SPACE: O(k)

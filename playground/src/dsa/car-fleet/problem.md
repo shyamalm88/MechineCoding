@@ -21,3 +21,33 @@ Constraints:
 - 0 < target <= 10^6
 - 0 <= position[i] < target
 - All positions are unique
+
+## Approach
+
+Sort by position (desc) + Monotonic Stack of arrival times
+
+## Story / intuition
+
+Sort cars by starting position in DESCENDING order (closest to target first).
+For each car, compute time to reach target = (target - position) / speed.
+
+A car behind can only SLOW DOWN to match the car ahead — it CANNOT speed up.
+So if a car's arrival time <= the car ahead's time, it catches up and joins
+that fleet (we ignore it — it's absorbed).
+
+The stack tracks fleet leaders' arrival times (monotonically increasing from
+closest to farthest). Each push = new fleet. If current time <= stack top,
+this car merges into the leading fleet (no push).
+
+DRY RUN (target=12, sorted by pos: [(10,2),(8,4),(5,1),(3,3),(0,1)]):
+times: [1.0, 1.0, 3.5, 3.0, 12.0]
+
+t=1.0:  stack=[] → push 1.0  → [1.0]       (car at 10, fleet 1)
+t=1.0:  1.0 <= 1.0 → merge   → [1.0]       (car at 8 joins fleet 1)
+t=3.5:  3.5 > 1.0  → push    → [1.0, 3.5]  (car at 5, fleet 2)
+t=3.0:  3.0 <= 3.5 → merge   → [1.0, 3.5]  (car at 3 joins fleet 2)
+t=12.0: 12.0 > 3.5 → push    → [1.0,3.5,12](car at 0, fleet 3)
+Result: stack.length = 3 ✓
+
+Time:  O(N log N) for sort
+Space: O(N) for stack

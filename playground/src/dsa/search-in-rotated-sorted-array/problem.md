@@ -21,3 +21,24 @@ Constraints:
 - 1 <= nums.length <= 5000
 - -10^4 <= nums[i], target <= 10^4
 - All values of nums are unique.
+
+## Approach
+
+Binary Search (Find Sorted Half)
+
+## Intuition
+
+In a rotated sorted array, at least one half (left or right) is always sorted.
+1. Find Mid.
+2. Check if Left side is sorted (nums[left] <= nums[mid]).
+```text
+   - If yes, check if target is in that range. If so, go Left. Else go Right.
+```
+
+3. Else (Right side must be sorted).
+```text
+   - Check if target is in that range. If so, go Right. Else go Left.
+```
+
+Time Complexity: O(log N)
+Space Complexity: O(1)

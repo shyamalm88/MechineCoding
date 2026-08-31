@@ -16,3 +16,19 @@ Output: [1,1,1,0]
 Constraints:
 - 1 <= temperatures.length <= 10^5
 - 30 <= temperatures[i] <= 100
+
+## Approach
+
+Monotonic Decreasing Stack
+
+## Intuition
+
+We need to find the *next* greater element for each element.
+We can use a stack to store indices of temperatures that haven't found a warmer day yet.
+The stack will be monotonic decreasing (temperatures at indices in stack are decreasing).
+
+When we encounter a temperature `T[i]` that is warmer than `T[stack.top()]`,
+it means `i` is the next warmer day for `stack.top()`. We pop and calculate the difference.
+
+Time Complexity: O(N) - Each element is pushed and popped at most once.
+Space Complexity: O(N) - Stack size.
