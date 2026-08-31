@@ -581,6 +581,13 @@
     "importance": "IMP"
   },
   {
+    "id": "minimum-height-trees",
+    "title": "Minimum Height Trees #310",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
+  },
+  {
     "id": "network-delay-time",
     "title": "Network Delay Time #743",
     "category": "Graphs",
@@ -593,6 +600,13 @@
     "category": "Graphs",
     "difficulty": "Medium",
     "importance": "Core"
+  },
+  {
+    "id": "number-of-distinct-islands",
+    "title": "Number of Distinct Islands #694",
+    "category": "Graphs",
+    "difficulty": "Medium",
+    "importance": "IMP"
   },
   {
     "id": "number-of-islands",
@@ -1624,6 +1638,13 @@
     "importance": "Core"
   },
   {
+    "id": "binary-tree-inorder-traversal",
+    "title": "Binary Tree Inorder Traversal #94",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
     "id": "level-order-traversal",
     "title": "Binary Tree Level Order Traversal #102",
     "category": "Trees & BST",
@@ -1636,6 +1657,20 @@
     "category": "Trees & BST",
     "difficulty": "Hard",
     "importance": "IMP"
+  },
+  {
+    "id": "binary-tree-postorder-traversal",
+    "title": "Binary Tree Postorder Traversal #145",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
+  },
+  {
+    "id": "binary-tree-preorder-traversal",
+    "title": "Binary Tree Preorder Traversal #144",
+    "category": "Trees & BST",
+    "difficulty": "Easy",
+    "importance": "Core"
   },
   {
     "id": "right-side-view",
