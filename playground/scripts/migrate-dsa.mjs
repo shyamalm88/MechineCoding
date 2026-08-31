@@ -15,6 +15,7 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { detectTechniques } from './techniques.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SRC = join(here, '..', '..', 'DSA')
@@ -181,7 +182,17 @@ for (const file of files) {
   writeFileSync(join(dir, 'problem.md'), headerToMarkdown(header, rawTitle))
   writeFileSync(join(dir, basename(file)), code + '\n')
 
-  registry.push({ id, title, category, difficulty: difficulty ?? 'Medium', importance })
+  // Read technique tags back out of the file's own prose -- see techniques.mjs.
+  const techniques = detectTechniques(source)
+
+  registry.push({
+    id,
+    title,
+    category,
+    difficulty: difficulty ?? 'Medium',
+    importance,
+    techniques,
+  })
 }
 
 registry.sort((a, b) => a.category.localeCompare(b.category) || a.title.localeCompare(b.title))

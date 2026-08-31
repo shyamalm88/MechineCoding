@@ -11,6 +11,7 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
   const [category, setCategory] = useHashParam('cat', ALL)
   const [difficulty, setDifficulty] = useHashParam('diff', ALL)
   const [importance, setImportance] = useHashParam('imp', ALL)
+  const [technique, setTechnique] = useHashParam('tech', ALL)
 
   const categories = useMemo(
     () => [ALL, ...new Set(problems.map((problem) => problem.category))],
@@ -24,16 +25,27 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
     return found.length ? [ALL, ...found] : []
   }, [problems])
 
+  // Technique cuts across categories -- BFS lives in Graphs, Trees and Matrix
+  // alike -- so it is the one filter that answers "show me every X problem".
+  // Tags are derived from each file's own text by scripts/techniques.mjs, and
+  // a problem can carry several.
+  const techniques = useMemo(() => {
+    const found = new Set()
+    for (const problem of problems) for (const tag of problem.techniques ?? []) found.add(tag)
+    return found.size ? [ALL, ...[...found].sort()] : []
+  }, [problems])
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return problems.filter((problem) => {
       if (category !== ALL && problem.category !== category) return false
       if (difficulty !== ALL && problem.difficulty !== difficulty) return false
       if (importance !== ALL && problem.importance !== importance) return false
+      if (technique !== ALL && !(problem.techniques ?? []).includes(technique)) return false
       if (!needle) return true
       return `${problem.title} ${problem.category}`.toLowerCase().includes(needle)
     })
-  }, [problems, query, category, difficulty, importance])
+  }, [problems, query, category, difficulty, importance, technique])
 
   return (
     <nav className="sidebar">
@@ -77,6 +89,17 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
             <span>Importance</span>
             <select value={importance} onChange={(event) => setImportance(event.target.value)}>
               {importances.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {techniques.length > 0 && (
+          <label className="select-field wide">
+            <span>Technique</span>
+            <select value={technique} onChange={(event) => setTechnique(event.target.value)}>
+              {techniques.map((name) => (
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>

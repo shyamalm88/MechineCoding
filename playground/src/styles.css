@@ -54,10 +54,12 @@ body {
   outline: none;
 }
 .sidebar-filters { display: flex; flex-wrap: wrap; gap: 6px; }
-/* Difficulty / importance are dropdowns rather than chip rows -- with three
-   filter dimensions the chips consumed most of the sidebar before any problem
-   was visible. */
-.sidebar-selects { display: flex; gap: 8px; }
+/* These are dropdowns rather than chip rows -- with four filter dimensions the
+   chips consumed most of the sidebar before any problem was visible. Difficulty
+   and Importance share a row; Technique takes its own, since values like
+   "Dynamic Programming" do not fit a third column in a sidebar this narrow. */
+.sidebar-selects { display: flex; flex-wrap: wrap; gap: 8px; }
+.select-field.wide { flex-basis: 100%; }
 .select-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .select-field > span {
   font-family: var(--pg-mono);
