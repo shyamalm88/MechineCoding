@@ -32,7 +32,8 @@ body {
 
 /* ---- sidebar ---- */
 .sidebar {
-  width: 280px;
+  /* Set by App from the drag handle; the literal is the first-visit default. */
+  width: var(--sidebar-width, 280px);
   flex-shrink: 0;
   background: var(--pg-panel);
   border-right: 1px solid var(--pg-line);
@@ -43,6 +44,65 @@ body {
   overflow-y: auto;
 }
 .sidebar-brand { font-size: 18px; font-weight: 700; }
+
+/* ---- drag-to-resize handle ---- */
+.sidebar-resizer {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid transparent;
+  transition: background 0.15s ease;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer.dragging,
+.sidebar-resizer:focus-visible { background: var(--pg-accent); outline: none; }
+
+/* ---- revision tracking ---- */
+.progress-ring { display: flex; align-items: center; gap: 12px; }
+.progress-ring svg { flex-shrink: 0; }
+.ring-track { fill: none; stroke: var(--pg-line); stroke-width: 5; }
+.ring-value {
+  fill: none;
+  stroke: var(--pg-accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+  /* Start the arc at 12 o'clock instead of 3. */
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.35s ease;
+}
+.ring-text { fill: var(--pg-text); font-family: var(--pg-mono); font-size: 12px; }
+.progress-caption { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 12px; }
+.progress-caption strong { font-size: 14px; }
+.progress-caption span { color: var(--pg-muted); }
+.progress-ticks { font-family: var(--pg-mono); font-size: 10.5px; color: var(--pg-faint) !important; }
+
+/* Visually hidden but still announced -- the ring's numbers are decorative
+   for screen readers, which get one sentence instead. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sidebar-row { display: flex; align-items: center; gap: 6px; }
+.revisions { display: flex; gap: 3px; flex-shrink: 0; padding-left: 2px; }
+.revision-box {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--pg-accent);
+  flex-shrink: 0;
+}
+/* A finished problem recedes rather than disappears -- still reachable, just
+   no longer competing for attention with what is left to do. */
+.sidebar-row.done .item-title { color: var(--pg-faint); text-decoration: line-through; }
 .sidebar-brand span { color: var(--pg-accent); }
 .sidebar-search {
   padding: 9px 12px;
@@ -124,6 +184,7 @@ body {
 }
 .chip.active { background: var(--pg-accent); border-color: var(--pg-accent); color: #1a1206; }
 .sidebar-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sidebar-row .item { flex: 1; min-width: 0; }
 .item {
   width: 100%;
   display: flex;

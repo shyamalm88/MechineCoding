@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
 import { useHashParam } from '../lib/hashState.js'
+import { useProgress, summarise, PASSES } from '../lib/progress.js'
+import ProgressRing from './ProgressRing.jsx'
 
 const ALL = 'All'
 
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard']
 
 export default function Sidebar({ problems, selectedId, onSelect, collection }) {
+  const [progress, togglePass] = useProgress(collection?.id ?? 'problems')
   // Mirrored into the URL hash so a reload restores the same view.
   const [query, setQuery] = useHashParam('q', '')
   const [category, setCategory] = useHashParam('cat', ALL)
@@ -47,11 +50,17 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
     })
   }, [problems, query, category, difficulty, importance, technique])
 
+  // The ring reports the whole collection, not the filtered view -- otherwise
+  // narrowing to one category would read as sudden progress.
+  const stats = useMemo(() => summarise(progress, problems), [progress, problems])
+
   return (
     <nav className="sidebar">
       <div className="sidebar-brand">
         {collection?.brand ?? (<>Play<span>ground</span></>)}
       </div>
+
+      <ProgressRing {...stats} />
 
       <input
         className="sidebar-search"
@@ -114,8 +123,27 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
       <p className="sidebar-count">{visible.length} of {problems.length}</p>
 
       <ul className="sidebar-list">
-        {visible.map((problem) => (
-          <li key={problem.id}>
+        {visible.map((problem) => {
+          const marks = progress[problem.id] ?? []
+          const fullyRevised = marks.filter(Boolean).length === PASSES
+
+          return (
+          <li key={problem.id} className={fullyRevised ? 'sidebar-row done' : 'sidebar-row'}>
+            {/* Outside the row button on purpose: a checkbox nested inside a
+                button is invalid HTML and the click never reaches it. */}
+            <span className="revisions">
+              {Array.from({ length: PASSES }, (_, pass) => (
+                <input
+                  key={pass}
+                  type="checkbox"
+                  className="revision-box"
+                  checked={Boolean(marks[pass])}
+                  onChange={() => togglePass(problem.id, pass)}
+                  title={`Revision ${pass + 1}`}
+                  aria-label={`${problem.title}: revision pass ${pass + 1}`}
+                />
+              ))}
+            </span>
             <button
               type="button"
               className={problem.id === selectedId ? 'item active' : 'item'}
@@ -134,7 +162,8 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
               </span>
             </button>
           </li>
-        ))}
+          )
+        })}
         {visible.length === 0 && <li className="sidebar-empty">No matches.</li>}
       </ul>
     </nav>
