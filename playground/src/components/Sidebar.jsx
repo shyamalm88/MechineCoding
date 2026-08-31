@@ -61,19 +61,9 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
         onChange={(event) => setQuery(event.target.value)}
       />
 
-      <div className="sidebar-filters">
-        {categories.map((name) => (
-          <button
-            key={name}
-            type="button"
-            className={name === category ? 'chip active' : 'chip'}
-            onClick={() => setCategory(name)}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-
+      {/* Dropdowns first: the category chips run to a dozen rows on the DSA
+          collection, which pushed Technique below the fold where nobody found
+          it. */}
       <div className="sidebar-selects">
         <label className="select-field">
           <span>Difficulty</span>
@@ -105,6 +95,20 @@ export default function Sidebar({ problems, selectedId, onSelect, collection }) 
             </select>
           </label>
         )}
+      </div>
+
+      <span className="filter-label">Category</span>
+      <div className="sidebar-filters">
+        {categories.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={name === category ? 'chip active' : 'chip'}
+            onClick={() => setCategory(name)}
+          >
+            {name}
+          </button>
+        ))}
       </div>
 
       <p className="sidebar-count">{visible.length} of {problems.length}</p>

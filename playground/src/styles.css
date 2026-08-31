@@ -53,6 +53,7 @@ body {
   font-size: 13.5px;
   outline: none;
 }
+.filter-label { display: block; margin-bottom: -6px; }
 .sidebar-filters { display: flex; flex-wrap: wrap; gap: 6px; }
 /* These are dropdowns rather than chip rows -- with four filter dimensions the
    chips consumed most of the sidebar before any problem was visible. Difficulty
@@ -61,7 +62,8 @@ body {
 .sidebar-selects { display: flex; flex-wrap: wrap; gap: 8px; }
 .select-field.wide { flex-basis: 100%; }
 .select-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.select-field > span {
+.select-field > span,
+.filter-label {
   font-family: var(--pg-mono);
   font-size: 10px;
   letter-spacing: 0.06em;
