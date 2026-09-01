@@ -73,20 +73,24 @@ A naive visited[city] is WRONG.
 
 STATE MODELING (This Is the Core of the Problem)
 
-State = (currentCity, stopsUsed)
+State = (city, flightsUsed)
 
 Distance:
 ```text
-  cost[city][stops] = minimum cost to reach `city` using `stops` flights
+  cheapestCost[city][flightsUsed] = cheapest way to reach `city` having
+  taken exactly `flightsUsed` flights
 ```
 
 We want:
 ```text
-  min cost to reach dst using <= k + 1 flights
+  cheapest way to reach destination using <= maxFlights flights
 ```
 
 Note:
-- k stops means k + 1 edges
+- k STOPS means k + 1 FLIGHTS -- the off-by-one that sinks most attempts,
+```text
+  which is why the code names it `maxFlights` rather than reusing k
+```
 
 ALGORITHM OPTIONS
 
@@ -99,24 +103,24 @@ We use Dijkstra-style here because:
 
 ALGORITHM (Dijkstra with State)
 
-1. Build adjacency list
+1. Build adjacency list  (outboundFlights)
 2. Min-heap storing:
 ```text
-     [totalCost, city, stopsUsed]
+     [costSoFar, city, flightsUsed]
 ```
 
-3. cost[city][stops] tracks best cost for this exact state
+3. cheapestCost[city][flightsUsed] tracks the best cost for that exact state
 4. Initialize:
 ```text
-     push [0, src, 0]
+     push [0, source, 0]
 ```
 
 5. While heap not empty:
 ```text
      a. Pop cheapest state
-     b. If city == dst → return cost
-     c. If stopsUsed > k → skip
-     d. Relax neighbors with stopsUsed + 1
+     b. If city === destination → return costSoFar
+     c. If flightsUsed === maxFlights → budget spent, skip
+     d. Otherwise relax neighbours at flightsUsed + 1
 ```
 
 TIME & SPACE COMPLEXITY
@@ -127,12 +131,12 @@ Let:
 
 Time:
 ```text
-  O(E log (V × K))
+  O(E × K log(V × K))
 ```
 
 Space:
 ```text
-  O(V × K)
+  O(V × K) for the state table, plus the heap
 ```
 
 WHY THIS PROBLEM IS 🟢 IMPORTANT
@@ -143,3 +147,15 @@ Interviewers are checking:
 - Can you control state explosion?
 
 This problem is the GATEWAY to all hard shortest-path questions.
+
+ Order is by cost alone -- the first element of each [cost, ...] tuple.
+
+@param {number} cityCount   number of cities, labelled 0 .. cityCount - 1
+@param {number[][]} flights each entry is [from, to, price]
+@param {number} source      city to depart from
+@param {number} destination city to reach
+@param {number} maxStops    intermediate stops allowed (so maxStops + 1 flights)
+@return {number} cheapest total price, or -1 if unreachable within the limit
+
+Parameter ORDER matches LeetCode's findCheapestPrice(n, flights, src, dst, k),
+so this still pastes straight into the judge.
