@@ -148,7 +148,7 @@ Interviewers are checking:
 
 This problem is the GATEWAY to all hard shortest-path questions.
 
- Order is by cost alone -- the first element of each [cost, ...] tuple.
+ compare(a, b) < 0 means `a` comes out first.
 
 @param {number} cityCount   number of cities, labelled 0 .. cityCount - 1
 @param {number[][]} flights each entry is [from, to, price]

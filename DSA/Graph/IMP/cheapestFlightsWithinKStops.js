@@ -135,27 +135,28 @@
  */
 
 // ============================================================================
-// Min-heap ordered by cost. Written out here because these files are meant to
-// run standalone under Node -- LeetCode's built-in PriorityQueue does not
-// exist outside their judge, so relying on it leaves the file unrunnable.
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
 // ============================================================================
-class MinCostHeap {
-  constructor() {
+class BinaryHeap {
+  /** compare(a, b) < 0 means `a` comes out first. */
+  constructor(compare) {
     this.items = [];
+    this.compare = compare;
   }
 
   get size() {
     return this.items.length;
   }
 
-  /** Order is by cost alone -- the first element of each [cost, ...] tuple. */
   push(entry) {
     this.items.push(entry);
     let index = this.items.length - 1;
 
     while (index > 0) {
       const parent = (index - 1) >> 1;
-      if (this.items[parent][0] <= this.items[index][0]) break;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
       [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
       index = parent;
     }
@@ -164,7 +165,7 @@ class MinCostHeap {
   pop() {
     if (this.items.length === 0) return undefined;
 
-    const cheapest = this.items[0];
+    const top = this.items[0];
     const last = this.items.pop();
 
     if (this.items.length > 0) {
@@ -174,18 +175,18 @@ class MinCostHeap {
       for (;;) {
         const left = 2 * index + 1;
         const right = left + 1;
-        let smallest = index;
+        let best = index;
 
-        if (left < this.items.length && this.items[left][0] < this.items[smallest][0]) smallest = left;
-        if (right < this.items.length && this.items[right][0] < this.items[smallest][0]) smallest = right;
-        if (smallest === index) break;
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
 
-        [this.items[smallest], this.items[index]] = [this.items[index], this.items[smallest]];
-        index = smallest;
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
       }
     }
 
-    return cheapest;
+    return top;
   }
 }
 
@@ -221,7 +222,7 @@ function findCheapestPrice(cityCount, flights, source, destination, maxStops) {
   cheapestCost[source][0] = 0;
 
   // Entries are [costSoFar, city, flightsUsed], cheapest first.
-  const frontier = new MinCostHeap();
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
   frontier.push([0, source, 0]);
 
   while (frontier.size > 0) {
@@ -281,4 +282,4 @@ console.log("Test 8:", findCheapestPrice(
   0, 4, 2,
 )); // Expected: 10 (the 1-per-leg chain needs 3 stops)
 
-module.exports = { findCheapestPrice, MinCostHeap };
+module.exports = { findCheapestPrice, BinaryHeap };

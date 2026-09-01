@@ -1,46 +1,121 @@
-function swimInWater(grid) {
-  const n = grid.length;
-  const directions = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
+// ============================================================================
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
+// ============================================================================
+class BinaryHeap {
+  /** compare(a, b) < 0 means `a` comes out first. */
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
+  }
 
-  // dist[r][c] = minimum max elevation to reach this cell
-  const dist = Array.from({ length: n }, () => Array(n).fill(Infinity));
+  get size() {
+    return this.items.length;
+  }
 
-  // Min-heap: [cost, r, c]
-  const pq = new PriorityQueue((a, b) => a[0] < b[0]);
+  push(entry) {
+    this.items.push(entry);
+    let index = this.items.length - 1;
 
-  dist[0][0] = grid[0][0];
-  pq.push([grid[0][0], 0, 0]);
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
 
-  while (pq.size() > 0) {
-    const [currCost, r, c] = pq.pop();
+  pop() {
+    if (this.items.length === 0) return undefined;
 
-    // Destination reached → optimal
-    if (r === n - 1 && c === n - 1) {
-      return currCost;
+    const top = this.items[0];
+    const last = this.items.pop();
+
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
+
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
+
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
+      }
     }
 
-    // Skip stale entry
-    if (currCost > dist[r][c]) continue;
+    return top;
+  }
+}
 
-    for (const [dr, dc] of directions) {
-      const nr = r + dr;
-      const nc = c + dc;
+/**
+ * @param {number[][]} grid n x n elevations
+ * @return {number} earliest time you can reach the bottom-right cell, which is
+ *   the smallest possible MAXIMUM elevation along some path
+ */
+function swimInWater(grid) {
+  const size = grid.length;
+  const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-      if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+  // bestElevation[row][col] = lowest "highest cell" needed to get there.
+  const bestElevation = Array.from({ length: size }, () => Array(size).fill(Infinity));
 
-      const nextCost = Math.max(currCost, grid[nr][nc]);
+  // Entries are [elevationSoFar, row, col], lowest first.
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
 
-      if (nextCost < dist[nr][nc]) {
-        dist[nr][nc] = nextCost;
-        pq.push([nextCost, nr, nc]);
+  bestElevation[0][0] = grid[0][0];
+  frontier.push([grid[0][0], 0, 0]);
+
+  while (frontier.size > 0) {
+    const [elevationSoFar, row, col] = frontier.pop();
+
+    // Lowest-first order means the first arrival is already optimal.
+    if (row === size - 1 && col === size - 1) return elevationSoFar;
+
+    // A lower route to this cell was queued later; this entry is stale.
+    if (elevationSoFar > bestElevation[row][col]) continue;
+
+    for (const [rowDelta, colDelta] of directions) {
+      const nextRow = row + rowDelta;
+      const nextCol = col + colDelta;
+
+      if (nextRow < 0 || nextRow >= size || nextCol < 0 || nextCol >= size) continue;
+
+      // You wait for the water to cover the highest cell on the route, so the
+      // path cost is a max() of elevations rather than a sum of steps.
+      const nextElevation = Math.max(elevationSoFar, grid[nextRow][nextCol]);
+
+      if (nextElevation < bestElevation[nextRow][nextCol]) {
+        bestElevation[nextRow][nextCol] = nextElevation;
+        frontier.push([nextElevation, nextRow, nextCol]);
       }
     }
   }
 
-  return -1;
+  return -1; // unreachable: the grid is fully connected, so this never fires
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Swim in Rising Water Tests ===\n");
+
+console.log("Test 1:", swimInWater([[0, 2], [1, 3]])); // Expected: 3
+console.log("Test 2:", swimInWater([
+  [0, 1, 2, 3, 4],
+  [24, 23, 22, 21, 5],
+  [12, 13, 14, 15, 16],
+  [11, 17, 18, 19, 20],
+  [10, 9, 8, 7, 6],
+])); // Expected: 16
+console.log("Test 3:", swimInWater([[0]]));                       // Expected: 0 (single cell)
+console.log("Test 4:", swimInWater([[0, 1], [2, 3]]));            // Expected: 3
+console.log("Test 5:", swimInWater([[3, 2], [1, 0]]));            // Expected: 3 (start is the peak)
+
+module.exports = { swimInWater, BinaryHeap };

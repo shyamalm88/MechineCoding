@@ -100,13 +100,13 @@ ALGORITHM (Dijkstra with Max-Cost Relaxation)
 
 State = (r, c)
 
-dist[r][c] = minimum possible max elevation to reach (r, c)
+bestElevation[row][col] = minimum possible max elevation to reach (row, col)
 
 Initialization:
-- dist[0][0] = grid[0][0]
+- bestElevation[0][0] = grid[0][0]
 
 Transition:
-- newCost = max(currCost, grid[nr][nc])
+- nextElevation = max(elevationSoFar, grid[nextRow][nextCol])
 
 Use:
 - Min-heap ordered by dist
@@ -134,3 +134,11 @@ Many candidates fail by:
 - Using sum of elevations ❌
 
 Getting this right signals Staff-level understanding.
+
+ compare(a, b) < 0 means `a` comes out first.
+
+@param {number[][]} grid n x n elevations
+@return {number} earliest time you can reach the bottom-right cell, which is
+```text
+  the smallest possible MAXIMUM elevation along some path
+```

@@ -103,7 +103,7 @@ ALGORITHM (Modified Dijkstra)
 
 1. Build adjacency list:
 ```text
-     graph[u] = [v, probability]
+     neighbours[from] = [to, probability]
 ```
 
 2. bestProb[i] = maximum probability to reach node i so far
@@ -125,7 +125,7 @@ ALGORITHM (Modified Dijkstra)
      b. If this is end → return probability (EARLY EXIT)
      c. If stale entry → skip
      d. Relax neighbors:
-          newProb = currProb × edgeProb
+          nextProbability = probabilitySoFar × edgeProbability
           if newProb > bestProb[neighbor]:
              update + push
 ```
@@ -145,3 +145,15 @@ Interviewers are checking:
 - Can you change heap direction correctly?
 
 If you can do this cleanly, your foundation is strong.
+
+ compare(a, b) < 0 means `a` comes out first.
+
+@param {number} nodeCount nodes are labelled 0 .. nodeCount - 1
+@param {number[][]} edges each entry is [from, to] (undirected)
+@param {number[]} edgeProbabilities success probability of edges[i]
+@param {number} start
+@param {number} end
+@return {number} highest success probability, or 0 if no path exists
+
+Parameter ORDER matches LeetCode's
+maxProbability(n, edges, succProb, start, end).

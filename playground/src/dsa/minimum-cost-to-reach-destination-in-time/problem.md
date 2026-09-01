@@ -73,7 +73,7 @@ So:
   (city = 3, time = 10) ≠ (city = 3, time = 25)
 ```
 
-A simple dist[city] is WRONG.
+A simple cheapestFee[city] is WRONG.
 
 STATE MODELING
 
@@ -129,3 +129,15 @@ It mainly tests:
 - Constraint-based shortest paths
 
 Great for depth, but not required for most roles.
+
+ compare(a, b) < 0 means `a` comes out first.
+
+@param {number} maxTime total travel minutes allowed
+@param {number[][]} edges each entry is [from, to, minutes] (undirected)
+@param {number[]} passingFees fee charged for being in each city
+@return {number} cheapest total fee from city 0 to the last city inside
+```text
+  maxTime, or -1 if no such journey exists
+```
+
+Parameter ORDER matches LeetCode's minCost(maxTime, edges, passingFees).

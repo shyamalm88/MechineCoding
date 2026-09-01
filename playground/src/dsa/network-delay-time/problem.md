@@ -89,12 +89,12 @@ ALGORITHM (Dijkstra with Min Heap)
 1. Build an adjacency list from the edge list
 2. Maintain a distance array:
 ```text
-     dist[i] = shortest known time to reach node i
+     earliestArrival[i] = soonest known time to reach node i
 ```
 
 3. Initialize:
 ```text
-     dist[k] = 0
+     earliestArrival[startNode] = 0
      all others = Infinity
 ```
 
@@ -113,7 +113,7 @@ ALGORITHM (Dijkstra with Min Heap)
 6. After processing:
 ```text
      - If any node is unreachable → return -1
-     - Else return max(dist[1..n])
+     - Else return max(earliestArrival[1..nodeCount])
 ```
 
 TIME & SPACE COMPLEXITY
@@ -141,3 +141,12 @@ WHY THIS PROBLEM IS 🔵 CORE
 ```
 
 If you cannot do this cleanly, harder Dijkstra variants WILL fail.
+
+ compare(a, b) < 0 means `a` comes out first.
+
+@param {number[][]} travelTimes each entry is [from, to, travelTime]
+@param {number} nodeCount nodes are labelled 1 .. nodeCount
+@param {number} startNode node the signal is sent from
+@return {number} time for every node to receive it, or -1 if any cannot
+
+Parameter ORDER matches LeetCode's networkDelayTime(times, n, k).

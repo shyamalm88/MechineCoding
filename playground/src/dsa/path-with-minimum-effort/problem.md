@@ -63,7 +63,7 @@ Instead of minimizing SUM of edges, we minimize:
 ## State
 
 - Each cell (r, c) is a node
-- dist[r][c] = minimum possible effort to reach (r, c)
+- lowestEffort[row][col] = minimum possible effort to reach (row, col)
 
 ## Edge relaxation
 
@@ -71,15 +71,15 @@ From (r, c) → (nr, nc):
 
 ```text
   edgeEffort = |heights[r][c] - heights[nr][nc]|
-  newEffort  = max(dist[r][c], edgeEffort)
+  worstStepSoFar = max(effortSoFar, stepEffort)
 ```
 
-If newEffort < dist[nr][nc], update it.
+If worstStepSoFar < lowestEffort[nextRow][nextCol], update it.
 
 ## Algorithm
 
-1. Initialize dist[][] with Infinity
-2. dist[0][0] = 0
+1. Initialize lowestEffort[][] with Infinity
+2. lowestEffort[0][0] = 0
 3. Push (0, 0, 0) into min-heap → [effort, row, col]
 4. While heap is not empty:
 ```text
@@ -99,3 +99,11 @@ Total: O(R * C * log(R * C))
 
 - dist array: O(R * C)
 - priority queue: O(R * C)
+
+ compare(a, b) < 0 means `a` comes out first.
+
+@param {number[][]} heights grid of cell elevations
+@return {number} the smallest possible "worst single step" along some path
+```text
+  from the top-left cell to the bottom-right one
+```

@@ -2151,27 +2151,28 @@ console.log("Test 3:", carFleet(100, [0, 2, 4], [4, 2, 1]));             // Expe
 
 module.exports = { carFleet };
 `,m0=`// ============================================================================
-// Min-heap ordered by cost. Written out here because these files are meant to
-// run standalone under Node -- LeetCode's built-in PriorityQueue does not
-// exist outside their judge, so relying on it leaves the file unrunnable.
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
 // ============================================================================
-class MinCostHeap {
-  constructor() {
+class BinaryHeap {
+  /** compare(a, b) < 0 means \`a\` comes out first. */
+  constructor(compare) {
     this.items = [];
+    this.compare = compare;
   }
 
   get size() {
     return this.items.length;
   }
 
-  /** Order is by cost alone -- the first element of each [cost, ...] tuple. */
   push(entry) {
     this.items.push(entry);
     let index = this.items.length - 1;
 
     while (index > 0) {
       const parent = (index - 1) >> 1;
-      if (this.items[parent][0] <= this.items[index][0]) break;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
       [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
       index = parent;
     }
@@ -2180,7 +2181,7 @@ class MinCostHeap {
   pop() {
     if (this.items.length === 0) return undefined;
 
-    const cheapest = this.items[0];
+    const top = this.items[0];
     const last = this.items.pop();
 
     if (this.items.length > 0) {
@@ -2190,18 +2191,18 @@ class MinCostHeap {
       for (;;) {
         const left = 2 * index + 1;
         const right = left + 1;
-        let smallest = index;
+        let best = index;
 
-        if (left < this.items.length && this.items[left][0] < this.items[smallest][0]) smallest = left;
-        if (right < this.items.length && this.items[right][0] < this.items[smallest][0]) smallest = right;
-        if (smallest === index) break;
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
 
-        [this.items[smallest], this.items[index]] = [this.items[index], this.items[smallest]];
-        index = smallest;
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
       }
     }
 
-    return cheapest;
+    return top;
   }
 }
 
@@ -2237,7 +2238,7 @@ function findCheapestPrice(cityCount, flights, source, destination, maxStops) {
   cheapestCost[source][0] = 0;
 
   // Entries are [costSoFar, city, flightsUsed], cheapest first.
-  const frontier = new MinCostHeap();
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
   frontier.push([0, source, 0]);
 
   while (frontier.size > 0) {
@@ -2297,7 +2298,7 @@ console.log("Test 8:", findCheapestPrice(
   0, 4, 2,
 )); // Expected: 10 (the 1-per-leg chain needs 3 stops)
 
-module.exports = { findCheapestPrice, MinCostHeap };
+module.exports = { findCheapestPrice, BinaryHeap };
 `,f0=`// ============================================================================
 // APPROACH: Greedy (Range of Open Counts)
 // ============================================================================
@@ -8677,54 +8678,131 @@ module.exports = { longestOnes };
 
   return 1 + Math.max(leftDepth, rightDepth);
 }
-`,tx=`function maxProbability(n, edges, succProb, start, end) {
-  // -------------------------------
-  // Build adjacency list
-  // -------------------------------
-  const graph = Array.from({ length: n }, () => []);
-  for (let i = 0; i < edges.length; i++) {
-    const [u, v] = edges[i];
-    const p = succProb[i];
-    graph[u].push([v, p]);
-    graph[v].push([u, p]);
+`,tx=`// ============================================================================
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
+// ============================================================================
+class BinaryHeap {
+  /** compare(a, b) < 0 means \`a\` comes out first. */
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
   }
 
-  // -------------------------------
-  // Best probability array
-  // -------------------------------
-  const bestProb = Array(n).fill(0);
-  bestProb[start] = 1;
+  get size() {
+    return this.items.length;
+  }
 
-  // -------------------------------
-  // Max-Heap: higher probability first
-  // -------------------------------
-  const pq = new PriorityQueue((a, b) => a[0] > b[0]);
-  pq.push([1, start]);
+  push(entry) {
+    this.items.push(entry);
+    let index = this.items.length - 1;
 
-  // -------------------------------
-  // Dijkstra
-  // -------------------------------
-  while (pq.size() > 0) {
-    const [currProb, node] = pq.pop();
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
 
-    // Early exit: best possible path to end found
-    if (node === end) return currProb;
+  pop() {
+    if (this.items.length === 0) return undefined;
 
-    // Skip stale entry
-    if (currProb < bestProb[node]) continue;
+    const top = this.items[0];
+    const last = this.items.pop();
 
-    for (const [nei, edgeProb] of graph[node]) {
-      const newProb = currProb * edgeProb;
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
 
-      if (newProb > bestProb[nei]) {
-        bestProb[nei] = newProb;
-        pq.push([newProb, nei]);
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
+
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
+      }
+    }
+
+    return top;
+  }
+}
+
+/**
+ * @param {number} nodeCount nodes are labelled 0 .. nodeCount - 1
+ * @param {number[][]} edges each entry is [from, to] (undirected)
+ * @param {number[]} edgeProbabilities success probability of edges[i]
+ * @param {number} start
+ * @param {number} end
+ * @return {number} highest success probability, or 0 if no path exists
+ *
+ * Parameter ORDER matches LeetCode's
+ * maxProbability(n, edges, succProb, start, end).
+ */
+function maxProbability(nodeCount, edges, edgeProbabilities, start, end) {
+  // neighbours[node] = [[nextNode, probability], ...] -- pushed both ways
+  // because the edges are undirected.
+  const neighbours = Array.from({ length: nodeCount }, () => []);
+  for (let i = 0; i < edges.length; i++) {
+    const [from, to] = edges[i];
+    const probability = edgeProbabilities[i];
+    neighbours[from].push([to, probability]);
+    neighbours[to].push([from, probability]);
+  }
+
+  // bestProbability[node] = best odds of arriving there. Starts at 0 (not
+  // Infinity) because we are MAXIMISING, and 0 is the worst possible value.
+  const bestProbability = Array(nodeCount).fill(0);
+  bestProbability[start] = 1;
+
+  // A MAX-heap: probabilities multiply, so the best path is the largest
+  // product, not the smallest sum. That reversed comparator is the only real
+  // difference from a textbook Dijkstra.
+  const frontier = new BinaryHeap((a, b) => b[0] - a[0]);
+  frontier.push([1, start]);
+
+  while (frontier.size > 0) {
+    const [probabilitySoFar, node] = frontier.pop();
+
+    // Best-first order means the first arrival at \`end\` is already optimal.
+    if (node === end) return probabilitySoFar;
+
+    // A better route to this node was queued later; this entry is stale.
+    if (probabilitySoFar < bestProbability[node]) continue;
+
+    for (const [nextNode, edgeProbability] of neighbours[node]) {
+      const nextProbability = probabilitySoFar * edgeProbability;
+
+      if (nextProbability > bestProbability[nextNode]) {
+        bestProbability[nextNode] = nextProbability;
+        frontier.push([nextProbability, nextNode]);
       }
     }
   }
 
-  return 0;
+  return 0; // end was never reached
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Path with Maximum Probability Tests ===\\n");
+
+const triangle = [[0, 1], [1, 2], [0, 2]];
+
+console.log("Test 1:", maxProbability(3, triangle, [0.5, 0.5, 0.2], 0, 2)); // Expected: 0.25 (via node 1)
+console.log("Test 2:", maxProbability(3, triangle, [0.5, 0.5, 0.3], 0, 2)); // Expected: 0.3  (direct wins)
+console.log("Test 3:", maxProbability(3, [[0, 1]], [0.5], 0, 2));           // Expected: 0    (unreachable)
+console.log("Test 4:", maxProbability(2, [[0, 1]], [1], 0, 1));             // Expected: 1
+console.log("Test 5:", maxProbability(2, [[0, 1]], [0.5], 0, 0));           // Expected: 1    (already there)
+
+module.exports = { maxProbability, BinaryHeap };
 `,ix=`// ============================================================================
 // APPROACH: Dynamic Programming (Tracking Min and Max)
 // ============================================================================
@@ -9895,58 +9973,134 @@ module.exports = { findMinArrowShots };
 
   return dist[rows - 1][cols - 1];
 }
-`,Tx=`function minCost(maxTime, edges, passingFees) {
-  const n = passingFees.length;
-
-  // -------------------------------
-  // Build adjacency list
-  // -------------------------------
-  const graph = Array.from({ length: n }, () => []);
-  for (const [u, v, t] of edges) {
-    graph[u].push([v, t]);
-    graph[v].push([u, t]);
+`,Tx=`// ============================================================================
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
+// ============================================================================
+class BinaryHeap {
+  /** compare(a, b) < 0 means \`a\` comes out first. */
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
   }
 
-  // -------------------------------
-  // cost[city][time] = min cost
-  // -------------------------------
-  const cost = Array.from({ length: n }, () =>
-    Array(maxTime + 1).fill(Infinity),
-  );
-  cost[0][0] = passingFees[0];
+  get size() {
+    return this.items.length;
+  }
 
-  // -------------------------------
-  // Min-heap: [totalCost, city, time]
-  // -------------------------------
-  const pq = new PriorityQueue((a, b) => a[0] < b[0]);
-  pq.push([passingFees[0], 0, 0]);
+  push(entry) {
+    this.items.push(entry);
+    let index = this.items.length - 1;
 
-  // -------------------------------
-  // Dijkstra with state pruning
-  // -------------------------------
-  while (pq.size() > 0) {
-    const [currCost, city, timeSpent] = pq.pop();
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
 
-    // Destination reached optimally
-    if (city === n - 1) return currCost;
+  pop() {
+    if (this.items.length === 0) return undefined;
 
-    // Skip stale entry
-    if (currCost > cost[city][timeSpent]) continue;
+    const top = this.items[0];
+    const last = this.items.pop();
 
-    for (const [nei, travelTime] of graph[city]) {
-      const newTime = timeSpent + travelTime;
-      if (newTime > maxTime) continue;
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
 
-      const newCost = currCost + passingFees[nei];
-      if (newCost < cost[nei][newTime]) {
-        cost[nei][newTime] = newCost;
-        pq.push([newCost, nei, newTime]);
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
+
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
+      }
+    }
+
+    return top;
+  }
+}
+
+/**
+ * @param {number} maxTime total travel minutes allowed
+ * @param {number[][]} edges each entry is [from, to, minutes] (undirected)
+ * @param {number[]} passingFees fee charged for being in each city
+ * @return {number} cheapest total fee from city 0 to the last city inside
+ *   maxTime, or -1 if no such journey exists
+ *
+ * Parameter ORDER matches LeetCode's minCost(maxTime, edges, passingFees).
+ */
+function minCost(maxTime, edges, passingFees) {
+  const cityCount = passingFees.length;
+
+  // roadsFrom[city] = [[nextCity, minutes], ...] -- both directions, the roads
+  // are undirected.
+  const roadsFrom = Array.from({ length: cityCount }, () => []);
+  for (const [from, to, minutes] of edges) {
+    roadsFrom[from].push([to, minutes]);
+    roadsFrom[to].push([from, minutes]);
+  }
+
+  // cheapestFee[city][timeSpent] = best fee for that exact STATE. Two
+  // dimensions, not one: arriving somewhere cheaply but slowly and arriving
+  // dearly but quickly are both worth keeping, since only one of them may
+  // still fit inside maxTime later.
+  const cheapestFee = Array.from({ length: cityCount }, () => Array(maxTime + 1).fill(Infinity));
+  cheapestFee[0][0] = passingFees[0];
+
+  // Entries are [feeSoFar, city, timeSpent], cheapest first.
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
+  frontier.push([passingFees[0], 0, 0]);
+
+  while (frontier.size > 0) {
+    const [feeSoFar, city, timeSpent] = frontier.pop();
+
+    // Cheapest-first order means the first arrival is already optimal among
+    // everything still inside the time budget.
+    if (city === cityCount - 1) return feeSoFar;
+
+    // A cheaper route to this same state was queued later; this entry is stale.
+    if (feeSoFar > cheapestFee[city][timeSpent]) continue;
+
+    for (const [nextCity, minutes] of roadsFrom[city]) {
+      const nextTime = timeSpent + minutes;
+      if (nextTime > maxTime) continue; // over budget, abandon this branch
+
+      const nextFee = feeSoFar + passingFees[nextCity];
+
+      if (nextFee < cheapestFee[nextCity][nextTime]) {
+        cheapestFee[nextCity][nextTime] = nextFee;
+        frontier.push([nextFee, nextCity, nextTime]);
       }
     }
   }
 
   return -1;
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Minimum Cost to Reach Destination in Time Tests ===\\n");
+
+const roads = [[0, 1, 10], [1, 2, 10], [2, 5, 10], [0, 3, 1], [3, 4, 10], [4, 5, 15]];
+const fees = [5, 1, 2, 20, 20, 3];
+
+console.log("Test 1:", minCost(30, roads, fees)); // Expected: 11 (0→1→2→5, exactly 30 min)
+console.log("Test 2:", minCost(29, roads, fees)); // Expected: 48 (cheap route now too slow)
+console.log("Test 3:", minCost(25, roads, fees)); // Expected: -1 (nothing fits)
+console.log("Test 4:", minCost(10, [[0, 1, 10]], [1, 2]));  // Expected: 3 (single road, exact fit)
+console.log("Test 5:", minCost(9, [[0, 1, 10]], [1, 2]));   // Expected: -1 (one minute short)
+
+module.exports = { minCost, BinaryHeap };
 `,Ex=`const TreeNode = function (val, left = null, right = null) { this.val = val; this.left = left; this.right = right; };
 
 const minDepthBFS = (root) => {
@@ -10604,58 +10758,126 @@ console.log("next(3):", ma.next(3).toFixed(5));   // Expected: 4.66667
 console.log("next(5):", ma.next(5).toFixed(5));   // Expected: 6.00000
 
 module.exports = { MovingAverage };
-`,Lx=`function networkDelayTime(times, n, k) {
-  // -------------------------------
-  // Build adjacency list
-  // -------------------------------
-  const graph = Array.from({ length: n + 1 }, () => []);
-  for (const [u, v, w] of times) {
-    graph[u].push([v, w]);
+`,Lx=`// ============================================================================
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
+// ============================================================================
+class BinaryHeap {
+  /** compare(a, b) < 0 means \`a\` comes out first. */
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
   }
 
-  // -------------------------------
-  // Distance array
-  // -------------------------------
-  const dist = Array(n + 1).fill(Infinity);
-  dist[k] = 0;
+  get size() {
+    return this.items.length;
+  }
 
-  // -------------------------------
-  // Min-Heap Priority Queue
-  // Stores [distance, node]
-  // -------------------------------
-  const pq = new PriorityQueue((a, b) => a[0] < b[0]);
-  pq.push([0, k]);
+  push(entry) {
+    this.items.push(entry);
+    let index = this.items.length - 1;
 
-  // -------------------------------
-  // Dijkstra
-  // -------------------------------
-  while (pq.size() > 0) {
-    const [currDist, node] = pq.pop();
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
 
-    // Skip stale heap entries
-    if (currDist > dist[node]) continue;
+  pop() {
+    if (this.items.length === 0) return undefined;
 
-    for (const [nei, weight] of graph[node]) {
-      const newDist = currDist + weight;
+    const top = this.items[0];
+    const last = this.items.pop();
 
-      if (newDist < dist[nei]) {
-        dist[nei] = newDist;
-        pq.push([newDist, nei]);
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
+
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
+
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
+      }
+    }
+
+    return top;
+  }
+}
+
+/**
+ * @param {number[][]} travelTimes each entry is [from, to, travelTime]
+ * @param {number} nodeCount nodes are labelled 1 .. nodeCount
+ * @param {number} startNode node the signal is sent from
+ * @return {number} time for every node to receive it, or -1 if any cannot
+ *
+ * Parameter ORDER matches LeetCode's networkDelayTime(times, n, k).
+ */
+function networkDelayTime(travelTimes, nodeCount, startNode) {
+  // Index 0 is unused: nodes are 1-based, so the array is sized nodeCount + 1
+  // rather than shifting every label by one at each access.
+  const outgoingEdges = Array.from({ length: nodeCount + 1 }, () => []);
+  for (const [from, to, travelTime] of travelTimes) {
+    outgoingEdges[from].push([to, travelTime]);
+  }
+
+  // earliestArrival[node] = soonest the signal can reach it.
+  const earliestArrival = Array(nodeCount + 1).fill(Infinity);
+  earliestArrival[startNode] = 0;
+
+  // Entries are [timeSoFar, node], soonest first.
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
+  frontier.push([0, startNode]);
+
+  while (frontier.size > 0) {
+    const [timeSoFar, node] = frontier.pop();
+
+    // A faster route to this node was queued later; this entry is stale.
+    if (timeSoFar > earliestArrival[node]) continue;
+
+    for (const [nextNode, travelTime] of outgoingEdges[node]) {
+      const arrivalTime = timeSoFar + travelTime;
+
+      if (arrivalTime < earliestArrival[nextNode]) {
+        earliestArrival[nextNode] = arrivalTime;
+        frontier.push([arrivalTime, nextNode]);
       }
     }
   }
 
-  // -------------------------------
-  // Compute answer
-  // -------------------------------
-  let maxTime = 0;
-  for (let i = 1; i <= n; i++) {
-    if (dist[i] === Infinity) return -1;
-    maxTime = Math.max(maxTime, dist[i]);
+  // The network is "done" only when the LAST node hears the signal, so the
+  // answer is the maximum arrival time -- and any unreachable node makes it
+  // impossible outright.
+  let slowestArrival = 0;
+  for (let node = 1; node <= nodeCount; node++) {
+    if (earliestArrival[node] === Infinity) return -1;
+    slowestArrival = Math.max(slowestArrival, earliestArrival[node]);
   }
 
-  return maxTime;
+  return slowestArrival;
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Network Delay Time Tests ===\\n");
+
+console.log("Test 1:", networkDelayTime([[2, 1, 1], [2, 3, 1], [3, 4, 1]], 4, 2)); // Expected: 2
+console.log("Test 2:", networkDelayTime([[1, 2, 1]], 2, 1));                        // Expected: 1
+console.log("Test 3:", networkDelayTime([[1, 2, 1]], 2, 2));                        // Expected: -1 (1 unreachable)
+console.log("Test 4:", networkDelayTime([], 1, 1));                                 // Expected: 0 (already there)
+console.log("Test 5:", networkDelayTime([[1, 2, 1], [2, 3, 2], [1, 3, 4]], 3, 1));  // Expected: 3 (via 2, not direct)
+
+module.exports = { networkDelayTime, BinaryHeap };
 `,Dx=`const nextGreaterElement = (nums1, nums2) => {
   const nextGreater = new Map();
   const stack = []; // decreasing
@@ -12555,7 +12777,7 @@ console.log(hasPathSum(null, 0)); // false
  * STATE:
  *
  * - Each cell (r, c) is a node
- * - dist[r][c] = minimum possible effort to reach (r, c)
+ * - lowestEffort[row][col] = minimum possible effort to reach (row, col)
  *
  * ---------------------------------------------------------------------------
  * EDGE RELAXATION:
@@ -12563,15 +12785,15 @@ console.log(hasPathSum(null, 0)); // false
  * From (r, c) → (nr, nc):
  *
  *   edgeEffort = |heights[r][c] - heights[nr][nc]|
- *   newEffort  = max(dist[r][c], edgeEffort)
+ *   worstStepSoFar = max(effortSoFar, stepEffort)
  *
- * If newEffort < dist[nr][nc], update it.
+ * If worstStepSoFar < lowestEffort[nextRow][nextCol], update it.
  *
  * ---------------------------------------------------------------------------
  * ALGORITHM:
  *
- * 1. Initialize dist[][] with Infinity
- * 2. dist[0][0] = 0
+ * 1. Initialize lowestEffort[][] with Infinity
+ * 2. lowestEffort[0][0] = 0
  * 3. Push (0, 0, 0) into min-heap → [effort, row, col]
  * 4. While heap is not empty:
  *    a. Pop cell with minimum effort so far
@@ -12595,55 +12817,112 @@ console.log(hasPathSum(null, 0)); // false
  * ============================================================================
  */
 
-const pathWithMinimumEffort = (heights) => {
-  const rows = heights.length;
-  const cols = heights[0].length;
+// ============================================================================
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
+// ============================================================================
+class BinaryHeap {
+  /** compare(a, b) < 0 means \`a\` comes out first. */
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
+  }
 
-  const dist = Array.from({ length: rows }, () => Array(cols).fill(Infinity));
+  get size() {
+    return this.items.length;
+  }
 
-  // Min-Heap: [currentEffort, row, col]
-  const pq = new PriorityQueue((a, b) => a[0] < b[0]);
+  push(entry) {
+    this.items.push(entry);
+    let index = this.items.length - 1;
 
-  dist[0][0] = 0;
-  pq.push([0, 0, 0]);
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
 
-  const dirs = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
+  pop() {
+    if (this.items.length === 0) return undefined;
 
-  while (pq.size() > 0) {
-    const [effort, r, c] = pq.pop();
+    const top = this.items[0];
+    const last = this.items.pop();
 
-    // If we reached destination, this is the minimum effort
-    if (r === rows - 1 && c === cols - 1) {
-      return effort;
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
+
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
+
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
+      }
     }
 
-    // Skip stale entries
-    if (effort > dist[r][c]) continue;
+    return top;
+  }
+}
 
-    for (const [dr, dc] of dirs) {
-      const nr = r + dr;
-      const nc = c + dc;
+/**
+ * @param {number[][]} heights grid of cell elevations
+ * @return {number} the smallest possible "worst single step" along some path
+ *   from the top-left cell to the bottom-right one
+ */
+const pathWithMinimumEffort = (heights) => {
+  const rowCount = heights.length;
+  const colCount = heights[0].length;
 
-      if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+  // lowestEffort[row][col] = best "worst step" seen for reaching that cell.
+  const lowestEffort = Array.from({ length: rowCount }, () => Array(colCount).fill(Infinity));
 
-      const edgeEffort = Math.abs(heights[r][c] - heights[nr][nc]);
+  // Entries are [effortSoFar, row, col], smallest effort first.
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
 
-      const newEffort = Math.max(effort, edgeEffort);
+  lowestEffort[0][0] = 0;
+  frontier.push([0, 0, 0]);
 
-      if (newEffort < dist[nr][nc]) {
-        dist[nr][nc] = newEffort;
-        pq.push([newEffort, nr, nc]);
+  const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  while (frontier.size > 0) {
+    const [effortSoFar, row, col] = frontier.pop();
+
+    // Smallest-first order means the first arrival is already optimal.
+    if (row === rowCount - 1 && col === colCount - 1) return effortSoFar;
+
+    // A gentler route to this cell was queued later; this entry is stale.
+    if (effortSoFar > lowestEffort[row][col]) continue;
+
+    for (const [rowDelta, colDelta] of directions) {
+      const nextRow = row + rowDelta;
+      const nextCol = col + colDelta;
+
+      if (nextRow < 0 || nextCol < 0 || nextRow >= rowCount || nextCol >= colCount) continue;
+
+      const stepEffort = Math.abs(heights[row][col] - heights[nextRow][nextCol]);
+
+      // The cost of a path is its WORST step, not the sum of its steps -- so
+      // costs combine with max(), not +. That single change is what turns
+      // Dijkstra into a minimax-path search.
+      const worstStepSoFar = Math.max(effortSoFar, stepEffort);
+
+      if (worstStepSoFar < lowestEffort[nextRow][nextCol]) {
+        lowestEffort[nextRow][nextCol] = worstStepSoFar;
+        frontier.push([worstStepSoFar, nextRow, nextCol]);
       }
     }
   }
 
-  // Problem guarantees reachability
-  return 0;
+  return 0; // a 1x1 grid never enters the loop body past the first pop
 };
 
 // ============================================================================
@@ -12651,42 +12930,19 @@ const pathWithMinimumEffort = (heights) => {
 // ============================================================================
 console.log("=== Path With Minimum Effort Tests ===\\n");
 
-// Test 1
-console.log(
-  "Test 1:",
-  pathWithMinimumEffort([
-    [1, 2, 2],
-    [3, 8, 2],
-    [5, 3, 5],
-  ]),
-);
-// Expected: 2
+console.log("Test 1:", pathWithMinimumEffort([[1, 2, 2], [3, 8, 2], [5, 3, 5]])); // Expected: 2
+console.log("Test 2:", pathWithMinimumEffort([[1, 2, 3], [3, 8, 4], [5, 3, 5]])); // Expected: 1
+console.log("Test 3:", pathWithMinimumEffort([
+  [1, 2, 1, 1, 1],
+  [1, 2, 1, 2, 1],
+  [1, 2, 1, 2, 1],
+  [1, 2, 1, 2, 1],
+  [1, 1, 1, 2, 1],
+])); // Expected: 0
+console.log("Test 4:", pathWithMinimumEffort([[1]]));            // Expected: 0 (single cell)
+console.log("Test 5:", pathWithMinimumEffort([[1, 10]]));        // Expected: 9 (forced single step)
 
-// Test 2
-console.log(
-  "Test 2:",
-  pathWithMinimumEffort([
-    [1, 2, 3],
-    [3, 8, 4],
-    [5, 3, 5],
-  ]),
-);
-// Expected: 1
-
-// Test 3
-console.log(
-  "Test 3:",
-  pathWithMinimumEffort([
-    [1, 2, 1, 1, 1],
-    [1, 2, 1, 2, 1],
-    [1, 2, 1, 2, 1],
-    [1, 2, 1, 2, 1],
-    [1, 1, 1, 2, 1],
-  ]),
-);
-// Expected: 0
-
-module.exports = { pathWithMinimumEffort };
+module.exports = { pathWithMinimumEffort, BinaryHeap };
 `,sv=`// ============================================================================
 // APPROACH: Fixed Sliding Window
 // ============================================================================
@@ -16798,52 +17054,127 @@ console.log("Test 1:", board1);
 // Expected: [["X","X","X","X"],["X","X","X","X"],["X","X","X","X"],["X","O","X","X"]]
 
 module.exports = { surroundedRegions };
-`,pS=`function swimInWater(grid) {
-  const n = grid.length;
-  const directions = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
+`,pS=`// ============================================================================
+// Binary heap ordered by a comparator. Written out here because these files are
+// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
+// exists only inside their judge, so depending on it leaves the file unrunnable.
+// ============================================================================
+class BinaryHeap {
+  /** compare(a, b) < 0 means \`a\` comes out first. */
+  constructor(compare) {
+    this.items = [];
+    this.compare = compare;
+  }
 
-  // dist[r][c] = minimum max elevation to reach this cell
-  const dist = Array.from({ length: n }, () => Array(n).fill(Infinity));
+  get size() {
+    return this.items.length;
+  }
 
-  // Min-heap: [cost, r, c]
-  const pq = new PriorityQueue((a, b) => a[0] < b[0]);
+  push(entry) {
+    this.items.push(entry);
+    let index = this.items.length - 1;
 
-  dist[0][0] = grid[0][0];
-  pq.push([grid[0][0], 0, 0]);
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
+      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
+      index = parent;
+    }
+  }
 
-  while (pq.size() > 0) {
-    const [currCost, r, c] = pq.pop();
+  pop() {
+    if (this.items.length === 0) return undefined;
 
-    // Destination reached → optimal
-    if (r === n - 1 && c === n - 1) {
-      return currCost;
+    const top = this.items[0];
+    const last = this.items.pop();
+
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let index = 0;
+
+      for (;;) {
+        const left = 2 * index + 1;
+        const right = left + 1;
+        let best = index;
+
+        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
+        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
+        if (best === index) break;
+
+        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
+        index = best;
+      }
     }
 
-    // Skip stale entry
-    if (currCost > dist[r][c]) continue;
+    return top;
+  }
+}
 
-    for (const [dr, dc] of directions) {
-      const nr = r + dr;
-      const nc = c + dc;
+/**
+ * @param {number[][]} grid n x n elevations
+ * @return {number} earliest time you can reach the bottom-right cell, which is
+ *   the smallest possible MAXIMUM elevation along some path
+ */
+function swimInWater(grid) {
+  const size = grid.length;
+  const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-      if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+  // bestElevation[row][col] = lowest "highest cell" needed to get there.
+  const bestElevation = Array.from({ length: size }, () => Array(size).fill(Infinity));
 
-      const nextCost = Math.max(currCost, grid[nr][nc]);
+  // Entries are [elevationSoFar, row, col], lowest first.
+  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
 
-      if (nextCost < dist[nr][nc]) {
-        dist[nr][nc] = nextCost;
-        pq.push([nextCost, nr, nc]);
+  bestElevation[0][0] = grid[0][0];
+  frontier.push([grid[0][0], 0, 0]);
+
+  while (frontier.size > 0) {
+    const [elevationSoFar, row, col] = frontier.pop();
+
+    // Lowest-first order means the first arrival is already optimal.
+    if (row === size - 1 && col === size - 1) return elevationSoFar;
+
+    // A lower route to this cell was queued later; this entry is stale.
+    if (elevationSoFar > bestElevation[row][col]) continue;
+
+    for (const [rowDelta, colDelta] of directions) {
+      const nextRow = row + rowDelta;
+      const nextCol = col + colDelta;
+
+      if (nextRow < 0 || nextRow >= size || nextCol < 0 || nextCol >= size) continue;
+
+      // You wait for the water to cover the highest cell on the route, so the
+      // path cost is a max() of elevations rather than a sum of steps.
+      const nextElevation = Math.max(elevationSoFar, grid[nextRow][nextCol]);
+
+      if (nextElevation < bestElevation[nextRow][nextCol]) {
+        bestElevation[nextRow][nextCol] = nextElevation;
+        frontier.push([nextElevation, nextRow, nextCol]);
       }
     }
   }
 
-  return -1;
+  return -1; // unreachable: the grid is fully connected, so this never fires
 }
+
+// ============================================================================
+// TEST CASES
+// ============================================================================
+console.log("=== Swim in Rising Water Tests ===\\n");
+
+console.log("Test 1:", swimInWater([[0, 2], [1, 3]])); // Expected: 3
+console.log("Test 2:", swimInWater([
+  [0, 1, 2, 3, 4],
+  [24, 23, 22, 21, 5],
+  [12, 13, 14, 15, 16],
+  [11, 17, 18, 19, 20],
+  [10, 9, 8, 7, 6],
+])); // Expected: 16
+console.log("Test 3:", swimInWater([[0]]));                       // Expected: 0 (single cell)
+console.log("Test 4:", swimInWater([[0, 1], [2, 3]]));            // Expected: 3
+console.log("Test 5:", swimInWater([[3, 2], [1, 0]]));            // Expected: 3 (start is the peak)
+
+module.exports = { swimInWater, BinaryHeap };
 `,mS=`// ============================================================================
 // APPROACH: Recursive DFS (Two Pointers)
 // ============================================================================
@@ -21189,7 +21520,7 @@ Interviewers are checking:
 
 This problem is the GATEWAY to all hard shortest-path questions.
 
- Order is by cost alone -- the first element of each [cost, ...] tuple.
+ compare(a, b) < 0 means \`a\` comes out first.
 
 @param {number} cityCount   number of cities, labelled 0 .. cityCount - 1
 @param {number[][]} flights each entry is [from, to, price]
@@ -26790,7 +27121,7 @@ ALGORITHM (Modified Dijkstra)
 
 1. Build adjacency list:
 \`\`\`text
-     graph[u] = [v, probability]
+     neighbours[from] = [to, probability]
 \`\`\`
 
 2. bestProb[i] = maximum probability to reach node i so far
@@ -26812,7 +27143,7 @@ ALGORITHM (Modified Dijkstra)
      b. If this is end → return probability (EARLY EXIT)
      c. If stale entry → skip
      d. Relax neighbors:
-          newProb = currProb × edgeProb
+          nextProbability = probabilitySoFar × edgeProbability
           if newProb > bestProb[neighbor]:
              update + push
 \`\`\`
@@ -26832,6 +27163,18 @@ Interviewers are checking:
 - Can you change heap direction correctly?
 
 If you can do this cleanly, your foundation is strong.
+
+ compare(a, b) < 0 means \`a\` comes out first.
+
+@param {number} nodeCount nodes are labelled 0 .. nodeCount - 1
+@param {number[][]} edges each entry is [from, to] (undirected)
+@param {number[]} edgeProbabilities success probability of edges[i]
+@param {number} start
+@param {number} end
+@return {number} highest success probability, or 0 if no path exists
+
+Parameter ORDER matches LeetCode's
+maxProbability(n, edges, succProb, start, end).
 `,hE=`# Maximum Product Subarray (LeetCode #152)
 
 Given an integer array nums, find a subarray that has the largest product,
@@ -28080,7 +28423,7 @@ So:
   (city = 3, time = 10) ≠ (city = 3, time = 25)
 \`\`\`
 
-A simple dist[city] is WRONG.
+A simple cheapestFee[city] is WRONG.
 
 STATE MODELING
 
@@ -28136,6 +28479,18 @@ It mainly tests:
 - Constraint-based shortest paths
 
 Great for depth, but not required for most roles.
+
+ compare(a, b) < 0 means \`a\` comes out first.
+
+@param {number} maxTime total travel minutes allowed
+@param {number[][]} edges each entry is [from, to, minutes] (undirected)
+@param {number[]} passingFees fee charged for being in each city
+@return {number} cheapest total fee from city 0 to the last city inside
+\`\`\`text
+  maxTime, or -1 if no such journey exists
+\`\`\`
+
+Parameter ORDER matches LeetCode's minCost(maxTime, edges, passingFees).
 `,ME=`# Minimum Depth of Binary Tree (LeetCode #111)
 
 Shortest root-to-LEAF path length. A leaf has no children.
@@ -28945,12 +29300,12 @@ ALGORITHM (Dijkstra with Min Heap)
 1. Build an adjacency list from the edge list
 2. Maintain a distance array:
 \`\`\`text
-     dist[i] = shortest known time to reach node i
+     earliestArrival[i] = soonest known time to reach node i
 \`\`\`
 
 3. Initialize:
 \`\`\`text
-     dist[k] = 0
+     earliestArrival[startNode] = 0
      all others = Infinity
 \`\`\`
 
@@ -28969,7 +29324,7 @@ ALGORITHM (Dijkstra with Min Heap)
 6. After processing:
 \`\`\`text
      - If any node is unreachable → return -1
-     - Else return max(dist[1..n])
+     - Else return max(earliestArrival[1..nodeCount])
 \`\`\`
 
 TIME & SPACE COMPLEXITY
@@ -28997,6 +29352,15 @@ WHY THIS PROBLEM IS 🔵 CORE
 \`\`\`
 
 If you cannot do this cleanly, harder Dijkstra variants WILL fail.
+
+ compare(a, b) < 0 means \`a\` comes out first.
+
+@param {number[][]} travelTimes each entry is [from, to, travelTime]
+@param {number} nodeCount nodes are labelled 1 .. nodeCount
+@param {number} startNode node the signal is sent from
+@return {number} time for every node to receive it, or -1 if any cannot
+
+Parameter ORDER matches LeetCode's networkDelayTime(times, n, k).
 `,GE=`# Next Greater Element I (LeetCode #496)
 
 nums1 is a subset of nums2. For each value in nums1, find the first greater
@@ -30439,7 +30803,7 @@ Instead of minimizing SUM of edges, we minimize:
 ## State
 
 - Each cell (r, c) is a node
-- dist[r][c] = minimum possible effort to reach (r, c)
+- lowestEffort[row][col] = minimum possible effort to reach (row, col)
 
 ## Edge relaxation
 
@@ -30447,15 +30811,15 @@ From (r, c) → (nr, nc):
 
 \`\`\`text
   edgeEffort = |heights[r][c] - heights[nr][nc]|
-  newEffort  = max(dist[r][c], edgeEffort)
+  worstStepSoFar = max(effortSoFar, stepEffort)
 \`\`\`
 
-If newEffort < dist[nr][nc], update it.
+If worstStepSoFar < lowestEffort[nextRow][nextCol], update it.
 
 ## Algorithm
 
-1. Initialize dist[][] with Infinity
-2. dist[0][0] = 0
+1. Initialize lowestEffort[][] with Infinity
+2. lowestEffort[0][0] = 0
 3. Push (0, 0, 0) into min-heap → [effort, row, col]
 4. While heap is not empty:
 \`\`\`text
@@ -30475,6 +30839,14 @@ Total: O(R * C * log(R * C))
 
 - dist array: O(R * C)
 - priority queue: O(R * C)
+
+ compare(a, b) < 0 means \`a\` comes out first.
+
+@param {number[][]} heights grid of cell elevations
+@return {number} the smallest possible "worst single step" along some path
+\`\`\`text
+  from the top-left cell to the bottom-right one
+\`\`\`
 `,fk=`# Permutation in String (LeetCode #567)
 
 Given two strings s1 and s2, return true if s2 contains a permutation of s1,
@@ -34304,13 +34676,13 @@ ALGORITHM (Dijkstra with Max-Cost Relaxation)
 
 State = (r, c)
 
-dist[r][c] = minimum possible max elevation to reach (r, c)
+bestElevation[row][col] = minimum possible max elevation to reach (row, col)
 
 Initialization:
-- dist[0][0] = grid[0][0]
+- bestElevation[0][0] = grid[0][0]
 
 Transition:
-- newCost = max(currCost, grid[nr][nc])
+- nextElevation = max(elevationSoFar, grid[nextRow][nextCol])
 
 Use:
 - Min-heap ordered by dist
@@ -34338,6 +34710,14 @@ Many candidates fail by:
 - Using sum of elevations ❌
 
 Getting this right signals Staff-level understanding.
+
+ compare(a, b) < 0 means \`a\` comes out first.
+
+@param {number[][]} grid n x n elevations
+@return {number} earliest time you can reach the bottom-right cell, which is
+\`\`\`text
+  the smallest possible MAXIMUM elevation along some path
+\`\`\`
 `,T_=`# Symmetric Tree (LeetCode #101)
 
 Given the root of a binary tree, check whether it is a mirror of itself
