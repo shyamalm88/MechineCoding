@@ -142,8 +142,6 @@ WHY THIS PROBLEM IS 🔵 CORE
 
 If you cannot do this cleanly, harder Dijkstra variants WILL fail.
 
- compare(a, b) < 0 means `a` comes out first.
-
 @param {number[][]} travelTimes each entry is [from, to, travelTime]
 @param {number} nodeCount nodes are labelled 1 .. nodeCount
 @param {number} startNode node the signal is sent from

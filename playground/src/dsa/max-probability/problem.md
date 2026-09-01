@@ -146,8 +146,6 @@ Interviewers are checking:
 
 If you can do this cleanly, your foundation is strong.
 
- compare(a, b) < 0 means `a` comes out first.
-
 @param {number} nodeCount nodes are labelled 0 .. nodeCount - 1
 @param {number[][]} edges each entry is [from, to] (undirected)
 @param {number[]} edgeProbabilities success probability of edges[i]

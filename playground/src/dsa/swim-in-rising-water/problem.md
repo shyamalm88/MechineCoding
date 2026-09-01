@@ -135,8 +135,6 @@ Many candidates fail by:
 
 Getting this right signals Staff-level understanding.
 
- compare(a, b) < 0 means `a` comes out first.
-
 @param {number[][]} grid n x n elevations
 @return {number} earliest time you can reach the bottom-right cell, which is
 ```text

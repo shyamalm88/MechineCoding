@@ -135,60 +135,64 @@
  */
 
 // ============================================================================
-// Binary heap ordered by a comparator. Written out here because these files are
-// meant to run standalone under Node -- LeetCode's built-in PriorityQueue
-// exists only inside their judge, so depending on it leaves the file unrunnable.
+// SAMPLE PriorityQueue (reference only)
 // ============================================================================
-class BinaryHeap {
-  /** compare(a, b) < 0 means `a` comes out first. */
-  constructor(compare) {
-    this.items = [];
-    this.compare = compare;
-  }
-
-  get size() {
-    return this.items.length;
-  }
-
-  push(entry) {
-    this.items.push(entry);
-    let index = this.items.length - 1;
-
-    while (index > 0) {
-      const parent = (index - 1) >> 1;
-      if (this.compare(this.items[parent], this.items[index]) <= 0) break;
-      [this.items[parent], this.items[index]] = [this.items[index], this.items[parent]];
-      index = parent;
-    }
-  }
-
-  pop() {
-    if (this.items.length === 0) return undefined;
-
-    const top = this.items[0];
-    const last = this.items.pop();
-
-    if (this.items.length > 0) {
-      this.items[0] = last;
-      let index = 0;
-
-      for (;;) {
-        const left = 2 * index + 1;
-        const right = left + 1;
-        let best = index;
-
-        if (left < this.items.length && this.compare(this.items[left], this.items[best]) < 0) best = left;
-        if (right < this.items.length && this.compare(this.items[right], this.items[best]) < 0) best = right;
-        if (best === index) break;
-
-        [this.items[best], this.items[index]] = [this.items[index], this.items[best]];
-        index = best;
-      }
-    }
-
-    return top;
-  }
-}
+// LeetCode provides PriorityQueue for you, so the solution below just uses it.
+// This is what it looks like, if you want to run the file locally with Node --
+// uncomment this block and the tests at the bottom will execute.
+//
+// The comparator is a BOOLEAN "does a come before b", which is LeetCode's
+// convention:  min-heap -> (a, b) => a[0] < b[0]
+//              max-heap -> (a, b) => a[0] > b[0]
+//
+// class PriorityQueue {
+//   constructor(comesFirst) {
+//     this.heap = [];
+//     this.comesFirst = comesFirst;
+//   }
+//
+//   size() {
+//     return this.heap.length;
+//   }
+//
+//   push(entry) {
+//     this.heap.push(entry);
+//
+//     // Bubble up while this entry outranks its parent.
+//     let index = this.heap.length - 1;
+//     while (index > 0) {
+//       const parent = (index - 1) >> 1;
+//       if (!this.comesFirst(this.heap[index], this.heap[parent])) break;
+//       [this.heap[parent], this.heap[index]] = [this.heap[index], this.heap[parent]];
+//       index = parent;
+//     }
+//   }
+//
+//   pop() {
+//     if (this.heap.length === 0) return undefined;
+//
+//     const top = this.heap[0];
+//     const last = this.heap.pop();
+//     if (this.heap.length === 0) return top;
+//
+//     // Move the last entry to the root and sink it back down.
+//     this.heap[0] = last;
+//     let index = 0;
+//     for (;;) {
+//       const left = 2 * index + 1;
+//       const right = left + 1;
+//       let best = index;
+//       if (left < this.heap.length && this.comesFirst(this.heap[left], this.heap[best])) best = left;
+//       if (right < this.heap.length && this.comesFirst(this.heap[right], this.heap[best])) best = right;
+//       if (best === index) break;
+//       [this.heap[best], this.heap[index]] = [this.heap[index], this.heap[best]];
+//       index = best;
+//     }
+//
+//     return top;
+//   }
+// }
+// ============================================================================
 
 /**
  * @param {number} cityCount   number of cities, labelled 0 .. cityCount - 1
@@ -222,11 +226,11 @@ function findCheapestPrice(cityCount, flights, source, destination, maxStops) {
   cheapestCost[source][0] = 0;
 
   // Entries are [costSoFar, city, flightsUsed], cheapest first.
-  const frontier = new BinaryHeap((a, b) => a[0] - b[0]);
-  frontier.push([0, source, 0]);
+  const priorityQueue = new PriorityQueue((a, b) => a[0] < b[0]);
+  priorityQueue.push([0, source, 0]);
 
-  while (frontier.size > 0) {
-    const [costSoFar, city, flightsUsed] = frontier.pop();
+  while (priorityQueue.size() > 0) {
+    const [costSoFar, city, flightsUsed] = priorityQueue.pop();
 
     // Cheapest-first order means the first arrival at the destination is
     // already optimal among everything still within the flight budget.
@@ -245,7 +249,7 @@ function findCheapestPrice(cityCount, flights, source, destination, maxStops) {
 
       if (nextCost < cheapestCost[nextCity][nextFlightsUsed]) {
         cheapestCost[nextCity][nextFlightsUsed] = nextCost;
-        frontier.push([nextCost, nextCity, nextFlightsUsed]);
+        priorityQueue.push([nextCost, nextCity, nextFlightsUsed]);
       }
     }
   }
@@ -256,30 +260,36 @@ function findCheapestPrice(cityCount, flights, source, destination, maxStops) {
 // ============================================================================
 // TEST CASES
 // ============================================================================
-console.log("=== Cheapest Flights Within K Stops Tests ===\n");
+// LeetCode defines PriorityQueue; Node does not. Uncomment the reference
+// class near the top to run these locally.
+if (typeof PriorityQueue === "undefined") {
+  console.log("PriorityQueue is not defined - uncomment the reference class above to run these tests.");
+} else {
+  console.log("=== Cheapest Flights Within K Stops Tests ===\n");
 
-const cheapFlights = [[0, 1, 100], [1, 2, 100], [2, 3, 100], [0, 3, 500]];
+  const cheapFlights = [[0, 1, 100], [1, 2, 100], [2, 3, 100], [0, 3, 500]];
 
-console.log("Test 1:", findCheapestPrice(4, cheapFlights, 0, 3, 1));
-// Expected: 500 (the 3-leg route needs 2 stops, over the limit)
+  console.log("Test 1:", findCheapestPrice(4, cheapFlights, 0, 3, 1));
+  // Expected: 500 (the 3-leg route needs 2 stops, over the limit)
 
-console.log("Test 2:", findCheapestPrice(4, cheapFlights, 0, 3, 2));
-// Expected: 300 (0 → 1 → 2 → 3 now fits)
+  console.log("Test 2:", findCheapestPrice(4, cheapFlights, 0, 3, 2));
+  // Expected: 300 (0 → 1 → 2 → 3 now fits)
 
-const threeCities = [[0, 1, 100], [1, 2, 100], [0, 2, 500]];
+  const threeCities = [[0, 1, 100], [1, 2, 100], [0, 2, 500]];
 
-console.log("Test 3:", findCheapestPrice(3, threeCities, 0, 2, 1)); // Expected: 200
-console.log("Test 4:", findCheapestPrice(3, threeCities, 0, 2, 0)); // Expected: 500 (direct only)
+  console.log("Test 3:", findCheapestPrice(3, threeCities, 0, 2, 1)); // Expected: 200
+  console.log("Test 4:", findCheapestPrice(3, threeCities, 0, 2, 0)); // Expected: 500 (direct only)
 
-console.log("Test 5:", findCheapestPrice(2, [], 0, 1, 0));          // Expected: -1 (no flights)
-console.log("Test 6:", findCheapestPrice(3, threeCities, 1, 1, 0)); // Expected: 0 (already there)
-console.log("Test 7:", findCheapestPrice(3, [[0, 1, 100]], 0, 2, 5)); // Expected: -1 (unreachable)
+  console.log("Test 5:", findCheapestPrice(2, [], 0, 1, 0));          // Expected: -1 (no flights)
+  console.log("Test 6:", findCheapestPrice(3, threeCities, 1, 1, 0)); // Expected: 0 (already there)
+  console.log("Test 7:", findCheapestPrice(3, [[0, 1, 100]], 0, 2, 5)); // Expected: -1 (unreachable)
 
-// A cheap route that uses too many legs must lose to a pricier short one.
-console.log("Test 8:", findCheapestPrice(
-  5,
-  [[0, 1, 1], [1, 2, 1], [2, 3, 1], [3, 4, 1], [0, 4, 10]],
-  0, 4, 2,
-)); // Expected: 10 (the 1-per-leg chain needs 3 stops)
+  // A cheap route that uses too many legs must lose to a pricier short one.
+  console.log("Test 8:", findCheapestPrice(
+    5,
+    [[0, 1, 1], [1, 2, 1], [2, 3, 1], [3, 4, 1], [0, 4, 10]],
+    0, 4, 2,
+  )); // Expected: 10 (the 1-per-leg chain needs 3 stops)
+}
 
-module.exports = { findCheapestPrice, BinaryHeap };
+module.exports = { findCheapestPrice };

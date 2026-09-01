@@ -148,8 +148,6 @@ Interviewers are checking:
 
 This problem is the GATEWAY to all hard shortest-path questions.
 
- compare(a, b) < 0 means `a` comes out first.
-
 @param {number} cityCount   number of cities, labelled 0 .. cityCount - 1
 @param {number[][]} flights each entry is [from, to, price]
 @param {number} source      city to depart from

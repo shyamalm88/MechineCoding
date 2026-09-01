@@ -100,8 +100,6 @@ Total: O(R * C * log(R * C))
 - dist array: O(R * C)
 - priority queue: O(R * C)
 
- compare(a, b) < 0 means `a` comes out first.
-
 @param {number[][]} heights grid of cell elevations
 @return {number} the smallest possible "worst single step" along some path
 ```text

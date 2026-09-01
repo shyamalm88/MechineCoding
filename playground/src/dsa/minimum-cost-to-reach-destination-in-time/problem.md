@@ -130,8 +130,6 @@ It mainly tests:
 
 Great for depth, but not required for most roles.
 
- compare(a, b) < 0 means `a` comes out first.
-
 @param {number} maxTime total travel minutes allowed
 @param {number[][]} edges each entry is [from, to, minutes] (undirected)
 @param {number[]} passingFees fee charged for being in each city
