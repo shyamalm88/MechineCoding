@@ -7465,12 +7465,16 @@ const largestRectangleArea = (heights) => {
 
   for (let i = 0; i <= heights.length; i++) {
     // Sentinel height of 0 at i === heights.length flushes the stack
-    const h = i === heights.length ? 0 : heights[i];
+    const currentHeight = i === heights.length ? 0 : heights[i];
 
-    while (stack.length > 0 && heights[stack[stack.length - 1]] >= h) {
+    // check if stack have any element and heights array last item >= currentHeight
+    while (
+      stack.length > 0 &&
+      heights[stack[stack.length - 1]] >= currentHeight
+    ) {
       const height = heights[stack.pop()];
-      const width =
-        stack.length === 0 ? i : i - stack[stack.length - 1] - 1;
+      // Width between the previous smaller bar and the current smaller bar
+      const width = stack.length === 0 ? i : i - stack[stack.length - 1] - 1;
       maxArea = Math.max(maxArea, height * width);
     }
 
@@ -7486,9 +7490,9 @@ const largestRectangleArea = (heights) => {
 console.log("=== Largest Rectangle in Histogram Tests ===\\n");
 
 console.log("Test 1:", largestRectangleArea([2, 1, 5, 6, 2, 3])); // Expected: 10
-console.log("Test 2:", largestRectangleArea([2, 4]));             // Expected: 4
-console.log("Test 3:", largestRectangleArea([1, 1, 1, 1]));       // Expected: 4
-console.log("Test 4:", largestRectangleArea([0]));                // Expected: 0
+console.log("Test 2:", largestRectangleArea([2, 4])); // Expected: 4
+console.log("Test 3:", largestRectangleArea([1, 1, 1, 1])); // Expected: 4
+console.log("Test 4:", largestRectangleArea([0])); // Expected: 0
 console.log("Test 5:", largestRectangleArea([6, 2, 5, 4, 5, 1, 6])); // Expected: 12
 
 module.exports = { largestRectangleArea };
