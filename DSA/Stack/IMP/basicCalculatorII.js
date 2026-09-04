@@ -78,6 +78,15 @@ const calculate = (s) => {
     const char = s[i];
     const isDigit = char >= "0" && char <= "9";
 
+    // lets assume number is 123
+    // num = 0 * 10 + 1
+    // = 1
+    // then num = 1 * 10 + 2
+    // = 12
+    // then again
+    // num = 12 * 10 + 3
+    // = 123
+
     if (isDigit) {
       num = num * 10 + Number(char);
     }
@@ -103,10 +112,10 @@ const calculate = (s) => {
 // ============================================================================
 console.log("=== Basic Calculator II Tests ===\n");
 
-console.log("Test 1:", calculate("3+2*2"));     // Expected: 7
-console.log("Test 2:", calculate(" 3/2 "));     // Expected: 1
+console.log("Test 1:", calculate("3+2*2")); // Expected: 7
+console.log("Test 2:", calculate(" 3/2 ")); // Expected: 1
 console.log("Test 3:", calculate(" 3+5 / 2 ")); // Expected: 5
-console.log("Test 4:", calculate("14-3/2"));    // Expected: 13
-console.log("Test 5:", calculate("1*2-3/4+5*6"));// Expected: 32
+console.log("Test 4:", calculate("14-3/2")); // Expected: 13
+console.log("Test 5:", calculate("1*2-3/4+5*6")); // Expected: 32
 
 module.exports = { calculate };
