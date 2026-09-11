@@ -39,31 +39,26 @@
  * @return {number}
  */
 var minMeetingRooms = function (intervals) {
-  if (intervals.length === 0) return 0;
+  if (meetings.length === 0) return 0;
 
-  // 1. Separate and Sort
-  const starts = intervals.map((i) => i[0]).sort((a, b) => a - b);
-  const ends = intervals.map((i) => i[1]).sort((a, b) => a - b);
+  const start = [...meetings].sort((a, b) => a[0] - b[0]);
+  const end = [...meetings].sort((a, b) => a[1] - b[1]);
 
+  let ptr = 0;
   let rooms = 0;
-  let endPtr = 0;
+  let maxRooms = 0;
 
-  // 2. Loop from i = 0 (Check EVERY meeting)
-  for (let i = 0; i < starts.length; i++) {
-    // 3. Collision Logic
-    if (starts[i] < ends[endPtr]) {
-      // A meeting started before the earliest one ended.
-      // We need a NEW room.
+  for (let i = 0; i < start.length; i++) {
+    if (start[i][0] < end[ptr][1]) {
       rooms++;
+      maxRooms = Math.max(maxRooms, rooms);
     } else {
-      // A meeting ended. We reuse that room.
-      // We do NOT increment rooms.
-      // We shift endPtr to the next available slot.
-      endPtr++;
+      ptr++;
+      rooms--;
     }
   }
 
-  return rooms;
+  return maxRooms;
 };
 
 // ============================================================================
@@ -77,7 +72,7 @@ console.log(
     [0, 30],
     [5, 10],
     [15, 20],
-  ])
+  ]),
 ); // Expected: 2
 
 console.log(
@@ -85,7 +80,7 @@ console.log(
   minMeetingRooms([
     [7, 10],
     [2, 4],
-  ])
+  ]),
 ); // Expected: 1
 
 module.exports = { minMeetingRooms };
