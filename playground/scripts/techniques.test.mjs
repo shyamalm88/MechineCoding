@@ -40,3 +40,26 @@ test('returns an empty array when nothing matches', () => {
 test('detects heap via priority queue', () => {
   assert.deepEqual(detectTechniques('push onto the priority queue'), ['Heap'])
 })
+
+test('a FOLLOW-UP paragraph does not contribute tags', () => {
+  const source = [
+    'APPROACH: sort the intervals and read the gaps',
+    '',
+    'FOLLOW-UP worth knowing: with K lists a min-heap merges them in O(N log K).',
+  ].join('\n')
+  assert.deepEqual(detectTechniques(source), [])
+})
+
+test('a one-line FOLLOW-UP does not suppress the real approach after it', () => {
+  const source = [
+    'FOLLOW-UP: solve it iteratively.',
+    '',
+    'APPROACH: DFS with an explicit stack',
+  ].join('\n')
+  assert.deepEqual(detectTechniques(source), ['DFS'])
+})
+
+test('Sorting keys on a real .sort() call, not the word "sorted"', () => {
+  assert.deepEqual(detectTechniques('Given a sorted array, use binary search on the answer'), ['Binary Search'])
+  assert.deepEqual(detectTechniques('intervals.sort((a, b) => a[0] - b[0])'), ['Sorting'])
+})

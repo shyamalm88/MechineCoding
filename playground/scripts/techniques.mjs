@@ -24,6 +24,10 @@ export const TECHNIQUES = [
   ['Binary Search', /binary\s+search(?!\s+tree)/i],
   ['Dynamic Programming', /\bDP\b|dynamic\s+programming|memoiz/i],
   ['Greedy', /\bgreedy\b/i],
+  // Keyed on a real .sort() call rather than the word "sorted", which appears
+  // in the STATEMENT of every binary-search problem without the solution ever
+  // sorting anything.
+  ['Sorting', /\.sort\(/],
   ['Heap', /\bheaps?\b|priority\s+queue/i],
   ['Monotonic Stack', /monotonic/i],
   ['Trie', /\btrie\b/i],
@@ -32,7 +36,24 @@ export const TECHNIQUES = [
   ['Recursion', /\brecursi(on|ve|vely)\b/i],
 ]
 
+/**
+ * Drop FOLLOW-UP paragraphs before matching.
+ *
+ * A follow-up describes an approach the file deliberately did NOT take ("with
+ * K employees a min-heap merges them in O(N log K)"), so tagging on it makes
+ * Technique=Heap return problems containing no heap. Only the paragraph is
+ * removed, not everything after it -- several files raise a follow-up in the
+ * problem statement and then go on to describe the real approach below.
+ */
+function withoutFollowUps(source) {
+  return source
+    .split(/\n\s*(?:\*\s*)?\n/)
+    .filter((para) => !/^\s*(?:\*\s*)?FOLLOW[- ]?UP\b/i.test(para))
+    .join('\n\n')
+}
+
 /** Tags present in `source`, in the fixed order above so output is stable. */
 export function detectTechniques(source) {
-  return TECHNIQUES.filter(([, pattern]) => pattern.test(source)).map(([name]) => name)
+  const text = withoutFollowUps(source)
+  return TECHNIQUES.filter(([, pattern]) => pattern.test(text)).map(([name]) => name)
 }

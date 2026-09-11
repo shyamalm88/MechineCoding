@@ -545,6 +545,7 @@
     "techniques": [
       "Binary Search",
       "Dynamic Programming",
+      "Sorting",
       "Monotonic Stack"
     ]
   },
@@ -648,7 +649,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Union-Find"
+      "Union-Find",
+      "Sorting"
     ]
   },
   {
@@ -964,6 +966,7 @@
       "Topological Sort",
       "Dijkstra",
       "Greedy",
+      "Sorting",
       "Heap"
     ]
   },
@@ -1095,7 +1098,8 @@
     "importance": "Core",
     "techniques": [
       "Two Pointers",
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1126,6 +1130,7 @@
     "importance": "VVIMP",
     "techniques": [
       "Greedy",
+      "Sorting",
       "Heap"
     ]
   },
@@ -1136,7 +1141,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1147,6 +1153,7 @@
     "importance": "VVIMP",
     "techniques": [
       "Greedy",
+      "Sorting",
       "Heap",
       "Monotonic Stack"
     ]
@@ -1169,7 +1176,8 @@
     "importance": "Core",
     "techniques": [
       "Dynamic Programming",
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1189,7 +1197,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1220,7 +1229,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1321,6 +1331,7 @@
     "difficulty": "Hard",
     "importance": "VVIMP",
     "techniques": [
+      "Sorting",
       "Heap"
     ]
   },
@@ -1342,6 +1353,16 @@
     "importance": "IMP",
     "techniques": [
       "Heap"
+    ]
+  },
+  {
+    "id": "employee-free-time",
+    "title": "Employee Free Time #759",
+    "category": "Intervals",
+    "difficulty": "Hard",
+    "importance": "VVIMP",
+    "techniques": [
+      "Sorting"
     ]
   },
   {
@@ -1368,7 +1389,9 @@
     "category": "Intervals",
     "difficulty": "Easy",
     "importance": "Core",
-    "techniques": []
+    "techniques": [
+      "Sorting"
+    ]
   },
   {
     "id": "minimum-meeting-rooms-required",
@@ -1377,7 +1400,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Two Pointers"
+      "Two Pointers",
+      "Sorting"
     ]
   },
   {
@@ -1386,7 +1410,9 @@
     "category": "Intervals",
     "difficulty": "Medium",
     "importance": "Core",
-    "techniques": []
+    "techniques": [
+      "Sorting"
+    ]
   },
   {
     "id": "minimum-arrows-to-burst-balloons",
@@ -1395,7 +1421,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1405,7 +1432,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {
@@ -1729,7 +1757,9 @@
     "category": "Queue & Deque",
     "difficulty": "Medium",
     "importance": "Core",
-    "techniques": []
+    "techniques": [
+      "Sorting"
+    ]
   },
   {
     "id": "time-needed-to-buy-tickets",
@@ -1758,6 +1788,7 @@
     "importance": "IMP",
     "techniques": [
       "Backtracking",
+      "Sorting",
       "Recursion"
     ]
   },
@@ -1823,6 +1854,7 @@
     "importance": "VVIMP",
     "techniques": [
       "Backtracking",
+      "Sorting",
       "Recursion"
     ]
   },
@@ -1845,6 +1877,7 @@
     "importance": "IMP",
     "techniques": [
       "Backtracking",
+      "Sorting",
       "Recursion"
     ]
   },
@@ -1875,6 +1908,7 @@
     "importance": "IMP",
     "techniques": [
       "Backtracking",
+      "Sorting",
       "Recursion"
     ]
   },
@@ -2059,6 +2093,7 @@
     "techniques": [
       "Sliding Window",
       "Binary Search",
+      "Sorting",
       "Heap"
     ]
   },
@@ -2101,6 +2136,7 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
+      "Sorting",
       "Monotonic Stack"
     ]
   },
@@ -2616,7 +2652,8 @@
     "difficulty": "Hard",
     "importance": "IMP",
     "techniques": [
-      "DFS"
+      "DFS",
+      "Sorting"
     ]
   },
   {
@@ -2626,7 +2663,8 @@
     "difficulty": "Medium",
     "importance": "Core",
     "techniques": [
-      "Two Pointers"
+      "Two Pointers",
+      "Sorting"
     ]
   },
   {
@@ -2636,7 +2674,8 @@
     "difficulty": "Medium",
     "importance": "Core",
     "techniques": [
-      "Two Pointers"
+      "Two Pointers",
+      "Sorting"
     ]
   },
   {
@@ -2646,7 +2685,8 @@
     "difficulty": "Medium",
     "importance": "IMP",
     "techniques": [
-      "Two Pointers"
+      "Two Pointers",
+      "Sorting"
     ]
   },
   {
@@ -2667,7 +2707,8 @@
     "importance": "Core",
     "techniques": [
       "Two Pointers",
-      "Greedy"
+      "Greedy",
+      "Sorting"
     ]
   },
   {

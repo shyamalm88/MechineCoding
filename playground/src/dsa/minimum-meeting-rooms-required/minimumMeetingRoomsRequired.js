@@ -57,7 +57,7 @@ console.log(
     [0, 30],
     [5, 10],
     [15, 20],
-  ])
+  ]),
 ); // Expected: 2
 
 console.log(
@@ -65,7 +65,7 @@ console.log(
   minMeetingRooms([
     [7, 10],
     [2, 4],
-  ])
+  ]),
 ); // Expected: 1
 
 module.exports = { minMeetingRooms };
