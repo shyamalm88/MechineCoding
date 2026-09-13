@@ -21,7 +21,7 @@ Path: (0,0) -> (1,1)
 Example 2:
 Input: [[0,0,0],[1,1,0],[1,1,0]]
 Output: 4
-Path: (0,0) -> (0,1) -> (0,2) -> (1,2) -> (2,2)
+Path: (0,0) -> (0,1) -> (1,2) -> (2,2)   (the last step is diagonal)
 
 Constraints:
 - n == grid.length
@@ -50,3 +50,46 @@ Key details:
 
 Time Complexity: O(N^2) - In worst case, we visit every cell once.
 Space Complexity: O(N^2) - For the queue in worst case.
+
+## Approach 2
+
+DFS (Backtracking) -- correct, but exponential
+
+## Intuition
+
+DFS goes deep down one route before trying another, so the first path it
+reaches the target on is just SOME path, not the shortest. To get the right
+answer, DFS has to try every simple path and keep the minimum.
+
+The trap -- marking visited and never unmarking:
+In BFS, a cell is marked visited forever, which is safe because BFS reaches
+every cell by its shortest route first. In DFS that is wrong: a long route
+may mark cells that a shorter route needs later, so the shorter route is
+never explored. On a fully open 3x3 grid that version returns 5, but the
+real answer is 3.
+
+So the DFS must BACKTRACK: mark a cell on the way in, unmark it on the way
+out. Then the cell is only blocked for the path currently being built.
+
+Pruning: once a path of length `shortest` is known, any path that has
+already reached that length cannot do better, so stop exploring it.
+
+Time Complexity: exponential. DFS enumerates simple paths, and there can be
+exponentially many. A loose upper bound is O(8^(N^2)): up to 8 choices per
+step, over a path that can touch up to N^2 cells. Pruning cuts a lot of work
+but does not change the growth class. Measured recursive calls on fully
+open grids (with pruning):
+```text
+    3x3: 72     5x5: 3,667     7x7: 158,592     8x8: 1,021,395
+```
+
+roughly 6-7x more work per +1 in grid size. At N = 100 it will not finish.
+
+Space Complexity: O(N^2) for the visited matrix, plus recursion depth up to
+N^2 (a path can snake through every open cell). At N = 100 that is up to
+10,000 stack frames, which can also overflow the call stack.
+
+Why BFS is the answer for this problem:
+every step costs 1, so BFS reaches each cell first by its shortest route --
+O(N^2) time. DFS is worth knowing mainly to explain why it is the wrong tool
+for shortest paths.

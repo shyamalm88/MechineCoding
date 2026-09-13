@@ -72,39 +72,144 @@ const shortestPathBinaryMatrix = (grid) => {
 };
 
 // ============================================================================
+// APPROACH 2: DFS (Backtracking) -- correct, but exponential
+// ============================================================================
+/**
+ * INTUITION:
+ * DFS goes deep down one route before trying another, so the first path it
+ * reaches the target on is just SOME path, not the shortest. To get the right
+ * answer, DFS has to try every simple path and keep the minimum.
+ *
+ * The trap -- marking visited and never unmarking:
+ * In BFS, a cell is marked visited forever, which is safe because BFS reaches
+ * every cell by its shortest route first. In DFS that is wrong: a long route
+ * may mark cells that a shorter route needs later, so the shorter route is
+ * never explored. On a fully open 3x3 grid that version returns 5, but the
+ * real answer is 3.
+ *
+ * So the DFS must BACKTRACK: mark a cell on the way in, unmark it on the way
+ * out. Then the cell is only blocked for the path currently being built.
+ *
+ * Pruning: once a path of length `shortest` is known, any path that has
+ * already reached that length cannot do better, so stop exploring it.
+ *
+ * Time Complexity: exponential. DFS enumerates simple paths, and there can be
+ * exponentially many. A loose upper bound is O(8^(N^2)): up to 8 choices per
+ * step, over a path that can touch up to N^2 cells. Pruning cuts a lot of work
+ * but does not change the growth class. Measured recursive calls on fully
+ * open grids (with pruning):
+ *     3x3: 72     5x5: 3,667     7x7: 158,592     8x8: 1,021,395
+ * roughly 6-7x more work per +1 in grid size. At N = 100 it will not finish.
+ *
+ * Space Complexity: O(N^2) for the visited matrix, plus recursion depth up to
+ * N^2 (a path can snake through every open cell). At N = 100 that is up to
+ * 10,000 stack frames, which can also overflow the call stack.
+ *
+ * Why BFS is the answer for this problem:
+ * every step costs 1, so BFS reaches each cell first by its shortest route --
+ * O(N^2) time. DFS is worth knowing mainly to explain why it is the wrong tool
+ * for shortest paths.
+ */
+const DIRECTIONS = [
+  [1, 0],
+  [0, 1],
+  [1, 1],
+  [-1, -1],
+  [-1, 0],
+  [0, -1],
+  [-1, 1],
+  [1, -1],
+];
+
+const shortestPathBinaryMatrixDFS = (grid) => {
+  const size = grid.length;
+
+  // Edge Case: Start or End is blocked
+  if (grid[0][0] === 1 || grid[size - 1][size - 1] === 1) return -1;
+
+  // Separate visited matrix, so the input grid is never modified.
+  const visited = Array.from({ length: size }, () => Array(size).fill(false));
+  let shortest = Infinity;
+
+  const dfs = (row, col, pathLength) => {
+    // Pruning: this path can no longer beat the best one found.
+    if (pathLength >= shortest) return;
+
+    // Reached bottom-right: record this path length.
+    if (row === size - 1 && col === size - 1) {
+      shortest = pathLength;
+      return;
+    }
+
+    visited[row][col] = true; // block this cell for the current path only
+
+    for (const [rowDelta, colDelta] of DIRECTIONS) {
+      const nextRow = row + rowDelta;
+      const nextCol = col + colDelta;
+
+      if (
+        nextRow >= 0 &&
+        nextCol >= 0 &&
+        nextRow < size &&
+        nextCol < size &&
+        grid[nextRow][nextCol] === 0 &&
+        !visited[nextRow][nextCol]
+      ) {
+        dfs(nextRow, nextCol, pathLength + 1);
+      }
+    }
+
+    visited[row][col] = false; // BACKTRACK: free the cell for other paths
+  };
+
+  dfs(0, 0, 1); // path length starts at 1 (the start cell counts)
+
+  return shortest === Infinity ? -1 : shortest;
+};
+
+// ============================================================================
 // TEST CASES
 // ============================================================================
 const clone2D = (arr) => arr.map((row) => [...row]);
 
 console.log("=== Shortest Path Binary Matrix Tests ===\n");
 
-console.log(
-  "Test 1 (2x2):",
-  shortestPathBinaryMatrix(
-    clone2D([
-      [0, 1],
-      [1, 0],
-    ])
-  )
-); // Expected: 2
-console.log(
-  "Test 2 (3x3):",
-  shortestPathBinaryMatrix(
-    clone2D([
-      [0, 0, 0],
-      [1, 1, 0],
-      [1, 1, 0],
-    ])
-  )
-); // Expected: 4
-console.log(
-  "Test 3 (Blocked):",
-  shortestPathBinaryMatrix(
-    clone2D([
-      [1, 0],
-      [0, 0],
-    ])
-  )
-); // Expected: -1
+const runBoth = (label, grid, expected) => {
+  const bfsResult = shortestPathBinaryMatrix(clone2D(grid));
+  const dfsResult = shortestPathBinaryMatrixDFS(clone2D(grid));
+  console.log(`${label}: BFS=${bfsResult} DFS=${dfsResult}  // Expected: ${expected}`);
+};
 
-module.exports = { shortestPathBinaryMatrix };
+runBoth("Test 1 (2x2)", [
+  [0, 1],
+  [1, 0],
+], 2);
+
+runBoth("Test 2 (3x3)", [
+  [0, 0, 0],
+  [1, 1, 0],
+  [1, 1, 0],
+], 4);
+
+runBoth("Test 3 (Blocked start)", [
+  [1, 0],
+  [0, 0],
+], -1);
+
+// Fully open grid: the case where a DFS that never unmarks visited cells
+// returns 5. Backtracking DFS must match BFS here.
+runBoth("Test 4 (Open 3x3)", [
+  [0, 0, 0],
+  [0, 0, 0],
+  [0, 0, 0],
+], 3);
+
+runBoth("Test 5 (No path)", [
+  [0, 1, 0],
+  [1, 1, 0],
+  [0, 0, 0],
+], -1);
+
+runBoth("Test 6 (Single cell)", [[0]], 1);
+
+module.exports = { shortestPathBinaryMatrix, shortestPathBinaryMatrixDFS };

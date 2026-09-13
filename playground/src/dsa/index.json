@@ -1638,7 +1638,9 @@
     "importance": "Core",
     "techniques": [
       "BFS",
-      "DFS"
+      "DFS",
+      "Backtracking",
+      "Recursion"
     ]
   },
   {
