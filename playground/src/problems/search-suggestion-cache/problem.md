@@ -17,19 +17,30 @@ cache.delete(query); cache.set(query, value)     // refresh recency
 cache.delete(cache.keys().next().value)          // evict LRU
 ```
 
-## In-flight deduplication — the part usually missed
+## The implementation
+
+`SearchSuggestionCache(maxSize).getResults(term)`:
+
+1. **Hit** — delete and re-set the key (move to most-recent) and return it.
+2. **Miss** — `await this.fetchFromDatabase(term)`, evict the first key if
+   `cache.size >= maxSize`, then store the result.
+
+`fetchFromDatabase` is a mock that resolves after 500ms; in real code it is your
+API call.
+
+## Known gap: in-flight deduplication
 
 Two keystrokes can produce the same query before the first request resolves
-(type `a`, backspace, type `a`). Without dedupe you fire **two** identical
-requests:
+(type `a`, backspace, type `a`). This version only caches **after** the fetch
+completes, so both calls miss and fire **two** identical requests. The fix is to
+store the *promise*:
 
 ```js
 if (inFlight.has(query)) return inFlight.get(query)
 ```
 
-Store the *promise*, not just the result, and every concurrent caller shares one
-request. Clear it in `.finally()` so a failure does not cache a rejected promise
-forever.
+so every concurrent caller shares one request, and to clear it in `.finally()`
+so a failure does not cache a rejected promise forever.
 
 ## What this does NOT replace
 

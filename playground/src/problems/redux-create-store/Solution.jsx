@@ -1,46 +1,35 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
-import { createStore, applyMiddleware, combineReducers } from './createStore.js'
-
-const counter = (state = 0, a) =>
-  a.type === 'inc' ? state + 1 : a.type === 'dec' ? state - 1 : state
-const todos = (state = [], a) => (a.type === 'add' ? [...state, a.text] : state)
+import { createStore, counterReducer } from './createStore.js'
 
 export default function Demo() {
   const [log, setLog] = useState([])
   const storeRef = useRef(null)
   const [, force] = useReducer((n) => n + 1, 0)
 
-  if (!storeRef.current) {
-    const logger = (api) => (next) => (action) => {
-      setLog((l) => [...l, `${action.type} · before ${JSON.stringify(api.getState())}`])
-      return next(action)
-    }
-    storeRef.current = createStore(
-      combineReducers({ counter, todos }),
-      undefined,
-      applyMiddleware(logger),
-    )
-  }
+  if (!storeRef.current) storeRef.current = createStore(counterReducer, { count: 0 })
   const store = storeRef.current
-  useEffect(() => store.subscribe(force), [store])
 
-  const s = store.getState()
+  useEffect(() => {
+    const unsubscribe = store.subscribe(() => {
+      setLog((l) => [...l, `State changed: ${JSON.stringify(store.getState())}`])
+      force()
+    })
+    return unsubscribe
+  }, [store])
+
   return (
     <div>
       <p>
-        <button onClick={() => store.dispatch({ type: 'inc' })}>+</button>{' '}
-        <button onClick={() => store.dispatch({ type: 'dec' })}>−</button>{' '}
-        <button onClick={() => store.dispatch({ type: 'add', text: `todo ${s.todos.length + 1}` })}>
-          add todo
-        </button>
+        <button type="button" onClick={() => store.dispatch({ type: 'INCREMENT' })}>+</button>{' '}
+        <button type="button" onClick={() => store.dispatch({ type: 'DECREMENT' })}>−</button>
       </p>
       <p style={{ fontFamily: 'monospace', fontSize: 13 }}>
-        state: {JSON.stringify(s)}
+        state: {JSON.stringify(store.getState())}
       </p>
       <ol style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.7 }}>
         {log.slice(-6).map((l, i) => <li key={i}>{l}</li>)}
       </ol>
-      <p style={{ color: '#666', fontSize: 13 }}>Middleware logs state before each action.</p>
+      <p style={{ color: '#666', fontSize: 13 }}>Every dispatch runs the reducer, then notifies subscribers.</p>
     </div>
   )
 }

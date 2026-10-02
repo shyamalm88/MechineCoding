@@ -1,55 +1,46 @@
-# Custom timers: setInterval, accurate timeout, and idle work
+# Custom timers: setInterval, setTimeout, and idle work
 
-## setInterval via recursive setTimeout
+## Why rebuild the timers on `requestAnimationFrame`?
 
-```js
-const tick = () => { callback(); timerId = setTimeout(tick, delay) }
-```
+1. rAF **pauses in background tabs**, saving battery and CPU.
+2. It lines up with the browser's repaint cycle (~60fps), so DOM updates in the
+   callback do not thrash layout.
 
-Not merely an academic exercise — it fixes a real defect. Native `setInterval`
-schedules by wall clock regardless of how long the callback takes, so a callback
-slower than the interval **queues up and overlaps itself**, and the browser fires
-them back-to-back trying to catch up.
+## customSetInterval
 
-Recursive `setTimeout` schedules the next run only *after* the current one
-finishes, so there is always a full gap. The trade-off: the effective period is
-`delay + callbackDuration`, i.e. it drifts rather than overlapping. For most
-work that is the better failure mode.
-
-## Long timers are unreliable
-
-`setTimeout(fn, 600000)` will not fire on time if the tab is backgrounded —
-browsers throttle background timers to roughly once per second, and mobile
-suspends them entirely.
-
-The fix is to **re-measure against a timestamp** and re-arm in short hops:
+rAF fires once per frame (~16ms), far more often than the delay, so the loop
+tracks time itself using the timestamp rAF passes in:
 
 ```js
-const remaining = delay - (performance.now() - start)
-setTimeout(check, Math.min(remaining, 500))
+if (timestamp - start >= delay) { callback(); start = timestamp }
+rafId = requestAnimationFrame(loop)
 ```
 
-Same principle as the stopwatch: trust the clock, never the timer.
+Resetting `start = timestamp` (rather than `start += delay`) avoids a burst of
+catch-up callbacks after the tab was inactive. The function returns `clear()`,
+which calls `cancelAnimationFrame`.
 
-## requestIdleCallback
+## customSetTimeout
+
+Same loop, but it runs the callback **once** and stops requesting frames when
+`elapsed >= delay`.
+
+Both are browser-only (no rAF in Node) and accurate only to a frame.
+
+## runInIdle
 
 Run non-urgent work only in the gaps between frames:
 
 ```js
-while (index < items.length && deadline.timeRemaining() > 1) worker(items[index++])
-if (index < items.length) requestIdleCallback(step)
+while (deadline.timeRemaining() > 0 && tasks.length > 0) tasks.shift()()
+if (tasks.length > 0) requestIdleCallback(process)
 ```
 
-Processing 5000 items in one loop blocks the main thread and freezes the page.
-Chunking against `timeRemaining()` keeps interaction smooth — this is exactly
-what React's scheduler does for low-priority work.
+Running everything in one loop blocks the main thread and freezes the page.
+Chunking against `timeRemaining()` keeps interaction smooth — this is the idea
+behind React's scheduler for low-priority work. This version consumes the
+`tasks` array it is given.
 
 Note `requestIdleCallback` is unsupported in Safari, so a `setTimeout` fallback
 is required. Pass `{ timeout }` if the work must eventually run even on a busy
 page, or it can be starved indefinitely.
-
-## Clamping
-
-Nested `setTimeout(…, 0)` is clamped to ~4ms after five levels, so it is not a
-route to "run this immediately". `queueMicrotask` is, but it does not yield to
-rendering — which is the whole point of idle scheduling.

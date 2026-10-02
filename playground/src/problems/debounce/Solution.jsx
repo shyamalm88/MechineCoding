@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { debounce } from './debounce.js'
+import { debounceAdvanced as debounce } from './debounce.js'
 
 const DELAY_MS = 500
 

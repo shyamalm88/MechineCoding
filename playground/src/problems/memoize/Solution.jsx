@@ -1,4 +1,4 @@
-import { memoize } from './memoize.js'
+import { memoization as memoize, memoizationWeakMap } from './memoize.js'
 
 let calls = 0
 const slowAdd = memoize((a, b) => { calls++; return a + b })
@@ -14,10 +14,10 @@ idf(1); idf('1')
 results.push(['memoize distinguishes 1 vs "1"', `${strCalls} calls`, strCalls])
 
 let objCalls = 0
-const byObject = memoize((o) => { objCalls++; return o.n * 2 })
+const byObject = memoizationWeakMap((o) => { objCalls++; return o.n * 2 })
 const shared = { n: 21 }
 byObject(shared); byObject(shared)
-results.push(['object arg cached by identity', byObject(shared), objCalls])
+results.push(['object arg cached by identity (WeakMap)', byObject(shared), objCalls])
 
 export default function Demo() {
   return (

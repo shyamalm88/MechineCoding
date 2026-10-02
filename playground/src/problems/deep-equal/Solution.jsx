@@ -1,19 +1,13 @@
 import { deepEqual } from './deepEqual.js'
 
-const cyclicA = { name: 'a' }; cyclicA.self = cyclicA
-const cyclicB = { name: 'a' }; cyclicB.self = cyclicB
-
 const rows = [
   ['{a:{b:1}} vs {a:{b:1}}', deepEqual({ a: { b: 1 } }, { a: { b: 1 } })],
   ['[1,[2,3]] vs [1,[2,3]]', deepEqual([1, [2, 3]], [1, [2, 3]])],
-  ['NaN vs NaN', deepEqual(NaN, NaN)],
-  ['+0 vs -0 (distinguished)', deepEqual(0, -0)],
-  ['new Date(0) vs new Date(0)', deepEqual(new Date(0), new Date(0))],
-  ['/a/g vs /a/g', deepEqual(/a/g, /a/g)],
-  ['Map([[1,2]]) vs Map([[1,2]])', deepEqual(new Map([[1, 2]]), new Map([[1, 2]]))],
   ['{a:1} vs {a:1,b:2}', deepEqual({ a: 1 }, { a: 1, b: 2 })],
-  ['[] vs {}  (prototype differs)', deepEqual([], {})],
-  ['circular vs circular', deepEqual(cyclicA, cyclicB)],
+  ['{a:1,b:2} vs {b:2,a:1} (key order)', deepEqual({ a: 1, b: 2 }, { b: 2, a: 1 })],
+  ['null vs {}', deepEqual(null, {})],
+  ['NaN vs NaN (=== says false)', deepEqual(NaN, NaN)],
+  ['[] vs {}  (both have 0 keys)', deepEqual([], {})],
 ]
 
 export default function Demo() {

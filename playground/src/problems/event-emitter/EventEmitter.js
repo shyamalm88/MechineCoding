@@ -1,41 +1,35 @@
-/**
- * EventEmitter / pub-sub.
- *
- * `on` returns an unsubscribe function -- far less error-prone than requiring
- * the caller to keep the exact same function reference for `off`.
- */
-export class EventEmitter {
+class EventEmitter {
   constructor() {
-    this.listeners = new Map() // event -> Set<handler>
+    this.events = {};
   }
 
-  on(event, handler) {
-    if (!this.listeners.has(event)) this.listeners.set(event, new Set())
-    this.listeners.get(event).add(handler)
-    return () => this.off(event, handler)
-  }
-
-  once(event, handler) {
-    const wrapped = (...args) => {
-      this.off(event, wrapped) // remove BEFORE calling, so a throw still unsubscribes
-      handler(...args)
+  on(event, listener) {
+    if (!this.events[event]) {
+      this.events[event] = [];
     }
-    return this.on(event, wrapped)
+    this.events[event].push(listener);
+
+    // Return unsubscribe function (Bonus points)
+    return () => this.off(event, listener);
   }
 
-  off(event, handler) {
-    const set = this.listeners.get(event)
-    if (!set) return
-    set.delete(handler)
-    if (set.size === 0) this.listeners.delete(event) // avoid unbounded growth
+  off(event, listenerRemove) {
+    if (!this.events[event]) return;
+    this.events[event] = this.events[event].filter((l) => l !== listenerRemove);
   }
 
   emit(event, ...args) {
-    const set = this.listeners.get(event)
-    if (!set) return false
-    // Copy first: a handler that unsubscribes (or subscribes) during emit
-    // would otherwise mutate the Set we are iterating.
-    for (const handler of [...set]) handler(...args)
-    return true
+    if (!this.events[event]) return;
+    this.events[event].forEach((listener) => listener.apply(this, args));
+  }
+
+  once(event, listener) {
+    const wrapper = (...args) => {
+      listener.apply(this, args);
+      this.off(event, wrapper); // Remove self after running
+    };
+    this.on(event, wrapper);
   }
 }
+
+export { EventEmitter }

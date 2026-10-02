@@ -28,19 +28,18 @@ Using a string key like `'fn'` risks overwriting an existing property — and if
 the call throws before the `delete`, you have permanently mutated the caller's
 object.
 
-## The part that separates answers: bind + new
+## bind
 
-A bound function must **still be constructible**, and when called with `new` the
-new instance must win over the bound `thisArg`:
+`myBind` does not invoke anything — it returns a function that remembers the
+context and the bound arguments, and merges them with the call-time ones:
 
 ```js
-const isNew = this instanceof bound
-return fn.apply(isNew ? this : thisArg, [...boundArgs, ...callArgs])
+return fn.apply(context, [...args, ...newArgs])
 ```
 
-You also have to relink the prototype (`bound.prototype = Object.create(fn.prototype)`)
-or `instanceof` breaks. Most candidates stop before this; it is the standard
-follow-up.
+This version does not support `new` on the bound function. A complete answer
+also checks `this instanceof bound` so the new instance wins over `thisArg`,
+and relinks `bound.prototype` — the standard follow-up.
 
 ## Traps
 

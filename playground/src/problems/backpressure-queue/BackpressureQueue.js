@@ -1,50 +1,83 @@
 /**
- * A queue with TWO gates:
- *   1. Execution gate  -- running < concurrency
- *   2. Admission gate  -- queue.length < maxQueueSize
+ * ============================================================================
+ * PROBLEM: Async Queue with Backpressure
+ * ============================================================================
+ * Implement a task queue that limits:
+ * 1. Concurrency: How many tasks run at the same time.
+ * 2. Queue Size: How many tasks can wait in the "ready" buffer.
  *
- * When the admission gate is closed, push() returns a promise that does not
- * resolve until space frees up. That is backpressure: the producer is SLOWED
- * rather than the queue growing without bound.
+ * If the queue is full, the `push` method should delay the acceptance of
+ * the task until space frees up.
+ *
+ * ============================================================================
+ * INTUITION: Double Gating
+ * ============================================================================
+ * We have two gates:
+ * 1. Execution Gate: `running < concurrency`.
+ *    - Controls moving tasks from `queue` -> Execution.
+ * 2. Admission Gate: `queue.length < maxQueueSize`.
+ *    - Controls moving tasks from `push()` -> `queue`.
+ *
+ * If the Admission Gate is closed (queue full), we park the incoming task
+ * in a `waitingProducers` list.
  */
-export class BackpressureQueue {
-  constructor({ concurrency = 2, maxQueueSize = 3 } = {}) {
-    this.concurrency = concurrency
-    this.maxQueueSize = maxQueueSize
-    this.queue = []
-    this.waitingProducers = []
-    this.running = 0
+
+class BackpressureQueue {
+  constructor(concurrency, maxQueueSize) {
+    this.concurrency = concurrency;
+    this.maxQueueSize = maxQueueSize;
+
+    this.running = 0;
+    this.queue = [];
+    this.waitingProducers = [];
   }
 
-  /** Resolves once the task has been ACCEPTED into the queue (not completed). */
   push(task) {
-    return new Promise((admit) => {
+    return new Promise((resolve, reject) => {
+      const runTask = async () => {
+        this.running++;
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.running--;
+          this._releaseProducer(); // 🔓 relieve backpressure
+          this._drain();
+        }
+      };
+
       const enqueue = () => {
-        this.queue.push(task)
-        admit()
-        this.#drain()
+        this.queue.push(runTask);
+        this._drain();
+      };
+
+      if (this.queue.length < this.maxQueueSize) {
+        enqueue();
+      } else {
+        // Backpressure: producer waits
+        this.waitingProducers.push(enqueue);
       }
-      if (this.queue.length < this.maxQueueSize) enqueue()
-      else this.waitingProducers.push(enqueue) // park the producer
-    })
+    });
   }
 
-  #drain() {
-    while (this.running < this.concurrency && this.queue.length > 0) {
-      const task = this.queue.shift()
-
-      // A slot just opened in the queue -- admit one parked producer.
-      this.waitingProducers.shift()?.()
-
-      this.running++
-      Promise.resolve()
-        .then(task)
-        .catch(() => {})
-        .finally(() => { this.running--; this.#drain() })
+  _releaseProducer() {
+    if (
+      this.waitingProducers.length > 0 &&
+      this.queue.length < this.maxQueueSize
+    ) {
+      const wakeProducer = this.waitingProducers.shift();
+      wakeProducer();
     }
   }
 
-  get stats() {
-    return { running: this.running, queued: this.queue.length, blocked: this.waitingProducers.length }
+  _drain() {
+    while (this.running < this.concurrency && this.queue.length > 0) {
+      const nextTask = this.queue.shift();
+      nextTask();
+    }
   }
 }
+
+export { BackpressureQueue }

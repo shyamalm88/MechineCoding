@@ -1,73 +1,79 @@
 /**
- * Async task scheduler: runs tasks by priority, with a concurrency cap.
+ * ============================================================================
+ * PROBLEM: Priority Executor with Concurrency Limit
+ * ============================================================================
+ * Implement a scheduler that:
+ * 1. Allows adding async tasks with a priority.
+ * 2. Limits the number of tasks running concurrently.
+ * 3. When a slot becomes available, starts the highest priority task from the queue.
  *
- * Uses a binary min-heap so the highest-priority task is O(log n) to extract.
- * A sorted array would be O(n) per insert; a linear scan O(n) per pull.
+ * ============================================================================
+ * INTUITION: Priority Queue + Concurrency Control
+ * ============================================================================
+ * This combines two patterns:
+ * 1. Concurrency Limiter:
+ *    - Maintain `running` count.
+ *    - Only start new tasks if `running < limit`.
+ *    - When a task finishes, decrement `running` and try to start the next one.
+ *
+ * 2. Priority Queue:
+ *    - Instead of a FIFO queue (array.push/shift), we need to ensure the
+ *      next task picked is the one with the highest priority.
+ *    - We can sort the queue every time we add a task (O(N log N)).
+ *    - Or use a Max Heap (O(log N)) for better performance in production.
+ *
+ * FLOW:
+ * - `add(task, priority)`:
+ *   1. Create a wrapper that manages the task lifecycle (start, resolve/reject, finally).
+ *   2. Push wrapper to queue.
+ *   3. Sort queue by priority (descending).
+ *   4. Try to run tasks (`_drain`).
+ *   5. Return a promise that settles when the task eventually runs and finishes.
+ *
+ * - `_drain()`:
+ *   1. While `running < limit` and `queue` has tasks:
+ *      - Pop highest priority task.
+ *      - Increment `running`.
+ *      - Execute task.
  */
-class MinHeap {
-  constructor() { this.items = [] }
-  get size() { return this.items.length }
-
-  push(item) {
-    this.items.push(item)
-    let i = this.items.length - 1
-    while (i > 0) {
-      const parent = (i - 1) >> 1
-      if (this.compare(this.items[i], this.items[parent]) >= 0) break
-      this.swap(i, parent)
-      i = parent
-    }
+class PriorityExecutorConcurrent {
+  constructor(limit = 2) {
+    this.limit = limit;
+    this.running = 0;
+    this.queue = [];
   }
 
-  pop() {
-    const top = this.items[0]
-    const last = this.items.pop()
-    if (this.items.length) {
-      this.items[0] = last
-      let i = 0
-      for (;;) {
-        const l = 2 * i + 1, r = l + 1
-        let smallest = i
-        if (l < this.items.length && this.compare(this.items[l], this.items[smallest]) < 0) smallest = l
-        if (r < this.items.length && this.compare(this.items[r], this.items[smallest]) < 0) smallest = r
-        if (smallest === i) break
-        this.swap(i, smallest)
-        i = smallest
-      }
-    }
-    return top
-  }
-
-  // Lower priority number = more urgent. `seq` breaks ties so equal
-  // priorities run FIFO -- without it, heap order is arbitrary and the
-  // scheduler is not stable.
-  compare(a, b) { return a.priority - b.priority || a.seq - b.seq }
-  swap(i, j) { [this.items[i], this.items[j]] = [this.items[j], this.items[i]] }
-}
-
-export class PriorityScheduler {
-  constructor(concurrency = 1) {
-    this.concurrency = concurrency
-    this.heap = new MinHeap()
-    this.running = 0
-    this.seq = 0
-  }
-
-  add(task, priority = 10) {
+  add(task, priority = 0) {
     return new Promise((resolve, reject) => {
-      this.heap.push({ task, priority, seq: this.seq++, resolve, reject })
-      this.#drain()
-    })
+      const runTask = async () => {
+        this.running++;
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        } finally {
+          this.running--;
+          this._drain();
+        }
+      };
+
+      // enqueue with priority
+      this.queue.push({ runTask, priority });
+
+      // higher priority first
+      this.queue.sort((a, b) => b.priority - a.priority);
+
+      this._drain();
+    });
   }
 
-  #drain() {
-    while (this.running < this.concurrency && this.heap.size > 0) {
-      const { task, resolve, reject } = this.heap.pop()
-      this.running++
-      Promise.resolve()
-        .then(task)
-        .then(resolve, reject)
-        .finally(() => { this.running--; this.#drain() })
+  _drain() {
+    while (this.running < this.limit && this.queue.length > 0) {
+      const { runTask } = this.queue.shift();
+      runTask();
     }
   }
 }
+
+export { PriorityExecutorConcurrent }

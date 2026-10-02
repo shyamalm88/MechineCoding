@@ -1,69 +1,48 @@
 /**
- * A miniature hooks runtime, to show WHY the rules of hooks exist.
+ * ============================================================================
+ * PROBLEM: Polyfill for React's useEffect Hook
+ * ============================================================================
  *
- * Hooks are identified by CALL ORDER, not by name: each component instance
- * keeps an array of state cells and a cursor that resets before every render.
+ * INTUITION:
+ * `useEffect` runs a function when specific dependencies change.
+ * It also handles "cleanup" (running a function before the next effect or unmount).
+ *
+ * ALGORITHM:
+ * 1. Store `prevDeps` (dependencies from previous run).
+ * 2. On every call, compare `currentDeps` vs `prevDeps`.
+ * 3. If changed (or first run):
+ *    - Run previous cleanup function (if exists).
+ *    - Run the new effect.
+ *    - Store the new cleanup function returned by the effect.
+ *    - Update `prevDeps`.
+ *
+ * ============================================================================
+ * DRY RUN
+ * ============================================================================
+ * 1. Render 1: deps=[0]. prev=undefined. Changed=True.
+ *    - Run Effect. Save Cleanup1. prev=[0].
+ * 2. Render 2: deps=[1]. prev=[0]. Changed=True.
+ *    - Run Cleanup1. Run Effect. Save Cleanup2. prev=[1].
+ * ============================================================================
  */
-export function createHookRuntime(render) {
-  const cells = []
-  let cursor = 0
-  let scheduled = false
+function createUseEffect() {
+  let prevDeps;
+  let cleanup;
 
-  const rerender = () => {
-    if (scheduled) return
-    scheduled = true
-    queueMicrotask(() => {           // batch multiple setState calls in a turn
-      scheduled = false
-      cursor = 0                     // ← the reset that makes call order work
-      render()
-      runEffects()
-    })
-  }
+  return function useEffect(effect, deps) {
+    const hasNoDeps = !deps;
+    const depsChanged = !prevDeps || deps.some((dep, i) => dep !== prevDeps[i]);
 
-  const pendingEffects = []
+    if (hasNoDeps || depsChanged) {
+      // run cleanup before next effect
+      if (typeof cleanup === "function") {
+        cleanup();
+      }
 
-  function useState(initial) {
-    const i = cursor++
-    if (!(i in cells)) cells[i] = { value: typeof initial === 'function' ? initial() : initial }
-    const cell = cells[i]
-    const setState = (next) => {
-      const value = typeof next === 'function' ? next(cell.value) : next
-      if (Object.is(value, cell.value)) return   // bail out on no-op updates
-      cell.value = value
-      rerender()
+      cleanup = effect();
+      prevDeps = deps;
     }
-    return [cell.value, setState]
-  }
-
-  function useEffect(effect, deps) {
-    const i = cursor++
-    const prev = cells[i]
-    // undefined deps ⇒ always run; [] ⇒ once; [a,b] ⇒ when any changes
-    const changed = !prev || !deps || deps.some((d, j) => !Object.is(d, prev.deps[j]))
-    if (changed) {
-      pendingEffects.push(() => {
-        prev?.cleanup?.()                    // cleanup BEFORE the next setup
-        const cleanup = effect()
-        cells[i] = { deps, cleanup }
-      })
-    }
-    if (!changed) cells[i] = prev
-  }
-
-  function useMemo(factory, deps) {
-    const i = cursor++
-    const prev = cells[i]
-    if (prev && deps && deps.every((d, j) => Object.is(d, prev.deps[j]))) return prev.value
-    const value = factory()
-    cells[i] = { value, deps }
-    return value
-  }
-
-  function runEffects() {
-    while (pendingEffects.length) pendingEffects.shift()()
-  }
-
-  function mount() { cursor = 0; render(); runEffects() }
-
-  return { useState, useEffect, useMemo, mount, _cells: cells }
+  };
 }
+
+export { createUseEffect }

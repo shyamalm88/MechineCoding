@@ -1,103 +1,196 @@
+// ---- LFUCache.js ----
 /**
- * Two eviction policies beyond plain LRU.
- */
-
-/**
- * LFU: evict the LEAST FREQUENTLY used key; ties broken by least-recently used.
+ * ============================================================================
+ * PROBLEM: LFU Cache (Least Frequently Used) — LeetCode #460
+ * ============================================================================
  *
- * Two maps make every operation O(1):
- *   keyMap:  key  -> { value, freq }
- *   freqMap: freq -> Map<key, true>   (insertion-ordered ⇒ first entry is LRU)
- *   minFreq: the smallest frequency currently in use
+ * Design a cache that evicts the LEAST FREQUENTLY USED key when it is full.
+ * If there's a tie in frequency, evict the LEAST RECENTLY USED among them.
+ *
+ * get(key)  -> return value, or -1 if not present. Bumps usage frequency.
+ * put(key, value) -> insert/update. Evicts LFU (tie -> LRU) if at capacity.
+ *
+ * Both operations must run in O(1).
+ *
+ * ============================================================================
+ * INTUITION
+ * ============================================================================
+ * LRU only tracks "how recently" a key was used. LFU additionally tracks
+ * "how often". A single Map isn't enough — we need to group keys by their
+ * frequency count, and within each frequency group preserve insertion order
+ * (so the oldest one in that group is the LRU tie-breaker).
+ *
+ * ALGORITHM (two-map design):
+ * - `keyMap`:  key   -> { value, freq }
+ * - `freqMap`: freq  -> Map<key, true>   (insertion-ordered set of keys at
+ *                                          that frequency; first = LRU)
+ * - `minFreq`: tracks the current smallest frequency in use.
+ *
+ * touch(key):
+ *   1. Remove key from freqMap[oldFreq].
+ *   2. If freqMap[oldFreq] is now empty and oldFreq === minFreq, bump minFreq.
+ *   3. freq++, insert key into freqMap[newFreq] (create the bucket if needed).
+ *
+ * get(key):
+ *   - Miss -> -1.
+ *   - Hit  -> touch(key), return value.
+ *
+ * put(key, value):
+ *   - If key exists -> update value, touch(key).
+ *   - Else:
+ *       - If at capacity -> evict the first key in freqMap[minFreq]
+ *         (oldest = LRU among the least-frequent keys).
+ *       - Insert key with freq = 1, set minFreq = 1.
+ *
+ * ============================================================================
+ * DRY RUN — capacity = 2
+ * ============================================================================
+ * put(1, "A")  -> keyMap:{1:(A,f1)}            freqMap:{1:[1]}           min=1
+ * put(2, "B")  -> keyMap:{1:(A,f1),2:(B,f1)}   freqMap:{1:[1,2]}         min=1
+ * get(1)       -> "A"; 1 moves to freq 2.
+ *                 keyMap:{1:(A,f2),2:(B,f1)}   freqMap:{1:[2],2:[1]}     min=1
+ * put(3, "C")  -> capacity full. Evict LFU: freqMap[1] = [2] -> evict 2.
+ *                 keyMap:{1:(A,f2),3:(C,f1)}   freqMap:{1:[3],2:[1]}     min=1
+ * get(2)       -> -1 (evicted)
+ * get(3)       -> "C"; 3 moves to freq 2.
+ *                 freqMap:{1:[],2:[1,3]}                                  min=2
+ *
+ * ============================================================================
+ * COMPLEXITY
+ * ============================================================================
+ * Time:  O(1) for get and put (Map insertion order gives O(1) "oldest" access)
+ * Space: O(capacity)
  */
-export class LFUCache {
+class LFUCache {
   constructor(capacity) {
-    this.capacity = capacity
-    this.keyMap = new Map()
-    this.freqMap = new Map()
-    this.minFreq = 0
+    this.capacity = capacity;
+    this.keyMap = new Map(); // key -> { value, freq }
+    this.freqMap = new Map(); // freq -> Map<key, true> (insertion ordered)
+    this.minFreq = 0;
   }
 
   #touch(key) {
-    const entry = this.keyMap.get(key)
-    const bucket = this.freqMap.get(entry.freq)
-    bucket.delete(key)
+    const node = this.keyMap.get(key);
+    const oldFreq = node.freq;
 
-    // If we just emptied the minimum bucket, the new minimum is one higher.
-    if (bucket.size === 0) {
-      this.freqMap.delete(entry.freq)
-      if (this.minFreq === entry.freq) this.minFreq++
+    // remove from old frequency bucket
+    const oldBucket = this.freqMap.get(oldFreq);
+    oldBucket.delete(key);
+    if (oldBucket.size === 0) {
+      this.freqMap.delete(oldFreq);
+      if (this.minFreq === oldFreq) this.minFreq++;
     }
 
-    entry.freq++
-    if (!this.freqMap.has(entry.freq)) this.freqMap.set(entry.freq, new Map())
-    this.freqMap.get(entry.freq).set(key, true)
+    // move to new frequency bucket
+    node.freq++;
+    if (!this.freqMap.has(node.freq)) this.freqMap.set(node.freq, new Map());
+    this.freqMap.get(node.freq).set(key, true);
   }
 
   get(key) {
-    if (!this.keyMap.has(key)) return -1
-    this.#touch(key)
-    return this.keyMap.get(key).value
+    if (!this.keyMap.has(key)) return -1;
+    const { value } = this.keyMap.get(key);
+    this.#touch(key);
+    return value;
   }
 
   put(key, value) {
-    if (this.capacity === 0) return
+    if (this.capacity <= 0) return;
 
     if (this.keyMap.has(key)) {
-      this.keyMap.get(key).value = value
-      this.#touch(key)
-      return
+      this.keyMap.get(key).value = value;
+      this.#touch(key);
+      return;
     }
 
     if (this.keyMap.size >= this.capacity) {
-      // Evict the oldest key in the least-frequent bucket (LFU, LRU tiebreak).
-      const bucket = this.freqMap.get(this.minFreq)
-      const evictKey = bucket.keys().next().value
-      bucket.delete(evictKey)
-      if (bucket.size === 0) this.freqMap.delete(this.minFreq)
-      this.keyMap.delete(evictKey)
+      const lfuBucket = this.freqMap.get(this.minFreq);
+      const evictKey = lfuBucket.keys().next().value; // oldest = LRU tie-break
+      lfuBucket.delete(evictKey);
+      if (lfuBucket.size === 0) this.freqMap.delete(this.minFreq);
+      this.keyMap.delete(evictKey);
     }
 
-    this.keyMap.set(key, { value, freq: 1 })
-    if (!this.freqMap.has(1)) this.freqMap.set(1, new Map())
-    this.freqMap.get(1).set(key, true)
-    this.minFreq = 1 // a brand-new key always resets the minimum
+    this.keyMap.set(key, { value, freq: 1 });
+    if (!this.freqMap.has(1)) this.freqMap.set(1, new Map());
+    this.freqMap.get(1).set(key, true);
+    this.minFreq = 1;
   }
 }
 
+// ---- LRUWithTTL.js ----
 /**
- * LRU with per-entry TTL. Expiry is LAZY -- checked on read -- so there is no
- * background timer per key.
+ * ============================================================================
+ * PROBLEM: LRU Cache with Time-To-Live (TTL)
+ * ============================================================================
+ *
+ * INTUITION:
+ * We need a cache that evicts items based on two criteria:
+ * 1. Capacity: If full, remove the Least Recently Used (LRU) item.
+ * 2. Expiry: If an item is too old (TTL), it is invalid.
+ *
+ * ALGORITHM:
+ * - Storage: JavaScript `Map` maintains insertion order.
+ *   - First item = Oldest (LRU).
+ *   - Last item = Newest (MRU).
+ * - Get(key):
+ *   - If expired: Delete & return null.
+ *   - If valid: Delete & Re-insert (moves to end/MRU). Return value.
+ * - Put(key, value):
+ *   - If exists: Delete (to refresh position).
+ *   - If full: Delete first key (LRU eviction).
+ *   - Insert new item.
+ *
+ * ============================================================================
+ * DRY RUN
+ * ============================================================================
+ * Cap=2.
+ * 1. put(A, val, 5s). Map: {A}.
+ * 2. put(B, val, 5s). Map: {A, B}.
+ * 3. get(A). A is valid. Delete A, Set A. Map: {B, A}. (A is now MRU).
+ * 4. put(C, val, 5s). Cap full. Evict first (B). Map: {A, C}.
+ * ============================================================================
  */
-export class LRUWithTTL {
-  constructor(capacity, defaultTtlMs = 1000) {
-    this.capacity = capacity
-    this.defaultTtlMs = defaultTtlMs
-    this.map = new Map()
+class LRUCacheTTL {
+  constructor(capacity) {
+    this.capacity = capacity;
+    this.cache = new Map(); // key -> { value, expiresAt }
   }
 
   get(key) {
-    if (!this.map.has(key)) return -1
-    const entry = this.map.get(key)
+    if (!this.cache.has(key)) return null;
 
+    const entry = this.cache.get(key);
+
+    // TTL check
     if (Date.now() > entry.expiresAt) {
-      this.map.delete(key)   // expired: treat exactly like a miss
-      return -1
+      this.cache.delete(key);
+      return null;
     }
 
-    this.map.delete(key)     // refresh recency
-    this.map.set(key, entry)
-    return entry.value
+    // Refresh LRU (move to end)
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+
+    return entry.value;
   }
 
-  put(key, value, ttlMs = this.defaultTtlMs) {
-    if (this.map.has(key)) this.map.delete(key)
-    this.map.set(key, { value, expiresAt: Date.now() + ttlMs })
+  put(key, value, ttl) {
+    const expiresAt = Date.now() + ttl;
 
-    if (this.map.size > this.capacity) {
-      // Prefer evicting something already expired before a live entry.
-      const expired = [...this.map.entries()].find(([, e]) => Date.now() > e.expiresAt)
-      this.map.delete(expired ? expired[0] : this.map.keys().next().value)
+    // Remove if already exists (refresh position)
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
     }
+
+    // Evict LRU if capacity exceeded
+    if (this.cache.size >= this.capacity) {
+      const lruKey = this.cache.keys().next().value;
+      this.cache.delete(lruKey);
+    }
+
+    this.cache.set(key, { value, expiresAt });
   }
 }
+
+export { LFUCache, LRUCacheTTL }

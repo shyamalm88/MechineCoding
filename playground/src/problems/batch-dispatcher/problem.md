@@ -1,57 +1,52 @@
-# Batch API dispatcher (DataLoader)
+# Batch API dispatcher
 
-Collect individual requests made in the same tick and issue **one** combined
-call, routing results back to each caller.
+Collect individual items and send them together as **one** batch, instead of one
+request per item.
 
-## The problem it solves: N+1
+## Two flush triggers
 
-A list renders 50 rows, each independently asking for its author:
+`batchDispatcher({ batchSize, batchDelay, dispatchFn })` flushes when **either**:
 
-```
-GET /users/1 … GET /users/50      →  50 round trips
-GET /users?ids=1,2,…,50           →  1
-```
-
-Crucially the *components stay unaware of each other*. Each calls
-`loader.load(id)` and gets a promise; the loader does the coalescing. That is
-what makes it composable — no lifting data fetching up the tree.
-
-## Microtask, not timer
+1. **Size** — the queue reaches `batchSize`: flush immediately. This bounds
+   memory.
+2. **Time** — `batchDelay` ms pass with no new item: flush the tail. Every
+   `enqueue` resets the timer, so it behaves like a debounce.
 
 ```js
-queueMicrotask(flush)   // batches everything queued in the current tick
+clearTimeout(timer)                  // KEY: one pending timer, never several
+timer = setTimeout(flush, batchDelay)
 ```
 
-A microtask fires after the current synchronous work completes but **before**
-the next macrotask or paint — so every `load()` from one render pass batches
-together, with no artificial delay. `setTimeout(flush, 0)` would also work but
-adds a real delay and can span unrelated work.
+Without that `clearTimeout`, enqueueing 4 items creates 4 timers and `flush()`
+fires 4 times — the first sends the batch, the other three send an empty one.
 
-This is exactly what Facebook's DataLoader does, and why it is described as
-"per-tick" batching.
+## Real-world uses
 
-## The contract that bites people
+- **Analytics events** — one `POST /events` with 100 events, not 100 POSTs.
+- **Log shipping** — flush every 500ms or every 50 logs.
+- **DataLoader-style** — `createUserLoader` uses `batchDelay: 0` so everything
+  enqueued in one tick goes out as a single `WHERE id IN (...)` query. This is
+  how it solves the N+1 problem.
 
-`batchFn(keys)` **must return an array of the same length, in the same order**
-as the keys. A batch function that filters out missing rows silently shifts
-every result and each caller gets someone else's data.
+## The detail that matters
 
-Defensive implementations assert `results.length === keys.length` — a genuinely
-worthwhile check.
+```js
+const batch = queue
+queue = []            // reset BEFORE dispatching
+dispatchFn(batch)
+```
 
-## Caching and its hazard
+Reset the queue first: if `dispatchFn` throws, or enqueues synchronously, new
+items start the next batch instead of mutating the one in flight.
 
-Returning the same promise for a repeated key dedupes both in-flight and
-completed requests (ids 1 and 2 in the demo are requested twice, fetched once).
+## Always expose `flushNow()`
 
-But that cache is **permanent** — the loader must be short-lived, typically
-per-request on a server, or you serve stale data forever. Long-lived clients
-need `clear(key)` after mutations.
+Call it on `beforeunload` (or `SIGTERM` on a server) so the last partial batch
+is not lost.
 
 ## Traps
 
-- Reset the queue **before** dispatching, so a `load()` triggered by a resolved
-  promise starts the next batch instead of mutating the in-flight one.
 - Cap the batch size: `?ids=` with 10,000 entries exceeds URL limits.
-- One failure rejects every caller in the batch. Per-key errors need the batch
-  function to return error objects positionally rather than throwing.
+- One failed dispatch loses the whole batch unless you re-queue or retry it.
+- In the DataLoader variant each caller needs its own promise resolved with its
+  own row, and the batch function must return results in key order.

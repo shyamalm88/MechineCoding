@@ -1,6 +1,6 @@
 # Implement LRU Cache
 
-`get(key)` and `put(key, value)` must both be **O(1)**, evicting the least
+`get(key)` and `set(key, value)` must both be **O(1)**, evicting the least
 recently used entry when capacity is exceeded.
 
 ## The textbook answer
@@ -26,9 +26,11 @@ get(key) {
 about ten lines. Worth saying out loud that you *know* the linked-list version —
 interviewers often want to hear it before accepting the shortcut.
 
+`get` returns `-1` for a miss, which is the LeetCode convention.
+
 ## The subtlety most people miss
 
-**`put` on an existing key must also refresh recency.** Without the `delete`
+**`set` on an existing key must also refresh recency.** Without the `delete`
 before `set`, `Map` keeps the original insertion position, so a frequently
 updated key is still evicted as if it were old.
 
@@ -36,6 +38,7 @@ updated key is still evicted as if it were old.
 
 - Checking `get(key) !== undefined` to test presence fails when `undefined` is a
   stored value — use `map.has(key)`.
-- Evicting before inserting can evict the key you are about to add.
+- Evict only when inserting a *new* key at capacity; evicting first on an
+  update would throw away a live entry.
 - LRU vs LFU: LRU evicts by *recency*, LFU by *frequency*. A one-off scan of
   many keys pollutes an LRU and evicts genuinely hot entries.

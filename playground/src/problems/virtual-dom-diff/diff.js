@@ -1,84 +1,69 @@
-/**
- * Virtual DOM diff: compare two vnode trees and emit the minimal patch list.
- *
- * vnode = { type, props, children, key? } | string | number
- */
-export function diff(oldNode, newNode, path = []) {
-  const patches = []
+// Virtual DOM Tree Diff
+// vNode: { type, children[] } | "string"
 
-  if (oldNode === newNode) return patches
+function diff(oldNode, newNode) {
+  if (!oldNode) return { op: "CREATE", node: newNode };
+  if (!newNode) return { op: "REMOVE" };
+  if (typeof oldNode === "string" || typeof newNode === "string") {
+    return oldNode !== newNode ? { op: "REPLACE", node: newNode } : null;
+  }
+  if (oldNode.type !== newNode.type) return { op: "REPLACE", node: newNode };
 
-  // Removal / insertion
-  if (oldNode == null) return [{ type: 'CREATE', path, node: newNode }]
-  if (newNode == null) return [{ type: 'REMOVE', path }]
-
-  // Text nodes
-  if (typeof oldNode !== 'object' || typeof newNode !== 'object') {
-    if (oldNode !== newNode) patches.push({ type: 'TEXT', path, value: newNode })
-    return patches
+  // Same type — recurse into children
+  const childPatches = [];
+  const max = Math.max(oldNode.children.length, newNode.children.length);
+  for (let i = 0; i < max; i++) {
+    const patch = diff(oldNode.children[i], newNode.children[i]);
+    if (patch) childPatches.push({ index: i, patch });
   }
 
-  // Heuristic #1: a different element type means REPLACE the whole subtree.
-  // React does not attempt to match children across a type change -- the
-  // assumption is that a <div> becoming a <span> is a different thing entirely.
-  if (oldNode.type !== newNode.type) {
-    return [{ type: 'REPLACE', path, node: newNode }]
-  }
-
-  const propPatch = diffProps(oldNode.props ?? {}, newNode.props ?? {})
-  if (Object.keys(propPatch).length) patches.push({ type: 'PROPS', path, props: propPatch })
-
-  patches.push(...diffChildren(oldNode.children ?? [], newNode.children ?? [], path))
-  return patches
+  return childPatches.length ? { op: "UPDATE_CHILDREN", childPatches } : null;
 }
 
-function diffProps(oldProps, newProps) {
-  const out = {}
-  for (const key of new Set([...Object.keys(oldProps), ...Object.keys(newProps)])) {
-    if (!Object.is(oldProps[key], newProps[key])) out[key] = newProps[key] ?? null
-  }
-  return out
+// ─── Apply ──────────────────────────────────────────────────────────────────
+// Mirrors the vnode shape (no real browser DOM here), so "mounting" is just a
+// deep clone — the applied tree must be independent of the vnode literals,
+// the same way a real DOM is a separate structure from the vnode describing it.
+
+function cloneTree(vnode) {
+  if (typeof vnode === "string") return vnode;
+  return { type: vnode.type, children: vnode.children.map(cloneTree) };
 }
 
-/**
- * Heuristic #2: keys give children stable identity. With keys we can detect a
- * MOVE; without them we can only compare position by position.
- */
-function diffChildren(oldChildren, newChildren, path) {
-  const keyed = oldChildren.every((c) => c?.key != null) && newChildren.every((c) => c?.key != null)
+function applyChildPatch(parent, index, patch) {
+  if (!patch) return; // null = no change at this position
 
-  if (!keyed) {
-    const patches = []
-    const max = Math.max(oldChildren.length, newChildren.length)
-    for (let i = 0; i < max; i++) {
-      patches.push(...diff(oldChildren[i], newChildren[i], [...path, i]))
+  switch (patch.op) {
+    case "CREATE":
+      parent.children.splice(index, 0, cloneTree(patch.node));
+      break;
+    case "REMOVE":
+      parent.children.splice(index, 1);
+      break;
+    case "REPLACE":
+      parent.children[index] = cloneTree(patch.node);
+      break;
+    case "UPDATE_CHILDREN": {
+      const target = parent.children[index];
+      // Apply in DESCENDING index order: CREATE/REMOVE splice the children
+      // array, shifting every index after them. Processing high indices
+      // first means a splice never invalidates an index we haven't used yet.
+      const sorted = [...patch.childPatches].sort((a, b) => b.index - a.index);
+      for (const { index: childIndex, patch: childPatch } of sorted) {
+        applyChildPatch(target, childIndex, childPatch);
+      }
+      break;
     }
-    return patches
   }
-
-  const patches = []
-  const oldByKey = new Map(oldChildren.map((c, i) => [c.key, { node: c, index: i }]))
-
-  newChildren.forEach((child, newIndex) => {
-    const prev = oldByKey.get(child.key)
-    if (!prev) {
-      patches.push({ type: 'CREATE', path: [...path, newIndex], node: child })
-      return
-    }
-    if (prev.index !== newIndex) {
-      // The win from keys: reorder instead of destroy + recreate.
-      patches.push({ type: 'MOVE', path: [...path, newIndex], key: child.key, from: prev.index })
-    }
-    patches.push(...diff(prev.node, child, [...path, newIndex]))
-    oldByKey.delete(child.key)
-  })
-
-  for (const [key, { index }] of oldByKey) {
-    patches.push({ type: 'REMOVE', path: [...path, index], key })
-  }
-  return patches
 }
 
-export const h = (type, props = {}, ...children) => ({
-  type, props, children: children.flat(), key: props.key,
-})
+function applyPatch(root, patch) {
+  // Wrap root as the lone child of a synthetic parent so CREATE/REMOVE/
+  // REPLACE at the root level reuse the exact same splice-based logic as
+  // every other position, instead of needing separate root-only handling.
+  const wrapper = { children: [root] };
+  applyChildPatch(wrapper, 0, patch);
+  return wrapper.children[0];
+}
+
+export { diff, cloneTree, applyPatch }

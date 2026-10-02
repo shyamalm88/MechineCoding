@@ -29,14 +29,18 @@ intermediate node. Every prefix would report as a word.
 
 ## Delete, done properly
 
-The naive delete just clears `isEnd`, leaking nodes forever. Pruning correctly
-requires knowing whether any *other* word passes through a node.
+The naive delete just clears `isEnd`, leaking nodes forever. This version uses a
+recursive `_delete(node, word, index)` that returns "am I now removable?" up the
+stack:
 
-Storing a `count` (words through this node) makes it a single O(m) pass: the
-first node whose count drops to zero can have its entire branch removed.
+- At the last character: clear `isEnd`; the node is removable only if it has no
+  children (so deleting `band` leaves `bandana` untouched).
+- On the way back up: if the child reported removable, delete it from
+  `children`; this node is removable if it is not itself a word end and has no
+  other children.
 
-Without the count you need a second traversal, or a recursive delete that
-returns "am I now removable?" up the stack.
+Each node also keeps a `count` (words passing through it) as an alternative way
+to decide removability.
 
 ## Cost
 
@@ -47,6 +51,10 @@ returns "am I now removable?" up the stack.
 **Compressed/radix tries** merge single-child chains into one node, which is
 what makes them practical for routing tables. Mentioning that shows awareness of
 the real weakness.
+
+## Search suggestions
+
+`SearchSuggestionEngine` lower-cases a word list into a trie and `suggest(prefix, limit = 5)` returns the first `limit` completions of `autocomplete`.
 
 ## Follow-ups
 

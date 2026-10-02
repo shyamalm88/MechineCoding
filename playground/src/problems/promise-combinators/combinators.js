@@ -1,70 +1,89 @@
-/**
- * Promise.all / allSettled / race / any, implemented from scratch.
- *
- * Shared shape: return a new Promise, iterate the inputs, and resolve or
- * reject once the relevant condition is met. Promise.resolve() wraps each
- * input so non-promise values ("thenables" or plain values) work too.
- */
-
-export function all(iterable) {
-  const items = [...iterable]
+// ---- promise.all.polyfill.js ----
+const myPromiseAll = function (promises) {
   return new Promise((resolve, reject) => {
-    const results = new Array(items.length)
-    let remaining = items.length
-    if (remaining === 0) return resolve([])
-
-    items.forEach((item, i) => {
-      Promise.resolve(item).then((value) => {
-        // Assign by INDEX, not push -- results must keep input order
-        // regardless of which settles first.
-        results[i] = value
-        if (--remaining === 0) resolve(results)
-      }, reject) // first rejection wins; later ones are ignored
-    })
-  })
-}
-
-export function allSettled(iterable) {
-  const items = [...iterable]
-  return new Promise((resolve) => {
-    const results = new Array(items.length)
-    let remaining = items.length
-    if (remaining === 0) return resolve([])
-
-    items.forEach((item, i) => {
-      Promise.resolve(item).then(
-        (value) => { results[i] = { status: 'fulfilled', value } },
-        (reason) => { results[i] = { status: 'rejected', reason } },
-      ).finally(() => { if (--remaining === 0) resolve(results) })
-    })
-  })
-}
-
-export function race(iterable) {
-  return new Promise((resolve, reject) => {
-    // No counter needed: the first settle of any kind wins, and further
-    // resolve/reject calls on an already-settled promise are no-ops.
-    for (const item of iterable) Promise.resolve(item).then(resolve, reject)
-  })
-}
-
-export function any(iterable) {
-  const items = [...iterable]
-  return new Promise((resolve, reject) => {
-    const errors = new Array(items.length)
-    let remaining = items.length
-    if (remaining === 0) {
-      return reject(new AggregateError([], 'All promises were rejected'))
+    if (promises.length === 0) {
+      resolve([]);
+      return;
     }
+    let result = new Array(promises.length);
+    let counter = 0;
+    promises.forEach((p, i) => {
+      Promise.resolve(p)
+        .then((val) => {
+          result[i] = val;
+          counter++;
+          if (counter === promises.length) {
+            resolve(result);
+          }
+        })
+        .catch((err) => {
+          reject(err);
+        });
+    });
+  });
+};
 
-    items.forEach((item, i) => {
-      Promise.resolve(item).then(resolve, (err) => {
-        errors[i] = err
-        // Only reject once EVERY input has failed.
-        if (--remaining === 0) {
-          reject(new AggregateError(errors, 'All promises were rejected'))
-        }
-      })
-    })
-  })
-}
+// ---- promise.allSettled.js ----
+Promise.myPromiseAllSettled = function (promises) {
+  return new Promise((resolve, reject) => {
+    if (promises.length === 0) {
+      resolve([]);
+      return;
+    }
+    let counter = 0;
+    const resolveWhenDone = () => {
+      counter++;
+      if (counter === promises.length) {
+        resolve(result);
+      }
+    };
+    let result = new Array(promises.length);
+    promises.forEach((p, i) => {
+      Promise.resolve(p)
+        .then((val) => {
+          result[i] = { status: "fulfilled", value: val };
+          resolveWhenDone();
+        })
+        .catch((err) => {
+          result[i] = { status: "rejected", reason: err };
+          resolveWhenDone();
+        });
+    });
+  });
+};
+
+// ---- promise.any.js ----
+Promise.any = function (promises) {
+  return new Promise((resolve, reject) => {
+    if (promises.length === 0) {
+      reject(new AggregateError([], "All promises were rejected"));
+      return;
+    }
+    let errors = new Array(promises.length);
+    let counter = 0;
+    promises.forEach((p, i) => {
+      Promise.resolve(p)
+        .then((val) => {
+          resolve(val);
+        })
+        .catch((err) => {
+          errors[i] = err;
+          counter++;
+          if (counter === promises.length) {
+            reject(new AggregateError(errors, "All promises were rejected"));
+          }
+        });
+    });
+  });
+};
+
+// ---- promise.race.js ----
+Promise.myRace = function (promises) {
+  return new Promise((resolve, reject) => {
+    promises.forEach((p) => {
+      Promise.resolve(p).then(resolve, reject);
+    });
+  });
+};
+
+export { myPromiseAll }

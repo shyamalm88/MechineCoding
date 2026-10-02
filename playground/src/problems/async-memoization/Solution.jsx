@@ -24,13 +24,6 @@ export default function Demo() {
       await flaky().catch(() => {})
       out.push(['rejections are NOT cached', `${failCalls} invocations (retried)`])
 
-      let ttlCalls = 0
-      const short = memoizeAsync(async () => { ttlCalls++; return 'v' }, { ttlMs: 100 })
-      await short(); await short()
-      await sleep(140)
-      await short()
-      out.push(['ttl 100ms: 3 calls across 140ms', `${ttlCalls} invocations`])
-
       if (alive) setRows(out)
     })()
     return () => { alive = false }

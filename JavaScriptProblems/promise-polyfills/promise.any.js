@@ -4,7 +4,7 @@ Promise.any = function (promises) {
       reject(new AggregateError([], "All promises were rejected"));
       return;
     }
-    let result = new Array(promises.length);
+    let errors = new Array(promises.length);
     let counter = 0;
     promises.forEach((p, i) => {
       Promise.resolve(p)
@@ -12,7 +12,7 @@ Promise.any = function (promises) {
           resolve(val);
         })
         .catch((err) => {
-          result[i] = { status: "rejected", reason: err };
+          errors[i] = err;
           counter++;
           if (counter === promises.length) {
             reject(new AggregateError(errors, "All promises were rejected"));

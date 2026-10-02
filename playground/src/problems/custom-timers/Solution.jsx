@@ -14,12 +14,16 @@ export default function Demo() {
 
   const runIdle = () => {
     setProcessed(0); setChunks(0)
-    let lastIndex = 0
-    const items = Array.from({ length: 5000 }, (_, i) => i)
-    runInIdle(items, () => {
-      lastIndex++
-      if (lastIndex % 250 === 0) setProcessed(lastIndex)
-    }, { onDone: () => { setProcessed(items.length); setChunks((c) => c + 1) } })
+    const total = 200
+    let done = 0
+    const tasks = Array.from({ length: total }, () => function task() {
+      const end = performance.now() + 0.5 // ~0.5ms of work per task
+      while (performance.now() < end) { /* busy */ }
+      done++
+      setProcessed(done)
+      if (done === total) setChunks((c) => c + 1)
+    })
+    runInIdle(tasks)
   }
 
   return (
@@ -29,14 +33,14 @@ export default function Demo() {
         <button type="button" onClick={() => stopRef.current?.()}>stop</button>
       </p>
       <p>
-        <button type="button" onClick={runIdle}>Process 5000 items while idle</button>
+        <button type="button" onClick={runIdle}>Run 200 tasks while idle</button>
       </p>
       <p style={{ fontFamily: 'monospace', fontSize: 13 }}>
-        processed: <b>{processed}</b> / 5000 {chunks > 0 && '· done'}
+        processed: <b>{processed}</b> / 200 {chunks > 0 && '· done'}
       </p>
       <p style={{ color: '#666', fontSize: 13, maxWidth: 440 }}>
-        The idle worker yields between chunks, so the page stays responsive
-        instead of freezing for the whole 5000.
+        runInIdle keeps running tasks only while the browser reports idle time,
+        then schedules the rest for the next idle period.
       </p>
     </div>
   )

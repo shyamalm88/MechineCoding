@@ -2,45 +2,42 @@
 
 Run queued async tasks highest-priority-first, with a concurrency cap.
 
-## Why a heap
+## Sorted queue now, heap later
 
-| Structure | Insert | Extract-min |
+`PriorityExecutorConcurrent(limit)` keeps `queue` as a plain array and re-sorts
+it on every `add`, highest priority number first:
+
+```js
+this.queue.push({ runTask, priority })
+this.queue.sort((a, b) => b.priority - a.priority)
+```
+
+That is O(n log n) per insert — fine for interview-sized queues. For a queue
+that is both written and drained continuously, a **binary heap** gives O(log n)
+for both insert and extract:
+
+| Structure | Insert | Extract-max |
 |---|---|---|
 | Sorted array | O(n) | O(1) |
 | Unsorted array | O(1) | O(n) |
 | **Binary heap** | **O(log n)** | **O(log n)** |
 
-For a queue that is both written and drained continuously, the heap wins. A
-`sort()` on every insert is O(n log n) per task and the usual first answer.
+## Stability
 
-## Stability: the detail that separates answers
-
-A binary heap is **not stable** — two items with equal priority come out in
-arbitrary order. For a scheduler that is wrong: equal-priority tasks should run
-FIFO.
-
-The fix is a monotonically increasing sequence number as a tiebreaker:
-
-```js
-compare(a, b) { return a.priority - b.priority || a.seq - b.seq }
-```
-
-Without it, submitting ten equal-priority jobs gives an unpredictable order,
-which is very hard to debug later.
+A heap is **not stable** — equal priorities come out in arbitrary order — so a
+heap needs a sequence-number tiebreaker to keep equal priorities FIFO.
+`Array.prototype.sort` is guaranteed stable in modern engines, so the sorted
+array gets FIFO ties for free.
 
 ## Draining
 
 ```js
-while (running < concurrency && heap.size) { ...run task... }
+while (running < limit && queue.length > 0) { queue.shift().runTask() }
 ```
 
-Each completion calls `drain()` again, so a freed slot is immediately refilled
-by whatever is now highest-priority — including tasks added *after* the
+Each task's `finally` calls `_drain()` again, so a freed slot is immediately
+refilled by whatever is now highest-priority — including tasks added *after* the
 currently running ones started.
-
-`Promise.resolve().then(task)` rather than `task()` ensures a task that throws
-synchronously still rejects the returned promise instead of blowing up the
-scheduler.
 
 ## Priority does not preempt
 

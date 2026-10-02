@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { runSaga } from './saga.js'
+import { runWithRollback } from './saga.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -10,23 +10,26 @@ export default function Demo() {
   const run = async () => {
     const log = []
     const step = (name) => ({
-      name,
-      execute: async () => {
+      do: async () => {
+        log.push({ phase: 'run', name })
         await sleep(90)
         if (name === failAt) throw new Error(`${name} failed`)
-        return `${name}-id`
       },
-      compensate: async () => { await sleep(60) },
+      undo: async () => {
+        log.push({ phase: 'compensate', name })
+        await sleep(60)
+      },
     })
 
-    await runSaga(
-      [step('reserve stock'), step('charge card'), step('create shipment')],
-      { onEvent: (e) => log.push(e) },
-    )
+    try {
+      await runWithRollback([step('reserve stock'), step('charge card'), step('create shipment')])
+    } catch (error) {
+      log.push({ phase: 'failed', name: failAt, error: error.message })
+    }
     setEvents(log)
   }
 
-  const colour = { run: '#1f2430', failed: '#b91c1c', compensate: '#b45309', skip: '#9aa1ad' }
+  const colour = { run: '#1f2430', failed: '#b91c1c', compensate: '#b45309' }
 
   return (
     <div>

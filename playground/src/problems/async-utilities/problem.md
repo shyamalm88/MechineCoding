@@ -1,31 +1,27 @@
-# Async utilities: sleep, retry with backoff, timeout, cancellable
+# Async utilities: retry, timeout, cancellable task
 
-## sleep
+## Retry with a delay — `promiseRetry(fn, retries = 3, delay = 100)`
 
-```js
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-```
+Recursion instead of a loop: `attempt(n)` runs `fn()`; on success it resolves the
+outer promise, on failure it either rejects (no attempts left) or waits `delay`
+ms and calls `attempt(n + 1)`. `retries` is the **total** number of attempts, and
+the final rejection carries the last error.
 
-The one-liner everyone should know. Note it cannot be cancelled — the timer
-still runs.
+The delay here is fixed. Two upgrades worth naming:
 
-## Retry with exponential backoff
-
-Delay grows as `baseDelay * factor ** attempt`: 100ms, 200ms, 400ms…
-
-**Jitter is the part people omit.** Without randomisation, every client that
-failed during an outage retries at exactly the same moment and knocks the
-recovering server straight back over — the *thundering herd*. Multiplying the
-delay by a random factor spreads them out.
+- **Exponential backoff** — `delay * factor ** attempt`: 100ms, 200ms, 400ms…
+- **Jitter** — without randomisation, every client that failed during an outage
+  retries at exactly the same moment and knocks the recovering server straight
+  back over (the *thundering herd*).
 
 Also worth saying: **only retry idempotent operations**. Retrying a payment
 because the response timed out can charge twice, and you cannot tell a lost
 request from a lost response.
 
-## Timeout
+## Timeout — `promiseWithTimeout(promise, timeout)`
 
 ```js
-Promise.race([work, rejectAfter(ms)])
+Promise.race([promise, timeoutPromise])
 ```
 
 The essential caveat: **the loser keeps running.** `race` does not cancel
@@ -37,18 +33,20 @@ fetch(url, { signal: controller.signal })
 controller.abort()
 ```
 
-## "Cancellable" promises
+## Cancellable task — `cancellableAsyncTask(signal)`
 
-Promises have no cancellation in the language. What this pattern gives you is a
-guarantee that **your handlers stop firing** — the underlying work continues.
+Promises have no cancellation in the language; cancellation is wired through an
+`AbortSignal`. Inside the promise constructor:
 
-That is still the fix for the classic React warning about setting state after
-unmount: you are not stopping the fetch, you are stopping the callback.
+1. If `signal.aborted` is already true, reject immediately.
+2. Start the work (here a 1s `setTimeout`).
+3. On the signal's `abort` event, clear the timer and reject with an
+   `AbortError`.
 
 ## Traps
 
 - Retrying non-idempotent requests.
 - Unbounded retries with no cap or circuit breaker.
 - Retrying a 4xx — the request is wrong; repeating it will not help.
-- Forgetting `clearTimeout` in a timeout helper leaves a pending timer holding
-  a reference.
+- The timeout helper never clears its timer, so a fast promise leaves a pending
+  timer behind until it fires.

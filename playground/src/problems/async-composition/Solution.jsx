@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { pipeAsync, composeAsync, waterfall, pipeAsyncCancellable } from './compose.js'
+import { pipeAsync, composeAsync, asyncWaterfall, composeAsyncWithCancel } from './compose.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const double = async (n) => { await sleep(30); return n * 2 }
@@ -14,16 +14,10 @@ export default function Demo() {
       const out = []
       out.push(['pipeAsync(double, inc)(5)', await pipeAsync(double, inc)(5)])
       out.push(['composeAsync(double, inc)(5)', await composeAsync(double, inc)(5)])
-
-      const { result, history } = await waterfall([
-        async (x) => x + 1,
-        async (x, hist) => x * 10 + hist.length,
-        async (x, hist) => `${x} after ${hist.length} steps`,
-      ], 1)
-      out.push(['waterfall result', result])
+      out.push(['asyncWaterfall([double, inc, double], 1)', await asyncWaterfall([double, inc, double], 1)])
 
       const ac = new AbortController()
-      const slow = pipeAsyncCancellable(double, async (n) => { await sleep(200); return n }, inc)
+      const slow = composeAsyncWithCancel(double, async (n) => { await sleep(200); return n }, inc)
       const p = slow(5, ac.signal).catch((e) => e.name)
       setTimeout(() => ac.abort(), 60)
       out.push(['cancellable pipeline aborted mid-chain', await p])

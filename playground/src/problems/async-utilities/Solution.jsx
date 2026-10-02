@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { retry, withTimeout, sleep, cancellable } from './asyncUtils.js'
+import { promiseRetry, promiseWithTimeout, cancellableAsyncTask } from './asyncUtils.js'
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export default function Demo() {
   const [rows, setRows] = useState([])
@@ -15,22 +17,20 @@ export default function Demo() {
         if (tries < 3) throw new Error('flaky')
         return 'succeeded on attempt ' + tries
       }
-      out.push(['retry(flaky, 3 attempts)', await retry(flaky, { baseDelay: 20 })])
+      out.push(['promiseRetry(flaky, 3, 20)', await promiseRetry(flaky, 3, 20)])
 
       try {
-        await withTimeout(sleep(500), 60)
+        await promiseWithTimeout(sleep(500), 60)
       } catch (e) {
-        out.push(['withTimeout(sleep(500), 60ms)', e.message])
+        out.push(['promiseWithTimeout(sleep(500), 60ms)', e.message])
       }
 
-      out.push(['withTimeout(sleep(10), 200ms)', await withTimeout(sleep(10).then(() => 'ok'), 200)])
+      out.push(['promiseWithTimeout(sleep(10), 200ms)', await promiseWithTimeout(sleep(10).then(() => 'ok'), 200)])
 
-      const { promise, cancel } = cancellable(sleep(30).then(() => 'should not appear'))
-      cancel()
-      let settled = 'never settled (cancelled)'
-      promise.then(() => { settled = 'settled!' })
-      await sleep(80)
-      out.push(['cancellable(...) then cancel()', settled])
+      const ac = new AbortController()
+      const task = cancellableAsyncTask(ac.signal).catch((e) => e.name)
+      setTimeout(() => ac.abort(), 30)
+      out.push(['cancellableAsyncTask(signal), abort after 30ms', await task])
 
       if (alive) setRows(out)
     })()

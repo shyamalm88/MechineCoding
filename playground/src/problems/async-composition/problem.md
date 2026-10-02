@@ -1,4 +1,4 @@
-# Async composition: pipeAsync, composeAsync, waterfall
+# Async composition: pipeAsync, composeAsync, waterfall, cancel
 
 ## The sync version does not work
 
@@ -27,22 +27,23 @@ Saying which one applies is the real question behind this exercise.
 
 ## Waterfall
 
-A pipeline where each step also receives the accumulated history, so a later
-step can reference an earlier result rather than only the immediately preceding
-one. That is what distinguishes `waterfall` from plain `pipeAsync` in libraries
-like async.js.
+`asyncWaterfall(tasks, initialValue)` is the same sequential loop under another
+name: each task receives the previous task's result and the last result is
+returned. It is the `async.waterfall` of async.js.
 
 ## Cancellation between steps
 
 An in-flight promise cannot be interrupted, but the chain can stop *between*
-steps:
+steps. `composeAsyncWithCancel` passes `(input, signal)` to every step and
+checks the signal before each one:
 
 ```js
-chain.then(acc => { if (signal?.aborted) throw AbortError; return fn(acc) })
+if (signal.aborted) throw new DOMException("Aborted", "AbortError")
+result = await fn(result, signal)
 ```
 
 So an abort takes effect at the next boundary. For genuine mid-request
-cancellation the signal must be threaded into `fetch` itself.
+cancellation the step must forward the signal into `fetch` itself.
 
 ## Error handling
 

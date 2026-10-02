@@ -1,27 +1,32 @@
-/**
- * Memoise an async function.
- *
- * Cache the PROMISE, not the resolved value -- that way concurrent callers
- * share one in-flight request instead of each starting their own.
- */
-export function memoizeAsync(fn, { keyFn = (...a) => JSON.stringify(a), ttlMs, cacheRejections = false } = {}) {
-  const cache = new Map()
+function memoizeAsync(fn) {
+  // 1. Two separate caches
+  const primitiveCache = new Map();
+  const objectCache = new WeakMap();
 
-  return function memoized(...args) {
-    const key = keyFn(...args)
-    const hit = cache.get(key)
+  return function (arg) {
+    // 2. Decide which cache to use based on type
+    const isObject =
+      (typeof arg === "object" && arg !== null) || typeof arg === "function";
+    const cache = isObject ? objectCache : primitiveCache;
 
-    if (hit && (!ttlMs || Date.now() < hit.expiresAt)) return hit.promise
-    if (hit) cache.delete(key)
-
-    const promise = fn.apply(this, args)
-    cache.set(key, { promise, expiresAt: ttlMs ? Date.now() + ttlMs : Infinity })
-
-    if (!cacheRejections) {
-      // A cached rejection poisons the key forever -- one network blip and
-      // every future call fails instantly. Evict on failure by default.
-      promise.catch(() => { if (cache.get(key)?.promise === promise) cache.delete(key) })
+    // 3. Check Cache
+    if (cache.has(arg)) {
+      return cache.get(arg);
     }
-    return promise
-  }
+
+    // 4. Execute Function
+    // We use .call(this) to preserve context
+    const promise = fn.call(this, arg).catch((err) => {
+      // 5. Delete on error (works for both Map and WeakMap)
+      cache.delete(arg);
+      throw err;
+    });
+
+    // 6. Store in the correct cache
+    cache.set(arg, promise);
+
+    return promise;
+  };
 }
+
+export { memoizeAsync }

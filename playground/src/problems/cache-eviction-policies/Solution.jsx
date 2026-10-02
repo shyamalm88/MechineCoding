@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LFUCache, LRUWithTTL } from './caches.js'
+import { LFUCache, LRUCacheTTL } from './caches.js'
 
 export default function Demo() {
   const [rows, setRows] = useState(null)
@@ -14,8 +14,8 @@ export default function Demo() {
     out.push(['LFU: get(2) — least frequent, evicted', lfu.get(2)])
     out.push(['LFU: get(3)', lfu.get(3)])
 
-    const ttl = new LRUWithTTL(3, 300)
-    ttl.put('x', 'fresh')
+    const ttl = new LRUCacheTTL(3)
+    ttl.put('x', 'fresh', 300)
     out.push(['TTL: get("x") immediately', ttl.get('x')])
 
     setTimeout(() => {

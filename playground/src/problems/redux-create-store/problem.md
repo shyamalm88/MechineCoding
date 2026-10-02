@@ -14,39 +14,38 @@ reducer on dispatch, notify subscribers.
 logs, and trivially testable state logic. Break it and every one of those
 guarantees goes.
 
-## The details that show you understand it
-
-**`dispatch({type: '@@redux/INIT'})` on creation.** Reducers use default
-parameters (`state = 0`) to declare their initial value; the store has to
-dispatch something unrecognised once to collect them.
-
-**Snapshot the listener array.** A subscriber that subscribes or unsubscribes
-during a dispatch would otherwise mutate the array being iterated. Copying on
-subscribe (rather than mutating in place) makes the in-flight iteration safe.
-
-**`combineReducers` must return the same reference when nothing changed:**
+## The core
 
 ```js
-return changed ? next : state
+function dispatch(action) {
+  state = reducer(state, action)
+  listeners.forEach((listener) => listener())
+}
 ```
 
-Always returning a fresh object defeats every `===` optimisation downstream —
-`useSelector`, `React.memo`, and `shouldComponentUpdate` all start firing on
-every action.
+`subscribe(listener)` adds to a `Set` and returns an unsubscribe function.
+`createStore(reducer, initialState)` also dispatches `{ type: "__INIT__" }` once
+on creation so reducers can supply their defaults (`state = { count: 0 }`).
 
-**Guard against dispatching inside a reducer.** It is an infinite loop waiting
-to happen, and the explicit error is far kinder than a stack overflow.
+## Details that show you understand it
 
-## applyMiddleware
+- **The init dispatch.** Reducers use default parameters to declare their
+  initial value; the store has to dispatch something unrecognised once to
+  collect them.
+- **Mutating the listener `Set` during a dispatch** — a listener that
+  unsubscribes while being notified is the edge case. Redux snapshots the
+  listener list before iterating to make it safe.
+- **Guard against dispatching inside a reducer.** It is an infinite loop waiting
+  to happen, and an explicit error is far kinder than a stack overflow.
+- **Return the same reference when nothing changed.** The reducer's `default:
+  return state` is what lets `===` checks downstream (`useSelector`,
+  `React.memo`) skip work.
 
-Middleware are `store => next => action => …` — each wraps `dispatch`, composed
-with `reduceRight` so the first listed runs outermost. That signature is why
-thunk is only a few lines:
+## Beyond this version
 
-```js
-const thunk = ({dispatch, getState}) => next => action =>
-  typeof action === 'function' ? action(dispatch, getState) : next(action)
-```
+The real library adds `combineReducers` (one reducer per slice of state) and
+`applyMiddleware` (`store => next => action => …`, which is why thunk is only a
+few lines). Both are natural follow-ups.
 
 ## Context
 

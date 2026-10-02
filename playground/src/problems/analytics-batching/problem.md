@@ -3,53 +3,54 @@
 Sending one HTTP request per tracked event is wasteful. Batch them, and flush on
 **whichever comes first**: a size threshold or a time limit.
 
+`new Analytics(batchSize = 5, flushInterval = 3000, maxQueueSize = 500)`
+
 ## Why both triggers
 
 - **Size only** — a user who triggers 2 events then leaves never sends them.
 - **Time only** — a burst of 500 events still waits out the interval, then sends
   one enormous request.
 
-Together they bound both request count and worst-case latency.
+Together they bound both request count and worst-case latency. Here the time
+trigger is a `setInterval` that calls `flush()`, and `track()` flushes as soon as
+`queue.length >= batchSize`.
 
-## The timer detail that matters
-
-Start the timer on the **first event of a batch**, and do not restart it on
-subsequent events:
-
-```js
-if (this.timer === null) this.timer = setTimeout(() => this.flush('time'), maxWaitMs)
-```
-
-Restarting per event (debounce semantics) means a steady trickle of events
-delays the flush indefinitely — exactly the starvation you were trying to avoid.
-
-## Swap the queue before sending
+## Drain the queue before sending
 
 ```js
-const batch = this.queue
-this.queue = []      // BEFORE send()
-this.send(batch)
+const payload = this.queue.splice(0)   // drain atomically, BEFORE the async fetch
 ```
 
-If `send` is async and an event is tracked while it is in flight, that event
-must land in the *next* batch — not be cleared away by a `this.queue = []`
-that runs after.
+Events tracked while the request is in flight land in the *next* batch, and the
+same events are never sent twice.
+
+## Failure handling
+
+If the `fetch` fails, the payload is put back with `unshift` so it is retried on
+the next flush. That would grow the queue forever during a long outage, so
+`_enforceCap()` drops the **oldest** events once `maxQueueSize` is exceeded.
 
 ## The production concern: page unload
 
-A pending batch is lost when the tab closes. `fetch` in an `unload` handler is
-routinely cancelled. The right tool is:
+A pending batch is lost when the tab closes, and `fetch` in an `unload` handler
+is routinely cancelled. The `beforeunload` handler calls `flush(true)`, which
+uses:
 
 ```js
-navigator.sendBeacon('/analytics', JSON.stringify(batch))
+navigator.sendBeacon("/analytics", body)   // queued by the browser, survives teardown
 ```
 
-`sendBeacon` is queued by the browser and survives page teardown. Trigger it on
-`visibilitychange` → `hidden`, which is more reliable than `unload` on mobile.
+`fetch(..., { keepalive: true })` is the fallback and lets a request outlive the
+page in modern browsers.
+
+## Clean up
+
+`destroy()` clears the interval and removes the `beforeunload` listener — call it
+on teardown (HMR, SPA unmount) or each instance leaks a timer.
 
 ## Follow-ups
 
-- Retry with backoff on failure, and cap the queue so a persistent outage does
-  not grow it without bound.
+- Retry with backoff rather than on the next tick.
+- Restart-vs-keep the timer: a debounced flush lets a steady trickle delay the
+  batch forever, which is why this uses a fixed interval.
 - Deduplicate or sample high-frequency events.
-- `keepalive: true` on `fetch` is an alternative to `sendBeacon`.

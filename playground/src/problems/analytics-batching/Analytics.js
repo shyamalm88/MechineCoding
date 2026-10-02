@@ -1,37 +1,48 @@
-/**
- * Batch events and flush on EITHER a size threshold or a time interval,
- * whichever comes first.
- *
- * Size-only never sends a partial trailing batch; time-only sends too often
- * under load. Both together bound latency and request count.
- */
-export class Analytics {
-  constructor({ maxSize = 5, maxWaitMs = 2000, send } = {}) {
-    this.maxSize = maxSize
-    this.maxWaitMs = maxWaitMs
-    this.send = send
-    this.queue = []
-    this.timer = null
+// Analytics SDK — batch events, flush on size or interval
+
+class Analytics {
+  constructor(batchSize = 5, flushInterval = 3000, maxQueueSize = 500) {
+    this.queue = [];
+    this.batchSize = batchSize;
+    this.maxQueueSize = maxQueueSize;
+    this.intervalId = setInterval(() => this.flush(), flushInterval);
+    this.onUnload = () => this.flush(true);
+    window.addEventListener("beforeunload", this.onUnload);
   }
 
-  track(event) {
-    this.queue.push(event)
+  track(event, data = {}) {
+    this.queue.push({ event, data, timestamp: Date.now() });
+    this._enforceCap();
+    if (this.queue.length >= this.batchSize) this.flush();
+  }
 
-    if (this.queue.length >= this.maxSize) return this.flush('size')
+  // drop oldest events once the queue exceeds maxQueueSize, so a prolonged
+  // outage (repeated failed flushes re-queuing events) can't grow it forever
+  _enforceCap() {
+    const overflow = this.queue.length - this.maxQueueSize;
+    if (overflow > 0) this.queue.splice(0, overflow);
+  }
 
-    // Start the clock on the FIRST event of a batch, so max latency is bounded
-    // by maxWaitMs. Restarting it per event would let a steady trickle delay
-    // the batch forever.
-    if (this.timer === null) {
-      this.timer = setTimeout(() => this.flush('time'), this.maxWaitMs)
+  flush(useBeacon = false) {
+    if (!this.queue.length) return;
+    const payload = this.queue.splice(0);            // drain queue atomically
+    const body = JSON.stringify(payload);
+
+    if (useBeacon && navigator.sendBeacon) {
+      navigator.sendBeacon("/analytics", body);      // survives page close
+    } else {
+      fetch("/analytics", { method: "POST", body, keepalive: true })
+        .catch(() => {
+          this.queue.unshift(...payload);            // retry on failure
+          this._enforceCap();
+        });
     }
   }
 
-  flush(reason = 'manual') {
-    if (this.timer !== null) { clearTimeout(this.timer); this.timer = null }
-    if (this.queue.length === 0) return
-    const batch = this.queue
-    this.queue = []          // swap out BEFORE sending, so events tracked
-    this.send(batch, reason) // during the send land in the next batch
+  destroy() {
+    clearInterval(this.intervalId);
+    window.removeEventListener("beforeunload", this.onUnload);
   }
 }
+
+export { Analytics }

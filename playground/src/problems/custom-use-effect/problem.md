@@ -1,66 +1,58 @@
-# Implement useState / useEffect (a mini hooks runtime)
+# Implement useEffect (a polyfill)
 
-Building the runtime is the clearest possible explanation of **why the rules of
-hooks exist**.
+`useEffect` runs a function when its dependencies change, and runs the previous
+run's **cleanup** first. Rebuilding it shows what the dependency array actually
+does.
 
-## Hooks are identified by call order
-
-```js
-const cells = []      // one slot per hook call
-let cursor = 0        // reset to 0 before EVERY render
-```
-
-There is no name, no key — `useState` simply takes `cells[cursor++]`. That single
-design decision explains everything:
+## A closure holds the previous run
 
 ```js
-if (cond) useState(0)   // ✗ shifts every later hook's index
-useState(1)             // now reads the wrong cell
+function createUseEffect() {
+  let prevDeps
+  let cleanup
+
+  return function useEffect(effect, deps) { ... }
+}
 ```
 
-A conditional hook desynchronises the cursor, so hook #2 reads hook #1's state.
-That is the "Rendered fewer hooks than expected" error, and why the linter rule
-is not merely stylistic.
+`prevDeps` and `cleanup` live in the closure — one pair per hook instance. Real
+React stores them per component in a fiber, indexed by **call order**, which is
+why hooks cannot be called conditionally.
 
 ## useEffect's dependency logic
 
 ```js
-const changed = !prev || !deps || deps.some((d, i) => !Object.is(d, prev.deps[i]))
+const hasNoDeps = !deps
+const depsChanged = !prevDeps || deps.some((dep, i) => dep !== prevDeps[i])
+if (hasNoDeps || depsChanged) { ... }
 ```
 
 Three cases, and the distinction matters:
 
 - **no deps argument** → run after every render
 - **`[]`** → run once (nothing can ever change)
-- **`[a, b]`** → run when any entry changes, compared with `Object.is`
+- **`[a, b]`** → run when any entry changes (`!==`)
 
 Comparison is **shallow**, which is exactly why an inline object or array in a
 dependency array re-runs the effect every render — a fresh reference is never
-`Object.is`-equal.
+equal to the previous one. (React uses `Object.is`, which also treats `NaN` as
+equal to itself.)
 
 ## Cleanup ordering
 
 ```js
-prev?.cleanup?.()   // BEFORE the next setup
-const cleanup = effect()
+if (typeof cleanup === "function") cleanup()   // BEFORE the next setup
+cleanup = effect()
+prevDeps = deps
 ```
 
 React runs the previous cleanup before the next effect, not after. Getting this
 backwards produces a window where two subscriptions are live at once — the bug
 Strict Mode's double-invoke is designed to expose.
 
-## Batching
-
-`setState` here schedules a microtask rather than re-rendering synchronously, so
-several calls in one turn produce one render. That is React 18's automatic
-batching in miniature.
-
-Note the bail-out: `Object.is(next, current)` and the update is dropped
-entirely — React does the same, which is why setting state to its current value
-does not always re-render.
-
 ## What this omits
 
-Fibers, reconciliation, priority lanes, concurrent interruption, and per-
-component instances (this runtime has exactly one). The hook *semantics*,
-though, are genuinely these ~60 lines.
+- **Unmount cleanup** — there is no way to tell this hook the component is gone.
+- **Running after paint** — React runs effects asynchronously after the browser
+  paints; this runs `effect()` synchronously.
+- `useState`, batching, fibers and per-component instances.

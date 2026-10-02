@@ -1,13 +1,13 @@
-import { flatten, flattenIterative, flattenObject } from './flatten.js'
+import './flatten.js'
+import { flattenObject } from './flatten.js'
 
 const nested = [1, [2, [3, [4, [5]]]]]
 const obj = { a: 1, b: { c: 2, d: { e: 3 } }, f: [1, 2], g: null }
 
 const rows = [
-  ['flatten([1,[2,[3,[4,[5]]]]])', JSON.stringify(flatten(nested))],
-  ['flatten(…, 2)', JSON.stringify(flatten(nested, 2))],
-  ['flatten(…, Infinity)', JSON.stringify(flatten(nested, Infinity))],
-  ['flattenIterative(…)', JSON.stringify(flattenIterative(nested))],
+  ['[1,[2,[3,[4,[5]]]]].myFlat()', JSON.stringify(nested.myFlat())],
+  ['…myFlat(2)', JSON.stringify(nested.myFlat(2))],
+  ['…myFlat(Infinity)', JSON.stringify(nested.myFlat(Infinity))],
   ['flattenObject({a:1,b:{c:2,d:{e:3}},f:[1,2],g:null})', JSON.stringify(flattenObject(obj))],
 ]
 

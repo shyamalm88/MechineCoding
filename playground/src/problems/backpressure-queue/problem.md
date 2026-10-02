@@ -29,16 +29,10 @@ out-of-memory crash.
 
 ## The implementation detail
 
-Admit a parked producer at the moment a task leaves the queue for execution,
-not when it finishes:
-
-```js
-const task = this.queue.shift()
-this.waitingProducers.shift()?.()   // a queue slot just opened
-```
-
-Waking on completion instead means the queue never refills while tasks are
-running, and throughput collapses to the concurrency limit.
+A parked producer is released each time a task **finishes**
+(`_releaseProducer()` in the `finally`), if the queue has room by then. Each
+`push()` returns a promise for the task's own result, and a rejected task
+rejects only that promise — the queue keeps draining.
 
 ## Alternatives when you cannot slow the producer
 

@@ -1,4 +1,4 @@
-import { pipe, compose, groupBy, isBalanced, quickSort } from './utils.js'
+import { pipe, compose, groupBy, once, chunk } from './utils.js'
 
 const double = (n) => n * 2
 const inc = (n) => n + 1
@@ -11,11 +11,8 @@ const rows = [
   ['compose(double, inc)(5)  → double(inc(5))', compose(double, inc)(5)],
   ['groupBy(people, "dept")', JSON.stringify(groupBy(people, 'dept'), null, 0).slice(0, 70) + '…'],
   ['groupBy([1.2,1.8,2.1], Math.floor)', JSON.stringify(groupBy([1.2, 1.8, 2.1], Math.floor))],
-  ['isBalanced("{[()]}")', String(isBalanced('{[()]}'))],
-  ['isBalanced("{[(])}")', String(isBalanced('{[(])}'))],
-  ['isBalanced("((")', String(isBalanced('(('))],
-  ['quickSort([5,3,8,1,9,2])', JSON.stringify(quickSort([5, 3, 8, 1, 9, 2]))],
-  ['quickSort(["b","a"], localeCompare)', JSON.stringify(quickSort(['b', 'a'], (a, b) => a.localeCompare(b)))],
+  ['chunk([1,2,3,4,5], 2)', JSON.stringify(chunk([1, 2, 3, 4, 5], 2))],
+  ['once(add)(2,3) then (100,100)', (() => { const add = once((a, b) => a + b); add(2, 3); return add(100, 100) })()],
 ]
 
 export default function Demo() {

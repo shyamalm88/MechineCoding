@@ -1,34 +1,36 @@
-/**
- * call / apply / bind, implemented from scratch.
- *
- * The shared trick: to make a function run with a chosen `this`, temporarily
- * make it a PROPERTY of that object and invoke it as a method -- because
- * `obj.fn()` sets `this` to `obj`. A Symbol key avoids clobbering anything.
- */
+// ---- call.js ----
+Function.prototype.myCall = function (context = window, ...args) {
+  // 1. Create a unique key (Symbol) to avoid overwriting existing properties
+  const fnSymbol = Symbol();
 
-Function.prototype.myCall = function (thisArg, ...args) {
-  const context = thisArg ?? globalThis
-  const key = Symbol('fn')
-  context[key] = this
-  const result = context[key](...args)
-  delete context[key] // clean up so we don't mutate the caller's object
-  return result
-}
+  // 2. Attach "this" (the function) to the context
+  context[fnSymbol] = this;
 
-Function.prototype.myApply = function (thisArg, argsArray = []) {
-  // Identical to call, except arguments arrive as an array.
-  return this.myCall(thisArg, ...argsArray)
-}
+  // 3. Execute it
+  const result = context[fnSymbol](...args);
 
-Function.prototype.myBind = function (thisArg, ...boundArgs) {
-  const fn = this
-  function bound(...callArgs) {
-    // If called with `new`, `this` is a fresh instance and must win over
-    // thisArg -- that is what makes a bound function still constructible.
-    const isNew = this instanceof bound
-    return fn.apply(isNew ? this : thisArg, [...boundArgs, ...callArgs])
-  }
-  // Preserve the prototype chain so `new bound()` produces the right instance.
-  bound.prototype = Object.create(fn.prototype ?? null)
-  return bound
-}
+  // 4. Cleanup
+  delete context[fnSymbol];
+
+  return result;
+};
+
+// ---- apply.js ----
+Function.prototype.myApply = function (context = window, args = []) {
+  const fnSymbol = Symbol();
+  context[fnSymbol] = this;
+  const result = context[fnSymbol](...args);
+  delete context[fnSymbol];
+  return result;
+};
+
+// ---- bind.js ----
+Function.prototype.myBind = function (context, ...args) {
+  const fn = this;
+
+  return function (...newArgs) {
+    // Merge outer args (from bind) and inner args (from call)
+    return fn.apply(context, [...args, ...newArgs]);
+  };
+};
+

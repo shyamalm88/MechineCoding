@@ -3,42 +3,36 @@
 Structural comparison — two values are equal if they have the same shape and
 equivalent contents.
 
-## Start with Object.is, not ===
+## The algorithm
+
+1. `a === b` — same reference or equal primitives, done.
+2. If either side is `null` or not an `object`, they differ.
+3. Compare `Object.keys` lengths — a different key count means not equal.
+4. For each key of `a`, `b` must **own** it and the values must be deeply equal.
 
 ```js
-NaN === NaN       // false  ← but they ARE structurally the same
-0 === -0          // true   ← but they are distinguishable values
-Object.is(NaN, NaN)  // true
-Object.is(0, -0)     // false
+if (!b.hasOwnProperty(key) || !deepEqual(a[key], b[key])) return false
 ```
 
-`Object.is` gets both right, which is why it is the first line.
+## What this version does not handle
 
-## What a complete answer covers
+Good follow-up material — each is a known gap you should be able to name:
 
-- **Prototype check.** `[]` and `{}` both have zero keys; without comparing
-  prototypes they compare equal, which is wrong.
-- **Date** — compare `getTime()`, not the object.
-- **RegExp** — compare `source` and `flags`.
-- **Map/Set** — size plus per-entry comparison. Note `Set` comparison here uses
-  `has()`, which is reference-based for object members; truly deep Set equality
-  needs an O(n²) pairwise match.
-- **`Reflect.ownKeys`** to include symbols.
-- **Cycles** — a `WeakMap` of pairs already being compared, or a circular
-  structure recurses forever.
-
-## The cycle guard is subtle
-
-If we are already comparing `a` against `b` further up the stack, returning
-`true` is correct: any genuine difference will be found by some *other* branch
-of the traversal. Returning `false` would wrongly reject two structurally
-identical circular objects.
+- **`NaN`** — `NaN === NaN` is false, so `deepEqual(NaN, NaN)` is false. Use
+  `Object.is` as the first check to fix it (it also tells `0` and `-0` apart).
+- **`[]` vs `{}`** — both have zero keys, so they compare equal. Compare
+  prototypes to fix it.
+- **Date / RegExp / Map / Set** — they have no own enumerable keys, so any two
+  of the same kind compare equal. They need dedicated branches (`getTime()`,
+  `source` + `flags`, size + per-entry).
+- **Cycles** — a circular structure recurses forever. Track the pairs already
+  being compared in a `WeakMap`.
+- **Symbol keys** — `Object.keys` skips them; use `Reflect.ownKeys`.
 
 ## Traps
 
-- `key in b` also finds inherited properties — use
-  `Object.prototype.hasOwnProperty.call(b, key)`.
-- Comparing only `Object.keys(a).length` misses keys that exist in `b` but not
-  `a` unless both lengths are checked.
+- `key in b` also finds inherited properties — use `hasOwnProperty`.
+- Comparing only `keysA.length` is not enough on its own; the per-key
+  `hasOwnProperty` check is what catches a key that exists in `a` but not `b`.
 - Deep equality is O(n). Inside a React render or a hot loop it is often the
   wrong tool — normalised state or referential stability usually is.

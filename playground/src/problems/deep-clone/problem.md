@@ -33,9 +33,13 @@ seen.set(value, out)   // BEFORE the recursive calls
 
 `WeakMap` (not `Map`) so cloned objects can still be garbage collected.
 
-**2. `Reflect.ownKeys`** rather than `for...in` or `Object.keys`. It includes
-**symbol keys and non-enumerable properties**, and it does not walk the
-prototype chain — which `for...in` does.
+**2. Special-case the built-ins first.** `Date`, `RegExp`, `Map` and `Set` have
+no own enumerable keys worth copying, so each gets its own branch. Map and Set
+register themselves in `seen` before cloning their entries, just like objects.
+
+Everything else is cloned with `Object.keys`, so symbol keys, non-enumerable
+properties and the prototype are **not** preserved — the result is a plain
+object or array.
 
 ## structuredClone
 

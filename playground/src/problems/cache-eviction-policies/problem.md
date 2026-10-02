@@ -45,7 +45,10 @@ the key is read costs nothing and is what production caches do.
 The trade-off is that an expired-but-never-read entry occupies memory until it
 is touched or evicted — so most caches also sweep periodically.
 
-Prefer evicting an already-expired entry over a live one when at capacity.
+In `LRUCacheTTL` `put(key, value, ttl)` stores `expiresAt`, `get` deletes an
+expired entry and returns `null`. It evicts the LRU entry when full without
+checking for expired ones first — preferring an already-expired entry over a
+live one is a natural follow-up.
 
 ## Choosing
 

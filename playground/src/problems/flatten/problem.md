@@ -2,52 +2,41 @@
 
 Two classic variants that are usually asked together.
 
-## Flattening an array
+## Flattening an array — `myFlat(depth = 1)`
 
 ```js
-arr.reduce((acc, item) =>
-  acc.concat(Array.isArray(item) ? flatten(item, depth - 1) : item), [])
+if (Array.isArray(item) && depth > 0) {
+  result.push(...item.myFlat(depth - 1))
+} else {
+  result.push(item)
+}
 ```
 
 The **depth parameter** is what separates a complete answer. Native
 `Array.prototype.flat()` defaults to depth 1, not infinity — `flat()` on
-`[1,[2,[3]]]` gives `[1,2,[3]]`.
+`[1,[2,[3]]]` gives `[1,2,[3]]`. `Infinity` works as a depth because
+`Infinity - 1` is still `Infinity`.
 
-### The iterative version
-
-Deep recursion can blow the call stack. A stack-based loop avoids it:
-
-```js
-while (stack.length) {
-  const item = stack.pop()
-  if (Array.isArray(item)) stack.push(...item)
-  else out.push(item)
-}
-```
-
-Note `pop()` takes from the end, so results come out reversed and need a final
-`reverse()` — an easy detail to miss.
+`if (!(i in this)) continue` skips holes, which is also what native `flat`
+does.
 
 ## Flattening an object
 
-Turn `{a: {b: {c: 1}}}` into `{'a.b.c': 1}`:
+Turn `{a: {b: {c: 1}}}` into `{'a.b.c': 1}` with a depth-first walk that carries
+the path down:
 
 ```js
-const path = prefix ? `${prefix}.${key}` : key
+const newKey = path ? `${path}.${key}` : key
 ```
 
-**The trap is `typeof`.** Both `null` and arrays report `'object'`:
-
-```js
-typeof null      // 'object'  ← recursing into it throws
-typeof [1,2]     // 'object'  ← usually you want to keep arrays as values
-```
-
-Hence the guard: `value !== null && typeof value === 'object' && !Array.isArray(value)`.
+**The trap is `typeof`.** `null` reports `'object'`, so the guard is
+`value !== null && typeof value === 'object'`. Arrays also pass that guard, so
+they are walked by index: `f: [1, 2]` becomes `'f.0'` and `'f.1'`.
 
 ## Follow-ups worth anticipating
 
 - **Unflatten** — the inverse, splitting keys on `.` and rebuilding nesting.
 - **Key collisions** — a literal key containing a dot (`{'a.b': 1}`) is
   indistinguishable from nesting after flattening.
+- **Keeping arrays as values** — add `!Array.isArray(value)` to the guard.
 - Circular references will recurse forever without a `seen` set.

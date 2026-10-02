@@ -1,4 +1,4 @@
-import { curry, infiniteAdd } from './curry.js'
+import { curry } from './curry.js'
 
 const volume = curry((l, w, h) => l * w * h)
 
@@ -7,7 +7,6 @@ const rows = [
   ['volume(2, 3)(4)', volume(2, 3)(4)],
   ['volume(2)(3, 4)', volume(2)(3, 4)],
   ['volume(2, 3, 4)', volume(2, 3, 4)],
-  ['infiniteAdd(1)(2)(3)(4) + 0', infiniteAdd(1)(2)(3)(4) + 0],
 ]
 
 export default function CurryDemo() {

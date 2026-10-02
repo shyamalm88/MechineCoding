@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { promisify, callbackify } from './promisify.js'
+import { promisify } from './promisify.js'
 
 // Node-style: callback last, (err, value)
 function readConfig(name, callback) {
@@ -21,10 +21,7 @@ export default function Demo() {
 
       out.push(['promisify success', JSON.stringify(await readAsync('app'))])
       try { await readAsync('missing') } catch (e) { out.push(['promisify error → rejects', e.message]) }
-      out.push(['multiple callback values', JSON.stringify(await promisify(multiValue)())])
-
-      const back = callbackify(async () => 'from promise')
-      await new Promise((r) => back((err, v) => { out.push(['callbackify', `${err} / ${v}`]); r() }))
+      out.push(['extra callback values dropped', JSON.stringify(await promisify(multiValue)())])
 
       if (alive) setRows(out)
     })()

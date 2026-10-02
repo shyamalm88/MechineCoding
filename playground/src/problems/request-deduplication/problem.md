@@ -1,6 +1,7 @@
 # Request deduplication and async race conditions
 
-Three distinct problems that get conflated, and three different fixes.
+Distinct problems that get conflated, each with its own fix. The code covers the
+first two (`coalescedFetch`, `createLatestFetcher`); the third is the follow-up.
 
 ## 1. Coalescing — N identical calls, one request
 
@@ -8,11 +9,11 @@ Three components mount and all ask for user 42. Without coalescing that is three
 identical network requests.
 
 ```js
-if (inFlight.has(key)) return inFlight.get(key)
+if (pendingRequests.has(url)) return pendingRequests.get(url)
 ```
 
 Store the **promise**, not the result, so concurrent callers share the in-flight
-work. Clear it in `.finally()` — leaving a rejected promise cached means every
+work. Clear it in `.finally()` (`pendingRequests.delete(url)`) — leaving a rejected promise cached means every
 future caller gets the old failure.
 
 ## 2. Latest-only — the out-of-order response bug
@@ -31,17 +32,19 @@ that **the last response to arrive wins** instead of the newest request.
 The fix is a monotonic ticket:
 
 ```js
-const mine = ++ticket
+latestId += 1
+const currentId = latestId
 // ...on resolve:
-if (mine !== ticket) throw stale   // a newer request superseded me
+if (currentId === latestId) return value   // otherwise a newer request superseded me
 ```
 
-Note debouncing **reduces** this but does not fix it — two requests can still be
+A superseded call resolves with `undefined` rather than rejecting — callers must
+treat `undefined` as "ignore me". Note debouncing **reduces** this but does not fix it — two requests can still be
 in flight, and network latency is not bounded by your debounce interval.
 
 ## 3. Abort — actually cancel
 
-`latestOnly` still lets the stale request complete; it just ignores it. To stop
+`createLatestFetcher` still lets the stale request complete; it just ignores it. To stop
 the work:
 
 ```js

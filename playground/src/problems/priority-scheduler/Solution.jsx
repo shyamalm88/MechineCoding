@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { PriorityScheduler } from './scheduler.js'
+import { PriorityExecutorConcurrent } from './scheduler.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -10,7 +10,7 @@ export default function Demo() {
     let alive = true
     ;(async () => {
       const done = []
-      const s = new PriorityScheduler(2)
+      const s = new PriorityExecutorConcurrent(2)
       const job = (name, p) => s.add(async () => { await sleep(70); done.push(name); return name }, p)
 
       // Saturate both slots FIRST. Priority orders the queue -- it cannot
@@ -21,11 +21,11 @@ export default function Demo() {
 
       // These all queue behind the blockers and drain strictly by priority.
       const queued = [
-        job('low-A (p=9)', 9),
-        job('high-1 (p=1)', 1),
+        job('low-A (p=1)', 1),
+        job('high-1 (p=9)', 9),
         job('mid (p=5)', 5),
-        job('high-2 (p=1)', 1),
-        job('low-B (p=9)', 9),
+        job('high-2 (p=9)', 9),
+        job('low-B (p=1)', 1),
       ]
 
       await Promise.all([...blockers, ...queued])
@@ -45,7 +45,7 @@ export default function Demo() {
       </ol>
       <p style={{ color: '#666', fontSize: 13, maxWidth: 460 }}>
         The two blockers occupy both slots first. Everything queued behind them
-        drains strictly by priority — and equal priorities stay FIFO
+        drains by priority (higher number first) — and equal priorities stay FIFO
         (high-1 before high-2).
       </p>
     </div>

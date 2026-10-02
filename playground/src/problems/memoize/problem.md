@@ -31,17 +31,6 @@ const objectCache = new WeakMap()  // key by identity, no leak
 The trade-off is that `WeakMap` compares by **identity**, so two structurally
 identical but distinct objects are separate cache entries.
 
-## The escape hatch
-
-Real libraries let you supply a key function:
-
-```js
-memoize(fetchUser, (user) => user.id)
-```
-
-That is usually the right answer in production — the caller knows what makes
-two calls equivalent far better than a generic serialiser.
-
 ## Traps
 
 - **Never memoise an impure function.** Caching a function that reads the clock,

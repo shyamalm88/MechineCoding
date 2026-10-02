@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { createSuggestionCache } from './cache.js'
+import { SearchSuggestionCache } from './cache.js'
 
 const FRUITS = ['apple', 'apricot', 'banana', 'blueberry', 'cherry', 'cranberry', 'date', 'fig', 'grape']
 
@@ -11,23 +11,29 @@ export default function Demo() {
   const cacheRef = useRef(null)
 
   if (!cacheRef.current) {
-    cacheRef.current = createSuggestionCache(
-      async (q) => {
-        setRequests((n) => n + 1)
-        await new Promise((r) => setTimeout(r, 250))
-        return FRUITS.filter((f) => f.startsWith(q))
-      },
-      { max: 4 },
-    )
+    const cache = new SearchSuggestionCache(4)
+    // Swap the mock API for one that filters FRUITS and counts real requests.
+    cache.fetchFromDatabase = async (q) => {
+      setRequests((n) => n + 1)
+      await new Promise((r) => setTimeout(r, 250))
+      return FRUITS.filter((f) => f.startsWith(q))
+    }
+    cacheRef.current = cache
   }
 
   const onChange = async (e) => {
     const q = e.target.value
     setQuery(q)
     if (!q) { setResults([]); return }
-    const r = await cacheRef.current.get(q)
+    const cache = cacheRef.current
+    const hit = cache.cache.has(q)
+    const r = await cache.getResults(q)
     setResults(r)
-    setStats(cacheRef.current.stats())
+    setStats((s) => ({
+      hits: s.hits + (hit ? 1 : 0),
+      misses: s.misses + (hit ? 0 : 1),
+      size: cache.cache.size,
+    }))
   }
 
   return (

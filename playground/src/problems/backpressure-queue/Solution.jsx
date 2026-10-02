@@ -8,22 +8,24 @@ export default function Demo() {
   const [log, setLog] = useState([])
   const qRef = useRef(null)
   const n = useRef(0)
-  if (!qRef.current) qRef.current = new BackpressureQueue({ concurrency: 2, maxQueueSize: 3 })
+  if (!qRef.current) qRef.current = new BackpressureQueue(2, 3)
 
   useEffect(() => {
-    const i = setInterval(() => setStats({ ...qRef.current.stats }), 120)
+    const i = setInterval(() => {
+      const q = qRef.current
+      setStats({ running: q.running, queued: q.queue.length, blocked: q.waitingProducers.length })
+    }, 120)
     return () => clearInterval(i)
   }, [])
 
   const flood = async () => {
     for (let i = 0; i < 8; i++) {
       const label = `t${++n.current}`
-      const accepted = qRef.current.push(async () => {
+      qRef.current.push(async () => {
         setLog((l) => [...l, `${label} started`])
         await sleep(700)
         setLog((l) => [...l, `${label} done`])
       })
-      accepted.then(() => setLog((l) => [...l, `${label} admitted`]))
     }
   }
 

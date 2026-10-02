@@ -1,71 +1,61 @@
 /**
- * Redux in ~40 lines. The whole library is: hold state, run it through a pure
- * reducer on dispatch, notify subscribers.
+ * ============================================================================
+ * PROBLEM: Redux-like State Management (CreateStore)
+ * ============================================================================
+ *
+ * INTUITION:
+ * A centralized store that holds the state tree of the application.
+ * The only way to change the state is to emit an action (dispatch).
+ *
+ * ALGORITHM (Pub/Sub Pattern):
+ * 1. State: Holds the current data.
+ * 2. Listeners: Array of functions subscribed to changes.
+ * 3. Dispatch(action):
+ *    - Call reducer(currentState, action) -> newState.
+ *    - Update state.
+ *    - Loop through listeners and call them.
+ *
+ * ============================================================================
+ * DRY RUN
+ * ============================================================================
+ * 1. createStore(reducer, {count:0}). State={count:0}.
+ * 2. subscribe(fn). Listeners=[fn].
+ * 3. dispatch({type: INC}). Reducer returns {count:1}. State updated. fn() called.
+ * ============================================================================
  */
-export function createStore(reducer, preloadedState, enhancer) {
-  if (typeof enhancer === 'function') return enhancer(createStore)(reducer, preloadedState)
+function createStore(reducer, initialState) {
+  let state = initialState;
+  const listeners = new Set();
 
-  let state = preloadedState
-  let listeners = []
-  let isDispatching = false
-
-  const getState = () => {
-    if (isDispatching) throw new Error('You may not call getState() while the reducer is executing')
-    return state
+  function getState() {
+    return state;
   }
 
-  const subscribe = (listener) => {
-    // Snapshot the array so a subscribe/unsubscribe DURING a dispatch does not
-    // mutate the list currently being iterated.
-    listeners = [...listeners, listener]
-    let subscribed = true
-    return () => {
-      if (!subscribed) return
-      subscribed = false
-      listeners = listeners.filter((l) => l !== listener)
-    }
+  function dispatch(action) {
+    state = reducer(state, action);
+    listeners.forEach((listener) => listener());
   }
 
-  const dispatch = (action) => {
-    if (typeof action.type === 'undefined') throw new Error('Actions must have a type')
-    if (isDispatching) throw new Error('Reducers may not dispatch actions')
-
-    try {
-      isDispatching = true
-      state = reducer(state, action)
-    } finally {
-      isDispatching = false
-    }
-
-    for (const listener of listeners) listener()
-    return action
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener); // unsubscribe
   }
 
-  dispatch({ type: '@@redux/INIT' }) // let reducers supply their defaults
-  return { getState, dispatch, subscribe }
+  // initialize state
+  dispatch({ type: "__INIT__" });
+
+  return { getState, dispatch, subscribe };
 }
 
-/** applyMiddleware: each middleware wraps dispatch, innermost first. */
-export function applyMiddleware(...middlewares) {
-  return (create) => (reducer, preloadedState) => {
-    const store = create(reducer, preloadedState)
-    let dispatch = store.dispatch
-    const api = { getState: store.getState, dispatch: (a) => dispatch(a) }
-    const chain = middlewares.map((mw) => mw(api))
-    dispatch = chain.reduceRight((next, mw) => mw(next), store.dispatch)
-    return { ...store, dispatch }
+function counterReducer(state = { count: 0 }, action) {
+  switch (action.type) {
+    case "INCREMENT":
+      return { ...state, count: state.count + 1 };
+    case "DECREMENT":
+      return { ...state, count: state.count - 1 };
+    default:
+      return state;
   }
 }
 
-export function combineReducers(reducers) {
-  return (state = {}, action) => {
-    let changed = false
-    const next = {}
-    for (const [key, reducer] of Object.entries(reducers)) {
-      next[key] = reducer(state[key], action)
-      if (next[key] !== state[key]) changed = true
-    }
-    // Return the SAME reference when nothing changed, so === checks short-circuit.
-    return changed ? next : state
-  }
-}
+export { createStore, counterReducer }

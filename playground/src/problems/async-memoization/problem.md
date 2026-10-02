@@ -6,7 +6,7 @@ each is a bug if you get it wrong.
 ## 1. Cache the promise, not the value
 
 ```js
-cache.set(key, fn(...args))   // the PROMISE goes in immediately
+cache.set(arg, promise)   // the PROMISE goes in immediately
 ```
 
 Caching only the resolved value leaves a window: three callers arriving before
@@ -22,24 +22,24 @@ blip and every future call for that key fails instantly, with no request ever
 being made again.
 
 ```js
-promise.catch(() => { if (cache.get(key)?.promise === promise) cache.delete(key) })
+fn.call(this, arg).catch((err) => {
+  cache.delete(arg)   // evict on failure
+  throw err
+})
 ```
-
-The identity check matters: without it, a slow failure can evict a *newer*
-successful entry that has since replaced it.
 
 ## 3. Async results go stale
 
 Sync memoisation of a pure function is valid forever. `fetchUser(1)` is a
-snapshot — the user changes. So async caches need a **TTL**, explicit
-invalidation after mutations, or both. That is the entire premise of React Query
+snapshot — the user changes. So real async caches need a **TTL**, explicit
+invalidation after mutations, or both (not implemented here). That is the entire premise of React Query
 and SWR.
 
 ## Traps
 
 - Unbounded growth: pair with LRU eviction for anything long-lived.
-- `JSON.stringify` keys are order-sensitive — `{a:1,b:2}` and `{b:2,a:1}` are
-  different keys for equivalent input.
+- Takes a single argument: primitives go in a `Map`, objects in a `WeakMap` so
+  they can be garbage-collected.
 - Storing the promise means the cache retains whatever the promise closes over
   until it settles.
 

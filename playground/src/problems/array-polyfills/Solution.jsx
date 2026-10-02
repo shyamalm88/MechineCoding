@@ -15,8 +15,9 @@ const rows = [
   ['[1,2,3,4].myFilter(n => n % 2)', JSON.stringify(nums.myFilter((n) => n % 2))],
   ['[1,2,3,4].myReduce((a,b) => a+b)', nums.myReduce((a, b) => a + b)],
   ['[1,2,3,4].myReduce((a,b) => a+b, 100)', nums.myReduce((a, b) => a + b, 100)],
-  ['[1,2,3,4].myEvery(n => n > 0)', String(nums.myEvery((n) => n > 0))],
-  ['[].myEvery(n => false) (vacuous truth)', String([].myEvery(() => false))],
+  ['[1,2,3,4].myFind(n => n > 2)', nums.myFind((n) => n > 2)],
+  ['[1,[2,[3]]].myFlat()', JSON.stringify([1, [2, [3]]].myFlat())],
+  ['[1,[2,[3]]].myFlat(Infinity)', JSON.stringify([1, [2, [3]]].myFlat(Infinity))],
   ['visits on [1, <hole>, 3] (holes skipped)', sparseVisits],
   ['[].myReduce(fn) with no initial', emptyReduce],
 ]

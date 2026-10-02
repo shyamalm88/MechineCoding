@@ -31,7 +31,7 @@
   },
   {
     "id": "array-polyfills",
-    "title": "Array Polyfills: map, filter, reduce, every",
+    "title": "Array Polyfills: map, filter, reduce, forEach, find, flat",
     "category": "JavaScript",
     "difficulty": "Easy"
   },
@@ -541,7 +541,7 @@
   },
   {
     "id": "functional-utils",
-    "title": "pipe, compose, groupBy, brackets, QuickSort",
+    "title": "pipe, compose, groupBy, once, chunk",
     "category": "JavaScript",
     "difficulty": "Medium"
   },

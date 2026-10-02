@@ -1,4 +1,4 @@
-# Promise.all, allSettled, race and any
+# Promise.all, allSettled, race and any (myPromiseAll, myPromiseAllSettled, myRace, any)
 
 ## What each does
 
@@ -15,9 +15,10 @@
 `results[i] = value`, never `results.push(value)` — otherwise a fast third
 promise ends up first in the array.
 
-**Count down, don't compare lengths.** `if (--remaining === 0)` is race-free;
-checking `results.length === items.length` breaks with holes and with
-`undefined` values.
+**Count completions, don't compare `results.length`.** A separate `counter`
+compared to `promises.length` is correct; checking `results.length` against the
+input breaks, because `results[i] = value` can fill the last slot first and make
+`length` jump early.
 
 **Handle the empty iterable.** `all([])` resolves immediately with `[]`;
 `any([])` rejects with an `AggregateError`. Forgetting this leaves the promise

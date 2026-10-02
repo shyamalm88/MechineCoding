@@ -1,71 +1,53 @@
-/**
- * A minimal Observable -- the primitive behind RxJS.
- *
- * Differences from a Promise, all of which matter:
- *   Promise:    ONE value,  EAGER (starts immediately), NOT cancellable
- *   Observable: MANY values, LAZY (starts on subscribe), cancellable
- */
-export class Observable {
-  constructor(producer) { this._producer = producer }
+// Observable — lazy, cancellable stream of values
+// Difference from Promise: multiple values, lazy (runs on subscribe), cancellable
+
+class Observable {
+  constructor(fn) {
+    this._fn = fn; // fn receives observer, returns teardown
+  }
 
   subscribe(observer) {
-    let active = true
+    let active = true;
     const safe = {
-      next: (v) => { if (active) observer.next?.(v) },
-      error: (e) => { if (active) { active = false; observer.error?.(e) } },
-      complete: () => { if (active) { active = false; observer.complete?.() } },
-    }
-    // The producer runs HERE, not at construction -- that is what "lazy" means.
-    const teardown = this._producer(safe) ?? (() => {})
-    return { unsubscribe: () => { active = false; teardown() } }
+      next:     v => active && observer.next(v),
+      error:    e => active && (observer.error?.(e), active = false),
+      complete: () => active && (observer.complete?.(), active = false),
+    };
+    const teardown = this._fn(safe) || (() => {});
+    return { unsubscribe: () => { active = false; teardown(); } };
   }
 
   map(fn) {
-    return new Observable((obs) => {
-      const sub = this.subscribe({
-        next: (v) => obs.next(fn(v)),
-        error: (e) => obs.error(e),
-        complete: () => obs.complete(),
-      })
-      return () => sub.unsubscribe()   // teardown must propagate upstream
-    })
+    return new Observable(obs => this.subscribe({
+      next: v => obs.next(fn(v)),
+      error: e => obs.error(e),
+      complete: () => obs.complete(),
+    }).unsubscribe);
   }
 
-  filter(predicate) {
-    return new Observable((obs) => {
-      const sub = this.subscribe({
-        next: (v) => predicate(v) && obs.next(v),
-        error: (e) => obs.error(e),
-        complete: () => obs.complete(),
-      })
-      return () => sub.unsubscribe()
-    })
+  filter(fn) {
+    return new Observable(obs => this.subscribe({
+      next: v => fn(v) && obs.next(v),
+      error: e => obs.error(e),
+      complete: () => obs.complete(),
+    }).unsubscribe);
   }
 
-  take(n) {
-    return new Observable((obs) => {
-      let taken = 0
-      const sub = this.subscribe({
-        next: (v) => {
-          obs.next(v)
-          if (++taken >= n) { obs.complete(); sub.unsubscribe() }
-        },
-        error: (e) => obs.error(e),
-        complete: () => obs.complete(),
-      })
-      return () => sub.unsubscribe()
-    })
+  // Static creators
+  static of(...values) {
+    return new Observable(obs => {
+      values.forEach(v => obs.next(v));
+      obs.complete();
+    });
   }
 
   static interval(ms) {
-    return new Observable((obs) => {
-      let i = 0
-      const id = setInterval(() => obs.next(i++), ms)
-      return () => clearInterval(id)
-    })
-  }
-
-  static of(...values) {
-    return new Observable((obs) => { values.forEach((v) => obs.next(v)); obs.complete() })
+    return new Observable(obs => {
+      let i = 0;
+      const id = setInterval(() => obs.next(i++), ms);
+      return () => clearInterval(id); // teardown
+    });
   }
 }
+
+export { Observable }

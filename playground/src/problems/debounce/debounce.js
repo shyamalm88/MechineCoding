@@ -1,14 +1,37 @@
-/**
- * Postpone calling `fn` until `delay` ms have passed since the last call to
- * the returned wrapper. A burst of calls collapses into one invocation.
- */
-export function debounce(fn, delay) {
-  let timeoutId
+function debounceAdvanced(fn, delay) {
+  let timerId;
+  let lastArgs;
+  let lastThis;
 
-  // A regular function (not an arrow) so `this` stays dynamic and can be
-  // forwarded to fn -- otherwise obj.debounced() would lose its receiver.
-  return function debounced(...args) {
-    clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => fn.apply(this, args), delay)
-  }
+  const debounced = function (...args) {
+    lastArgs = args;
+    lastThis = this;
+
+    if (timerId) clearTimeout(timerId);
+
+    timerId = setTimeout(() => {
+      fn.apply(lastThis, lastArgs);
+      timerId = null;
+    }, delay);
+  };
+
+  // CANCEL: Stop the timer, don't run.
+  debounced.cancel = () => {
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+  };
+
+  // FLUSH: Run immediately if a timer is pending.
+  debounced.flush = () => {
+    if (timerId) {
+      fn.apply(lastThis, lastArgs);
+      debounced.cancel(); // Clear the timer since we just ran it
+    }
+  };
+
+  return debounced;
 }
+
+export { debounceAdvanced }
