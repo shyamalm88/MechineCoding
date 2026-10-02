@@ -1,69 +1,49 @@
-function deepClone(obj, cache = new WeakMap()) {
-  // ==========================================
-  // 1. Primitives & Functions
-  // ==========================================
-  if (obj === null || typeof obj !== "object") {
-    return obj;
+function deepClone(value, seen = new WeakMap()) {
+  if (value === null || typeof value !== "object") {
+    return value;
   }
 
-  // ==========================================
-  // 2. Circular References
-  // ==========================================
-  if (cache.has(obj)) {
-    return cache.get(obj);
+  if (seen.has(value)) {
+    return seen.get(value);
   }
 
-  // ==========================================
-  // 3. Built-in Types
-  // ==========================================
-
-  if (obj instanceof Date) {
-    return new Date(obj);
+  if (value instanceof Date) {
+    return new Date(value);
   }
 
-  if (obj instanceof RegExp) {
-    return new RegExp(obj.source, obj.flags);
+  if (value instanceof RegExp) {
+    return new RegExp(value.source, value.flags);
   }
 
-  if (obj instanceof Map) {
-    const clone = new Map();
-    cache.set(obj, clone);
+  if (value instanceof Map) {
+    const clonedMap = new Map();
+    seen.set(value, clonedMap);
 
-    for (const [key, value] of obj) {
-      clone.set(deepClone(key, cache), deepClone(value, cache));
+    for (const [key, val] of value) {
+      clonedMap.set(deepClone(key, seen), deepClone(val, seen));
     }
 
-    return clone;
+    return clonedMap;
   }
 
-  if (obj instanceof Set) {
-    const clone = new Set();
-    cache.set(obj, clone);
+  if (value instanceof Set) {
+    const clonedSet = new Set();
+    seen.set(value, clonedSet);
 
-    for (const value of obj) {
-      clone.add(deepClone(value, cache));
+    for (const item of value) {
+      clonedSet.add(deepClone(item, seen));
     }
 
-    return clone;
+    return clonedSet;
   }
 
-  // ==========================================
-  // 4. Arrays / Objects / Class Instances
-  // ==========================================
+  const cloned = Array.isArray(value) ? [] : {};
 
-  const clone = Array.isArray(obj) ? [] : {};
+  seen.set(value, cloned);
 
-  cache.set(obj, clone);
-
-  // ==========================================
-  // 5. Copy ALL own properties
-  //    - string keys
-  //    - symbol keys
-  // ==========================================
-
-  for (const key of Reflect.ownKeys(obj)) {
-    clone[key] = deepClone(obj[key], cache);
+  for (const key of Object.keys(value)) {
+    cloned[key] = deepClone(value[key], seen);
   }
 
-  return clone;
+  return cloned;
 }
