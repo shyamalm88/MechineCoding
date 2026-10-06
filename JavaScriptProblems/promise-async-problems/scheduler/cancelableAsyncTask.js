@@ -11,50 +11,52 @@
  * ============================================================================
  * INTUITION: AbortController Pattern
  * ============================================================================
- * 1. The function accepts an `AbortSignal`.
+ * 1. The function accepts a promise and an `AbortSignal`.
  * 2. Inside the Promise constructor:
  *    - Check `signal.aborted` immediately. If true, reject.
- *    - Start the async work (e.g., setTimeout, fetch).
- *    - Add an event listener for the 'abort' event on the signal.
- * 3. If 'abort' fires:
- *    - Clean up resources (clearTimeout).
- *    - Reject the promise with a specific error.
- */
-function cancellableAsyncTask(signal) {
+ *    - Listen for 'abort' (once) and forward the promise's result.
+ * * 3. If 'abort' fires:
+ *    - Reject with signal.reason (AbortError by default).
+ * */
+function cancellable(promise, signal) {
   return new Promise((resolve, reject) => {
-    // 1. Check if already aborted
-    if (signal.aborted) {
-      return reject(new DOMException("Aborted", "AbortError"));
-    }
+    // 1. Already aborted -> fail fast
+    if (signal.aborted) return reject(signal.reason);
 
-    // 2. Start operation
-    const timeout = setTimeout(() => {
-      resolve("done");
-    }, 1000);
+    // 2. Listen for abort (once: auto-removed after firing)
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
 
-    // 3. Listen for abort
-    signal.addEventListener("abort", () => {
-      clearTimeout(timeout);
-      reject(new DOMException("Aborted", "AbortError"));
-    });
+    // 3. Forward original result, then clean up the listener
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", onAbort));
   });
 }
 
-const controller = new AbortController();
+const sleep = (ms) => new Promise((r) => setTimeout(() => r("done"), ms));
 
-cancellableAsyncTask(controller.signal)
+// Test 1: cancelled mid-flight
+const c1 = new AbortController();
+cancellable(sleep(1000), c1.signal)
   .then(console.log)
-  .catch((err) => {
-    if (err.name === "AbortError") {
-      console.log("Cancelled");
-    }
-  });
+  .catch((err) => console.log(err.name === "AbortError" ? "Cancelled" : err));
+setTimeout(() => c1.abort(), 300);
+// Expected: Cancelled
 
-setTimeout(() => controller.abort(), 300);
+// Test 2: success
+const c2 = new AbortController();
+cancellable(sleep(500), c2.signal).then((r) => console.log("Success:", r));
+// Expected: Success: done
 
-// Test Case 2: Successful completion
-const controller2 = new AbortController();
-cancellableAsyncTask(controller2.signal)
-  .then((res) => console.log("Success:", res))
-  .catch((err) => console.error("Error:", err));
-// Expected: Success: done (after 1s)
+// Test 3: already aborted
+const c3 = new AbortController();
+c3.abort();
+cancellable(sleep(100), c3.signal).catch((e) => console.log("Pre-aborted:", e.name));
+// Expected: Pre-aborted: AbortError
+
+// Test 4: custom reason
+const c4 = new AbortController();
+cancellable(sleep(1000), c4.signal).catch((e) => console.log("Reason:", e));
+c4.abort("user left");
+// Expected: Reason: user left

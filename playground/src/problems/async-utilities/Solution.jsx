@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { promiseRetry, promiseWithTimeout, cancellableAsyncTask } from './asyncUtils.js'
+import { promiseRetry, promiseWithTimeout, cancellable } from './asyncUtils.js'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -28,9 +28,9 @@ export default function Demo() {
       out.push(['promiseWithTimeout(sleep(10), 200ms)', await promiseWithTimeout(sleep(10).then(() => 'ok'), 200)])
 
       const ac = new AbortController()
-      const task = cancellableAsyncTask(ac.signal).catch((e) => e.name)
+      const task = cancellable(sleep(1000), ac.signal).catch((e) => e.name)
       setTimeout(() => ac.abort(), 30)
-      out.push(['cancellableAsyncTask(signal), abort after 30ms', await task])
+      out.push(['cancellable(sleep(1000), signal), abort after 30ms', await task])
 
       if (alive) setRows(out)
     })()

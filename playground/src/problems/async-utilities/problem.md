@@ -33,15 +33,18 @@ fetch(url, { signal: controller.signal })
 controller.abort()
 ```
 
-## Cancellable task — `cancellableAsyncTask(signal)`
+## Cancellable task — `cancellable(promise, signal)`
 
 Promises have no cancellation in the language; cancellation is wired through an
-`AbortSignal`. Inside the promise constructor:
+`AbortSignal`. Wrap the promise in a new one:
 
-1. If `signal.aborted` is already true, reject immediately.
-2. Start the work (here a 1s `setTimeout`).
-3. On the signal's `abort` event, clear the timer and reject with an
-   `AbortError`.
+1. If `signal.aborted` is already true, reject immediately with `signal.reason`.
+2. On the signal's `abort` event (`{ once: true }`), reject with `signal.reason`.
+3. Forward the original promise's result, then remove the listener so it
+   doesn't leak.
+
+The wrapper only stops *waiting* — it cannot stop the underlying work. Pass the
+same signal into `fetch` (or clear your own timer) to really cancel it.
 
 ## Traps
 

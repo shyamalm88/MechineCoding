@@ -85,39 +85,38 @@ function promiseWithTimeout(promise, timeout) {
  * Create a wrapper for an async operation (Promise) that can be cancelled
  * using an AbortSignal (standard Web API).
  *
- * If the signal is aborted before the promise resolves, the promise should
+ * If the signal is aborted before the promise settles, the wrapper should
  * reject immediately with an "AbortError".
  *
  * ============================================================================
  * INTUITION: AbortController Pattern
  * ============================================================================
- * 1. The function accepts an `AbortSignal`.
+ * 1. Wrapper takes (promise, signal) and returns a NEW promise.
  * 2. Inside the Promise constructor:
- *    - Check `signal.aborted` immediately. If true, reject.
- *    - Start the async work (e.g., setTimeout, fetch).
- *    - Add an event listener for the 'abort' event on the signal.
- * 3. If 'abort' fires:
- *    - Clean up resources (clearTimeout).
- *    - Reject the promise with a specific error.
+ *    - If signal.aborted already -> reject right away.
+ *    - Listen for 'abort' -> reject with signal.reason.
+ *    - Forward the original promise's result/error.
+ * 3. Remove the abort listener once settled (no leak).
+ *
+ * NOTE: the wrapper only stops WAITING. It cannot stop the underlying work.
+ * To really cancel (fetch, timers), pass the same signal into that work too.
+ *
+ * Time: O(1)   Space: O(1)
  */
-function cancellableAsyncTask(signal) {
+function cancellable(promise, signal) {
   return new Promise((resolve, reject) => {
-    // 1. Check if already aborted
-    if (signal.aborted) {
-      return reject(new DOMException("Aborted", "AbortError"));
-    }
+    // 1. Already aborted -> fail fast
+    if (signal.aborted) return reject(signal.reason);
 
-    // 2. Start operation
-    const timeout = setTimeout(() => {
-      resolve("done");
-    }, 1000);
+    // 2. Listen for abort (once: auto-removed after firing)
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
 
-    // 3. Listen for abort
-    signal.addEventListener("abort", () => {
-      clearTimeout(timeout);
-      reject(new DOMException("Aborted", "AbortError"));
-    });
+    // 3. Forward original result, then clean up the listener
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", onAbort));
   });
 }
 
-export { promiseRetry, promiseWithTimeout, cancellableAsyncTask }
+export { promiseRetry, promiseWithTimeout, cancellable }
